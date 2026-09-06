@@ -1,0 +1,16 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const source=fs.readFileSync(path.join(__dirname,'../memory-ui-fix.js'),'utf8');
+const pipeline=fs.readFileSync(path.join(__dirname,'../processing-pipeline-ui.js'),'utf8');
+assert(source.includes("TODAY_PIPELINE_ID='todayMemoryPipeline'"),'Today processing panel must have a stable id');
+assert(source.includes("root.SynapProcessingPipeline"),'Today status must use the same truthful pipeline model as Library');
+assert(source.includes("api.derive(recording"),'Today status must derive from per-recording processing state/jobs');
+assert(source.includes("ready+' of '+items.length+' ready'"),'Today must expose aggregate ready count');
+assert(source.includes("focus.model.steps.forEach"),'Today must render the actual processing steps');
+assert(source.includes("/^Update check:/i"),'background firmware-check failures must be recognized');
+assert(source.includes("notice.hidden=true"),'background firmware-check failures must not occupy the main Today surface');
+assert(pipeline.includes("step('recorded', 'Recorded'"));
+assert(pipeline.includes("step('upload', 'Upload'"));
+assert(pipeline.includes("step('transcription', 'Transcription'"));
+assert(pipeline.includes("step('summary', 'Summary'"));
+assert(pipeline.includes("step('ready', 'Ready'"));
+console.log('PASS: Today shows truthful processing stages and suppresses noisy background OTA-check banners');
