@@ -66,7 +66,7 @@
       if (!recording) throw permanent('Recording is no longer in local storage.');
       var startedAt = recording.createdAt || new Date().toISOString();
       var timezone = 'UTC'; try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (error) {}
-      return request('/v1/recordings', { method:'POST', headers:{'Content-Type':'application/json','Idempotency-Key':'create:'+recordingId}, body:JSON.stringify({recording_id:recordingId,device_id:recording.deviceId||'',started_at:new Date(startedAt).toISOString(),sample_rate:recording.sampleRate||16000,channels:1,encoding:'pcm_s16le',language:prefs().language||'auto',timezone:timezone,continuous_group_id:recording.continuousGroupId||null,continuous_part:Number(recording.continuousPart||1)}) }).then(function(){return recording;});
+      return request('/v1/recordings', { method:'POST', headers:{'Content-Type':'application/json','Idempotency-Key': 'create:'+recordingId}, body:JSON.stringify({recording_id:recordingId,device_id:recording.deviceId||'',started_at:new Date(startedAt).toISOString(),sample_rate:recording.sampleRate||16000,channels:1,encoding:'pcm_s16le',language:prefs().language||'auto',timezone:timezone,continuous_group_id:recording.continuousGroupId||null,continuous_part:Number(recording.continuousPart||1)}) }).then(function(){return recording;});
     });
   }
 
@@ -95,13 +95,13 @@
   }
 
   function finalize(processor,job){
-    return processor.store.get('recordings',job.recordingId).then(function(recording){return processor.store.all('segments','recording',job.recordingId).then(function(segments){var counted=segments.filter(function(segment){return segment.frameCount||segment.pcmBlob;}).length;return request('/v1/recordings/'+encodeURIComponent(job.recordingId)+'/finalize',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':idempotencyKey(job,'finalize')},body:JSON.stringify({ended_at:new Date((recording&&(recording.endedAt||recording.completedAt))||Date.now()).toISOString(),duration_ms:Math.max(0,Math.round(Number((recording&&recording.durationMs)||0))),segment_count:counted||segments.length})});});});
+    return processor.store.get('recordings',job.recordingId).then(function(recording){return processor.store.all('segments','recording',job.recordingId).then(function(segments){var counted=segments.filter(function(segment){return segment.frameCount||segment.pcmBlob;}).length;return request('/v1/recordings/'+encodeURIComponent(job.recordingId)+'/finalize',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':idempotencyKey(job, 'finalize')},body:JSON.stringify({ended_at:new Date((recording&&(recording.endedAt||recording.completedAt))||Date.now()).toISOString(),duration_ms:Math.max(0,Math.round(Number((recording&&recording.durationMs)||0))),segment_count:counted||segments.length})});});});
   }
 
   function waitForProcessing(processor,job,onProgress){
     var deadline=Date.now()+PROCESSING_TIMEOUT_MS;
     function poll(){
-      if(processor.paused||!processor.canRun()){var aborted=new Error('Processing paused');aborted.name='AbortError';throw aborted;}
+      if(processor.paused || !processor.canRun()){var aborted=new Error('Processing paused');aborted.name = 'AbortError';throw aborted;}
       if(Date.now()>deadline){var slow=new Error('The backend is still working on this recording.');slow.retryable=true;throw slow;}
       return request('/v1/recordings/'+encodeURIComponent(job.recordingId)+'/processing').then(function(status){if(onProgress)onProgress(status);if(status.state==='ready')return status;if(status.state==='failed'){var failure=new Error(status.error_code||'Backend processing failed.');failure.retryable=Boolean(status.retryable);throw failure;}return new Promise(function(resolve){setTimeout(resolve,POLL_INTERVAL_MS);}).then(poll);});
     }
@@ -142,7 +142,7 @@
     Processor.prototype.process=function(job,config,url){
       var settings=prefs();if(settings.provider!=='synap')return originalProcess.call(this,job,config,url);
       if(!root.SynapAuth||!root.SynapAuth.isSignedIn())return Promise.reject(permanent('Sign in with Google in Settings to sync your memories.'));
-      var self=this,controller=new AbortController();this.controllers.set(job.id,controller);var budget=job.kind==='consolidate'?PROCESSING_TIMEOUT_MS:UPLOAD_TIMEOUT_MS;var timer=setTimeout(function(){controller.abort();},budget);
+      var self=this,controller=new AbortController();this.controllers.set(job.id,controller);var budget=job.kind === 'consolidate' ? PROCESSING_TIMEOUT_MS : UPLOAD_TIMEOUT_MS;var timer=setTimeout(function(){controller.abort();},budget);
       return handle(this,job).then(function(result){clearTimeout(timer);self.controllers.delete(job.id);return result;},function(error){clearTimeout(timer);self.controllers.delete(job.id);throw error;});
     };
     Processor.prototype.__synapBackendPatched=true;
