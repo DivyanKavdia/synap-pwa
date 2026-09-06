@@ -1,4 +1,44 @@
 'use strict';
-const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');const root=path.join(__dirname,'..');
-test('production PWA contract matches compressed firmware transport and mobile lifecycle',()=>{const app=fs.readFileSync(path.join(root,'app.js'),'utf8'),codec=fs.readFileSync(path.join(root,'audio-codec-v3.js'),'utf8'),events=fs.readFileSync(path.join(root,'event-channel.js'),'utf8'),bridge=fs.readFileSync(path.join(root,'recording-bridge.js'),'utf8'),sw=fs.readFileSync(path.join(root,'sw.js'),'utf8'),html=fs.readFileSync(path.join(root,'index.html'),'utf8'),compat=fs.readFileSync(path.join(root,'runtime-compat.js'),'utf8'),enhancements=fs.readFileSync(path.join(root,'enhancements.js'),'utf8');
-assert.match(app,/MIN_CHUNKS_PER_FRAME = 1/);assert.match(app,/MIN_STREAM_MTU = 32/);assert.doesNotMatch(app,/receivedStatus\.mtu < 91/);assert.match(app,/SynapAudioCodecV3\?\.normalizePacket/);assert.match(codec,/ADPCM_BYTES_PER_FRAME=404/);assert.doesNotMatch(codec,/EventTarget|BluetoothRemoteGATTCharacteristic|patchService|patchCharacteristic/);assert.match(app,/AUDIO_STALL_TIMEOUT_MS = 12000/);assert.match(app,/FOREGROUND_STALL_GRACE_MS = 3000/);assert.match(app,/document\.visibilityState === "visible"/);assert.match(app,/Foreground pendant status resynchronised/);assert.match(app,/function validHttpsEndpoint/);assert.match(bridge,/Touch: hold 2s to start · double tap to stop · hold 5s to sleep\/wake/);assert.doesNotMatch(bridge,/hold ~1s|deliberate tap to stop|hold to remember/);assert.doesNotMatch(events,/script\.src=['"]audio-codec-v3/);assert.match(sw,/1\.0\.0-shell30-processing-recovery/);assert.match(sw,/\.\/runtime-compat\.js/);assert.match(sw,/\.\/processing-recovery\.js/);assert(html.indexOf('runtime-compat.js')<html.indexOf('app.js'),'runtime compatibility must load before app initialization');assert.match(compat,/settingsButton\.addEventListener\('click'/);assert.match(compat,/if \(dialog\.open\) return/);assert.match(enhancements,/e\.data\.shellRevision===SHELL_REVISION/)});
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.join(__dirname, '..');
+
+const read = file => fs.readFileSync(path.join(root, file), 'utf8');
+
+test('production PWA contract matches firmware transport and lifecycle', () => {
+  const app = read('app.js');
+  const codec = read('audio-codec-v3.js');
+  const events = read('event-channel.js');
+  const bridge = read('recording-bridge.js');
+  const sw = read('sw.js');
+  const html = read('index.html');
+  const compat = read('runtime-compat.js');
+  const enhancements = read('enhancements.js');
+
+  assert.match(app, /MIN_CHUNKS_PER_FRAME = 1/);
+  assert.match(app, /MIN_STREAM_MTU = 32/);
+  assert.doesNotMatch(app, /receivedStatus\.mtu < 91/);
+  assert.match(app, /SynapAudioCodecV3\?\.normalizePacket/);
+  assert.match(codec, /ADPCM_BYTES_PER_FRAME=404/);
+  assert.doesNotMatch(codec, /EventTarget|BluetoothRemoteGATTCharacteristic|patchService|patchCharacteristic/);
+
+  assert.match(app, /AUDIO_STALL_TIMEOUT_MS = 12000/);
+  assert.match(app, /FOREGROUND_STALL_GRACE_MS = 3000/);
+  assert.match(app, /document\.visibilityState === "visible"/);
+  assert.match(app, /Foreground pendant status resynchronised/);
+  assert.match(app, /function validHttpsEndpoint/);
+
+  assert.match(bridge, /Touch: double tap to start\/stop · hold 5s to sleep/);
+  assert.doesNotMatch(bridge, /hold 2s to start|hold ~1s|deliberate tap to stop|hold to remember/);
+
+  assert.doesNotMatch(events, /script\.src=['"]audio-codec-v3/);
+  assert.match(sw, /1\.0\.0-shell30-processing-recovery/);
+  assert.match(sw, /\.\/runtime-compat\.js/);
+  assert.match(sw, /\.\/processing-recovery\.js/);
+  assert(html.indexOf('runtime-compat.js') < html.indexOf('app.js'), 'runtime compatibility must load before app initialization');
+  assert.match(compat, /settingsButton\.addEventListener\('click'/);
+  assert.match(compat, /if \(dialog\.open\) return/);
+  assert.match(enhancements, /e\.data\.shellRevision===SHELL_REVISION/);
+});
