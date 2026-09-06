@@ -55,11 +55,22 @@
       statusEl.dataset.kind = kind || '';
     }
 
+    function maybeProcessPending(session) {
+      var auto = el('autoProcessInput');
+      if (provider.value !== 'synap' || !session || !session.refreshToken || !auto || !auto.checked) return;
+      /* The processing button is the public seam into app.js's private FIFO
+         processor. Trigger it only after authentication succeeds; signed-out
+         recordings stay local and pending. */
+      root.setTimeout(function () {
+        var run = el('runQueueButton');
+        if (run) run.click();
+      }, 0);
+    }
+
     function applyProvider() {
       var usingSynap = provider.value === 'synap';
       accountFields.hidden = !usingSynap;
       customFields.hidden = usingSynap;
-      if (usingSynap && root.SynapBackend) root.SynapBackend.mirrorEndpoints();
     }
 
     function renderSession(session) {
@@ -77,17 +88,13 @@
       }
     }
 
-    /* Load stored connection settings into the fields. */
+    /* Deployment configuration lives in SynapAuth, not the user's processing
+       endpoint settings. Production defaults keep this advanced panel hidden;
+       it remains available only for a fork/self-hosted build or config failure. */
     var settings = auth.config();
     if (backendInput) backendInput.value = settings.backendUrl || '';
     if (clientInput) clientInput.value = settings.clientId || '';
 
-    /* A backend URL and a client ID are deployment configuration, not user
-       settings. When the build ships them as defaults there is nothing here a
-       person should be asked to fill in, so the panel stays hidden and signing
-       in is a single tap. It appears only when configuration is genuinely
-       missing — a fork, a self-hosted backend, or a build without defaults —
-       or when sign-in fails in a way that points at these values. */
     function revealConnection(force) {
       if (!connection) return;
       var configured = Boolean(settings.backendUrl && settings.clientId);
@@ -110,18 +117,20 @@
     provider.addEventListener('change', function () {
       savePrefs({ provider: provider.value });
       applyProvider();
+      maybeProcessPending(auth.session());
     });
 
     auth.onChange(renderSession);
 
     if (signIn) {
       signIn.addEventListener('click', function () {
-        /* Persist connection settings before signing in, so a first-run user
-           does not have to press Save and then Sign in in the right order. */
+        /* Production builds already ship this config. Persist only what the
+           advanced self-host panel currently contains; normal users never need
+           to paste Cloud Run or OAuth values to sign in. */
         try {
           settings = auth.saveConfig({
-            backendUrl: backendInput ? backendInput.value : '',
-            clientId: clientInput ? clientInput.value : ''
+            backendUrl: backendInput ? backendInput.value : settings.backendUrl,
+            clientId: clientInput ? clientInput.value : settings.clientId
           });
         } catch (error) {
           status(error.message, 'error');
@@ -134,6 +143,7 @@
 
         auth.signIn().then(function () {
           status('Signed in. Your memories will sync from now on.', 'ok');
+          maybeProcessPending(auth.session());
         }).catch(function (error) {
           /* One Tap is routinely suppressed in installed PWAs and on iOS.
              Fall back to the explicit button rather than dead-ending. */
@@ -144,6 +154,7 @@
             auth.renderButton(buttonHost, function () {
               buttonHost.hidden = true;
               status('Signed in. Your memories will sync from now on.', 'ok');
+              maybeProcessPending(auth.session());
             }, function (failure) {
               status(failure.message || 'Sign-in failed.', 'error');
             });
@@ -173,18 +184,16 @@
       });
     }
 
-    /* Save connection settings with the rest of the form. Capture phase, so
-       this runs before app.js validates the legacy endpoint fields. */
     form.addEventListener('submit', function () {
       savePrefs({ provider: provider.value });
       if (provider.value !== 'synap') return;
       try {
         settings = auth.saveConfig({
-          backendUrl: backendInput ? backendInput.value : '',
-          clientId: clientInput ? clientInput.value : ''
+          backendUrl: backendInput ? backendInput.value : settings.backendUrl,
+          clientId: clientInput ? clientInput.value : settings.clientId
         });
-        if (root.SynapBackend) root.SynapBackend.mirrorEndpoints();
         revealConnection(false);
+        maybeProcessPending(auth.session());
       } catch (error) {
         status(error.message, 'error');
       }
