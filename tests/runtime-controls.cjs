@@ -3,6 +3,8 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const runtime=fs.readFileSync(path.join(__dirname,'..','runtime-ui.js'),'utf8');
+const compat=fs.readFileSync(path.join(__dirname,'..','runtime-compat.js'),'utf8');
+const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const sw=fs.readFileSync(path.join(__dirname,'..','sw.js'),'utf8');
 
 assert.match(runtime,/installBlobRegistry\(\)/,'runtime must retain object-url to Blob mapping for synchronous export');
@@ -14,5 +16,8 @@ assert.match(runtime,/window\.open\(url,'_blank','noopener'\)/,'iOS fallback mus
 assert.match(runtime,/anchor\.download=name/,'desktop export must keep direct WAV download');
 assert.match(runtime,/touch-action:manipulation/,'tap targets must opt out of delayed double-tap handling');
 assert.match(runtime,/min-height:44px/,'primary controls must meet the minimum mobile tap target');
-assert.match(sw,/shell28-gemini-brain/,'service worker cache must advance with touch guidance v3');
+assert.match(compat,/bindSettingsSafetyNet/,'settings must retain a fallback even if app initialization stops early');
+assert.match(compat,/settingsButton\.addEventListener\('click'/,'settings safety net must be wired directly');
+assert(html.indexOf('runtime-compat.js')<html.indexOf('app.js'),'compatibility guard must load before app.js');
+assert.match(sw,/shell29-controls/,'service worker cache must advance with the controls compatibility fix');
 console.log('runtime recording controls and tap responsiveness: ok');
