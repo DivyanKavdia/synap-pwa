@@ -85,10 +85,15 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 root.SynapPowerLifecycle={IDLE_TO_STANDBY_MS,MIN_SAFE_STANDBY_BUILD,get state(){return lastPowerState},get firmwareBuild(){return firmwareBuild},get autoStartPending(){return autoStartPending},schedule:scheduleStandby};
 })(globalThis);
 
-/* Load optional memory and voice tooling through an existing production script
- * so the base app.js lifecycle remains untouched. */
+/* Load optional memory tooling through the literal production URL retained by
+ * the existing regression contract. */
 (function(root){'use strict';
-function load(flag,file,version,label){if(document.querySelector('script['+flag+']'))return;const script=document.createElement('script');script.setAttribute(flag,'1');script.src=new URL(file+'?v='+version,document.baseURI).href;script.defer=true;script.onerror=()=>console.warn(label+' could not load');document.head.appendChild(script)}
-load('data-synap-memory-tools','memory-tools.js','1.0.0-memory-tools1','[synap memory] optional memory tools');
-load('data-synap-voice-profile','voice-profile.js','1.0.0-voice-profile1','[synap voice] voice profile module');
+if(document.querySelector('script[data-synap-memory-tools]'))return;
+const script=document.createElement('script');script.dataset.synapMemoryTools='1';script.src=new URL('memory-tools.js?v=1.0.0-memory-tools1',document.baseURI).href;script.defer=true;script.onerror=()=>console.warn('[synap memory] optional memory tools could not load');document.head.appendChild(script);
+})(globalThis);
+
+/* Voice profiling is optional and independently loadable. */
+(function(root){'use strict';
+if(document.querySelector('script[data-synap-voice-profile]'))return;
+const script=document.createElement('script');script.dataset.synapVoiceProfile='1';script.src=new URL('voice-profile.js?v=1.0.0-voice-profile1',document.baseURI).href;script.defer=true;script.onerror=()=>console.warn('[synap voice] voice profile module could not load');document.head.appendChild(script);
 })(globalThis);
