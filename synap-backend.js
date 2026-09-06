@@ -5,18 +5,11 @@
  * PWA uploads sealed segments to the Synap backend, which holds the Gemini AI
  * Studio key in Secret Manager and writes encrypted memory to GCP.
  *
- * This hooks the same DKFIFOProcessor.process seam the OpenAI provider uses, so
- * the existing queue keeps its ordering, idempotency keys, retry backoff,
- * per-recording failure isolation and OTA pause. The three job kinds map onto
- * the backend like this:
- *
- *   transcribe   -> create the recording if needed, upload this 30s segment
- *   summarize    -> no-op; the backend understands the capture as a whole
- *   consolidate  -> finalize, wait for processing, pull the structured memory
- *
- * Segment upload stays per-segment on purpose. A pendant capture can run for an
- * hour on a phone that drifts between cell and wifi, and a resumable per-segment
- * upload is the difference between losing thirty seconds and losing the meeting.
+ * This hooks the same DKFIFOProcessor seams the OpenAI provider uses, so the
+ * existing queue keeps its ordering, idempotency keys, retry backoff,
+ * per-recording failure isolation and OTA pause. Synap Cloud is a managed
+ * transport: its deployment URL comes from SynapAuth configuration and is never
+ * copied into the user's Custom endpoint settings.
  */
 (function (root) {
   'use strict';
@@ -40,6 +33,12 @@
   function auth() {
     if (!root.SynapAuth) throw new Error('google-auth.js did not load.');
     return root.SynapAuth;
+  }
+
+  function managedEndpoint() {
+    var backendUrl = root.SynapAuth && root.SynapAuth.config().backendUrl;
+    if (!backendUrl) return '';
+    return String(backendUrl).replace(/\/+$/, '') + '/v1/recordings';
   }
 
   function permanent(message) {
@@ -171,7 +170,7 @@
       var markers = (recording && (recording.rememberMarkers || recording.highlights)) || [];
       if (!markers.length) return null;
 
-      return Promise.all(markers.map(function (marker, index) {
+      return Promise.all(markers.map(function (marker) {
         var id = marker.id || marker.highlightId;
         if (!id) return Promise.resolve(null);
         return request('/v1/recordings/' + encodeURIComponent(recordingId) + '/highlights', {
@@ -338,10 +337,56 @@
     var Processor = root.DKFIFOProcessor;
     if (!Processor || Processor.prototype.__synapBackendPatched) return;
 
-    var original = Processor.prototype.process;
+    var originalProcess = Processor.prototype.process;
+    var originalRun = Processor.prototype.run;
+
+    Processor.prototype.run = function () {
+      if (prefs().provider !== 'synap') return originalRun.call(this);
+
+      /* Signed-out recordings remain durable and pending. Do not launch a job
+         merely to fail it five times; login is the eligibility boundary. */
+      if (!root.SynapAuth || !root.SynapAuth.isSignedIn()) {
+        this.onChange('Sign in with Google to process pending memories.');
+        return Promise.resolve();
+      }
+
+      var endpoint = managedEndpoint();
+      if (!endpoint) {
+        this.onChange('Synap Cloud is not configured for this build.');
+        return Promise.resolve();
+      }
+
+      /* FIFOProcessor predates the managed provider and checks endpoint fields
+         before calling process(). Supply the managed route in memory for that
+         one run only. Nothing is written to dk-pendant-settings, so Custom
+         endpoints remain the only user-editable endpoint configuration. */
+      var originalSettings = this.settings;
+      var self = this;
+      this.settings = function () {
+        var config = originalSettings ? originalSettings() : {};
+        return Object.assign({}, config, { endpoint: endpoint, llmEndpoint: endpoint });
+      };
+
+      var outcome;
+      try {
+        outcome = originalRun.call(this);
+      } catch (error) {
+        this.settings = originalSettings;
+        throw error;
+      }
+
+      return Promise.resolve(outcome).then(function (value) {
+        self.settings = originalSettings;
+        return value;
+      }, function (error) {
+        self.settings = originalSettings;
+        throw error;
+      });
+    };
+
     Processor.prototype.process = function (job, config, url) {
       var settings = prefs();
-      if (settings.provider !== 'synap') return original.call(this, job, config, url);
+      if (settings.provider !== 'synap') return originalProcess.call(this, job, config, url);
 
       if (!root.SynapAuth || !root.SynapAuth.isSignedIn()) {
         return Promise.reject(permanent('Sign in with Google in Settings to sync your memories.'));
@@ -366,40 +411,16 @@
     Processor.prototype.__synapBackendPatched = true;
   }
 
-  /**
-   * The queue refuses to start a job when settings.endpoint or
-   * settings.llmEndpoint is blank. With the backend provider the URLs live in
-   * SynapAuth config instead, so mirror them into the legacy fields to satisfy
-   * that guard without asking the user to paste anything.
-   */
-  function mirrorEndpoints() {
-    if (prefs().provider !== 'synap') return;
-    var backendUrl = root.SynapAuth && root.SynapAuth.config().backendUrl;
-    if (!backendUrl) return;
-    try {
-      var stored = JSON.parse(root.localStorage.getItem('dk-pendant-settings') || '{}');
-      var transcribeUrl = backendUrl + '/v1/recordings';
-      if (stored.endpoint === transcribeUrl && stored.llmEndpoint === transcribeUrl) return;
-      stored.endpoint = transcribeUrl;
-      stored.llmEndpoint = transcribeUrl;
-      root.localStorage.setItem('dk-pendant-settings', JSON.stringify(stored));
-    } catch (error) { /* the guard will surface this in the UI */ }
-  }
-
-  function init() {
-    patch();
-    mirrorEndpoints();
-  }
-
+  /* Patch immediately. audio-store.js has already defined DKFIFOProcessor by
+     the time this script loads, while app.js may not have finished async startup.
+     This guarantees auto-processing can never enter the legacy provider first. */
+  patch();
   if (root.document && root.document.readyState === 'loading') {
-    root.document.addEventListener('DOMContentLoaded', init, { once: true });
-  } else {
-    init();
+    root.document.addEventListener('DOMContentLoaded', patch, { once: true });
   }
 
   root.SynapBackend = {
     patchProcessor: patch,
-    mirrorEndpoints: mirrorEndpoints,
     toRecordingFields: toRecordingFields,
     ask: function (query, scope) {
       return request('/v1/ask', {
