@@ -47,7 +47,8 @@
       entries.set(recordingId, entry);
       return;
     }
-    if (at - entry.since < STALL_MS || entry.inFlight || at - entry.lastAttempt < RETRY_MS) return;
+    if (at - entry.since < STALL_MS || entry.inFlight ||
+        (entry.lastAttempt > 0 && at - entry.lastAttempt < RETRY_MS)) return;
     if (typeof originalFetch !== 'function') return;
 
     entry.inFlight = true;
