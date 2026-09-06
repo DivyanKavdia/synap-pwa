@@ -17,7 +17,7 @@ assert.match(source, /start\.click\(\)/, 'hardware STREAMING state opens the bro
 assert.match(source, /stop\.click\(\)/, 'long capture performs a controlled rollover');
 assert.match(source, /continuousGroupId/);
 assert.match(source, /continuousPart/);
-assert.match(source, /Touch: double tap to start\/stop · hold 5s to sleep/);
+assert.match(source, /Touch: double tap to start\/stop · hold 5s to sleep\/wake/);
 assert.match(theme, /recording-bridge\.js\?v=1\.0\.0-touch3/);
 assert.match(worker, /\.\/recording-bridge\.js/);
 assert.match(ai, /continuousContext/);
