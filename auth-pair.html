@@ -32,10 +32,13 @@
 <script>
 (function(){
   'use strict';
+  /* Fixed production endpoints deliberately ignore query-string overrides.
+     A copied or forged pairing URL therefore cannot redirect a Google ID token
+     to an attacker-controlled server. */
+  var BACKEND='https://synap-backend-435475937223.asia-south1.run.app';
+  var CLIENT_ID='435475937223-7d2lmg7oc0887tc8psbt8ikgn0jkm62q.apps.googleusercontent.com';
   var params=new URLSearchParams(location.search);
   var pairId=String(params.get('pair_id')||'');
-  var backend=String(params.get('backend')||'').replace(/\/+$/,'');
-  var clientId=String(params.get('client_id')||'');
   var statusEl=document.getElementById('status');
   var loading=document.getElementById('loading');
   var host=document.getElementById('gsi');
@@ -44,18 +47,13 @@
   function status(message,kind){statusEl.textContent=message||'';statusEl.dataset.kind=kind||'';}
   function fail(message){loading.classList.add('hidden');host.classList.add('hidden');status(message,'error');}
 
-  try{
-    if(!/^[A-Za-z0-9_-]{16,128}$/.test(pairId))throw new Error('This Synap sign-in link is invalid.');
-    var backendUrl=new URL(backend);
-    if(backendUrl.protocol!=='https:')throw new Error('Synap backend must use HTTPS.');
-    if(!clientId||clientId.length<20)throw new Error('Google Sign-In is not configured.');
-  }catch(error){fail(error.message||'This Synap sign-in link is invalid.');return;}
+  if(!/^[A-Za-z0-9_-]{16,128}$/.test(pairId)){fail('This Synap sign-in link is invalid.');return;}
 
   function approve(credential){
     loading.classList.remove('hidden');
     host.classList.add('hidden');
     status('Finishing sign-in…');
-    fetch(backend+'/v1/auth/pair/approve',{
+    fetch(BACKEND+'/v1/auth/pair/approve',{
       method:'POST',
       headers:{'Content-Type':'application/json','X-Synap-Client':'pwa','X-Synap-Schema':'1'},
       body:JSON.stringify({pair_id:pairId,id_token:credential})
@@ -87,7 +85,7 @@
     loading.classList.add('hidden');
     if(!window.google||!google.accounts||!google.accounts.id){fail('Google Sign-In could not load.');return;}
     google.accounts.id.initialize({
-      client_id:clientId,
+      client_id:CLIENT_ID,
       auto_select:false,
       callback:function(response){
         if(!response||!response.credential){status('Google Sign-In returned no credential.','error');return;}
