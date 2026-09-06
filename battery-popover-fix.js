@@ -84,3 +84,11 @@ if(document.body)bindStateObserver();else document.addEventListener('DOMContentL
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){bindStateObserver();tryAutoStart();scheduleStandby()}});
 root.SynapPowerLifecycle={IDLE_TO_STANDBY_MS,MIN_SAFE_STANDBY_BUILD,get state(){return lastPowerState},get firmwareBuild(){return firmwareBuild},get autoStartPending(){return autoStartPending},schedule:scheduleStandby};
 })(globalThis);
+
+/* Load optional memory tooling through an existing production script so the
+ * base app.js lifecycle remains untouched. The service worker caches the module
+ * for installed/offline PWA sessions. */
+(function(root){'use strict';
+if(document.querySelector('script[data-synap-memory-tools]'))return;
+const script=document.createElement('script');script.dataset.synapMemoryTools='1';script.src=new URL('memory-tools.js?v=1.0.0-memory-tools1',document.baseURI).href;script.defer=true;script.onerror=()=>console.warn('[synap memory] optional memory tools could not load');document.head.appendChild(script);
+})(globalThis);
