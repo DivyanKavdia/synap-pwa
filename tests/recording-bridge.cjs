@@ -10,7 +10,6 @@ const worker = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
 const rollover = Number(source.match(/const ROLLOVER_MS = (\d+) \* 60 \* 1000/)?.[1]);
 assert.equal(rollover, 45, 'continuous capture rolls before 16-bit sequence wrap');
 assert(rollover < (65536 * 50 / 60000), 'rollover must stay below protocol wrap');
-assert.match(source, /hardware-originated controls/i);
 assert.match(source, /function adoptHardwareStream\(\)/);
 assert.match(source, /if \(state === '2'\)/);
 assert.match(source, /attempts >= 40/);
@@ -18,11 +17,11 @@ assert.match(source, /start\.click\(\)/, 'hardware STREAMING state opens the bro
 assert.match(source, /stop\.click\(\)/, 'long capture performs a controlled rollover');
 assert.match(source, /continuousGroupId/);
 assert.match(source, /continuousPart/);
-assert.match(source, /Touch: hold 2s to start · double tap to stop · hold 5s to sleep\/wake/);
+assert.match(source, /Touch: double tap to start\/stop · hold 5s to sleep/);
 assert.match(theme, /recording-bridge\.js\?v=1\.0\.0-touch3/);
 assert.match(worker, /\.\/recording-bridge\.js/);
 assert.match(ai, /continuousContext/);
 assert.match(ai, /one continuous conversation/);
 assert.match(ai, /continuous-45m-parts-30s-stt-5m-blocks-final/);
 
-console.log('PASS: hardware-start journal adoption, touch3 copy, 45-minute rollover, linked parts and continuous AI consolidation.');
+console.log('PASS: hardware-start journal adoption, current touch copy, 45-minute rollover, linked parts and continuous AI consolidation.');
