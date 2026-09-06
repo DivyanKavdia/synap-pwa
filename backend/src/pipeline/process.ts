@@ -23,6 +23,7 @@ import {
 import { extractMemory } from '../gemini/memory.js';
 import { embedContent } from '../gemini/client.js';
 import { toSpeakerLines, transcribeSegment } from '../gemini/transcribe.js';
+import { tagSelfSpeaker } from '../speaker/enrich.js';
 import * as db from '../store/firestore.js';
 import { readSealedSegment } from '../store/gcs.js';
 import type {
@@ -184,6 +185,35 @@ async function transcribeOne(
 // Stage 2 — understanding
 // ---------------------------------------------------------------------------
 
+async function enrichSegmentWords(
+  uid: string,
+  recordingId: string,
+  dek: Buffer,
+  segment: SegmentDoc,
+  segmentWords: TranscriptWord[],
+): Promise<TranscriptWord[]> {
+  if (!segment.storagePath || segmentWords.length === 0) return segmentWords;
+  try {
+    const sealed = await readSealedSegment(segment.storagePath);
+    if (!sealed) return segmentWords;
+    const audio = openBytes(
+      dek,
+      sealed,
+      binding(uid, `recording/${recordingId}/segment/${segment.index}`, 'audio'),
+    );
+    return (await tagSelfSpeaker(uid, dek, audio, segmentWords, segment.startMs)).words;
+  } catch (cause) {
+    // Identity is metadata enrichment, never a prerequisite for a transcript.
+    log.warn('Could not enrich one segment with voice profile', {
+      uid,
+      recordingId,
+      index: segment.index,
+      error: (cause as Error).message,
+    });
+    return segmentWords;
+  }
+}
+
 async function understand(
   uid: string,
   recordingId: string,
@@ -201,7 +231,8 @@ async function understand(
       if (text.trim()) flat.push(text.trim());
     }
     if (segment.sealedWords) {
-      words.push(...openJson<TranscriptWord[]>(dek, segment.sealedWords, binding(uid, scope, 'words')));
+      const segmentWords = openJson<TranscriptWord[]>(dek, segment.sealedWords, binding(uid, scope, 'words'));
+      words.push(...await enrichSegmentWords(uid, recordingId, dek, segment, segmentWords));
     }
   }
 
