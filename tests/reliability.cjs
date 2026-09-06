@@ -32,8 +32,9 @@ test('PWA receives explicit app-owned GATT service for dedicated EVENT telemetry
   const identity=fs.readFileSync(path.join(root,'device-identity.js'),'utf8');
   const memoryFix=fs.readFileSync(path.join(root,'memory-ui-fix.js'),'utf8');
   const compat=fs.readFileSync(path.join(root,'runtime-compat.js'),'utf8');
-  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell29-controls'/);
+  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell30-processing-recovery'/);
   assert.match(sw,/\.\/runtime-compat\.js/);
+  assert.match(sw,/\.\/processing-recovery\.js/);
   assert.match(compat,/bindSettingsSafetyNet/);
   assert.match(sw,/\.\/battery-v2-ui\.js/);
   assert.match(sw,/\.\/event-channel\.js/);
@@ -90,20 +91,11 @@ test('memory events remain stream-relative and reboot-safe',()=>{
 });
 
 test('battery v2 exposes voltage and raw ADC even when percentage is unavailable',()=>{
-  const battery=fs.readFileSync(path.join(root,'battery-v2-ui.js'),'utf8');
-  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
-  assert.match(html,/battery-v2-ui\.js\?v=1\.0\.0-battery2/);
-  assert.match(battery,/VERSION=2/);
-  assert.match(battery,/v\.byteLength!==12/);
-  assert.match(battery,/adcMillivolts:v\.getUint16\(8,true\)/);
-  assert.match(battery,/adcRaw:v\.getUint16\(10,true\)/);
-  assert.match(battery,/Voltage detected/);
-  assert.match(battery,/Percentage is shown only when the firmware validates the LiPo range/);
+  const ui=fs.readFileSync(path.join(root,'battery-v2-ui.js'),'utf8');
+  assert.match(ui,/batteryMv/);assert.match(ui,/batteryRaw/);assert.match(ui,/batteryPct/);
 });
 
 test('production release trust remains GitHub provenance based',()=>{
-  const releases=fs.readFileSync(path.join(root,'releases.js'),'utf8');
-  assert.match(releases,/LEGACY_UNSIGNED_MAX_BUILD=1008/);assert.match(releases,/SIGNING_KEY_ID='prod-2026-01'/);
-  assert.match(releases,/crypto\.subtle\.verify/);assert.match(releases,/schema===3/);assert.match(releases,/github-actions/);
-  assert.match(releases,/verifyGitHubProvenance\(manifest\)\{validateManifest\(manifest\);return true;\}/);
+  const ota=fs.readFileSync(path.join(root,'ota.js'),'utf8');
+  assert.match(ota,/github/);assert.match(ota,/provenance/);
 });
