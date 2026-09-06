@@ -2,8 +2,8 @@
 const APP_VERSION='1.0.0';
 /* app.js owns the client compatibility revision used for update signalling. */
 const CLIENT_REVISION='1.0.0-audio2';
-/* Runtime compatibility guard now also primes Synap cloud processing before app startup. */
-const CACHE_REVISION='1.0.0-shell30-cloud-processing';
+/* Runtime compatibility guard keeps core controls alive in BLE WebKit shells. */
+const CACHE_REVISION='1.0.0-shell29-controls';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings-icon-fix.css',
