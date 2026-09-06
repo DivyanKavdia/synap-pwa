@@ -2796,14 +2796,6 @@ const APP_REVISION = "1.0.0-audio2";
         toast("Local save completed");
       } catch(e){toast(friendlyError(e,"Local save"),"error");}
     });
-    ui.connectButton.addEventListener("click", function () {
-      if (isGattConnected()) {
-        disconnectPendant();
-      } else {
-        connectPendant();
-      }
-    });
-
     ui.startButton.addEventListener("click", startRecording);
     ui.stopButton.addEventListener("click", stopRecording);
     document.getElementById("setupConnect").addEventListener("click", function () {

@@ -27,5 +27,7 @@ assert(app.indexOf('bindCoreControls();',app.indexOf('async function initialize'
 const core=app.slice(app.indexOf('function bindCoreControls()'),app.indexOf('function bindEvents()'));
 assert.match(core,/ui\.connectButton\.addEventListener/,'Connect must be in the early core binder');
 assert.match(core,/ui\.settingsButton\.addEventListener/,'Settings must be in the early core binder');
+assert.equal((app.match(/ui\.connectButton\.addEventListener/g)||[]).length,1,'Connect must be bound exactly once');
+assert.equal((app.match(/ui\.settingsButton\.addEventListener/g)||[]).length,1,'Settings must be bound exactly once in app.js');
 
 console.log('runtime recording controls and tap responsiveness: ok');
