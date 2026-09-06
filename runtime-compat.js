@@ -11,6 +11,13 @@
  * name prefixes as OR filters while keeping the service UUID in optionalServices.
  * app.js still validates the real Synap primary service after GATT connection.
  *
+ * Synap cloud processing has one startup-order constraint: app.js snapshots the
+ * legacy processing settings into private memory before synap-backend.js loads.
+ * The backend adapter later mirrors its URL into localStorage, but that is too
+ * late for the already-created queue. Bootstrap the Synap provider, queue guard
+ * endpoints and one-time auto-processing default here because this file is
+ * intentionally loaded before app.js.
+ *
  * This file provides only the tiny Web Locks subset Synap uses: an exclusive,
  * ifAvailable page lock. The fallback is backed by a best-effort localStorage
  * lease so two visible tabs do not normally claim the same pendant journal.
@@ -22,6 +29,66 @@
   if (!navigatorObject) return;
 
   const SYNAP_SERVICE_UUID = '4fa12345-0000-1000-8000-00805f9b34fb';
+  const SYNAP_PROVIDER_KEY = 'synap-ai-provider-settings';
+  const SYNAP_BACKEND_CONFIG_KEY = 'synap-backend-config-v1';
+  const APP_SETTINGS_KEY = 'dk-pendant-settings';
+  const CLOUD_PROCESSING_MIGRATION_KEY = 'synap-cloud-processing-default-v1';
+  const DEFAULT_BACKEND_URL = 'https://synap-backend-435475937223.asia-south1.run.app';
+
+  function readJson(key) {
+    try {
+      const value = JSON.parse(root.localStorage.getItem(key) || '{}');
+      return value && typeof value === 'object' ? value : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function safeBackendUrl() {
+    const stored = readJson(SYNAP_BACKEND_CONFIG_KEY);
+    const candidate = String(stored.backendUrl || DEFAULT_BACKEND_URL).replace(/\/+$/, '');
+    try {
+      return new URL(candidate).protocol === 'https:' ? candidate : DEFAULT_BACKEND_URL;
+    } catch (_) {
+      return DEFAULT_BACKEND_URL;
+    }
+  }
+
+  function bootstrapSynapCloudProcessing() {
+    try {
+      const providerPrefs = readJson(SYNAP_PROVIDER_KEY);
+      if (!providerPrefs.provider) {
+        providerPrefs.provider = 'synap';
+        root.localStorage.setItem(SYNAP_PROVIDER_KEY, JSON.stringify(providerPrefs));
+      }
+      if (providerPrefs.provider !== 'synap') return false;
+
+      const backendUrl = safeBackendUrl();
+      const queueGuardUrl = backendUrl + '/v1/recordings';
+      const appSettings = readJson(APP_SETTINGS_KEY);
+
+      // FIFOProcessor checks these legacy URLs before the Synap backend adapter
+      // gets the job. The adapter itself still sends requests through SynapAuth.
+      appSettings.endpoint = queueGuardUrl;
+      appSettings.llmEndpoint = queueGuardUrl;
+
+      // Migrate existing Synap installs once. Afterwards an explicit user choice
+      // to turn automatic processing off remains respected.
+      if (root.localStorage.getItem(CLOUD_PROCESSING_MIGRATION_KEY) !== '1') {
+        appSettings.autoProcess = true;
+        root.localStorage.setItem(CLOUD_PROCESSING_MIGRATION_KEY, '1');
+      } else if (typeof appSettings.autoProcess !== 'boolean') {
+        appSettings.autoProcess = true;
+      }
+
+      root.localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(appSettings));
+      return true;
+    } catch (_) {
+      // Storage can be blocked in private/embedded modes. Capture must still boot;
+      // the queue will surface its normal configuration message if processing runs.
+      return false;
+    }
+  }
 
   function installAndroidBluetoothDiscoveryFallback() {
     const bluetooth = navigatorObject.bluetooth;
@@ -223,6 +290,7 @@
     });
   }
 
+  const synapCloudProcessingBootstrap = bootstrapSynapCloudProcessing();
   const androidBleDiscoveryCompat = installAndroidBluetoothDiscoveryFallback();
   installWebLocksFallback();
   bindSettingsSafetyNet();
@@ -230,6 +298,7 @@
   root.SynapRuntimeCompat = Object.freeze({
     webLocksNative: Boolean(navigatorObject.locks && navigatorObject.locks.request && !String(navigatorObject.locks.request).includes('Lock callback is required')),
     androidBleDiscoveryCompat: androidBleDiscoveryCompat,
+    synapCloudProcessingBootstrap: synapCloudProcessingBootstrap,
     installed: true
   });
 })(globalThis);
