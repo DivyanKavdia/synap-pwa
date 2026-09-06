@@ -61,6 +61,23 @@
     return String(job.dedupe || (job.recordingId + ':' + job.kind)) + ':' + suffix;
   }
 
+  /* Finalize metadata must be identical on every retry. Older builds used
+     Date.now() when endedAt was absent, which paired a stable Idempotency-Key
+     with a changing request body and caused a 409 on retry. Journal recordings
+     always have createdAt and durationMs, so start + duration is the truthful,
+     deterministic fallback. */
+  function stableFinalizeEndedAt(recording) {
+    var explicit = recording && (recording.endedAt || recording.completedAt);
+    if (explicit) {
+      var explicitDate = new Date(explicit);
+      if (!Number.isNaN(explicitDate.getTime())) return explicitDate.toISOString();
+    }
+    var started = new Date(recording && recording.createdAt);
+    if (Number.isNaN(started.getTime())) throw permanent('Recording start time is missing; cannot finalize safely.');
+    var duration = Math.max(0, Math.round(Number(recording && recording.durationMs) || 0));
+    return new Date(started.getTime() + duration).toISOString();
+  }
+
   /* Processing visibility is local metadata only. It never changes the audio,
      queue ordering, encrypted cloud record, or backend request contract. */
   function patchLocalProcessing(processor, recordingId, fields) {
@@ -118,7 +135,7 @@
   }
 
   function finalize(processor,job){
-    return processor.store.get('recordings',job.recordingId).then(function(recording){return processor.store.all('segments','recording',job.recordingId).then(function(segments){var counted=segments.filter(function(segment){return segment.frameCount||segment.pcmBlob;}).length;return request('/v1/recordings/'+encodeURIComponent(job.recordingId)+'/finalize',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':idempotencyKey(job, 'finalize')},body:JSON.stringify({ended_at:new Date((recording&&(recording.endedAt||recording.completedAt))||Date.now()).toISOString(),duration_ms:Math.max(0,Math.round(Number((recording&&recording.durationMs)||0))),segment_count:counted||segments.length})}).then(function(result){return safePatchLocalProcessing(processor,job.recordingId,{processingStage:'uploaded',processingProgress:0,processingFailedStage:'',processingError:'',processingRetryable:true}).then(function(){return result;});});});});
+    return processor.store.get('recordings',job.recordingId).then(function(recording){return processor.store.all('segments','recording',job.recordingId).then(function(segments){var counted=segments.filter(function(segment){return segment.frameCount||segment.pcmBlob;}).length;return request('/v1/recordings/'+encodeURIComponent(job.recordingId)+'/finalize',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':idempotencyKey(job, 'finalize-v2')},body:JSON.stringify({ended_at:stableFinalizeEndedAt(recording),duration_ms:Math.max(0,Math.round(Number((recording&&recording.durationMs)||0))),segment_count:counted||segments.length})}).then(function(result){return safePatchLocalProcessing(processor,job.recordingId,{processingStage:'uploaded',processingProgress:0,processingFailedStage:'',processingError:'',processingRetryable:true}).then(function(){return result;});});});});
   }
 
   function waitForProcessing(processor,job,onProgress){
@@ -167,6 +184,23 @@
     return consolidate(processor,job);
   }
 
+  /* Repair only the known legacy finalize failure. The old key remains in
+     Firestore for up to 48 hours, so finalize-v2 gives the retried request a
+     clean ledger entry. Resetting the local failed job makes already-recorded
+     memories self-heal after this PWA update instead of requiring deletion. */
+  function recoverLegacyFinalizeFailures(processor) {
+    if (!processor || !processor.store || typeof processor.store.all !== 'function' || typeof processor.store.patchJob !== 'function') return Promise.resolve();
+    return processor.store.all('jobs').then(function (jobs) {
+      var legacy = (jobs || []).filter(function (job) {
+        return job && job.kind === 'consolidate' && job.state === 'failed' &&
+          String(job.lastError || '').indexOf('Idempotency-Key reused with a different request body') !== -1;
+      });
+      return Promise.all(legacy.map(function (job) {
+        return processor.store.patchJob(job.id, { state:'pending', attempts:0, nextAt:0, lastError:'' });
+      }));
+    }).catch(function () { return null; });
+  }
+
   function patch(){
     var Processor=root.DKFIFOProcessor;if(!Processor||Processor.prototype.__synapBackendPatched)return;
     var originalProcess=Processor.prototype.process,originalRun=Processor.prototype.run;
@@ -175,6 +209,11 @@
       if(prefs().provider!=='synap')return originalRun.call(this);
       if(!root.SynapAuth||!root.SynapAuth.isSignedIn()){this.onChange('Sign in with Google to process pending memories.');return Promise.resolve();}
       var endpoint=managedEndpoint();if(!endpoint){this.onChange('Synap Cloud is not configured for this build.');return Promise.resolve();}
+      if(!this.__synapFinalizeRecoveryDone){
+        this.__synapFinalizeRecoveryDone=true;
+        var recoveryProcessor=this;
+        return recoverLegacyFinalizeFailures(this).then(function(){return recoveryProcessor.run();});
+      }
       var originalSettings=this.settings,self=this;this.settings=function(){var config=originalSettings?originalSettings():{};return Object.assign({},config,{endpoint:endpoint,llmEndpoint:endpoint});};
       var outcome;try{outcome=originalRun.call(this);}catch(error){this.settings=originalSettings;throw error;}
       return Promise.resolve(outcome).then(function(value){self.settings=originalSettings;return value;},function(error){self.settings=originalSettings;throw error;});
