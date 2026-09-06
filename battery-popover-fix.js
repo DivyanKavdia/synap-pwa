@@ -85,10 +85,10 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 root.SynapPowerLifecycle={IDLE_TO_STANDBY_MS,MIN_SAFE_STANDBY_BUILD,get state(){return lastPowerState},get firmwareBuild(){return firmwareBuild},get autoStartPending(){return autoStartPending},schedule:scheduleStandby};
 })(globalThis);
 
-/* Load optional memory tooling through an existing production script so the
- * base app.js lifecycle remains untouched. The service worker caches the module
- * for installed/offline PWA sessions. */
+/* Load optional memory and voice tooling through an existing production script
+ * so the base app.js lifecycle remains untouched. */
 (function(root){'use strict';
-if(document.querySelector('script[data-synap-memory-tools]'))return;
-const script=document.createElement('script');script.dataset.synapMemoryTools='1';script.src=new URL('memory-tools.js?v=1.0.0-memory-tools1',document.baseURI).href;script.defer=true;script.onerror=()=>console.warn('[synap memory] optional memory tools could not load');document.head.appendChild(script);
+function load(flag,file,version,label){if(document.querySelector('script['+flag+']'))return;const script=document.createElement('script');script.setAttribute(flag,'1');script.src=new URL(file+'?v='+version,document.baseURI).href;script.defer=true;script.onerror=()=>console.warn(label+' could not load');document.head.appendChild(script)}
+load('data-synap-memory-tools','memory-tools.js','1.0.0-memory-tools1','[synap memory] optional memory tools');
+load('data-synap-voice-profile','voice-profile.js','1.0.0-voice-profile1','[synap voice] voice profile module');
 })(globalThis);
