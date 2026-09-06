@@ -61,6 +61,23 @@
     return String(job.dedupe || (job.recordingId + ':' + job.kind)) + ':' + suffix;
   }
 
+  /* Processing visibility is local metadata only. It never changes the audio,
+     queue ordering, encrypted cloud record, or backend request contract. */
+  function patchLocalProcessing(processor, recordingId, fields) {
+    if (!processor || !processor.store || typeof processor.store.atomic !== 'function') return Promise.resolve();
+    return processor.store.atomic(['recordings'], function (stores) {
+      var get = stores.recordings.get(recordingId);
+      get.onsuccess = function () {
+        if (!get.result) return;
+        stores.recordings.put(Object.assign({}, get.result, fields, { processingUpdatedAt: new Date().toISOString() }));
+      };
+    });
+  }
+
+  function safePatchLocalProcessing(processor, recordingId, fields) {
+    return patchLocalProcessing(processor, recordingId, fields).catch(function () { return null; });
+  }
+
   function ensureRecording(processor, recordingId) {
     return processor.store.get('recordings', recordingId).then(function (recording) {
       if (!recording) throw permanent('Recording is no longer in local storage.');
@@ -78,7 +95,13 @@
   }
 
   function uploadSegment(processor, job) {
-    return ensureRecording(processor,job.recordingId).then(function(){return processor.store.segment(job.recordingId,job.segmentIndex);}).then(function(data){
+    return safePatchLocalProcessing(processor, job.recordingId, {
+      processingStage: 'uploading',
+      processingError: '',
+      processingRetryable: true
+    }).then(function () {
+      return ensureRecording(processor,job.recordingId);
+    }).then(function(){return processor.store.segment(job.recordingId,job.segmentIndex);}).then(function(data){
       if(!data.blob&&!data.frames.length)throw permanent('Segment has no complete PCM frames.');
       var wav=data.blob||root.DKAudioCodec.wav(data.frames); return wav.arrayBuffer();
     }).then(function(buffer){return sha256Hex(buffer).then(function(digest){
@@ -95,15 +118,33 @@
   }
 
   function finalize(processor,job){
-    return processor.store.get('recordings',job.recordingId).then(function(recording){return processor.store.all('segments','recording',job.recordingId).then(function(segments){var counted=segments.filter(function(segment){return segment.frameCount||segment.pcmBlob;}).length;return request('/v1/recordings/'+encodeURIComponent(job.recordingId)+'/finalize',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':idempotencyKey(job, 'finalize')},body:JSON.stringify({ended_at:new Date((recording&&(recording.endedAt||recording.completedAt))||Date.now()).toISOString(),duration_ms:Math.max(0,Math.round(Number((recording&&recording.durationMs)||0))),segment_count:counted||segments.length})});});});
+    return processor.store.get('recordings',job.recordingId).then(function(recording){return processor.store.all('segments','recording',job.recordingId).then(function(segments){var counted=segments.filter(function(segment){return segment.frameCount||segment.pcmBlob;}).length;return request('/v1/recordings/'+encodeURIComponent(job.recordingId)+'/finalize',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':idempotencyKey(job, 'finalize')},body:JSON.stringify({ended_at:new Date((recording&&(recording.endedAt||recording.completedAt))||Date.now()).toISOString(),duration_ms:Math.max(0,Math.round(Number((recording&&recording.durationMs)||0))),segment_count:counted||segments.length})}).then(function(result){return safePatchLocalProcessing(processor,job.recordingId,{processingStage:'uploaded',processingProgress:0,processingFailedStage:'',processingError:'',processingRetryable:true}).then(function(){return result;});});});});
   }
 
   function waitForProcessing(processor,job,onProgress){
     var deadline=Date.now()+PROCESSING_TIMEOUT_MS;
+    var lastBackendStage='uploaded';
     function poll(){
       if(processor.paused || !processor.canRun()){var aborted=new Error('Processing paused');aborted.name = 'AbortError';throw aborted;}
       if(Date.now()>deadline){var slow=new Error('The backend is still working on this recording.');slow.retryable=true;throw slow;}
-      return request('/v1/recordings/'+encodeURIComponent(job.recordingId)+'/processing').then(function(status){if(onProgress)onProgress(status);if(status.state==='ready')return status;if(status.state==='failed'){var failure=new Error(status.error_code||'Backend processing failed.');failure.retryable=Boolean(status.retryable);throw failure;}return new Promise(function(resolve){setTimeout(resolve,POLL_INTERVAL_MS);}).then(poll);});
+      return request('/v1/recordings/'+encodeURIComponent(job.recordingId)+'/processing').then(function(status){
+        var state=String(status&&status.state||'');
+        var progress=Number(status&&status.progress);
+        var fields={
+          processingStage:state||lastBackendStage,
+          processingProgress:Number.isFinite(progress)?progress:null,
+          processingError:(status&&status.error_code)||'',
+          processingRetryable:Boolean(status&&status.retryable)
+        };
+        if(state==='failed') fields.processingFailedStage=lastBackendStage;
+        else if(state){lastBackendStage=state;fields.processingFailedStage='';}
+        return safePatchLocalProcessing(processor,job.recordingId,fields).then(function(){
+          if(onProgress)onProgress(status);
+          if(state==='ready')return status;
+          if(state==='failed'){var failure=new Error(status.error_code||'Backend processing failed.');failure.retryable=Boolean(status.retryable);throw failure;}
+          return new Promise(function(resolve){setTimeout(resolve,POLL_INTERVAL_MS);}).then(poll);
+        });
+      });
     }
     return poll();
   }
@@ -113,7 +154,7 @@
     (memory.conversations||[]).forEach(function(conversation){(conversation.decisions||[]).forEach(function(decision){decisions.push(decision.text);});(conversation.action_items||[]).forEach(function(action){actions.push({task:action.task,owner:action.owner,due_date:action.due_date||''});});(conversation.follow_ups||[]).forEach(function(item){followUps.push(item.text);});});
     var lines=[memory.executive_summary||''];function section(title,values){if(!values||!values.length)return;lines.push('',title);values.forEach(function(value){lines.push('• '+value);});}
     section('Key points',memory.key_points);section('Decisions',decisions);if(actions.length){lines.push('','Action items');actions.forEach(function(action){lines.push('• '+action.task+(action.owner?' — '+action.owner:'')+(action.due_date?' · '+action.due_date:''));});}section('Follow-ups',followUps);
-    return{name:memory.title||undefined,summary:lines.join('\n').trim(),meeting:memory,people:memory.people||[],conversations:memory.conversations||[],processingState:'done',provider:'synap',processedAt:new Date().toISOString()};
+    return{name:memory.title||undefined,summary:lines.join('\n').trim(),meeting:memory,people:memory.people||[],conversations:memory.conversations||[],processingState:'done',processingStage:'ready',processingProgress:1,processingFailedStage:'',processingError:'',processingRetryable:false,provider:'synap',processedAt:new Date().toISOString()};
   }
 
   function consolidate(processor,job){
