@@ -28,8 +28,43 @@ function parse(event){
 }
 
 function voltageText(mv){return Number.isFinite(mv)&&mv>0?(mv/1000).toFixed(2)+'V':'—'}
+function isDisconnected(){
+  const body=document.body;
+  if(!body)return true;
+  if(body.dataset.deviceState==='0')return true;
+  return body.dataset.state==='disconnected'||body.dataset.state==='unsupported';
+}
+function renderDisconnected(){
+  const button=document.getElementById('headerBatteryStatus');
+  if(button){
+    const value=button.querySelector('.synap-battery-value');
+    const fill=button.querySelector('.synap-battery-fill');
+    button.dataset.state='disconnected';
+    if(value)value.textContent='';
+    if(fill)fill.style.width='0px';
+    button.setAttribute('aria-label','Pendant disconnected');
+  }
+  const pop=document.getElementById('synapBatteryPopover');
+  if(pop){
+    const big=pop.querySelector('.synap-battery-big');
+    const state=pop.querySelector('.synap-battery-state');
+    const meter=pop.querySelector('.synap-battery-meter>span');
+    const help=pop.querySelector('.synap-battery-help');
+    if(big)big.textContent='—';
+    if(state)state.textContent='Disconnected';
+    if(meter)meter.style.width='0%';
+    if(help)help.textContent='Connect the pendant to read battery status.';
+  }
+  if(document.body)document.body.dataset.batteryPercent='';
+}
+function syncConnectionUi(){if(isDisconnected())renderDisconnected()}
 function render(detail){
   last=detail;
+  if(isDisconnected()){
+    renderDisconnected();
+    root.dispatchEvent(new CustomEvent('synap-battery-status',{detail}));
+    return;
+  }
   const trustedVoltage=detail.millivolts>=2500&&detail.millivolts<=5000;
   const voltage=trustedVoltage?voltageText(detail.millivolts):detail.adcMillivolts?voltageText(detail.adcMillivolts):'—';
   const button=document.getElementById('headerBatteryStatus');
@@ -92,6 +127,16 @@ function batteryInspect(event){
   return previousBatteryInspect?previousBatteryInspect(event):false;
 }
 
+function installConnectionObserver(){
+  const start=()=>{
+    if(!document.body)return;
+    syncConnectionUi();
+    new MutationObserver(syncConnectionUi).observe(document.body,{attributes:true,attributeFilter:['data-device-state','data-state']});
+  };
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});
+  else start();
+}
+
 if(root.SynapMemoryEventBridge)root.SynapMemoryEventBridge.inspect=memoryInspect;
 root.SynapBatteryBridge={
   MAGIC,
@@ -103,4 +148,5 @@ root.SynapBatteryBridge={
   close:previousBattery.close
 };
 root.SynapBatteryV2={MAGIC,VERSION,parse,get status(){return last}};
+installConnectionObserver();
 })(globalThis);

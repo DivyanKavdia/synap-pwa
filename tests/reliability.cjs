@@ -100,6 +100,9 @@ test('battery v2 exposes voltage and raw ADC even when percentage is unavailable
   assert.match(battery,/adcRaw:v\.getUint16\(10,true\)/);
   assert.match(battery,/Voltage detected/);
   assert.match(battery,/Percentage is shown only when the firmware validates the LiPo range/);
+  assert.match(battery,/Pendant disconnected/);
+  assert.match(battery,/value\.textContent=''/);
+  assert.match(battery,/attributeFilter:\['data-device-state','data-state'\]/);
 });
 
 test('production release trust remains GitHub provenance based',()=>{
