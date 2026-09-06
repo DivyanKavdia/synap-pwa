@@ -5,7 +5,6 @@ const path=require('node:path');
 const vm=require('node:vm');
 
 const source=fs.readFileSync(path.join(__dirname,'..','runtime-compat.js'),'utf8');
-const DEFAULT_BACKEND='https://synap-backend-435475937223.asia-south1.run.app';
 
 function storage(initial={}){
   const values=new Map(Object.entries(initial));
@@ -45,8 +44,8 @@ function run(initial={}){
   const provider=JSON.parse(localStorage.dump('synap-ai-provider-settings'));
   const settings=JSON.parse(localStorage.dump('dk-pendant-settings'));
   assert.equal(provider.provider,'synap','fresh installs must select the Synap cloud provider before app startup');
-  assert.equal(settings.endpoint,DEFAULT_BACKEND+'/v1/recordings');
-  assert.equal(settings.llmEndpoint,DEFAULT_BACKEND+'/v1/recordings');
+  assert.equal(settings.endpoint,undefined,'managed Cloud Run URL must not be copied into user endpoint settings');
+  assert.equal(settings.llmEndpoint,undefined,'managed Cloud Run URL must not be copied into user LLM settings');
   assert.equal(settings.autoProcess,true,'Synap cloud processing must default on');
   assert.equal(localStorage.dump('synap-cloud-processing-default-v1'),'1');
   assert.equal(context.SynapRuntimeCompat.synapCloudProcessingBootstrap,true);
@@ -71,8 +70,8 @@ function run(initial={}){
     'synap-cloud-processing-default-v1':'1'
   });
   const settings=JSON.parse(localStorage.dump('dk-pendant-settings'));
-  assert.equal(settings.endpoint,'https://backend.example.test/v1/recordings','configured Synap backend must drive the queue guard URL');
-  assert.equal(settings.llmEndpoint,'https://backend.example.test/v1/recordings');
+  assert.equal(settings.endpoint,undefined,'deployment config must remain outside dk-pendant-settings');
+  assert.equal(settings.llmEndpoint,undefined);
   assert.equal(settings.autoProcess,false,'an explicit post-migration opt-out must remain respected');
 }
 
@@ -82,7 +81,8 @@ function run(initial={}){
     'synap-backend-config-v1':JSON.stringify({backendUrl:'http://unsafe.example.test'})
   });
   const settings=JSON.parse(localStorage.dump('dk-pendant-settings'));
-  assert.equal(settings.endpoint,DEFAULT_BACKEND+'/v1/recordings','non-HTTPS backend config must not enter processing settings');
+  assert.equal(settings.endpoint,undefined,'even invalid deployment config must never leak into processing settings');
+  assert.equal(settings.llmEndpoint,undefined);
 }
 
-console.log('synap cloud startup processing bootstrap: ok');
+console.log('synap cloud managed processing bootstrap: ok');
