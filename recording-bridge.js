@@ -1,10 +1,8 @@
-/* Synap recording bridge: hardware-originated controls and safe long-capture rollover.
- * The pendant stays stateless. Audio remains in the browser journal.
- */
+/* Hardware recording bridge and long-capture rollover. */
 (function (root) {
   'use strict';
 
-  const ROLLOVER_MS = 45 * 60 * 1000; // safely below the 16-bit 50 ms sequence wrap (~54.6 min)
+  const ROLLOVER_MS = 45 * 60 * 1000;
   const SESSION_KEY = 'synap-continuous-capture';
   let activeSince = 0;
   let rolloverTimer = null;
@@ -137,9 +135,7 @@
   function handleDeviceState() {
     const state = document.body.dataset.deviceState;
     if (state === '2') {
-      // A hardware hold can put the pendant into STREAMING before the browser has
-      // opened its journal. Keep trying briefly until the app-side Start action
-      // becomes available; firmware START is idempotent so adoption is safe.
+      // Adopt a hardware-started stream into the browser journal.
       adoptHardwareStream();
       if (!activeSince) activeSince = performance.now();
       scheduleRollover();
@@ -172,7 +168,7 @@
     if (key && !document.getElementById('touchControlHint')) {
       const hint = document.createElement('span');
       hint.id = 'touchControlHint';
-      hint.textContent = 'Touch: hold 2s to start · double tap to stop · hold 5s to sleep/wake';
+      hint.textContent = 'Touch: double tap to start/stop · hold 5s to sleep';
       key.appendChild(hint);
     }
   }
