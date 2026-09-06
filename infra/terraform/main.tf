@@ -188,6 +188,76 @@ resource "google_firestore_index" "conversation_vectors" {
   }
 }
 
+# The daily brief reads every recording for a day. where(day) + orderBy(startedAt)
+# is a composite query, and its absence failed processing at the very last step —
+# after transcription, understanding and indexing had all succeeded.
+resource "google_firestore_index" "recordings_by_day" {
+  project     = var.project_id
+  database    = google_firestore_database.synap.name
+  collection  = "recordings"
+  query_scope = "COLLECTION_GROUP"
+
+  fields {
+    field_path = "day"
+    order      = "ASCENDING"
+  }
+
+  fields {
+    field_path = "startedAt"
+    order      = "ASCENDING"
+  }
+
+  lifecycle {
+    ignore_changes = [fields]
+  }
+}
+
+# Retrieval's non-vector fallback: recent conversations within a date window.
+resource "google_firestore_index" "conversations_by_day" {
+  project     = var.project_id
+  database    = google_firestore_database.synap.name
+  collection  = "conversations"
+  query_scope = "COLLECTION_GROUP"
+
+  fields {
+    field_path = "day"
+    order      = "ASCENDING"
+  }
+
+  fields {
+    field_path = "startedAt"
+    order      = "DESCENDING"
+  }
+
+  lifecycle {
+    ignore_changes = [fields]
+  }
+}
+
+# Unprefixed vector index. A vector index's prefix fields must be EQUALITY
+# filters; Ask Synap filters by date range and by array membership, neither of
+# which qualifies. So nearest-neighbour search runs unfiltered against this
+# index and the scope is applied to the results instead — see
+# findNearestConversations.
+resource "google_firestore_index" "conversation_vectors_plain" {
+  project     = var.project_id
+  database    = google_firestore_database.synap.name
+  collection  = "conversations"
+  query_scope = "COLLECTION_GROUP"
+
+  fields {
+    field_path = "embedding"
+    vector_config {
+      dimension = 768
+      flat {}
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [fields]
+  }
+}
+
 resource "google_firestore_index" "conversations_by_person" {
   project     = var.project_id
   database    = google_firestore_database.synap.name

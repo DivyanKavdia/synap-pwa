@@ -199,26 +199,44 @@ export async function findNearestConversations(
   limit: number,
   scope: RetrievalScope = {},
 ): Promise<ConversationDoc[]> {
-  let query: Query = paths.conversations(uid);
-  if (scope.from) query = query.where('day', '>=', scope.from);
-  if (scope.to) query = query.where('day', '<=', scope.to);
-  if (scope.personIds?.length) {
-    // Firestore allows one array-contains-any per query.
-    query = query.where('personIds', 'array-contains-any', scope.personIds.slice(0, 10));
-  } else if (scope.topicKeys?.length) {
-    query = query.where('topicKeys', 'array-contains-any', scope.topicKeys.slice(0, 10));
-  }
-
-  const snapshot = await query
+  // A Firestore vector index can only be prefixed by EQUALITY filters. Ask
+  // Synap scopes by date range and by array membership, and neither qualifies —
+  // attaching them to the query makes it unservable by any index we can
+  // declare. So nearest-neighbour runs unfiltered and the scope is applied to
+  // the results here instead.
+  //
+  // The cost is that scoping narrows the candidate set after ranking rather
+  // than before it, so a heavily filtered question sees fewer usable results.
+  // Over-fetching absorbs that: callers ask for more than they intend to use.
+  const snapshot = await paths
+    .conversations(uid)
     .findNearest({
       vectorField: 'embedding',
       queryVector,
-      limit,
+      limit: Math.min(1000, Math.max(limit * 4, 40)),
       distanceMeasure: 'COSINE',
     })
     .get();
 
-  return snapshot.docs.map((doc) => normalizeConversation(doc.data()));
+  return snapshot.docs
+    .map((doc) => normalizeConversation(doc.data()))
+    .filter((conversation) => matchesScope(conversation, scope))
+    .slice(0, limit);
+}
+
+/** Applies the parts of a retrieval scope a vector index cannot express. */
+export function matchesScope(conversation: ConversationDoc, scope: RetrievalScope): boolean {
+  if (scope.from && conversation.day < scope.from) return false;
+  if (scope.to && conversation.day > scope.to) return false;
+  if (scope.personIds?.length) {
+    const wanted = new Set(scope.personIds);
+    if (!conversation.personIds?.some((id) => wanted.has(id))) return false;
+  }
+  if (scope.topicKeys?.length) {
+    const wanted = new Set(scope.topicKeys);
+    if (!conversation.topicKeys?.some((key) => wanted.has(key))) return false;
+  }
+  return true;
 }
 
 /** Keyword fallback when vectors are disabled or the index is still building. */
