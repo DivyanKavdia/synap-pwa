@@ -3,13 +3,13 @@ const APP_VERSION='1.0.0';
 /* app.js owns the client compatibility revision used for update signalling. */
 const CLIENT_REVISION='1.0.0-audio2';
 /* Keep the previous production revision explicit for upgrade diagnostics/tests. */
-const PREVIOUS_CACHE_REVISION='1.0.0-shell29-controls';
-/* Processing recovery is part of the production shell so installed PWAs pick it up reliably. */
-const CACHE_REVISION='1.0.0-shell30-processing-recovery';
+const PREVIOUS_CACHE_REVISION='1.0.0-shell30-processing-recovery';
+/* Memory merge/transcript tooling is optional at runtime but cached for installed PWAs. */
+const CACHE_REVISION='1.0.0-shell31-memory-tools';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings-icon-fix.css',
-  './touch-event-bridge.js','./battery-v2-ui.js','./event-channel.js','./audio-codec-v3.js','./battery-popover-fix.js','./memory-ui-fix.js','./device-identity.js','./runtime-compat.js','./audio-store.js','./ota.js','./releases.js',
+  './touch-event-bridge.js','./battery-v2-ui.js','./event-channel.js','./audio-codec-v3.js','./battery-popover-fix.js','./memory-ui-fix.js','./memory-tools.js','./device-identity.js','./runtime-compat.js','./audio-store.js','./ota.js','./releases.js',
   './app.js','./enhancements.js','./capture-ui.js','./brain-ui.js','./product-ui.js','./runtime-ui.js',
   './ai-providers.js','./recording-bridge.js','./manifest.webmanifest','./logo.webp','./icon.svg','./icon-192.png','./icon-512.png',
   './google-auth.js','./synap-backend.js','./processing-recovery.js','./processing-pipeline-ui.js','./synap-account-ui.js'
