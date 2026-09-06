@@ -1,0 +1,66 @@
+name: Fix early core controls
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-early-core-controls.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Bind Connect and Settings before storage recovery
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app.js')
+          s=p.read_text()
+          marker='''  function bindEvents() {\n'''
+          insert='''  let coreControlsBound = false;\n\n  function bindCoreControls() {\n    if (coreControlsBound) return;\n    coreControlsBound = true;\n\n    ui.connectButton.addEventListener("click", function () {\n      if (isGattConnected()) {\n        disconnectPendant();\n      } else {\n        connectPendant();\n      }\n    });\n    ui.settingsButton.addEventListener("click", openSettings);\n  }\n\n  function bindEvents() {\n    bindCoreControls();\n'''
+          if 'function bindCoreControls()' not in s:
+              if marker not in s: raise SystemExit('bindEvents marker not found')
+              s=s.replace(marker,insert,1)
+          connect='''    ui.connectButton.addEventListener("click", function () {\n      if (isGattConnected()) {\n        disconnectPendant();\n      } else {\n        connectPendant();\n      }\n    });\n\n'''
+          # Remove the old late-bound copy, leaving the new early one intact.
+          first=s.find(connect)
+          second=s.find(connect, first+1) if first >= 0 else -1
+          if second >= 0:
+              s=s[:second]+s[second+len(connect):]
+          elif first >= 0 and s.find('function bindCoreControls()') < first:
+              # New block contains the first copy; no duplicate remains.
+              pass
+          else:
+              raise SystemExit('connect handler layout not recognized')
+          old_settings='''    ui.settingsButton.addEventListener("click", openSettings);\n'''
+          # Keep the one inside bindCoreControls and remove the later bindEvents copy.
+          first=s.find(old_settings)
+          second=s.find(old_settings, first+1) if first >= 0 else -1
+          if second >= 0:
+              s=s[:second]+s[second+len(old_settings):]
+          init='''    });\n    await journal.open();\n'''
+          repl='''    });\n    // Core navigation must remain usable even if IndexedDB recovery fails.\n    bindCoreControls();\n    await journal.open();\n'''
+          if 'Core navigation must remain usable even if IndexedDB recovery fails.' not in s:
+              if init not in s: raise SystemExit('journal open marker not found')
+              s=s.replace(init,repl,1)
+          p.write_text(s)
+
+          t=Path('tests/runtime-controls.cjs')
+          q=t.read_text()
+          extra='''\nconst app=fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8');\nassert.match(app,/function bindCoreControls\(\)/,'core Connect and Settings controls must have an early binder');\nassert(app.indexOf('bindCoreControls();',app.indexOf('async function initialize'))<app.indexOf('await journal.open()'),'core controls must bind before IndexedDB open/recovery');\nconst core=app.slice(app.indexOf('function bindCoreControls()'),app.indexOf('function bindEvents()'));\nassert.match(core,/ui\.connectButton\.addEventListener/,'Connect must be in the early core binder');\nassert.match(core,/ui\.settingsButton\.addEventListener/,'Settings must be in the early core binder');\n'''
+          if 'core Connect and Settings controls must have an early binder' not in q:
+              q=q.replace("console.log('runtime recording controls and tap responsiveness: ok');",extra+"\nconsole.log('runtime recording controls and tap responsiveness: ok');")
+              t.write_text(q)
+          PY
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.js tests/runtime-controls.cjs
+          git commit -m "Bind Connect and Settings before storage recovery"
+          git push origin HEAD:main
