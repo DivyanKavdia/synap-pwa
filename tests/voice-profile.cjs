@@ -1,0 +1,62 @@
+'use strict';
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const root=path.join(__dirname,'..');
+
+test('voice enrollment is explicit and enrollment audio is never stored locally',()=>{
+  const src=fs.readFileSync(path.join(root,'voice-profile.js'),'utf8');
+  assert.match(src,/I agree to create an encrypted voice profile/);
+  assert.match(src,/enrollment audio is not saved/i);
+  assert.match(src,/\/v1\/voice-profile/);
+  assert.match(src,/Content-Type':'audio\/wav/);
+  assert.doesNotMatch(src,/indexedDB\.open/);
+  assert.doesNotMatch(src,/localStorage\.setItem\([^)]*voice/i);
+});
+
+test('voice profile supports setup, re-record and deletion',()=>{
+  const src=fs.readFileSync(path.join(root,'voice-profile.js'),'utf8');
+  assert.match(src,/setup\.textContent='Re-record'/);
+  assert.match(src,/method:'DELETE'/);
+  assert.match(src,/Future memories will stop identifying your speech as You/);
+});
+
+test('speaker matching is enrichment-only and conservative',()=>{
+  const enrich=fs.readFileSync(path.join(root,'backend/src/speaker/enrich.ts'),'utf8');
+  const process=fs.readFileSync(path.join(root,'backend/src/pipeline/process.ts'),'utf8');
+  assert.match(enrich,/best\.score < config\.speaker\.matchThreshold/);
+  assert.match(enrich,/minMatchMargin/);
+  assert.match(enrich,/speaker: 'YOU'/);
+  assert.match(enrich,/return \{ words, matchedSpeaker: null/);
+  assert.match(process,/Identity is metadata enrichment, never a prerequisite for a transcript/);
+});
+
+test('installed PWA caches and loads the voice profile module',()=>{
+  const sw=fs.readFileSync(path.join(root,'sw.js'),'utf8');
+  const bridge=fs.readFileSync(path.join(root,'battery-popover-fix.js'),'utf8');
+  assert.match(sw,/\.\/voice-profile\.js/);
+  assert.match(bridge,/voice-profile\.js\?v=1\.0\.0-voice-profile1/);
+  assert.match(bridge,/data-synap-voice-profile/);
+  assert.match(bridge,/memory-tools\.js\?v=1\.0\.0-memory-tools1/);
+});
+
+test('speaker service computes embeddings in memory without audio persistence APIs',()=>{
+  const app=fs.readFileSync(path.join(root,'speaker-service/app.py'),'utf8');
+  assert.match(app,/await request\.body\(\)/);
+  assert.match(app,/encode_batch/);
+  assert.doesNotMatch(app,/open\([^)]*,\s*["'](?:w|a|x|wb|ab|xb)["']/);
+  assert.doesNotMatch(app,/google\.cloud\.storage|Storage\(|Bucket\(|firestore\.Client|upload_from|blob\(/);
+});
+
+test('speaker Cloud Run stays private and isolated from Synap data permissions',()=>{
+  const terraform=fs.readFileSync(path.join(root,'infra/terraform/speaker.tf'),'utf8');
+  const deploy=fs.readFileSync(path.join(root,'infra/deploy.sh'),'utf8');
+  assert.match(terraform,/account_id\s*=\s*"synap-speaker"/);
+  assert.match(terraform,/member\s*=\s*"serviceAccount:\$\{google_service_account\.api\.email\}"/);
+  assert.match(terraform,/role\s*=\s*"roles\/run\.invoker"/);
+  assert.doesNotMatch(terraform,/member\s*=\s*"allUsers"/);
+  assert.doesNotMatch(terraform,/roles\/(?:datastore|storage|cloudkms|secretmanager)\./);
+  assert.match(deploy,/SYNAP_SPEAKER_SERVICE_URL=/);
+  assert.match(deploy,/SYNAP_SPEAKER_SERVICE_AUTH=oidc/);
+});

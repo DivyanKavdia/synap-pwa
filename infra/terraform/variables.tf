@@ -49,6 +49,29 @@ variable "min_instances" {
   default     = 0
 }
 
+variable "speaker_enabled" {
+  description = "Create the private Synap speaker-verification Cloud Run service. Disabled by default so existing environments remain unchanged until a speaker image has been built."
+  type        = bool
+  default     = false
+}
+
+variable "speaker_image" {
+  description = "Container image for the optional speaker service. Required when speaker_enabled=true."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.speaker_enabled || length(trimspace(var.speaker_image)) > 0
+    error_message = "speaker_image must be set when speaker_enabled=true."
+  }
+}
+
+variable "speaker_min_instances" {
+  description = "Minimum instances for voice verification. Keep 0 while usage is low; set 1 if enrollment/matching cold starts become noticeable."
+  type        = number
+  default     = 0
+}
+
 variable "billing_account_id" {
   description = "Billing account for the spend alert, e.g. 016546-5B939B-08B03B. Leave empty to skip creating a budget."
   type        = string

@@ -7,6 +7,7 @@ import { brainRoutes } from './routes/brain.js';
 import { memoryToolRoutes } from './routes/memory-tools.js';
 import { recordingRoutes } from './routes/recordings.js';
 import { taskRoutes } from './routes/tasks.js';
+import { voiceProfileRoutes } from './routes/voice-profile.js';
 
 /**
  * CORS.
@@ -73,7 +74,8 @@ export function createApp(): Express {
   app.use(cors());
   app.use(requestLog());
 
-  // Segment upload parses its own raw body; JSON parsing is scoped to the rest.
+  // Segment/voice upload routes parse their own raw audio bodies; JSON parsing
+  // ignores audio/wav and remains scoped to normal API payloads.
   app.use(express.json({ limit: '2mb' }));
 
   app.get('/health', (_req, res) => {
@@ -84,6 +86,7 @@ export function createApp(): Express {
   app.use('/v1', recordingRoutes());
   app.use('/v1', brainRoutes());
   app.use('/v1', memoryToolRoutes());
+  app.use('/v1', voiceProfileRoutes());
   app.use('/v1', taskRoutes());
 
   app.use((_req, res) => {
