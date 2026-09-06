@@ -110,7 +110,7 @@ const CONTROL_UUID='4fa12347-0000-1000-8000-00805f9b34fb';
 const PROTOCOL_VERSION=0x02,CMD_STANDBY=0x03;
 const POWER_MAGIC=0xE2,POWER_VERSION=1,POWER_AWAKE=1,POWER_STANDBY=2,POWER_DEEP_SLEEP=3,POWER_WAKE_RECORD=4;
 const IDLE_TO_STANDBY_MS=30000;
-let service=null,control=null,standbyTimer=0,autoStartPending=false,lastPowerState=0,writeBusy=false;
+let service=null,control=null,standbyTimer=0,autoStartPending=false,lastPowerState=0,writeBusy=false,stateObserver=null;
 
 function state(){return String(document.body?.dataset?.state||'')}
 function cancelStandby(){if(standbyTimer){clearTimeout(standbyTimer);standbyTimer=0}}
@@ -145,6 +145,13 @@ function tryAutoStart(){
   document.body.dataset.powerIntent='';
   setTimeout(()=>{if(state()==='idle'&&!button.disabled)button.click()},80);
 }
+function onStateChange(){const s=state();if(s==='idle'){tryAutoStart();scheduleStandby()}else cancelStandby()}
+function bindStateObserver(){
+  if(stateObserver||!root.MutationObserver||!document.body)return;
+  stateObserver=new MutationObserver(onStateChange);
+  stateObserver.observe(document.body,{attributes:true,attributeFilter:['data-state','data-device-state']});
+  onStateChange();
+}
 function parseHex(hex){return String(hex||'').trim().split(/\s+/).filter(Boolean).map(x=>Number.parseInt(x,16))}
 function onPowerPacket(event){
   const bytes=parseHex(event?.detail?.hex);if(bytes.length!==6||bytes[0]!==POWER_MAGIC||bytes[1]!==POWER_VERSION)return;
@@ -153,8 +160,8 @@ function onPowerPacket(event){
   if(lastPowerState===POWER_AWAKE||lastPowerState===POWER_WAKE_RECORD)scheduleStandby();
 }
 root.addEventListener('synap-event-packet',onPowerPacket);
-root.addEventListener('synap-gatt-service-ready',event=>{service=event?.detail?.service||root.__synapGattService||null;control=null;lastPowerState=0;scheduleStandby();setTimeout(tryAutoStart,900)});
-if(root.MutationObserver&&document.body){new MutationObserver(()=>{const s=state();if(s==='idle'){tryAutoStart();scheduleStandby()}else cancelStandby()}).observe(document.body,{attributes:true,attributeFilter:['data-state','data-device-state']})}
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){tryAutoStart();scheduleStandby()}});
+root.addEventListener('synap-gatt-service-ready',event=>{service=event?.detail?.service||root.__synapGattService||null;control=null;lastPowerState=0;bindStateObserver();scheduleStandby();setTimeout(tryAutoStart,900)});
+if(document.body)bindStateObserver();else document.addEventListener('DOMContentLoaded',bindStateObserver,{once:true});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){bindStateObserver();tryAutoStart();scheduleStandby()}});
 root.SynapPowerLifecycle={IDLE_TO_STANDBY_MS,get state(){return lastPowerState},get autoStartPending(){return autoStartPending},schedule:scheduleStandby};
 })(globalThis);
