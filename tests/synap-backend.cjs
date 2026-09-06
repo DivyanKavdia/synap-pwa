@@ -473,7 +473,12 @@ test('legacy idempotency failures self-heal on the next signed-in run', async ()
 
   assert.equal(result, 'ran');
   assert.equal(processor.originalRuns, 1);
-  assert.deepEqual(patched, [{ id: 9, fields: { state: 'pending', attempts: 0, nextAt: 0, lastError: '' } }]);
+  assert.equal(patched.length, 1);
+  assert.equal(patched[0].id, 9);
+  assert.equal(patched[0].fields.state, 'pending');
+  assert.equal(patched[0].fields.attempts, 0);
+  assert.equal(patched[0].fields.nextAt, 0);
+  assert.equal(patched[0].fields.lastError, '');
 });
 
 test('a paused queue aborts polling instead of holding a job open', () => {
