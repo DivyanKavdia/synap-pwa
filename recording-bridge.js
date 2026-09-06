@@ -168,7 +168,7 @@
     if (key && !document.getElementById('touchControlHint')) {
       const hint = document.createElement('span');
       hint.id = 'touchControlHint';
-      hint.textContent = 'Touch: double tap to start/stop · hold 5s to sleep';
+      hint.textContent = 'Touch: double tap to start/stop · hold 5s to sleep/wake';
       key.appendChild(hint);
     }
   }
