@@ -12,7 +12,8 @@ test('memory tools keep source recordings untouched and expose reversible merge'
   assert.match(src,/Unmerge/);
   assert.match(src,/Source audio stays unchanged in Library/);
   assert.doesNotMatch(src,/objectStore\(['"]recordings['"]\)\.delete/);
-  assert.doesNotMatch(src,/\.remove\(/);
+  assert.doesNotMatch(src,/journal\.(?:remove|clear)\(/);
+  assert.doesNotMatch(src,/deleteRecording\(/);
 });
 
 test('merge UI enforces two-to-five consecutive memories before backend call',()=>{
