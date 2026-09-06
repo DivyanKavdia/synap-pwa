@@ -259,6 +259,14 @@
     ask:function(query,scope){return request('/v1/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:query,scope:scope||{}})});},
     dailyBrief:function(day){return request('/v1/days/'+encodeURIComponent(day)+'/brief');},
     people:function(){return request('/v1/people');},
+    /* List recordings with their memory so a device that has never seen this
+       account can rebuild its journal. Transcripts are opt-in because they
+       dominate the payload and the list views never render them. */
+    recordings:function(options){var opts=options||{};var query=[];
+      if(opts.day)query.push('day='+encodeURIComponent(opts.day));
+      if(opts.limit)query.push('limit='+encodeURIComponent(opts.limit));
+      if(opts.transcript)query.push('include_transcript=true');
+      return request('/v1/recordings'+(query.length?'?'+query.join('&'):''));},
     followUps:function(state,owner){return request('/v1/follow-ups?state='+encodeURIComponent(state||'open')+'&owner='+encodeURIComponent(owner||'all'));},
     resolveFollowUp:function(id,state){return request('/v1/follow-ups/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:state})});},
     confirmPerson:function(personId,confirmed){return request('/v1/people/'+encodeURIComponent(personId),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmed:confirmed!==false})});},

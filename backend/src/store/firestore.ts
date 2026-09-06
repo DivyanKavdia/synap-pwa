@@ -113,6 +113,23 @@ export async function listRecordingsByDay(uid: string, day: string): Promise<Rec
   return snapshot.docs.map((doc) => doc.data() as RecordingDoc);
 }
 
+/**
+ * Most recent recordings across every day.
+ *
+ * This is what a device that has never seen this account asks for first: it has
+ * no local journal, so it cannot know which days to request. Ordering by
+ * startedAt alone is a single-field query, which Firestore indexes
+ * automatically — deliberately, so restoring history needs no new index.
+ */
+export async function listRecentRecordings(uid: string, limit: number): Promise<RecordingDoc[]> {
+  const snapshot = await paths
+    .recordings(uid)
+    .orderBy('startedAt', 'desc')
+    .limit(limit)
+    .get();
+  return snapshot.docs.map((doc) => doc.data() as RecordingDoc);
+}
+
 export async function putSegment(uid: string, recordingId: string, doc: SegmentDoc): Promise<void> {
   await paths.segments(uid, recordingId).doc(String(doc.index)).set(doc, { merge: true });
 }

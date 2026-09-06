@@ -9,6 +9,7 @@ import * as db from '../../store/firestore.js';
 import { segmentPath, writeSealedSegment } from '../../store/gcs.js';
 import type { HighlightDoc, RecordingDoc, SegmentDoc, StructuredMemory } from '../../store/types.js';
 import { fingerprint, localDay, sha256 } from '../../util/ids.js';
+import { log } from '../../util/log.js';
 import { requireAuth, type AuthedRequest } from '../auth.js';
 import { HttpError, handler } from '../errors.js';
 
@@ -320,6 +321,83 @@ export function recordingRoutes(): Router {
         error_code: recording.errorCode,
         uploaded_segments: recording.uploadedSegments,
       });
+    }),
+  );
+
+  /**
+   * List recordings, with their memory, so a device can rebuild its journal.
+   *
+   * Everything the app shows — Library, Today, People, follow-ups — is rendered
+   * from a local IndexedDB journal. That journal is per-device, so signing in on
+   * a second phone used to show an empty app even though every memory was
+   * sitting in Firestore. Signing out clears the journal too, which made the
+   * same thing happen on the original phone. This is the read path that was
+   * missing.
+   *
+   * `day` fetches one calendar day. Without it, the most recent recordings
+   * across all days come back, because a fresh device cannot know which days to
+   * ask for. Transcripts are opt-in: they dominate the payload and the list
+   * views never render them.
+   */
+  router.get(
+    '/recordings',
+    handler<AuthedRequest>(async (req, res) => {
+      const day = req.query.day ? String(req.query.day) : '';
+      if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+        throw new HttpError(400, 'bad_request', 'day must be YYYY-MM-DD');
+      }
+
+      const requested = Number(req.query.limit ?? 50);
+      const limit = Number.isFinite(requested) ? Math.min(Math.max(Math.trunc(requested), 1), 200) : 50;
+      const withTranscript = String(req.query.include_transcript ?? '') === 'true';
+
+      const recordings = day
+        ? await db.listRecordingsByDay(req.uid, day)
+        : await db.listRecentRecordings(req.uid, limit);
+
+      const items = recordings.slice(0, limit).map((recording) => {
+        const scope = `recording/${recording.recordingId}`;
+        const base = {
+          recording_id: recording.recordingId,
+          day: recording.day,
+          started_at: recording.startedAt,
+          ended_at: recording.endedAt,
+          duration_ms: recording.durationMs,
+          state: recording.state,
+          continuous_group_id: recording.continuousGroupId,
+          continuous_part: recording.continuousPart,
+        };
+
+        // A recording still being processed is reported honestly rather than
+        // omitted: the app should be able to show that something is in flight
+        // on this device too, not silently lose it.
+        if (!recording.sealedMemory) return base;
+
+        try {
+          const memory = openJson<StructuredMemory>(
+            req.dek,
+            recording.sealedMemory,
+            binding(req.uid, scope, 'memory'),
+          );
+          const transcript =
+            withTranscript && recording.sealedTranscript
+              ? openText(req.dek, recording.sealedTranscript, binding(req.uid, scope, 'transcript'))
+              : undefined;
+          return { ...base, ...memory, ...(transcript === undefined ? {} : { transcript }) };
+        } catch (cause) {
+          // One unreadable record must not cost the user the rest of their
+          // history. This should be impossible — it would mean the sealed bytes
+          // no longer match their binding — so it is worth a log.
+          log.error('Could not open a stored memory while listing recordings', {
+            uid: req.uid,
+            recordingId: recording.recordingId,
+            error: (cause as Error).message,
+          });
+          return base;
+        }
+      });
+
+      res.status(200).json({ day: day || null, count: items.length, recordings: items });
     }),
   );
 
