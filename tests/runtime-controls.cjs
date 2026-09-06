@@ -19,7 +19,8 @@ assert.match(runtime,/min-height:44px/,'primary controls must meet the minimum m
 assert.match(compat,/bindSettingsSafetyNet/,'settings must retain a fallback even if app initialization stops early');
 assert.match(compat,/settingsButton\.addEventListener\('click'/,'settings safety net must be wired directly');
 assert(html.indexOf('runtime-compat.js')<html.indexOf('app.js'),'compatibility guard must load before app.js');
-assert.match(sw,/shell29-controls/,'service worker cache must retain the established controls compatibility revision');
+assert.match(sw,/shell30-processing-recovery/,'service worker cache must retain controls compatibility while shipping processing recovery');
+assert.match(sw,/\.\/runtime-compat\.js/,'service worker must continue caching the controls compatibility guard');
 
 const app=fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8');
 assert.match(app,/function bindCoreControls\(\)/,'core Connect and Settings controls must have an early binder');
