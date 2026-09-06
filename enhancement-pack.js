@@ -1,78 +1,113 @@
-/* Synap Sep-06 enhancement pack.
+/* Synap rolling capture + account privacy enhancement pack.
  *
- * Adds rolling one-minute capture segments without changing the BLE protocol,
- * starts processing a completed minute while capture continues, keeps legacy
- * 30-second recordings readable, hides memory-bearing UI immediately on
- * sign-out, and makes completed transcripts visible by default.
+ * Internal PCM/transcription windows stay at the proven 30-second geometry.
+ * Completed windows are sealed and queued while capture continues. Two adjacent
+ * windows are exposed as one logical source WAV, so source files are <=60 sec
+ * without duplicating audio in IndexedDB.
  */
 (function (root) {
   'use strict';
 
-  const ONE_MINUTE_FRAMES = 1200; // 60 s / 50 ms protocol frame.
-  const LEGACY_SEGMENT_FRAMES = 600;
-  const PCM_BYTES_PER_FRAME = 1600;
-  const PROCESSOR_REGISTRY = new Set();
-  const AUTH_POLL_MS = 50;
+  const TRANSCRIPTION_FRAMES = 600; // 30 s at 50 ms/frame; matches audio-store.js.
+  const SOURCE_FILE_SEGMENTS = 2;
+  const SOURCE_FILE_MS = 60 * 1000;
+  const PROCESSORS = new Set();
   const INSTALL_POLL_MS = 40;
+  const AUTH_POLL_MS = 50;
+  const DB_NAME = 'dk-pendant-recordings';
 
   function currentUid() {
     try {
       const session = root.SynapAuth && root.SynapAuth.session && root.SynapAuth.session();
       return String(session && session.profile && session.profile.uid || '');
-    } catch (_) {
-      return '';
-    }
+    } catch (_) { return ''; }
   }
 
-  function ownerForNewRecording() {
-    return currentUid() || null;
+  function openDb() {
+    return new Promise((resolve, reject) => {
+      if (!root.indexedDB) { reject(new Error('IndexedDB unavailable')); return; }
+      const request = root.indexedDB.open(DB_NAME);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
   }
 
-  function segmentFrames(record) {
-    return Number(record && record.segmentFrames) === ONE_MINUTE_FRAMES
-      ? ONE_MINUTE_FRAMES
-      : LEGACY_SEGMENT_FRAMES;
+  async function claimLegacyRecordings(uid) {
+    if (!uid || !root.indexedDB) return;
+    const marker = 'synap-owner-migration-v1:' + uid;
+    try { if (root.localStorage.getItem(marker) === 'done') return; } catch (_) {}
+    const db = await openDb();
+    try {
+      if (!db.objectStoreNames.contains('recordings')) return;
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('recordings', 'readwrite');
+        const store = tx.objectStore('recordings');
+        const cursor = store.openCursor();
+        cursor.onsuccess = () => {
+          const hit = cursor.result;
+          if (!hit) return;
+          const value = hit.value || {};
+          if (!value.ownerUid) hit.update(Object.assign({}, value, { ownerUid: uid }));
+          hit.continue();
+        };
+        tx.oncomplete = resolve;
+        tx.onerror = tx.onabort = () => reject(tx.error || new Error('Owner migration failed'));
+      });
+      try { root.localStorage.setItem(marker, 'done'); } catch (_) {}
+    } finally { try { db.close(); } catch (_) {} }
+  }
+
+  async function ownerOf(recordingId) {
+    if (!recordingId || !root.indexedDB) return '';
+    const db = await openDb();
+    try {
+      if (!db.objectStoreNames.contains('recordings')) return '';
+      return await new Promise((resolve, reject) => {
+        const request = db.transaction('recordings').objectStore('recordings').get(recordingId);
+        request.onsuccess = () => resolve(String(request.result && request.result.ownerUid || ''));
+        request.onerror = () => reject(request.error);
+      });
+    } finally { try { db.close(); } catch (_) {} }
   }
 
   function installAudioPatch() {
     const Store = root.DKAudioStore;
     const Processor = root.DKFIFOProcessor;
     const codec = root.DKAudioCodec;
-    if (!Store || !Processor || !codec || !codec.assemble || Store.prototype.__synapMinuteSegments) return false;
+    if (!Store || !Processor || !codec || !codec.assemble || Store.prototype.__synapRolling30) return false;
 
     const originalBegin = Store.prototype.begin;
     const originalAppend = Store.prototype.append;
+    const originalClose = Store.prototype.close;
     const originalResume = Processor.prototype.resume;
 
     Store.prototype.begin = async function (name, association) {
       const id = await originalBegin.call(this, name, association);
-      this.__synapFramesByRecording = this.__synapFramesByRecording || new Map();
-      this.__synapFramesByRecording.set(id, ONE_MINUTE_FRAMES);
       await this.atomic(['recordings'], (stores) => {
         const request = stores.recordings.get(id);
         request.onsuccess = () => {
           if (!request.result) return;
           stores.recordings.put(Object.assign({}, request.result, {
-            segmentFrames: ONE_MINUTE_FRAMES,
-            segmentSeconds: 60,
-            ownerUid: ownerForNewRecording(),
-            rollingProcessing: true
+            ownerUid: currentUid() || null,
+            transcriptionWindowSeconds: 30,
+            sourceFileSeconds: 60,
+            rollingTranscription: true
           }));
         };
       });
       return id;
     };
 
-    function queueSeal(store, recordingId, index) {
-      if (index < 0) return;
-      store.__synapSealQueue = (store.__synapSealQueue || Promise.resolve()).then(async () => {
+    function sealCompletedWindow(store, recordingId, index) {
+      if (!Number.isInteger(index) || index < 0) return;
+      store.__synapRollingSeal = (store.__synapRollingSeal || Promise.resolve()).then(async () => {
         await store.flush();
         const meta = await store.get('segments', [recordingId, index]);
         if (meta && meta.pcmBlob) return;
         const packets = await store.all('packets', 'segment', [recordingId, index]);
         if (!packets.length) return;
-        const start = index * ONE_MINUTE_FRAMES;
-        const end = start + ONE_MINUTE_FRAMES - 1;
+        const start = index * TRANSCRIPTION_FRAMES;
+        const end = start + TRANSCRIPTION_FRAMES - 1;
         const data = codec.assemble(packets, {
           preserveTimeline: true,
           startSequence: start,
@@ -80,8 +115,8 @@
         });
         if (!data.completeFrames) return;
         await store.compactSegment(recordingId, index, data);
-        root.dispatchEvent(new CustomEvent('synap-segment-ready', {
-          detail: { recordingId: recordingId, segmentIndex: index, seconds: 60 }
+        root.dispatchEvent(new CustomEvent('synap-transcription-window-ready', {
+          detail: { recordingId: recordingId, segmentIndex: index, startMs: index * 30000, endMs: (index + 1) * 30000 }
         }));
       }).catch((error) => {
         try { store.onError(error); } catch (_) {}
@@ -90,173 +125,96 @@
 
     Store.prototype.append = function (recordingId, packet) {
       originalAppend.call(this, recordingId, packet);
-      const buffer = this.buffer || [];
-      const last = buffer[buffer.length - 1];
-      if (!last || last.recordingId !== recordingId || last.sequence !== packet.sequence || last.chunk !== packet.chunk) return;
-
-      const frames = this.__synapFramesByRecording && this.__synapFramesByRecording.get(recordingId);
-      if (frames !== ONE_MINUTE_FRAMES) return; // legacy/recovered capture remains on its original geometry.
-
-      const nextIndex = Math.floor(packet.sequence / ONE_MINUTE_FRAMES);
-      last.segmentIndex = nextIndex;
-      this.__synapActiveSegment = this.__synapActiveSegment || new Map();
-      const previous = this.__synapActiveSegment.get(recordingId);
-      if (Number.isInteger(previous) && nextIndex > previous) queueSeal(this, recordingId, previous);
-      this.__synapActiveSegment.set(recordingId, nextIndex);
+      const index = Math.floor(packet.sequence / TRANSCRIPTION_FRAMES);
+      this.__synapRollingIndex = this.__synapRollingIndex || new Map();
+      const previous = this.__synapRollingIndex.get(recordingId);
+      if (Number.isInteger(previous) && index > previous) sealCompletedWindow(this, recordingId, previous);
+      this.__synapRollingIndex.set(recordingId, index);
     };
 
     Store.prototype.close = async function (recordingId, reason) {
-      await (this.__synapSealQueue || Promise.resolve());
-      await this.flush();
-      const record = await this.get('recordings', recordingId);
-      if (!record || !record.journal) return;
-      const framesPerSegment = segmentFrames(record);
-      const segments = (await this.all('segments', 'recording', recordingId)).sort((a, b) => a.index - b.index);
-      const byIndex = new Map(segments.map((segment) => [segment.index, segment]));
-      const raw = new Map();
-      let lastSequence = -1, packets = 0, incomplete = 0;
-
-      for (const segment of segments) {
-        if (segment.pcmBlob) {
-          lastSequence = Math.max(lastSequence, segment.lastSequence == null ? -1 : segment.lastSequence);
-          packets += segment.packets || 0;
-          incomplete += segment.incomplete || 0;
-          continue;
-        }
-        const list = await this.all('packets', 'segment', [recordingId, segment.index]);
-        raw.set(segment.index, list);
-        const scan = codec.assemble(list);
-        lastSequence = Math.max(lastSequence, scan.lastSequence);
-        packets += scan.packets;
-        incomplete += scan.incomplete;
-      }
-
-      let complete = 0, missing = 0, timelineFrames = 0;
-      if (lastSequence >= 0) {
-        const lastIndex = Math.floor(lastSequence / framesPerSegment);
-        for (let index = 0; index <= lastIndex; index += 1) {
-          const segment = byIndex.get(index);
-          if (segment && segment.pcmBlob) {
-            complete += segment.frameCount || 0;
-            missing += segment.missing || 0;
-            timelineFrames += segment.timelineFrameCount || 0;
-            continue;
-          }
-          const start = index * framesPerSegment;
-          const end = Math.min(lastSequence, start + framesPerSegment - 1);
-          const data = codec.assemble(raw.get(index) || [], {
-            preserveTimeline: true,
-            startSequence: start,
-            endSequence: end
-          });
-          complete += data.completeFrames;
-          missing += data.missing;
-          timelineFrames += data.frames.length;
-          await this.compactSegment(recordingId, index, data);
-        }
-      }
-
-      await this.atomic(['recordings', 'jobs'], (stores) => {
+      await (this.__synapRollingSeal || Promise.resolve());
+      const saved = await originalClose.call(this, recordingId, reason);
+      if (!saved) return saved;
+      const sourceFileCount = saved.durationMs ? Math.ceil(saved.durationMs / SOURCE_FILE_MS) : 0;
+      await this.atomic(['recordings'], (stores) => {
         const request = stores.recordings.get(recordingId);
         request.onsuccess = () => {
           if (!request.result) return;
-          const previous = request.result;
-          stores.recordings.put(Object.assign({}, previous, {
-            status: complete ? 'saved' : 'empty',
-            stopReason: reason || 'normal',
-            durationMs: lastSequence >= 0 ? (lastSequence + 1) * 50 : 0,
-            sizeBytes: timelineFrames ? 44 + timelineFrames * PCM_BYTES_PER_FRAME : 0,
-            stats: {
-              completeFrames: complete,
-              incompleteFrames: incomplete,
-              packetsReceived: packets,
-              missingFrames: missing
-            },
-            sealed: true,
-            compacted: true
+          stores.recordings.put(Object.assign({}, request.result, {
+            transcriptionWindowSeconds: 30,
+            sourceFileSeconds: 60,
+            sourceFileCount: sourceFileCount,
+            rollingTranscription: true
           }));
-          if (!previous.sealed && complete) {
-            stores.jobs.add({
-              recordingId: recordingId,
-              kind: 'consolidate',
-              segmentIndex: -1,
-              dedupe: recordingId + ':consolidate',
-              state: 'pending', attempts: 0, nextAt: 0
-            });
-          }
         };
       });
-      if (this.__synapActiveSegment) this.__synapActiveSegment.delete(recordingId);
+      if (this.__synapRollingIndex) this.__synapRollingIndex.delete(recordingId);
       return this.get('recordings', recordingId);
     };
 
-    Store.prototype.blob = async function (record) {
-      if (record.blob) return record.blob;
-      const framesPerSegment = segmentFrames(record);
-      const segments = (await this.all('segments', 'recording', record.id)).sort((a, b) => a.index - b.index);
-      const pcm = [];
-      for (const segment of segments) {
-        if (segment.pcmBlob) {
-          pcm.push(new Uint8Array(await segment.pcmBlob.arrayBuffer()));
-          continue;
-        }
-        const packets = await this.all('packets', 'segment', [record.id, segment.index]);
-        const end = segment.lastSequence == null ? codec.assemble(packets).lastSequence : segment.lastSequence;
-        const data = codec.assemble(packets, {
-          preserveTimeline: true,
-          startSequence: segment.index * framesPerSegment,
-          endSequence: end
-        });
-        pcm.push.apply(pcm, data.frames);
-      }
-      if (!pcm.length) throw new Error('No complete audio frames are available. Raw partial chunks remain stored.');
-      return codec.wav(pcm);
-    };
+    async function pcmForSegment(store, recordingId, segment) {
+      if (segment.pcmBlob) return new Uint8Array(await segment.pcmBlob.arrayBuffer());
+      const packets = await store.all('packets', 'segment', [recordingId, segment.index]);
+      if (!packets.length) return null;
+      const scan = codec.assemble(packets);
+      if (scan.lastSequence < 0) return null;
+      const start = segment.index * TRANSCRIPTION_FRAMES;
+      const data = codec.assemble(packets, {
+        preserveTimeline: true,
+        startSequence: start,
+        endSequence: scan.lastSequence
+      });
+      return data.frames.length ? new Uint8Array(await new Blob(data.frames).arrayBuffer()) : null;
+    }
 
-    // Original scheduling isolates recordings. Keep that property for dependent
-    // jobs, but allow sealed transcribe/upload jobs from one recording to overlap.
-    Store.prototype.nextRunnable = async function (now, excludedRecordings) {
-      now = now == null ? Date.now() : now;
-      excludedRecordings = excludedRecordings || new Set();
-      const jobs = (await this.all('jobs')).sort((a, b) => a.id - b.id);
-      const blocked = new Set(), deferred = new Set();
-      let wakeAt = Infinity;
-      for (const job of jobs) {
-        if (job.state === 'done') continue;
-        if (job.state === 'failed') { blocked.add(job.recordingId); continue; }
-        if (blocked.has(job.recordingId) || deferred.has(job.recordingId)) continue;
-        if (excludedRecordings.has(job.recordingId) && job.kind !== 'transcribe') continue;
-        if (job.state === 'running') {
-          if (job.kind !== 'transcribe') deferred.add(job.recordingId);
-          continue;
-        }
-        if ((job.nextAt || 0) > now) {
-          wakeAt = Math.min(wakeAt, job.nextAt);
-          if (job.kind !== 'transcribe') deferred.add(job.recordingId);
-          continue;
-        }
-        return { job: job, wakeAt: Number.isFinite(wakeAt) ? wakeAt : 0, blockedCount: blocked.size };
+    Store.prototype.sourceFiles = async function (record) {
+      if (!record || !record.id) return [];
+      const segments = (await this.all('segments', 'recording', record.id))
+        .filter((segment) => segment && (segment.pcmBlob || segment.frameCount))
+        .sort((a, b) => a.index - b.index);
+      if (!segments.length && record.blob) {
+        return [{ index: 0, startMs: 0, endMs: record.durationMs || 0, durationMs: record.durationMs || 0, blob: record.blob }];
       }
-      return { job: null, wakeAt: Number.isFinite(wakeAt) ? wakeAt : 0, blockedCount: blocked.size };
+      const files = [];
+      for (let offset = 0; offset < segments.length; offset += SOURCE_FILE_SEGMENTS) {
+        const group = segments.slice(offset, offset + SOURCE_FILE_SEGMENTS);
+        const pcm = [];
+        for (const segment of group) {
+          const bytes = await pcmForSegment(this, record.id, segment);
+          if (bytes && bytes.byteLength) pcm.push(bytes);
+        }
+        if (!pcm.length) continue;
+        const firstIndex = group[0].index;
+        const startMs = firstIndex * 30000;
+        const durationMs = Math.min(SOURCE_FILE_MS, Math.max(0, (record.durationMs || startMs + SOURCE_FILE_MS) - startMs));
+        files.push({
+          index: files.length,
+          startMs: startMs,
+          endMs: startMs + durationMs,
+          durationMs: durationMs,
+          blob: codec.wav(pcm)
+        });
+      }
+      return files;
     };
 
     Processor.prototype.resume = function () {
-      PROCESSOR_REGISTRY.add(this);
+      PROCESSORS.add(this);
       return originalResume.apply(this, arguments);
     };
-    root.addEventListener('synap-segment-ready', () => {
-      PROCESSOR_REGISTRY.forEach((processor) => {
-        try {
-          if (!processor.paused && processor.canRun()) processor.run();
-        } catch (_) {}
+
+    root.addEventListener('synap-transcription-window-ready', () => {
+      PROCESSORS.forEach((processor) => {
+        try { if (!processor.paused && processor.canRun()) processor.run(); } catch (_) {}
       });
     });
 
-    Store.prototype.__synapMinuteSegments = true;
+    Store.prototype.__synapRolling30 = true;
     return true;
   }
 
-  function installPrivacyAndTranscriptUi() {
+  function installPrivacyUi() {
     if (!root.document || root.document.getElementById('synapAccountPrivacyStyle')) return;
     const style = root.document.createElement('style');
     style.id = 'synapAccountPrivacyStyle';
@@ -278,28 +236,45 @@
     const capture = root.document.getElementById('capture');
     if (capture) capture.insertAdjacentElement('beforebegin', note);
 
+    async function filterRecordingCards(uid) {
+      const cards = Array.from(root.document.querySelectorAll('.recording-card'));
+      await Promise.all(cards.map(async (card) => {
+        const id = String(card.id || '').replace(/^recording-/, '');
+        if (!id) return;
+        const owner = await ownerOf(id).catch(() => '');
+        card.hidden = !uid || !owner || owner !== uid;
+      }));
+    }
+
     function makeTranscriptsVisible() {
       root.document.querySelectorAll('details.transcript-preview').forEach((details) => { details.open = true; });
       root.document.querySelectorAll('.recording-card details').forEach((details) => {
-        const summary = details.querySelector(':scope > summary');
-        if (summary && /^transcript$/i.test(summary.textContent.trim())) details.open = true;
+        const heading = details.querySelector(':scope > summary');
+        if (heading && /^transcript$/i.test(heading.textContent.trim())) details.open = true;
       });
     }
 
-    new MutationObserver(makeTranscriptsVisible).observe(root.document.body, { childList: true, subtree: true });
-    makeTranscriptsVisible();
+    let activeUid = '';
+    const observer = new MutationObserver(() => {
+      makeTranscriptsVisible();
+      if (activeUid) filterRecordingCards(activeUid).catch(() => {});
+    });
+    observer.observe(root.document.body, { childList: true, subtree: true });
 
-    function applySession(session) {
+    async function applySession(session) {
       const uid = String(session && session.profile && session.profile.uid || '');
+      activeUid = uid;
       root.document.body.dataset.synapAccountState = uid ? 'signed-in' : 'signed-out';
       note.hidden = Boolean(uid);
       if (!uid) {
-        PROCESSOR_REGISTRY.forEach((processor) => {
-          try { processor.pause(); } catch (_) {}
-        });
+        PROCESSORS.forEach((processor) => { try { processor.pause(); } catch (_) {} });
         const search = root.document.querySelector('.memory-results');
         if (search) search.replaceChildren();
+        return;
       }
+      await claimLegacyRecordings(uid).catch(() => {});
+      await filterRecordingCards(uid).catch(() => {});
+      makeTranscriptsVisible();
     }
 
     let attempts = 0;
@@ -315,7 +290,7 @@
   }
 
   function boot() {
-    installPrivacyAndTranscriptUi();
+    installPrivacyUi();
     if (installAudioPatch()) return;
     let attempts = 0;
     const timer = root.setInterval(() => {
@@ -327,8 +302,9 @@
   else boot();
 
   root.SynapEnhancementPack = {
-    ONE_MINUTE_FRAMES: ONE_MINUTE_FRAMES,
-    LEGACY_SEGMENT_FRAMES: LEGACY_SEGMENT_FRAMES,
+    TRANSCRIPTION_FRAMES: TRANSCRIPTION_FRAMES,
+    SOURCE_FILE_SEGMENTS: SOURCE_FILE_SEGMENTS,
+    SOURCE_FILE_MS: SOURCE_FILE_MS,
     installAudioPatch: installAudioPatch
   };
 })(globalThis);
