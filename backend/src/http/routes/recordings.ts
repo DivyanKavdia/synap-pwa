@@ -1,9 +1,10 @@
 import { Router, raw } from 'express';
 import { z } from 'zod';
 import { config } from '../../config.js';
-import { openJson, sealBytes } from '../../crypto/envelope.js';
+import { openJson, openText, sealBytes } from '../../crypto/envelope.js';
 import { enqueueProcessing } from '../../pipeline/queue.js';
 import { binding } from '../../pipeline/process.js';
+import { transcribeUploadedWindow } from '../../pipeline/rolling-transcription.js';
 import * as db from '../../store/firestore.js';
 import { segmentPath, writeSealedSegment } from '../../store/gcs.js';
 import type { HighlightDoc, RecordingDoc, SegmentDoc, StructuredMemory } from '../../store/types.js';
@@ -63,7 +64,6 @@ export function recordingRoutes(): Router {
       }
       // No Idempotency-Key here on purpose. This endpoint is idempotent on
       // recording_id: an existing recording is returned rather than duplicated.
-      // A ledger keyed on the body could only ever reject a legitimate retry.
       const input = body.data;
       const now = new Date().toISOString();
       const existing = await db.getRecording(req.uid, input.recording_id);
@@ -105,7 +105,7 @@ export function recordingRoutes(): Router {
   );
 
   // -------------------------------------------------------------------------
-  // Segment upload
+  // Segment upload + immediate rolling transcription
   // -------------------------------------------------------------------------
   router.put(
     '/recordings/:recordingId/segments/:index',
@@ -127,16 +127,33 @@ export function recordingRoutes(): Router {
 
       const digest = sha256(audio);
       const declared = req.header('x-synap-sha256');
-      // The client computes the digest before upload; a mismatch means the
-      // bytes changed in flight and must not be transcribed.
       if (declared && declared.toLowerCase() !== digest) {
         throw new HttpError(400, 'digest_mismatch', 'Segment SHA-256 does not match the body');
       }
 
       const existing = await db.getSegment(req.uid, recordingId, index);
       if (existing?.sha256 === digest && existing.storagePath) {
-        // Exactly the idempotent replay the spec requires.
-        res.status(200).json({ segment_index: index, state: existing.state, sha256: digest });
+        // A retry after upload but before/while ASR completed must continue the
+        // missing transcription rather than returning early and leaving a hole.
+        let completed = existing;
+        if (!existing.sealedTranscript || !existing.sealedWords || existing.state !== 'transcribed') {
+          try {
+            completed = await transcribeUploadedWindow(req.uid, recordingId, index, req.dek);
+          } catch (cause) {
+            throw new HttpError(
+              503,
+              'transcription_failed',
+              (cause as Error).message || 'Rolling transcription failed',
+              true,
+            );
+          }
+        }
+        res.status(200).json({
+          segment_index: index,
+          state: completed.state,
+          sha256: digest,
+          transcript_ready: completed.state === 'transcribed',
+        });
         return;
       }
 
@@ -178,7 +195,27 @@ export function recordingRoutes(): Router {
         uploadedSegments: uploaded,
       });
 
-      res.status(200).json({ segment_index: index, state: 'accepted', sha256: digest });
+      // The audio is safely persisted before ASR starts. If ASR fails, the PWA's
+      // existing retry resends the same PUT; the idempotent path above then
+      // retries only transcription instead of writing audio again.
+      let completed: SegmentDoc;
+      try {
+        completed = await transcribeUploadedWindow(req.uid, recordingId, index, req.dek);
+      } catch (cause) {
+        throw new HttpError(
+          503,
+          'transcription_failed',
+          (cause as Error).message || 'Rolling transcription failed',
+          true,
+        );
+      }
+
+      res.status(200).json({
+        segment_index: index,
+        state: completed.state,
+        sha256: digest,
+        transcript_ready: true,
+      });
     }),
   );
 
@@ -251,14 +288,16 @@ export function recordingRoutes(): Router {
         progress: 0,
       });
 
+      // Most/all 30-second windows are already transcribed by this point.
+      // processRecording skips sealed transcripts, transcribes only any final
+      // missing/partial window, then joins the complete transcript and performs
+      // meeting-level understanding/indexing.
       await enqueueProcessing(req.uid, recordingId);
 
       const response = {
         recording_id: recordingId,
         state: 'uploaded',
         uploaded_segments: uploaded,
-        // A gap here means segments are still in flight; the PWA retries them
-        // and finalize is idempotent, so this is informational, not an error.
         missing_segments: Math.max(0, body.data.segment_count - uploaded),
       };
       await db.completeIdempotencyKey(req.uid, key, response);
@@ -299,11 +338,20 @@ export function recordingRoutes(): Router {
         recording.sealedMemory,
         binding(req.uid, `recording/${recordingId}`, 'memory'),
       );
+      const transcript = recording.sealedTranscript
+        ? openText(
+            req.dek,
+            recording.sealedTranscript,
+            binding(req.uid, `recording/${recordingId}`, 'transcript'),
+          )
+        : '';
+
       res.status(200).json({
         recording_id: recordingId,
         day: recording.day,
         started_at: recording.startedAt,
         duration_ms: recording.durationMs,
+        transcript,
         ...memory,
       });
     }),
