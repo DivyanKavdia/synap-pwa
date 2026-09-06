@@ -374,6 +374,36 @@ test('the backend read helpers cover the second-brain surface', () => {
   }
 });
 
+test('a recording is created once, not once per segment', () => {
+  // ensureRecording ran for every 30s chunk. The endpoint is idempotent, but
+  // repeating it multiplied requests by capture length and widened the window
+  // in which the recording's own metadata could shift between calls.
+  assert.match(backendSource, /var createdRecordings = Object\.create\(null\)/);
+  assert.match(backendSource, /if \(createdRecordings\[recordingId\]\) return createdRecordings\[recordingId\]/);
+});
+
+test('a failed create is evicted so the recording is not stuck for the session', () => {
+  assert.match(backendSource, /pending\.catch\(function \(\) \{ delete createdRecordings\[recordingId\]; \}\)/);
+});
+
+test('creating a recording does not depend on an idempotency ledger', () => {
+  // POST /v1/recordings is idempotent on recording_id: it returns the existing
+  // recording. A body-fingerprint guard there could only reject a valid retry,
+  // which is exactly what stalled every capture at its second segment.
+  const routes = fs.readFileSync(path.join(root, 'backend/src/http/routes/recordings.ts'), 'utf8');
+  const create = routes.slice(routes.indexOf("'/recordings',"), routes.indexOf("'/recordings/:recordingId/segments/:index'"));
+  assert.doesNotMatch(create, /claimIdempotencyKey/);
+  assert.doesNotMatch(create, /completeIdempotencyKey/);
+});
+
+test('a changed body under a known idempotency key replays instead of failing', () => {
+  // Synap's keys derive from a recording, and a recording's metadata moves
+  // while it is captured. A mismatch means newer truth, not abuse.
+  const store = fs.readFileSync(path.join(root, 'backend/src/store/firestore.ts'), 'utf8');
+  assert.doesNotMatch(store, /Idempotency-Key reused with a different request body/);
+  assert.match(store, /return \{ fresh: true, response: null \}/);
+});
+
 test('consolidate is given a longer budget than an upload', () => {
   // A 45-minute capture takes minutes to transcribe and understand; the queue's
   // own 120s ceiling is right for an upload and would abort every consolidation.

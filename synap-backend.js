@@ -95,7 +95,23 @@
     return patchLocalProcessing(processor, recordingId, fields).catch(function () { return null; });
   }
 
+  /* One create per recording, not one per segment. The endpoint is idempotent,
+     but calling it for every 30s chunk multiplied requests by capture length
+     and widened the window in which a recording's own metadata could change
+     between otherwise identical calls. */
+  var createdRecordings = Object.create(null);
+
   function ensureRecording(processor, recordingId) {
+    if (createdRecordings[recordingId]) return createdRecordings[recordingId];
+    var pending = createRecording(processor, recordingId);
+    createdRecordings[recordingId] = pending;
+    /* A failed create must not be cached, or the whole recording is stuck for
+       the life of the page. */
+    pending.catch(function () { delete createdRecordings[recordingId]; });
+    return pending;
+  }
+
+  function createRecording(processor, recordingId) {
     return processor.store.get('recordings', recordingId).then(function (recording) {
       if (!recording) throw permanent('Recording is no longer in local storage.');
       var startedAt = recording.createdAt || new Date().toISOString();

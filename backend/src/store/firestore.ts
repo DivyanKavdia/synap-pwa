@@ -340,12 +340,19 @@ export async function claimIdempotencyKey(
     const snapshot = await tx.get(ref);
     if (snapshot.exists) {
       const data = snapshot.data() as { fingerprint: string; response: unknown | null };
-      if (data.fingerprint !== fingerprint) {
-        const error = new Error('Idempotency-Key reused with a different request body');
-        (error as Error & { status?: number }).status = 409;
-        throw error;
+      if (data.fingerprint === fingerprint) {
+        return { fresh: false, response: data.response ?? null };
       }
-      return { fresh: false, response: data.response ?? null };
+      // A changed body under the same key is not abuse here. Synap's keys are
+      // derived from a recording, and a recording's own metadata legitimately
+      // moves while it is being captured — a device association resolves, a
+      // long capture rolls into a new continuous part, the duration grows with
+      // every segment. Rejecting that stalled the whole pipeline on the second
+      // segment of every recording. Treat the newer body as the truth and
+      // replay from it; the endpoints this guards are each idempotent on their
+      // own resource id, so a repeat is a no-op rather than a duplicate.
+      tx.set(ref, { fingerprint, response: null, updatedAt: new Date().toISOString() }, { merge: true });
+      return { fresh: true, response: null };
     }
     tx.set(ref, {
       fingerprint,

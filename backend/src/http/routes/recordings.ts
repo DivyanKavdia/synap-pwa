@@ -61,13 +61,9 @@ export function recordingRoutes(): Router {
       if (!body.success) {
         throw new HttpError(400, 'bad_request', body.error.issues[0]?.message ?? 'Invalid body');
       }
-      const key = idempotencyKey(req);
-      const claim = await db.claimIdempotencyKey(req.uid, key, fingerprint(body.data));
-      if (!claim.fresh && claim.response) {
-        res.status(200).json(claim.response);
-        return;
-      }
-
+      // No Idempotency-Key here on purpose. This endpoint is idempotent on
+      // recording_id: an existing recording is returned rather than duplicated.
+      // A ledger keyed on the body could only ever reject a legitimate retry.
       const input = body.data;
       const now = new Date().toISOString();
       const existing = await db.getRecording(req.uid, input.recording_id);
@@ -99,14 +95,12 @@ export function recordingRoutes(): Router {
       };
 
       await db.putRecording(req.uid, doc);
-      const response = {
+      res.status(existing ? 200 : 201).json({
         recording_id: doc.recordingId,
         state: doc.state,
         day: doc.day,
         uploaded_segments: doc.uploadedSegments,
-      };
-      await db.completeIdempotencyKey(req.uid, key, response);
-      res.status(existing ? 200 : 201).json(response);
+      });
     }),
   );
 
