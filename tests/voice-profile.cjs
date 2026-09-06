@@ -38,6 +38,7 @@ test('installed PWA caches and loads the voice profile module',()=>{
   assert.match(sw,/\.\/voice-profile\.js/);
   assert.match(bridge,/voice-profile\.js\?v=1\.0\.0-voice-profile1/);
   assert.match(bridge,/data-synap-voice-profile/);
+  assert.match(bridge,/memory-tools\.js\?v=1\.0\.0-memory-tools1/);
 });
 
 test('speaker service computes embeddings in memory without audio persistence APIs',()=>{
@@ -46,4 +47,16 @@ test('speaker service computes embeddings in memory without audio persistence AP
   assert.match(app,/encode_batch/);
   assert.doesNotMatch(app,/open\([^)]*,\s*["'](?:w|a|x|wb|ab|xb)["']/);
   assert.doesNotMatch(app,/google\.cloud\.storage|Storage\(|Bucket\(|firestore\.Client|upload_from|blob\(/);
+});
+
+test('speaker Cloud Run stays private and isolated from Synap data permissions',()=>{
+  const terraform=fs.readFileSync(path.join(root,'infra/terraform/speaker.tf'),'utf8');
+  const deploy=fs.readFileSync(path.join(root,'infra/deploy.sh'),'utf8');
+  assert.match(terraform,/account_id\s*=\s*"synap-speaker"/);
+  assert.match(terraform,/member\s*=\s*"serviceAccount:\$\{google_service_account\.api\.email\}"/);
+  assert.match(terraform,/role\s*=\s*"roles\/run\.invoker"/);
+  assert.doesNotMatch(terraform,/member\s*=\s*"allUsers"/);
+  assert.doesNotMatch(terraform,/roles\/(?:datastore|storage|cloudkms|secretmanager)\./);
+  assert.match(deploy,/SYNAP_SPEAKER_SERVICE_URL=/);
+  assert.match(deploy,/SYNAP_SPEAKER_SERVICE_AUTH=oidc/);
 });
