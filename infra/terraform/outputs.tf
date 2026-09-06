@@ -3,6 +3,11 @@ output "service_url" {
   value       = google_cloud_run_v2_service.backend.uri
 }
 
+output "speaker_service_url" {
+  description = "Private speaker-verification URL. infra/deploy.sh automatically pins this into SYNAP_SPEAKER_SERVICE_URL when the service exists."
+  value       = var.speaker_enabled ? google_cloud_run_v2_service.speaker[0].uri : null
+}
+
 output "audio_bucket" {
   value = google_storage_bucket.audio.name
 }
@@ -31,6 +36,7 @@ output "next_steps" {
          printf '%s' "$GEMINI_API_KEY" | gcloud secrets versions add ${google_secret_manager_secret.gemini_api_key.secret_id} --data-file=- --project=${var.project_id}
     2. Redeploy so the service picks up SYNAP_SERVICE_URL:
          gcloud run services update ${google_cloud_run_v2_service.backend.name} --region=${var.region} --update-env-vars=SYNAP_SERVICE_URL=${google_cloud_run_v2_service.backend.uri}
-    3. Point the PWA at it: set SYNAP_BACKEND_URL in synap-backend.js, or configure it in Settings.
+    3. If speaker_enabled=true, run infra/deploy.sh after Terraform; it pins the private speaker URL into SYNAP_SPEAKER_SERVICE_URL.
+    4. Point the PWA at the backend: set SYNAP_BACKEND_URL in synap-backend.js, or configure it in Settings.
   EOT
 }
