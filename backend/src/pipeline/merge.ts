@@ -49,8 +49,11 @@ function binding(uid: string, mergeId: string, field: string): Binding {
 
 function timestampToMs(value: string): number {
   const parts = value.split(':').map(Number);
-  if (parts.length === 2) return (parts[0] * 60 + parts[1]) * 1000;
-  if (parts.length === 3) return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
+  const a = parts[0] ?? 0;
+  const b = parts[1] ?? 0;
+  const c = parts[2] ?? 0;
+  if (parts.length === 2) return (a * 60 + b) * 1000;
+  if (parts.length === 3) return (a * 3600 + b * 60 + c) * 1000;
   return 0;
 }
 
@@ -62,9 +65,8 @@ export function shiftTranscript(transcript: string, offsetMs: number): string {
 }
 
 /**
- * NeoSapien-style merge is deliberately strict: only a contiguous run of the
- * day's ready memories can be merged. The order supplied by the client does not
- * matter; the backend derives chronology from the canonical day list.
+ * Merge is deliberately strict: only a contiguous run of the day's ready
+ * memories can be merged. Client order is ignored; chronology is canonical.
  */
 export function consecutiveSourceIds(availableIds: string[], requestedIds: string[]): string[] {
   const requested = [...new Set(requestedIds)];
@@ -76,10 +78,16 @@ export function consecutiveSourceIds(availableIds: string[], requestedIds: strin
     throw new MemoryMergeError(400, 'invalid_merge_source', 'Every selected memory must be ready on the same day.');
   }
   positions.sort((a, b) => a - b);
-  if (positions[positions.length - 1] - positions[0] + 1 !== positions.length) {
+  const first = positions[0];
+  const last = positions[positions.length - 1];
+  if (first === undefined || last === undefined || last - first + 1 !== positions.length) {
     throw new MemoryMergeError(400, 'non_consecutive_memories', 'Only consecutive memories can be merged.');
   }
-  return positions.map((position) => availableIds[position]);
+  return positions.map((position) => {
+    const id = availableIds[position];
+    if (!id) throw new MemoryMergeError(400, 'invalid_merge_source', 'A selected memory is unavailable.');
+    return id;
+  });
 }
 
 function recordingEndMs(recording: RecordingDoc): number {
@@ -103,16 +111,18 @@ async function knownPeople(uid: string, dek: Buffer): Promise<string[]> {
         return '';
       }
     })
-    .filter(Boolean);
+    .filter((name): name is string => Boolean(name));
 }
 
 export async function listMemoryMerges(uid: string, dek: Buffer, day?: string): Promise<MemoryMergeView[]> {
-  let query: FirebaseFirestore.Query = mergeCollection(uid);
-  if (day) query = query.where('day', '==', day);
-  const snapshot = await query.orderBy('startedAt', 'desc').get();
-  return snapshot.docs.map((snapshotDoc) => {
-    const doc = snapshotDoc.data() as MemoryMergeDoc;
-    return {
+  // Intentionally filter/sort this tiny per-user collection in application code.
+  // That keeps the feature deployable without a new Firestore composite index.
+  const snapshot = await mergeCollection(uid).get();
+  return snapshot.docs
+    .map((snapshotDoc) => snapshotDoc.data() as MemoryMergeDoc)
+    .filter((doc) => !day || doc.day === day)
+    .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
+    .map((doc) => ({
       mergeId: doc.mergeId,
       sourceRecordingIds: doc.sourceRecordingIds,
       day: doc.day,
@@ -122,8 +132,7 @@ export async function listMemoryMerges(uid: string, dek: Buffer, day?: string): 
       memory: openJson<StructuredMemory>(dek, doc.sealedMemory, binding(uid, doc.mergeId, 'memory')),
       transcript: openText(dek, doc.sealedTranscript, binding(uid, doc.mergeId, 'transcript')),
       createdAt: doc.createdAt,
-    };
-  });
+    }));
 }
 
 export async function createMemoryMerge(
@@ -140,26 +149,30 @@ export async function createMemoryMerge(
   if (sourceDocs.some((recording) => !recording)) {
     throw new MemoryMergeError(404, 'memory_not_found', 'One or more selected memories no longer exist.');
   }
-  const recordings = sourceDocs as RecordingDoc[];
-  const day = recordings[0].day;
-  if (recordings.some((recording) => recording.day !== day)) {
+  const recordings = sourceDocs.filter((recording): recording is RecordingDoc => Boolean(recording));
+  const firstRecording = recordings[0];
+  if (!firstRecording) throw new MemoryMergeError(404, 'memory_not_found', 'No selected memory exists.');
+  const mergeDay = firstRecording.day;
+  if (recordings.some((recording) => recording.day !== mergeDay)) {
     throw new MemoryMergeError(400, 'different_days', 'Memories must be from the same day.');
   }
 
-  const ready = (await db.listRecordingsByDay(uid, day)).filter(
+  const ready = (await db.listRecordingsByDay(uid, mergeDay)).filter(
     (recording) => recording.state === 'ready' && recording.sealedTranscript && recording.sealedMemory,
   );
   const canonicalIds = consecutiveSourceIds(ready.map((recording) => recording.recordingId), unique);
   const byId = new Map(recordings.map((recording) => [recording.recordingId, recording]));
   const ordered = canonicalIds.map((id) => byId.get(id)).filter((item): item is RecordingDoc => Boolean(item));
+  const firstOrdered = ordered[0];
+  if (!firstOrdered) throw new MemoryMergeError(409, 'memory_not_ready', 'Selected memories are not ready to merge.');
 
-  const existing = await listMemoryMerges(uid, dek, day);
+  const existing = await listMemoryMerges(uid, dek, mergeDay);
   const occupied = new Set(existing.flatMap((merge) => merge.sourceRecordingIds));
   if (canonicalIds.some((id) => occupied.has(id))) {
     throw new MemoryMergeError(409, 'already_merged', 'One of these memories is already part of another merge. Unmerge it first.');
   }
 
-  const firstStartedMs = Date.parse(ordered[0].startedAt);
+  const firstStartedMs = Date.parse(firstOrdered.startedAt);
   const lastEndedMs = Math.max(...ordered.map(recordingEndMs));
   const durationMs = Math.max(1, lastEndedMs - firstStartedMs);
   const transcripts: string[] = [];
@@ -185,13 +198,14 @@ export async function createMemoryMerge(
     throw new MemoryMergeError(409, 'empty_transcript', 'The selected memories do not contain transcript text.');
   }
 
-  const languages = [...new Set(ordered.map((recording) => recording.language).filter(Boolean))];
+  const languages = [...new Set(ordered.map((recording) => recording.language).filter((language): language is string => Boolean(language)))];
+  const language = languages.length === 1 ? (languages[0] ?? 'auto') : 'auto';
   const memory = await extractMemory({
     transcript,
     durationMs,
     highlightOffsetsMs,
     knownPeople: await knownPeople(uid, dek),
-    language: languages.length === 1 ? languages[0] : 'auto',
+    language,
   });
 
   const mergeId = newId();
@@ -199,7 +213,7 @@ export async function createMemoryMerge(
   const doc: MemoryMergeDoc = {
     mergeId,
     sourceRecordingIds: canonicalIds,
-    day,
+    day: mergeDay,
     startedAt: new Date(firstStartedMs).toISOString(),
     endedAt: new Date(lastEndedMs).toISOString(),
     durationMs,
@@ -213,7 +227,7 @@ export async function createMemoryMerge(
   return {
     mergeId,
     sourceRecordingIds: canonicalIds,
-    day,
+    day: mergeDay,
     startedAt: doc.startedAt,
     endedAt: doc.endedAt,
     durationMs,
