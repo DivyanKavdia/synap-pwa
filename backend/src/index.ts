@@ -8,6 +8,15 @@ async function main(): Promise<void> {
   // cannot reach Secret Manager should never accept traffic.
   await loadSecrets();
 
+  // Cloud Tasks calls the service back at this address and mints its OIDC
+  // audience from it. Unset, finalize silently processes inline instead of
+  // queueing — which works, but blocks the request and loses the queue's
+  // retries. That is a difference worth seeing in the logs rather than
+  // discovering when a long recording times out.
+  if (!config.tasks.serviceUrl) {
+    log.warn('SYNAP_SERVICE_URL is unset; recordings will process inline instead of via Cloud Tasks');
+  }
+
   const server = createApp().listen(config.port, () => {
     log.info('Synap backend listening', {
       port: config.port,

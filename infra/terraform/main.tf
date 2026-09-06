@@ -46,6 +46,7 @@ locals {
     "artifactregistry.googleapis.com",
     "cloudbuild.googleapis.com",
     "iamcredentials.googleapis.com",
+    "billingbudgets.googleapis.com",
   ]
   audio_bucket = "${var.project_id}-synap-audio"
 }
@@ -313,6 +314,69 @@ resource "google_firestore_field" "idempotency_ttl" {
   field      = "expireAt"
 
   ttl_config {}
+}
+
+# Short-lived auth pairings. Application logic already refuses an expired
+# pairing inside its transaction; this only stops the collection growing.
+resource "google_firestore_field" "auth_pairings_ttl" {
+  project    = var.project_id
+  database   = google_firestore_database.synap.name
+  collection = "authPairings"
+  field      = "expireAt"
+
+  ttl_config {}
+}
+
+# Rate-limit counters. Without a TTL the limiter would trade unbounded pairing
+# documents for unbounded counter documents, which is not a fix.
+resource "google_firestore_field" "rate_limits_ttl" {
+  project    = var.project_id
+  database   = google_firestore_database.synap.name
+  collection = "rateLimits"
+  field      = "expireAt"
+
+  ttl_config {}
+}
+
+# ---------------------------------------------------------------------------
+# Spend alerting
+# ---------------------------------------------------------------------------
+
+# Nothing else in this stack caps cost, and audio transcription is billed per
+# minute of audio — ambient capture is mostly silence you are paying to
+# transcribe. This does not stop spending; it makes runaway spending visible
+# within a day instead of at the end of the month.
+resource "google_billing_budget" "synap" {
+  count = var.billing_account_id == "" ? 0 : 1
+
+  billing_account = var.billing_account_id
+  display_name    = "Synap monthly spend"
+
+  budget_filter {
+    projects = ["projects/${var.project_id}"]
+  }
+
+  amount {
+    specified_amount {
+      currency_code = "INR"
+      units         = tostring(var.monthly_budget_inr)
+    }
+  }
+
+  threshold_rules {
+    threshold_percent = 0.5
+  }
+  threshold_rules {
+    threshold_percent = 0.9
+  }
+  threshold_rules {
+    threshold_percent = 1.0
+  }
+  # Catches a runaway before month end, when the monthly percentages still look fine.
+  threshold_rules {
+    threshold_percent = 1.0
+    spend_basis       = "FORECASTED_SPEND"
+  }
 }
 
 # ---------------------------------------------------------------------------

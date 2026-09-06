@@ -16,6 +16,7 @@ import {
   type AuthedRequest,
 } from '../auth.js';
 import { HttpError, handler } from '../errors.js';
+import { rateLimit } from '../rate-limit.js';
 
 const exchangeBody = z.object({ id_token: z.string().min(16) });
 const refreshBody = z.object({ refresh_token: z.string().min(16) });
@@ -34,6 +35,9 @@ export function authRoutes(): Router {
   /** Exchange a Google ID token for a Synap session. */
   router.post(
     '/auth/google',
+    // Token exchange creates a user on first sign-in. Generous enough for a
+    // shared network, tight enough that nothing enumerates it.
+    rateLimit({ bucket: 'auth_google', limit: 30, windowMs: 60_000 }),
     handler(async (req, res) => {
       const body = exchangeBody.safeParse(req.body);
       if (!body.success) throw new HttpError(400, 'bad_request', 'id_token is required');
@@ -58,6 +62,10 @@ export function authRoutes(): Router {
    */
   router.post(
     '/auth/pair/start',
+    // Unauthenticated and it writes a Firestore document per call, so it is
+    // the cheapest thing in the API to abuse. A person pairing a phone needs
+    // a handful of attempts; a script wants thousands.
+    rateLimit({ bucket: 'pair_start', limit: 20, windowMs: 60_000 }),
     handler(async (_req, res) => {
       const pairing = await createPairing();
       res.status(201).json({
@@ -96,6 +104,9 @@ export function authRoutes(): Router {
    */
   router.post(
     '/auth/pair/claim',
+    // Claim is guessing-resistant by construction (32-byte secret), but a
+    // limit keeps brute force off the Firestore bill as well as off the data.
+    rateLimit({ bucket: 'pair_claim', limit: 60, windowMs: 60_000 }),
     handler(async (req, res) => {
       const body = pairClaimBody.safeParse(req.body);
       if (!body.success) throw new HttpError(400, 'bad_request', 'pair_id and pair_secret are required');

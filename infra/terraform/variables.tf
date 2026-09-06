@@ -48,3 +48,15 @@ variable "min_instances" {
   type        = number
   default     = 0
 }
+
+variable "billing_account_id" {
+  description = "Billing account for the spend alert, e.g. 016546-5B939B-08B03B. Leave empty to skip creating a budget."
+  type        = string
+  default     = ""
+}
+
+variable "monthly_budget_inr" {
+  description = "Monthly spend that triggers alerts. Transcription dominates the bill, so set this to a number you would actually be unhappy to see."
+  type        = number
+  default     = 2000
+}

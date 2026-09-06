@@ -85,6 +85,19 @@ ships inside the PWA.
 > works; a trailing slash or a `/synap-pwa` path does not. Origins are
 > scheme + host + port, never a path.
 
+> **Working in Cloud Shell?** Only your home directory survives a VM recycle —
+> `/usr` does not, so `apt install terraform` disappears without warning and the
+> shell then reports `terraform: command not found` as if it were never there.
+> Install the binary into `~/bin` instead:
+>
+> ```bash
+> mkdir -p ~/bin && cd /tmp \
+>   && curl -sLO https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip \
+>   && unzip -o terraform_1.9.8_linux_amd64.zip terraform -d ~/bin && cd -
+> echo 'export PATH="$HOME/bin:$PATH"' >> ~/.customize_environment
+> export PATH="$HOME/bin:$PATH"
+> ```
+
 ## 2. Bootstrap and provision
 
 ```bash
@@ -173,6 +186,37 @@ Settings → Diagnostics. The queue should report upload, then "synap is
 understanding this conversation", then a summary in Memories. First run takes
 longer because Cloud Run is cold and the Firestore vector index is still
 building.
+
+## Spend alerting
+
+Nothing in this stack caps cost, and transcription is billed per minute of
+audio. Pass your billing account to get budget alerts at 50%, 90%, 100% and on
+forecast:
+
+```bash
+terraform apply ... -var billing_account_id=016546-5B939B-08B03B -var monthly_budget_inr=2000
+```
+
+Alerts make a runaway visible within a day. They do not stop it — capping spend
+needs a billing-triggered function, which is deliberately not wired up here
+because a hard cutoff mid-capture loses recordings.
+
+## Indexes created by hand
+
+If an index was created from a Firestore error link or with `gcloud` before
+Terraform knew about it, `apply` fails with `ALREADY_EXISTS`. Import rather than
+delete — rebuilding a vector index takes minutes:
+
+```bash
+P=YOUR_PROJECT_ID
+for r in recordings_by_day conversations_by_day conversation_vectors_plain; do
+  echo "terraform import google_firestore_index.$r <index resource name>"
+done
+gcloud firestore indexes composite list --project=$P --format='value(name)'
+```
+
+Match each resource to its index by collection group and fields, then import
+with the full `projects/.../indexes/...` name.
 
 ## First-run errors, in the order you are likely to hit them
 
