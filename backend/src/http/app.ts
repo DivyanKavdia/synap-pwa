@@ -4,6 +4,7 @@ import { log } from '../util/log.js';
 import { errorHandler } from './errors.js';
 import { authRoutes } from './routes/auth.js';
 import { brainRoutes } from './routes/brain.js';
+import { memoryToolRoutes } from './routes/memory-tools.js';
 import { recordingRoutes } from './routes/recordings.js';
 import { taskRoutes } from './routes/tasks.js';
 
@@ -82,6 +83,7 @@ export function createApp(): Express {
   app.use('/v1', authRoutes());
   app.use('/v1', recordingRoutes());
   app.use('/v1', brainRoutes());
+  app.use('/v1', memoryToolRoutes());
   app.use('/v1', taskRoutes());
 
   app.use((_req, res) => {
