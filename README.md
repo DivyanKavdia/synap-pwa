@@ -28,8 +28,8 @@ Production firmware uses the following touch model:
 | Recording | Double tap | Stop recording and enter BLE standby |
 | Idle or recording | Hold ~5 s | Enter deep sleep; active recording stops first |
 | BLE standby | Double tap | Wake and start recording |
-| Deep sleep | Double tap | Wake with record intent |
-| Deep sleep | Single wake tap only | Return to deep sleep |
+| Deep sleep | Hold continuously ~5 s | Wake and remain awake |
+| Deep sleep | Release before ~5 s | Return immediately to deep sleep |
 
 For compatible firmware, the PWA also places an idle connected pendant into BLE standby after about 30 seconds. BLE stays connected while the microphone/I2S and status LED are off.
 
@@ -150,6 +150,7 @@ Before a production release, validate at minimum:
 - BLE connect/reconnect;
 - real-microphone recording;
 - touch start/stop/standby/deep-sleep behavior;
+- 5-second hold wake from deep sleep;
 - long-recording rollover;
 - screen-lock/foreground recovery;
 - battery telemetry;
