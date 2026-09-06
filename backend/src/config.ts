@@ -89,6 +89,22 @@ export const config = {
     requestTimeoutMs: Number(optional('SYNAP_GEMINI_TIMEOUT_MS', '120000')),
   },
 
+  /**
+   * Optional private speaker-embedding service. It is deliberately separate
+   * from Gemini transcription: if speaker verification is unavailable, Synap
+   * still records, transcribes and understands the meeting normally.
+   */
+  speaker: {
+    serviceUrl: optional('SYNAP_SPEAKER_SERVICE_URL', '').replace(/\/+$/, ''),
+    authMode: optional('SYNAP_SPEAKER_SERVICE_AUTH', 'oidc') as 'oidc' | 'none',
+    requestTimeoutMs: Number(optional('SYNAP_SPEAKER_TIMEOUT_MS', '30000')),
+    /** Conservative defaults; tune only against real pendant recordings. */
+    matchThreshold: Number(optional('SYNAP_SPEAKER_MATCH_THRESHOLD', '0.72')),
+    minMatchMargin: Number(optional('SYNAP_SPEAKER_MATCH_MARGIN', '0.06')),
+    minSampleMs: Number(optional('SYNAP_SPEAKER_MIN_SAMPLE_MS', '2500')),
+    maxSampleMs: Number(optional('SYNAP_SPEAKER_MAX_SAMPLE_MS', '8000')),
+  },
+
   session: {
     /** Short-lived bearer token the PWA sends on every /v1 call. */
     accessTokenTtlSeconds: Number(optional('SYNAP_ACCESS_TTL', '3600')),
