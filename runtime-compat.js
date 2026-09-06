@@ -4,6 +4,13 @@
  * API. app.js deliberately holds a page-lifetime lock before binding the main
  * UI, so a missing navigator.locks otherwise leaves Connect and Settings inert.
  *
+ * Android Chrome also needs a tolerant Synap chooser filter. The main app uses
+ * the custom 128-bit service UUID as the strongest discovery signal, but some
+ * Android BLE stacks surface that UUID inconsistently between advertisement and
+ * scan-response data. On Android only, we therefore add the known Synap device
+ * name prefixes as OR filters while keeping the service UUID in optionalServices.
+ * app.js still validates the real Synap primary service after GATT connection.
+ *
  * This file provides only the tiny Web Locks subset Synap uses: an exclusive,
  * ifAvailable page lock. The fallback is backed by a best-effort localStorage
  * lease so two visible tabs do not normally claim the same pendant journal.
@@ -13,6 +20,77 @@
 
   const navigatorObject = root.navigator;
   if (!navigatorObject) return;
+
+  const SYNAP_SERVICE_UUID = '4fa12345-0000-1000-8000-00805f9b34fb';
+
+  function installAndroidBluetoothDiscoveryFallback() {
+    const bluetooth = navigatorObject.bluetooth;
+    if (!bluetooth || typeof bluetooth.requestDevice !== 'function') return false;
+    if (!/Android/i.test(String(navigatorObject.userAgent || ''))) return false;
+    if (bluetooth.__synapDiscoveryCompatInstalled) return true;
+
+    const nativeRequestDevice = bluetooth.requestDevice.bind(bluetooth);
+
+    function hasSynapServiceFilter(options) {
+      return Boolean(options && Array.isArray(options.filters) && options.filters.some(function (filter) {
+        return filter && Array.isArray(filter.services) && filter.services.some(function (service) {
+          return String(service).toLowerCase() === SYNAP_SERVICE_UUID;
+        });
+      }));
+    }
+
+    function addFilterOnce(filters, namePrefix) {
+      if (!filters.some(function (filter) { return filter && filter.namePrefix === namePrefix; })) {
+        filters.push({ namePrefix: namePrefix });
+      }
+    }
+
+    function requestDevice(options) {
+      if (!hasSynapServiceFilter(options) || options.acceptAllDevices) {
+        return nativeRequestDevice(options);
+      }
+
+      const patched = Object.assign({}, options);
+      patched.filters = options.filters.slice();
+      // Filters in requestDevice are OR-ed. Keep the strong service match, then
+      // add current and legacy Synap advertising names for Android discovery.
+      addFilterOnce(patched.filters, 'synap');
+      addFilterOnce(patched.filters, 'dk-');
+
+      const optional = Array.isArray(options.optionalServices)
+        ? options.optionalServices.slice()
+        : [];
+      if (!optional.some(function (service) {
+        return String(service).toLowerCase() === SYNAP_SERVICE_UUID;
+      })) {
+        optional.push(SYNAP_SERVICE_UUID);
+      }
+      patched.optionalServices = optional;
+
+      return nativeRequestDevice(patched);
+    }
+
+    try {
+      Object.defineProperty(bluetooth, 'requestDevice', {
+        configurable: true,
+        writable: true,
+        value: requestDevice
+      });
+      Object.defineProperty(bluetooth, '__synapDiscoveryCompatInstalled', {
+        configurable: true,
+        value: true
+      });
+      return bluetooth.requestDevice === requestDevice;
+    } catch (_) {
+      try {
+        bluetooth.requestDevice = requestDevice;
+        bluetooth.__synapDiscoveryCompatInstalled = true;
+        return bluetooth.requestDevice === requestDevice;
+      } catch (_) {
+        return false;
+      }
+    }
+  }
 
   function installWebLocksFallback() {
     if (navigatorObject.locks && typeof navigatorObject.locks.request === 'function') return;
@@ -145,11 +223,13 @@
     });
   }
 
+  const androidBleDiscoveryCompat = installAndroidBluetoothDiscoveryFallback();
   installWebLocksFallback();
   bindSettingsSafetyNet();
 
   root.SynapRuntimeCompat = Object.freeze({
     webLocksNative: Boolean(navigatorObject.locks && navigatorObject.locks.request && !String(navigatorObject.locks.request).includes('Lock callback is required')),
+    androidBleDiscoveryCompat: androidBleDiscoveryCompat,
     installed: true
   });
 })(globalThis);
