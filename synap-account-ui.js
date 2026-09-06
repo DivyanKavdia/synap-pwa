@@ -29,6 +29,23 @@
     return merged;
   }
 
+  /* Keep recovery isolated from account/settings code. This file is already
+     loaded after google-auth.js and synap-backend.js in every production shell,
+     so it is a stable place to attach the small optional guard without changing
+     capture/app startup ordering. Cloud processing is online-only, therefore the
+     dynamically loaded module does not need to be part of the offline shell. */
+  function loadProcessingRecovery() {
+    if (!root.document || !root.document.createElement || root.SynapProcessingRecovery) return;
+    if (root.document.querySelector && root.document.querySelector('script[data-synap-processing-recovery]')) return;
+    var parent = root.document.head || root.document.documentElement;
+    if (!parent || typeof parent.appendChild !== 'function') return;
+    var script = root.document.createElement('script');
+    script.src = 'processing-recovery.js?v=1.0.0-recovery1';
+    script.async = true;
+    script.setAttribute('data-synap-processing-recovery', '1');
+    parent.appendChild(script);
+  }
+
   function bind() {
     var provider = el('providerInput');
     var accountFields = el('synapAccountFields');
@@ -202,11 +219,12 @@
     renderSession(auth.session());
   }
 
+  loadProcessingRecovery();
   if (root.document && root.document.readyState === 'loading') {
     root.document.addEventListener('DOMContentLoaded', bind, { once: true });
   } else {
     bind();
   }
 
-  root.SynapAccountUI = { bind: bind };
+  root.SynapAccountUI = { bind: bind, loadProcessingRecovery: loadProcessingRecovery };
 })(globalThis);
