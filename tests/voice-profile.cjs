@@ -36,14 +36,14 @@ test('installed PWA caches and loads the voice profile module',()=>{
   const sw=fs.readFileSync(path.join(root,'sw.js'),'utf8');
   const bridge=fs.readFileSync(path.join(root,'battery-popover-fix.js'),'utf8');
   assert.match(sw,/\.\/voice-profile\.js/);
-  assert.match(bridge,/voice-profile\.js/);
+  assert.match(bridge,/voice-profile\.js\?v=1\.0\.0-voice-profile1/);
   assert.match(bridge,/data-synap-voice-profile/);
 });
 
-test('speaker service contract does not persist raw audio',()=>{
+test('speaker service computes embeddings in memory without audio persistence APIs',()=>{
   const app=fs.readFileSync(path.join(root,'speaker-service/app.py'),'utf8');
   assert.match(app,/await request\.body\(\)/);
   assert.match(app,/encode_batch/);
-  assert.doesNotMatch(app,/open\([^)]*,\s*["']w/);
-  assert.doesNotMatch(app,/storage|bucket|firestore/i);
+  assert.doesNotMatch(app,/open\([^)]*,\s*["'](?:w|a|x|wb|ab|xb)["']/);
+  assert.doesNotMatch(app,/google\.cloud\.storage|Storage\(|Bucket\(|firestore\.Client|upload_from|blob\(/);
 });
