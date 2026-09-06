@@ -54,6 +54,10 @@ self.addEventListener('fetch',event=>{
   if(event.request.method!=='GET')return;
   const url=new URL(event.request.url);
   if(url.origin!==ORIGIN)return;
+  /* The Safari auth handoff is a real HTML document, not an SPA navigation.
+     Keep it network-first under its own cache key so visiting it can never
+     overwrite the cached Synap index shell. */
+  if(url.pathname.endsWith('/auth-pair.html')){event.respondWith(networkFirst(event.request));return}
   if(event.request.mode==='navigate'){event.respondWith(navigation(event.request));return}
   const code=/\.(?:js|css|html)$/i.test(url.pathname)||url.pathname.endsWith('/manifest.webmanifest');
   event.respondWith(code?networkFirst(event.request):cacheFirst(event.request));

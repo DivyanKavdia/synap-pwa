@@ -1,21 +1,16 @@
 /* Synap Google Sign-In.
  *
- * Flow:
+ * Flow on normal browsers (Android Chrome/PWA, desktop Chromium):
  *   Google Identity Services  ->  Google ID token
  *   POST /v1/auth/google      ->  Synap access token (1h) + refresh token (30d)
- *   POST /v1/auth/refresh     ->  a new pair, without another Google prompt
  *
- * The exchange exists because a Google ID token from the browser flow lasts an
- * hour with no refresh path. Uploading a long capture would break the moment
- * the phone stayed locked past that hour, mid-conversation, which is precisely
- * when Synap must not fail. A Synap refresh token keeps the queue running.
+ * Flow on iOS Web-Bluetooth browsers (for example Bluefy):
+ *   Bluefy starts a short-lived pairing transaction
+ *   Safari completes Google Sign-In and approves that transaction
+ *   Bluefy claims the transaction -> the same Synap access + refresh tokens
  *
- * The refresh token is held in localStorage. That is a deliberate tradeoff:
- * this PWA is served from a different origin than the API, so an httpOnly
- * cookie would need SameSite=None and a credentialed CORS path, and the token
- * would still be usable by anything that can run script here. Instead the
- * server stamps each refresh token with a generation number, so signing out —
- * from any device — invalidates every outstanding token at once.
+ * The iOS path is additive. Browsers where Google Identity Services already
+ * works keep the original path unchanged.
  */
 (function (root) {
   'use strict';
@@ -26,8 +21,7 @@
 
   /* Deployment defaults, overridable in Settings at runtime.
      The client ID is not a secret — it is public by design and ships in every
-     Google Sign-In page. The backend URL is filled in after the first Cloud Run
-     deploy prints it. */
+     Google Sign-In page. */
   var DEFAULTS = {
     clientId: '435475937223-7d2lmg7oc0887tc8psbt8ikgn0jkm62q.apps.googleusercontent.com',
     backendUrl: 'https://synap-backend-435475937223.asia-south1.run.app'
@@ -36,6 +30,7 @@
   var listeners = [];
   var gisPromise = null;
   var refreshPromise = null;
+  var pairingPromise = null;
 
   function config() {
     try {
@@ -155,8 +150,152 @@
     return session;
   }
 
-  /* Prompt for Google Sign-In and exchange the resulting ID token. */
-  function signIn() {
+  function finishSession(result) {
+    var session = storeTokens(result, null);
+    return me().then(function (profile) {
+      session.profile = profile;
+      writeSession(session);
+      return session;
+    }).catch(function () { return session; });
+  }
+
+  /**
+   * Google explicitly does not support Sign in with Google inside iOS WebViews.
+   * Safari itself is fine, but Safari still lacks Web Bluetooth. A browser such
+   * as Bluefy therefore needs the two-browser pairing flow. Capability detection
+   * is primary; the Bluefy UA check is only a compatibility fallback.
+   */
+  function needsExternalIosPairing() {
+    var nav = root.navigator || {};
+    var ua = String(nav.userAgent || '');
+    var platform = String(nav.platform || '');
+    var touchPoints = Number(nav.maxTouchPoints || 0);
+    var ios = /iPad|iPhone|iPod/i.test(ua) || (platform === 'MacIntel' && touchPoints > 1);
+    var webBluetooth = Boolean(nav.bluetooth);
+    return /Bluefy/i.test(ua) || (ios && webBluetooth);
+  }
+
+  function pairingPageUrl(pairing, settings) {
+    var base = root.location && root.location.href ? root.location.href : './';
+    var url = new URL('auth-pair.html', base);
+    url.searchParams.set('pair_id', pairing.pair_id);
+    url.searchParams.set('backend', settings.backendUrl);
+    url.searchParams.set('client_id', settings.clientId);
+    return url.toString();
+  }
+
+  function safariUrl(httpsUrl) {
+    return String(httpsUrl).replace(/^https:\/\//i, 'x-safari-https://');
+  }
+
+  function launchSafari(url) {
+    var target = safariUrl(url);
+    /* x-safari-https asks iOS to leave the Web-Bluetooth browser and open the
+       transaction in Safari. The normal HTTPS URL contains no claim secret and
+       is safe to copy manually if a particular iOS build rejects the scheme. */
+    try {
+      if (root.location) root.location.href = target;
+      else throw new Error('location_unavailable');
+    } catch (error) {
+      throw new Error('Could not open Safari. Open the Synap sign-in link in Safari and try again.');
+    }
+  }
+
+  function waitForPairing(pairing) {
+    var expiresAt = Date.now() + Math.max(30, Number(pairing.expires_in || 300)) * 1000;
+    var stopped = false;
+    var timer = null;
+    var visibilityHandler = null;
+
+    function cleanup() {
+      stopped = true;
+      if (timer) root.clearTimeout(timer);
+      timer = null;
+      if (visibilityHandler && root.document) {
+        root.document.removeEventListener('visibilitychange', visibilityHandler);
+      }
+    }
+
+    return new Promise(function (resolve, reject) {
+      function schedule(delay) {
+        if (stopped) return;
+        if (Date.now() >= expiresAt) {
+          cleanup();
+          reject(new Error('Google Sign-In expired. Tap Sign in and try again.'));
+          return;
+        }
+        if (timer) root.clearTimeout(timer);
+        timer = root.setTimeout(attempt, delay);
+      }
+
+      function attempt() {
+        if (stopped) return;
+        timer = null;
+        api('/v1/auth/pair/claim', {
+          body: JSON.stringify({
+            pair_id: pairing.pair_id,
+            pair_secret: pairing.pair_secret
+          })
+        }).then(function (result) {
+          if (!result || result.status === 'pending') {
+            schedule(1400);
+            return;
+          }
+          if (result.status !== 'approved' || !result.access_token || !result.refresh_token) {
+            throw new Error('Google Sign-In could not be completed.');
+          }
+          cleanup();
+          return finishSession(result).then(resolve, reject);
+        }).catch(function (error) {
+          if (error && (error.status === 404 || error.status === 409 || error.status === 410 || error.status === 401)) {
+            cleanup();
+            reject(error);
+            return;
+          }
+          /* A brief network loss while switching apps should not destroy the
+             login transaction. Retry until the server-side expiry. */
+          schedule(1800);
+        });
+      }
+
+      if (root.document) {
+        visibilityHandler = function () {
+          if (root.document.visibilityState === 'visible') schedule(50);
+        };
+        root.document.addEventListener('visibilitychange', visibilityHandler);
+      }
+      schedule(900);
+    });
+  }
+
+  function signInViaPairing() {
+    if (pairingPromise) return pairingPromise;
+    var settings = config();
+    if (!settings.clientId) return Promise.reject(new Error('Add your Google client ID in Settings.'));
+    if (!settings.backendUrl) return Promise.reject(new Error('Add your Synap backend URL in Settings.'));
+
+    pairingPromise = api('/v1/auth/pair/start', { body: '{}' }).then(function (pairing) {
+      if (!pairing || !pairing.pair_id || !pairing.pair_secret) {
+        throw new Error('Synap could not start Google Sign-In.');
+      }
+      var loginUrl = pairingPageUrl(pairing, settings);
+      /* Start polling before leaving Bluefy so it is ready as soon as the app
+         becomes visible again after Safari approval. */
+      var result = waitForPairing(pairing);
+      launchSafari(loginUrl);
+      return result;
+    }).then(function (session) {
+      pairingPromise = null;
+      return session;
+    }).catch(function (error) {
+      pairingPromise = null;
+      throw error;
+    });
+    return pairingPromise;
+  }
+
+  /* Original Google Identity Services path. Kept intact for Android/desktop. */
+  function signInWithGis() {
     var settings = config();
     if (!settings.clientId) {
       return Promise.reject(new Error('Add your Google client ID in Settings.'));
@@ -196,19 +335,17 @@
       });
     }).then(function (credential) {
       return api('/v1/auth/google', { body: JSON.stringify({ id_token: credential }) });
-    }).then(function (result) {
-      var session = storeTokens(result, null);
-      return me().then(function (profile) {
-        session.profile = profile;
-        writeSession(session);
-        return session;
-      }).catch(function () { return session; });
-    });
+    }).then(finishSession);
+  }
+
+  /** Choose transport automatically without changing the resulting Synap session. */
+  function signIn() {
+    return needsExternalIosPairing() ? signInViaPairing() : signInWithGis();
   }
 
   /**
    * Render an explicit "Sign in with Google" button into a container. Used when
-   * One Tap is unavailable, which is common in installed PWAs and on iOS.
+   * One Tap is unavailable on browsers where GIS itself is supported.
    */
   function renderButton(container, onSuccess, onError) {
     var settings = config();
@@ -225,14 +362,7 @@
             return;
           }
           api('/v1/auth/google', { body: JSON.stringify({ id_token: response.credential }) })
-            .then(function (result) {
-              var session = storeTokens(result, null);
-              return me().then(function (profile) {
-                session.profile = profile;
-                writeSession(session);
-                return session;
-              }).catch(function () { return session; });
-            })
+            .then(finishSession)
             .then(function (session) { if (onSuccess) onSuccess(session); })
             .catch(function (error) { if (onError) onError(error); });
         }
@@ -338,6 +468,7 @@
     session: readSession,
     isSignedIn: isSignedIn,
     onChange: onChange,
+    needsExternalIosPairing: needsExternalIosPairing,
     STORAGE_KEY: STORAGE_KEY,
     CONFIG_KEY: CONFIG_KEY
   };
