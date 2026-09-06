@@ -404,6 +404,27 @@ test('a changed body under a known idempotency key replays instead of failing', 
   assert.match(store, /return \{ fresh: true, response: null \}/);
 });
 
+test('pairing claims are serialized so one cannot consume the other', () => {
+  // Claiming is a one-time consume. Returning from Safari fires
+  // visibilitychange, which polls at the exact moment a claim is usually
+  // outstanding — the first wins, the second is told the pairing was already
+  // used, and a successful sign-in renders as a red error.
+  assert.match(authSource, /var inFlight = false;/);
+  assert.match(authSource, /if \(inFlight\) \{/);
+  assert.match(authSource, /if \(stopped\) return;\s*\n\s*timer = null;/);
+});
+
+test('a pairing we consumed ourselves resolves instead of reporting failure', () => {
+  assert.match(authSource, /error\.status === 409 && isSignedIn\(\)/);
+  assert.match(authSource, /resolve\(readSession\(\)\)/);
+});
+
+test('other terminal pairing failures still reject', () => {
+  // 404 gone, 410 expired and 401 bad secret are real failures and must not be
+  // swallowed by the 409 special case.
+  assert.match(authSource, /error\.status === 404 \|\| error\.status === 409 \|\| error\.status === 410 \|\| error\.status === 401/);
+});
+
 test('consolidate is given a longer budget than an upload', () => {
   // A 45-minute capture takes minutes to transcribe and understand; the queue's
   // own 120s ceiling is right for an upload and would abort every consolidation.

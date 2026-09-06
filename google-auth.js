@@ -206,6 +206,11 @@
     var stopped = false;
     var timer = null;
     var visibilityHandler = null;
+    /* Claiming is a one-time consume, so two in-flight claims race: the first
+       succeeds and the second is told the pairing was already used. That is
+       not hypothetical on iOS — returning from Safari fires visibilitychange,
+       which schedules a poll at the exact moment one is usually outstanding. */
+    var inFlight = false;
 
     function cleanup() {
       stopped = true;
@@ -231,12 +236,19 @@
       function attempt() {
         if (stopped) return;
         timer = null;
+        if (inFlight) {
+          /* Come back rather than run a second claim beside the first. */
+          schedule(400);
+          return;
+        }
+        inFlight = true;
         api('/v1/auth/pair/claim', {
           body: JSON.stringify({
             pair_id: pairing.pair_id,
             pair_secret: pairing.pair_secret
           })
         }).then(function (result) {
+          inFlight = false;
           if (!result || result.status === 'pending') {
             schedule(1400);
             return;
@@ -247,6 +259,16 @@
           cleanup();
           return finishSession(result).then(resolve, reject);
         }).catch(function (error) {
+          inFlight = false;
+          /* 409 means this pairing was already consumed. If a session exists,
+             we are the ones who consumed it — a duplicate poll landing after
+             the successful one. Reporting that as a failure tells a user who
+             is signed in that signing in failed. */
+          if (error && error.status === 409 && isSignedIn()) {
+            cleanup();
+            resolve(readSession());
+            return;
+          }
           if (error && (error.status === 404 || error.status === 409 || error.status === 410 || error.status === 401)) {
             cleanup();
             reject(error);
