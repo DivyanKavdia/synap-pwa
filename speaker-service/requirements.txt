@@ -1,5 +1,13 @@
 fastapi==0.116.1
 uvicorn[standard]==0.35.0
 speechbrain==1.0.3
+
+# speechbrain 1.0.3 declares "huggingface_hub" with no upper bound, and
+# huggingface_hub 1.0 removed the use_auth_token argument that
+# speechbrain/utils/fetching.py still passes. Unpinned, pip takes 1.x and the
+# service dies at startup with:
+#   TypeError: hf_hub_download() got an unexpected keyword argument 'use_auth_token'
+huggingface_hub>=0.36,<1.0
+
 # speechbrain/utils/fetching.py imports requests but does not declare it.
 requests>=2.31,<3
