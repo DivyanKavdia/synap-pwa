@@ -382,10 +382,98 @@ test('consolidate is given a longer budget than an upload', () => {
   assert.match(backendSource, /job\.kind === 'consolidate' \? PROCESSING_TIMEOUT_MS : UPLOAD_TIMEOUT_MS/);
 });
 
-test('uploads are idempotent and content-addressed', () => {
+test('uploads are idempotent and finalize retries use deterministic metadata', () => {
   assert.match(backendSource, /X-Synap-Sha256/);
   assert.match(backendSource, /'Idempotency-Key': 'create:'/);
-  assert.match(backendSource, /idempotencyKey\(job, 'finalize'\)/);
+  assert.match(backendSource, /idempotencyKey\(job, 'finalize-v2'\)/);
+  assert.match(backendSource, /stableFinalizeEndedAt\(recording\)/);
+  assert.match(backendSource, /started\.getTime\(\) \+ duration/);
+  assert.doesNotMatch(backendSource, /ended_at:new Date\([^\n]*Date\.now\(\)/);
+});
+
+test('the v2 finalize request body is identical across retries', async () => {
+  const finalizeCalls = [];
+  class Processor {
+    async process() { return { from: 'original' }; }
+  }
+  const recording = {
+    id: '11111111-1111-4111-8111-111111111111',
+    createdAt: '2026-09-06T03:11:00.000Z',
+    durationMs: 20000,
+    rememberMarkers: [],
+  };
+  const store = {
+    get: async (name) => (name === 'recordings' ? recording : null),
+    all: async (name) => (name === 'segments' ? [{ frameCount: 400 }] : []),
+    atomic: async () => undefined,
+  };
+  const response = (data, status = 200) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => JSON.stringify(data),
+  });
+  const context = load(backendSource, {
+    DKFIFOProcessor: Processor,
+    localStorage: storage({ 'synap-ai-provider-settings': JSON.stringify({ provider: 'synap' }) }),
+    SynapAuth: {
+      isSignedIn: () => true,
+      config: () => ({ backendUrl: 'https://api.example.test' }),
+      authedFetch: async (url, init = {}) => {
+        if (String(url).endsWith('/finalize')) {
+          finalizeCalls.push({ body: init.body, key: init.headers['Idempotency-Key'] });
+          return response({ state: 'uploaded' }, 202);
+        }
+        if (String(url).endsWith('/processing')) return response({ state: 'ready', progress: 1, retryable: false });
+        if (String(url).endsWith('/memory')) return response({ title: 'Done', executive_summary: 'Done', key_points: [], people: [], conversations: [], transcript: 'hello' });
+        throw new Error('Unexpected URL ' + url);
+      },
+    },
+  });
+  const processor = new Processor();
+  processor.store = store;
+  processor.controllers = new Map();
+  processor.paused = false;
+  processor.canRun = () => true;
+  processor.onChange = () => {};
+  const job = { id: 7, recordingId: recording.id, kind: 'consolidate', dedupe: recording.id + ':consolidate' };
+
+  await processor.process(job, {}, '');
+  await processor.process(job, {}, '');
+
+  assert.equal(finalizeCalls.length, 2);
+  assert.equal(finalizeCalls[0].key, recording.id + ':consolidate:finalize-v2');
+  assert.equal(finalizeCalls[0].key, finalizeCalls[1].key);
+  assert.equal(finalizeCalls[0].body, finalizeCalls[1].body);
+  assert.equal(JSON.parse(finalizeCalls[0].body).ended_at, '2026-09-06T03:11:20.000Z');
+});
+
+test('legacy idempotency failures self-heal on the next signed-in run', async () => {
+  const patched = [];
+  class Processor {
+    constructor() {
+      this.store = {
+        all: async () => [{ id: 9, recordingId: 'r1', kind: 'consolidate', state: 'failed', attempts: 5, lastError: 'Error: Idempotency-Key reused with a different request body' }],
+        patchJob: async (id, fields) => patched.push({ id, fields }),
+      };
+      this.settings = () => ({});
+      this.onChange = () => {};
+      this.originalRuns = 0;
+    }
+    async run() { this.originalRuns += 1; return 'ran'; }
+    async process() { return {}; }
+  }
+  const context = load(backendSource, {
+    DKFIFOProcessor: Processor,
+    localStorage: storage({ 'synap-ai-provider-settings': JSON.stringify({ provider: 'synap' }) }),
+    SynapAuth: { isSignedIn: () => true, config: () => ({ backendUrl: 'https://api.example.test' }) },
+  });
+  context.SynapBackend.patchProcessor();
+  const processor = new Processor();
+  const result = await processor.run();
+
+  assert.equal(result, 'ran');
+  assert.equal(processor.originalRuns, 1);
+  assert.deepEqual(patched, [{ id: 9, fields: { state: 'pending', attempts: 0, nextAt: 0, lastError: '' } }]);
 });
 
 test('a paused queue aborts polling instead of holding a job open', () => {
