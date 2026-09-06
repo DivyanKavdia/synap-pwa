@@ -20,4 +20,12 @@ assert.match(compat,/bindSettingsSafetyNet/,'settings must retain a fallback eve
 assert.match(compat,/settingsButton\.addEventListener\('click'/,'settings safety net must be wired directly');
 assert(html.indexOf('runtime-compat.js')<html.indexOf('app.js'),'compatibility guard must load before app.js');
 assert.match(sw,/shell29-controls/,'service worker cache must advance with the controls compatibility fix');
+
+const app=fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8');
+assert.match(app,/function bindCoreControls\(\)/,'core Connect and Settings controls must have an early binder');
+assert(app.indexOf('bindCoreControls();',app.indexOf('async function initialize'))<app.indexOf('await journal.open()'),'core controls must bind before IndexedDB open/recovery');
+const core=app.slice(app.indexOf('function bindCoreControls()'),app.indexOf('function bindEvents()'));
+assert.match(core,/ui\.connectButton\.addEventListener/,'Connect must be in the early core binder');
+assert.match(core,/ui\.settingsButton\.addEventListener/,'Settings must be in the early core binder');
+
 console.log('runtime recording controls and tap responsiveness: ok');

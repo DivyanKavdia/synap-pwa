@@ -2745,7 +2745,24 @@ const APP_REVISION = "1.0.0-audio2";
   // Event wiring
   // -------------------------------------------------------------------------
 
+  let coreControlsBound = false;
+
+  function bindCoreControls() {
+    if (coreControlsBound) return;
+    coreControlsBound = true;
+
+    ui.connectButton.addEventListener("click", function () {
+      if (isGattConnected()) {
+        disconnectPendant();
+      } else {
+        connectPendant();
+      }
+    });
+    ui.settingsButton.addEventListener("click", openSettings);
+  }
+
   function bindEvents() {
+    bindCoreControls();
     ui.showMoreRecordingsButton.addEventListener("click", function () {
       libraryVisibleCount += LIBRARY_PAGE_SIZE;
       renderLibraryPage();
@@ -2789,7 +2806,6 @@ const APP_REVISION = "1.0.0-audio2";
 
     ui.startButton.addEventListener("click", startRecording);
     ui.stopButton.addEventListener("click", stopRecording);
-    ui.settingsButton.addEventListener("click", openSettings);
     document.getElementById("setupConnect").addEventListener("click", function () {
       // Reuse the recorder's connection guards; never turn this action into Disconnect.
       if (firmwareBusy || connectInProgress || isGattConnected()) {
@@ -3005,6 +3021,8 @@ const APP_REVISION = "1.0.0-audio2";
         resolve();await new Promise(function () {}); // Released automatically when this page closes.
       }).catch(reject);
     });
+    // Core navigation must remain usable even if IndexedDB recovery fails.
+    bindCoreControls();
     await journal.open();
     const recovered = await journal.recover();
     ui.appVersion.textContent = APP_VERSION;
