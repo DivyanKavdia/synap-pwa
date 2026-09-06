@@ -11,12 +11,10 @@
  * name prefixes as OR filters while keeping the service UUID in optionalServices.
  * app.js still validates the real Synap primary service after GATT connection.
  *
- * Synap cloud processing has one startup-order constraint: app.js snapshots the
- * legacy processing settings into private memory before synap-backend.js loads.
- * The backend adapter later mirrors its URL into localStorage, but that is too
- * late for the already-created queue. Bootstrap the Synap provider, queue guard
- * endpoints and one-time auto-processing default here because this file is
- * intentionally loaded before app.js.
+ * Synap cloud is a managed provider. Runtime preferences may select it and may
+ * default automatic processing on, but deployment details such as the Cloud Run
+ * URL and Google client ID must never be copied into the user's legacy endpoint
+ * settings. synap-backend.js owns the managed transport internally.
  *
  * This file provides only the tiny Web Locks subset Synap uses: an exclusive,
  * ifAvailable page lock. The fallback is backed by a best-effort localStorage
@@ -30,10 +28,8 @@
 
   const SYNAP_SERVICE_UUID = '4fa12345-0000-1000-8000-00805f9b34fb';
   const SYNAP_PROVIDER_KEY = 'synap-ai-provider-settings';
-  const SYNAP_BACKEND_CONFIG_KEY = 'synap-backend-config-v1';
   const APP_SETTINGS_KEY = 'dk-pendant-settings';
   const CLOUD_PROCESSING_MIGRATION_KEY = 'synap-cloud-processing-default-v1';
-  const DEFAULT_BACKEND_URL = 'https://synap-backend-435475937223.asia-south1.run.app';
 
   function readJson(key) {
     try {
@@ -44,17 +40,7 @@
     }
   }
 
-  function safeBackendUrl() {
-    const stored = readJson(SYNAP_BACKEND_CONFIG_KEY);
-    const candidate = String(stored.backendUrl || DEFAULT_BACKEND_URL).replace(/\/+$/, '');
-    try {
-      return new URL(candidate).protocol === 'https:' ? candidate : DEFAULT_BACKEND_URL;
-    } catch (_) {
-      return DEFAULT_BACKEND_URL;
-    }
-  }
-
-  function bootstrapSynapCloudProcessing() {
+  function bootstrapSynapProcessingPreferences() {
     try {
       const providerPrefs = readJson(SYNAP_PROVIDER_KEY);
       if (!providerPrefs.provider) {
@@ -63,17 +49,10 @@
       }
       if (providerPrefs.provider !== 'synap') return false;
 
-      const backendUrl = safeBackendUrl();
-      const queueGuardUrl = backendUrl + '/v1/recordings';
       const appSettings = readJson(APP_SETTINGS_KEY);
 
-      // FIFOProcessor checks these legacy URLs before the Synap backend adapter
-      // gets the job. The adapter itself still sends requests through SynapAuth.
-      appSettings.endpoint = queueGuardUrl;
-      appSettings.llmEndpoint = queueGuardUrl;
-
-      // Migrate existing Synap installs once. Afterwards an explicit user choice
-      // to turn automatic processing off remains respected.
+      // One-time product migration: Synap Cloud should normally process a saved
+      // recording automatically. After migration an explicit opt-out is kept.
       if (root.localStorage.getItem(CLOUD_PROCESSING_MIGRATION_KEY) !== '1') {
         appSettings.autoProcess = true;
         root.localStorage.setItem(CLOUD_PROCESSING_MIGRATION_KEY, '1');
@@ -81,11 +60,12 @@
         appSettings.autoProcess = true;
       }
 
+      // Deliberately do not set endpoint or llmEndpoint here. Those fields are
+      // for the Custom provider only; Synap Cloud transport is managed internally.
       root.localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(appSettings));
       return true;
     } catch (_) {
-      // Storage can be blocked in private/embedded modes. Capture must still boot;
-      // the queue will surface its normal configuration message if processing runs.
+      // Storage can be blocked in private/embedded modes. Capture must still boot.
       return false;
     }
   }
@@ -290,7 +270,7 @@
     });
   }
 
-  const synapCloudProcessingBootstrap = bootstrapSynapCloudProcessing();
+  const synapCloudProcessingBootstrap = bootstrapSynapProcessingPreferences();
   const androidBleDiscoveryCompat = installAndroidBluetoothDiscoveryFallback();
   installWebLocksFallback();
   bindSettingsSafetyNet();
