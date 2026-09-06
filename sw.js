@@ -3,9 +3,9 @@ const APP_VERSION='1.0.0';
 /* app.js owns the client compatibility revision used for update signalling. */
 const CLIENT_REVISION='1.0.0-audio2';
 /* Keep the previous production revision explicit for upgrade diagnostics/tests. */
-const PREVIOUS_CACHE_REVISION='1.0.0-shell30-processing-recovery';
-/* Memory merge/transcript tooling is optional at runtime but cached for installed PWAs. */
-const CACHE_REVISION='1.0.0-shell31-memory-tools';
+const PREVIOUS_CACHE_REVISION='1.0.0-shell29-controls';
+/* Processing recovery remains the production shell revision; install refreshes all cached entries. */
+const CACHE_REVISION='1.0.0-shell30-processing-recovery';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings-icon-fix.css',
