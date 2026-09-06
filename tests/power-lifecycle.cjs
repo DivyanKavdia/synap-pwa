@@ -17,7 +17,7 @@ test('PWA idles into protocol-compatible firmware standby',()=>{
 test('head-loaded bridge binds state observer once body becomes available',()=>{
   const src=fs.readFileSync(path.join(root,'battery-popover-fix.js'),'utf8');
   assert.match(src,/function bindStateObserver\(\)/);
-  assert.match(src,/DOMContentLoaded', 'head script must defer observer binding when body does not exist yet');
+  assert.match(src,/DOMContentLoaded/,'head script must defer observer binding when body does not exist yet');
   assert.match(src,/attributeFilter:\['data-state','data-device-state'\]/);
   assert.match(src,/onStateChange\(\)/);
 });
