@@ -1,0 +1,341 @@
+/* Confirm and correct the people Synap thinks it heard.
+ *
+ * Names come out of the transcript, so they are guesses: a mishearing becomes a
+ * permanent second person unless someone corrects it. The backend already
+ * feeds confirmed names back into the next extraction, so a correction made
+ * once improves every recording after it — this file is the missing control
+ * that lets a user actually make one.
+ *
+ * Deliberately kept out of brain-ui.js. That file renders from the local
+ * IndexedDB journal and works signed out; this one needs the backend, and a
+ * network failure here must not stop the people list from rendering. Everything
+ * below degrades to "no controls, list unchanged".
+ *
+ * Voice enrollment would identify speakers far better, but a stored voice
+ * signature is biometric data — special category under GDPR, sensitive personal
+ * data under the DPDP Act — and that is a decision to take deliberately rather
+ * than to arrive at by shipping a feature. Confirming names gets most of the
+ * value and stores nothing new about anyone.
+ */
+(function (root) {
+  'use strict';
+
+  var LIST_SELECTOR = '#peopleList';
+  var cache = null;
+  var inFlight = null;
+  var decorating = false;
+
+  function doc() {
+    return root.document;
+  }
+
+  function normalize(name) {
+    return String(name == null ? '' : name)
+      .normalize('NFKD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function backend() {
+    return root.SynapBackend || null;
+  }
+
+  function signedIn() {
+    return Boolean(root.SynapAuth && root.SynapAuth.isSignedIn && root.SynapAuth.isSignedIn());
+  }
+
+  /* Cards are keyed by the name the local journal recorded, so the lookup has
+     to normalize exactly the way the backend does. If the two ever drift, every
+     card silently loses its controls rather than failing loudly — which is why
+     this is a named function with its own test. */
+  function indexPeople(result) {
+    var byName = new Map();
+    var list = result && result.people ? result.people : [];
+    for (var i = 0; i < list.length; i++) {
+      var person = list[i];
+      var key = normalize(person && person.name);
+      // Later entries win: /v1/people is ordered by recency, so the most
+      // recently seen spelling is the one a card is most likely to carry.
+      if (key && person && person.person_id) byName.set(key, person);
+    }
+    return byName;
+  }
+
+  /* One fetch, shared by every re-render. A failure caches nothing, so the next
+     render retries rather than remembering that the network was down once. */
+  function people() {
+    if (cache) return Promise.resolve(cache);
+    if (inFlight) return inFlight;
+    var api = backend();
+    if (!api || !api.people || !signedIn()) return Promise.resolve(null);
+
+    inFlight = api.people().then(function (result) {
+      cache = indexPeople(result);
+      inFlight = null;
+      return cache;
+    }).catch(function () {
+      inFlight = null;
+      return null;
+    });
+    return inFlight;
+  }
+
+  function invalidate() {
+    cache = null;
+  }
+
+  function styles() {
+    if (!doc() || doc().getElementById('synapPeopleConfirmStyles')) return;
+    var style = doc().createElement('style');
+    style.id = 'synapPeopleConfirmStyles';
+    style.textContent = [
+      '.person-entry{display:flex;flex-direction:column;gap:.35rem;min-width:0}',
+      '.person-entry>.person-card{width:100%}',
+      '.person-verify{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;font-size:.75rem}',
+      '.person-verify button{font-size:.72rem;padding:.2rem .5rem;border-radius:999px;',
+      'border:1px solid currentColor;background:transparent;color:inherit;opacity:.72;cursor:pointer}',
+      '.person-verify button:hover{opacity:1}',
+      '.person-verify button[disabled]{opacity:.4;cursor:default}',
+      '.person-verify .person-confirmed{opacity:.7;display:inline-flex;align-items:center;gap:.25rem}',
+      '.person-verify form{display:flex;gap:.3rem;flex:1;min-width:0}',
+      '.person-verify input{flex:1;min-width:0;font:inherit;font-size:.78rem;padding:.2rem .45rem;',
+      'border-radius:.4rem;border:1px solid currentColor;background:transparent;color:inherit}',
+      '.person-verify .person-verify-note{opacity:.65}'
+    ].join('');
+    (doc().head || doc().documentElement).appendChild(style);
+  }
+
+  function note(host, message) {
+    var el = host.querySelector('.person-verify-note');
+    if (!el) {
+      el = doc().createElement('span');
+      el.className = 'person-verify-note';
+      host.appendChild(el);
+    }
+    el.textContent = message || '';
+  }
+
+  function renderControls(host, person) {
+    host.innerHTML = '';
+
+    if (person.confirmed_by_user) {
+      var badge = doc().createElement('span');
+      badge.className = 'person-confirmed';
+      badge.textContent = '✓ Confirmed';
+      host.appendChild(badge);
+    } else {
+      var confirm = doc().createElement('button');
+      confirm.type = 'button';
+      confirm.dataset.action = 'confirm';
+      confirm.textContent = '✓ That’s right';
+      host.appendChild(confirm);
+    }
+
+    var rename = doc().createElement('button');
+    rename.type = 'button';
+    rename.dataset.action = 'rename';
+    rename.textContent = person.confirmed_by_user ? 'Rename' : 'Wrong name';
+    host.appendChild(rename);
+  }
+
+  function renderEditor(host, person) {
+    host.innerHTML = '';
+    var form = doc().createElement('form');
+    var input = doc().createElement('input');
+    input.type = 'text';
+    input.value = person.name || '';
+    input.maxLength = 120;
+    input.setAttribute('aria-label', 'Correct this person’s name');
+
+    var save = doc().createElement('button');
+    save.type = 'submit';
+    save.textContent = 'Save';
+
+    var cancel = doc().createElement('button');
+    cancel.type = 'button';
+    cancel.dataset.action = 'cancel';
+    cancel.textContent = 'Cancel';
+
+    form.append(input, save, cancel);
+    host.appendChild(form);
+    input.focus();
+    input.select();
+  }
+
+  /* The card itself is a <button> that jumps to Ask Synap. Controls cannot be
+     nested inside it, so each card is wrapped and the controls sit beside it —
+     which also keeps brain-ui.js's delegated click handler working untouched. */
+  function decorate() {
+    if (decorating || !doc()) return;
+    var list = doc().querySelector(LIST_SELECTOR);
+    if (!list) return;
+
+    var cards = [].slice.call(list.querySelectorAll('.person-card'));
+    if (!cards.length) return;
+
+    people().then(function (byName) {
+      if (!byName || !doc().querySelector(LIST_SELECTOR)) return;
+      decorating = true;
+      try {
+        cards.forEach(function (card) {
+          if (!card.isConnected || card.parentElement.classList.contains('person-entry')) return;
+          var person = byName.get(normalize(card.dataset.person));
+          // Someone the backend has not indexed yet — usually a recording that
+          // has not finished processing. Leave the card exactly as it was.
+          if (!person || !person.person_id) return;
+
+          var entry = doc().createElement('div');
+          entry.className = 'person-entry';
+          card.parentNode.insertBefore(entry, card);
+          entry.appendChild(card);
+
+          var host = doc().createElement('div');
+          host.className = 'person-verify';
+          host.dataset.personId = person.person_id;
+          entry.appendChild(host);
+          renderControls(host, person);
+        });
+      } finally {
+        decorating = false;
+      }
+    });
+  }
+
+  function personFor(host) {
+    if (!cache) return null;
+    var found = null;
+    cache.forEach(function (person) {
+      if (person.person_id === host.dataset.personId) found = person;
+    });
+    return found;
+  }
+
+  function apply(host, promise, pendingLabel) {
+    [].forEach.call(host.querySelectorAll('button'), function (button) {
+      button.disabled = true;
+    });
+    note(host, pendingLabel);
+
+    return promise.then(function (result) {
+      var person = personFor(host);
+      if (person) {
+        if (result && result.name) person.name = result.name;
+        person.confirmed_by_user = result && 'confirmed_by_user' in result
+          ? Boolean(result.confirmed_by_user)
+          : true;
+        renderControls(host, person);
+
+        var card = host.parentElement && host.parentElement.querySelector('.person-card');
+        if (card) {
+          var label = card.querySelector('strong');
+          if (label) label.textContent = person.name;
+          card.dataset.person = person.name;
+          var avatar = card.querySelector('.person-avatar');
+          if (avatar && person.name) avatar.textContent = person.name.charAt(0).toUpperCase();
+        }
+      }
+      note(host, '');
+    }).catch(function (error) {
+      var person = personFor(host);
+      if (person) renderControls(host, person);
+      // Say what failed. A silently reverted name looks like the app ignored you.
+      note(host, (error && error.message) || 'Could not save that. Try again.');
+    });
+  }
+
+  function onClick(event) {
+    var host = event.target.closest ? event.target.closest('.person-verify') : null;
+    if (!host) return;
+    var button = event.target.closest('button');
+    if (!button) return;
+
+    // These controls sit next to the card, not inside it, but a stray bubble
+    // would still send the user off to Ask Synap mid-edit.
+    event.preventDefault();
+    event.stopPropagation();
+
+    var person = personFor(host);
+    if (!person) return;
+    var action = button.dataset.action;
+
+    if (action === 'rename') {
+      renderEditor(host, person);
+      return;
+    }
+    if (action === 'cancel') {
+      renderControls(host, person);
+      return;
+    }
+    if (action === 'confirm') {
+      var api = backend();
+      if (!api || !api.confirmPerson) return;
+      apply(host, api.confirmPerson(person.person_id, true), 'Saving…');
+    }
+  }
+
+  function onSubmit(event) {
+    var host = event.target.closest ? event.target.closest('.person-verify') : null;
+    if (!host) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    var person = personFor(host);
+    var input = event.target.querySelector('input');
+    if (!person || !input) return;
+
+    var name = String(input.value || '').trim();
+    if (!name || name === person.name) {
+      renderControls(host, person);
+      return;
+    }
+    var api = backend();
+    if (!api || !api.renamePerson) return;
+    apply(host, api.renamePerson(person.person_id, name), 'Saving…');
+  }
+
+  function watch() {
+    var list = doc() && doc().querySelector(LIST_SELECTOR);
+    if (!list) return false;
+    new root.MutationObserver(function () {
+      if (decorating) return;
+      decorate();
+    }).observe(list, { childList: true });
+    decorate();
+    return true;
+  }
+
+  function init() {
+    if (!doc() || !root.MutationObserver) return;
+    styles();
+    doc().addEventListener('click', onClick, true);
+    doc().addEventListener('submit', onSubmit, true);
+
+    // brain-ui.js creates #peopleList after its own load, so wait for it rather
+    // than assuming it is already in the document.
+    if (watch()) return;
+    var observer = new root.MutationObserver(function () {
+      if (watch()) observer.disconnect();
+    });
+    observer.observe(doc().body || doc().documentElement, { childList: true, subtree: true });
+  }
+
+  // A new sign-in is a different person's data; a sign-out means there is none.
+  if (root.SynapAuth && root.SynapAuth.onChange) root.SynapAuth.onChange(invalidate);
+  root.addEventListener('synap-processing-complete', invalidate);
+
+  if (doc() && doc().readyState === 'loading') {
+    doc().addEventListener('DOMContentLoaded', init, { once: true });
+  } else {
+    init();
+  }
+
+  root.SynapPeopleConfirmUI = {
+    decorate: decorate,
+    invalidate: invalidate,
+    normalize: normalize,
+    indexPeople: indexPeople
+  };
+})(globalThis);

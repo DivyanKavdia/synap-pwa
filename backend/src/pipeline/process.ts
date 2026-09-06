@@ -36,7 +36,7 @@ import type {
   TranscriptWord,
   UserProfile,
 } from '../store/types.js';
-import { localDay, nameKey, newId, normalizeName, topicKey } from '../util/ids.js';
+import { localDay, mergeAliasKeys, nameKey, newId, normalizeName, topicKey } from '../util/ids.js';
 import { log } from '../util/log.js';
 import { rebuildDay } from './brief.js';
 
@@ -371,13 +371,32 @@ async function upsertPeople(
     const personId = existing?.personId ?? newId();
     const now = new Date().toISOString();
 
+    // A name the user confirmed outranks whatever the model heard this time.
+    // Without this the next recording quietly overwrites the correction, which
+    // is the most annoying possible way to lose one.
+    let name = person.name;
+    if (existing?.confirmedByUser) {
+      try {
+        name = openJson<{ name: string }>(
+          dek,
+          existing.sealedProfile,
+          binding(uid, `person/${existing.personId}`, 'profile'),
+        ).name || person.name;
+      } catch {
+        name = person.name;
+      }
+    }
+
     const doc: PersonDoc = {
       personId,
-      nameKey: key,
+      // The stored key follows the confirmed name so listings stay consistent,
+      // while aliasKeys keeps every spelling the transcript might use matchable.
+      nameKey: existing?.confirmedByUser ? (existing.nameKey ?? key) : key,
+      aliasKeys: mergeAliasKeys(existing?.aliasKeys, existing?.nameKey, key),
       sealedProfile: sealJson(
         dek,
         {
-          name: person.name,
+          name,
           role: person.role,
           evidence: person.evidence,
           confidence: person.confidence,

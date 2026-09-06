@@ -267,7 +267,23 @@ function normalizeConversation(data: FirebaseFirestore.DocumentData): Conversati
 // People and follow-ups
 // ---------------------------------------------------------------------------
 
+/**
+ * Find a person by any name they have been known under.
+ *
+ * The alias query is tried first so a renamed person still matches the name the
+ * transcript used. The exact-nameKey query remains as a fallback for documents
+ * written before aliasKeys existed; both are single-field queries Firestore
+ * indexes automatically, so neither needs a composite index.
+ */
 export async function findPersonByNameKey(uid: string, nameKey: string): Promise<PersonDoc | null> {
+  const byAlias = await paths
+    .people(uid)
+    .where('aliasKeys', 'array-contains', nameKey)
+    .limit(1)
+    .get();
+  const alias = byAlias.docs[0];
+  if (alias) return alias.data() as PersonDoc;
+
   const snapshot = await paths.people(uid).where('nameKey', '==', nameKey).limit(1).get();
   const doc = snapshot.docs[0];
   return doc ? (doc.data() as PersonDoc) : null;

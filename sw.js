@@ -12,7 +12,7 @@ const APP_SHELL=[
   './touch-event-bridge.js','./battery-v2-ui.js','./event-channel.js','./audio-codec-v3.js','./battery-popover-fix.js','./memory-ui-fix.js','./memory-tools.js','./voice-profile.js','./device-identity.js','./runtime-compat.js','./audio-store.js','./ota.js','./releases.js',
   './app.js','./enhancements.js','./capture-ui.js','./brain-ui.js','./product-ui.js','./runtime-ui.js',
   './ai-providers.js','./recording-bridge.js','./manifest.webmanifest','./logo.webp','./icon.svg','./icon-192.png','./icon-512.png',
-  './google-auth.js','./synap-backend.js','./processing-recovery.js','./processing-pipeline-ui.js','./synap-account-ui.js'
+  './google-auth.js','./synap-backend.js','./processing-recovery.js','./processing-pipeline-ui.js','./synap-account-ui.js','./people-confirm-ui.js'
 ];
 const SCOPE=self.registration?.scope||'https://local.invalid/';
 const ORIGIN=self.location?.origin||new URL(SCOPE).origin;

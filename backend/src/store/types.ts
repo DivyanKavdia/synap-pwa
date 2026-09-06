@@ -126,6 +126,18 @@ export interface PersonDoc {
   personId: string;
   /** HMAC of the normalized name under the user's DEK — lets us dedupe without storing names in the clear. */
   nameKey: string;
+  /**
+   * Every name key this person has been seen under, including nameKey itself.
+   *
+   * A rename would otherwise undo itself: correcting "Ankit" to "Ankit Sharma"
+   * moves the key, the next extraction still hears "Ankit", finds nothing, and
+   * creates a second person. Confirmed names are also fed back to the model, so
+   * the drift runs in both directions. Matching on the alias set keeps one
+   * person whichever name the transcript happens to use.
+   *
+   * Optional because documents written before this existed have only nameKey.
+   */
+  aliasKeys?: string[];
   sealedProfile: Sealed;
   confirmedByUser: boolean;
   firstSeenAt: string;

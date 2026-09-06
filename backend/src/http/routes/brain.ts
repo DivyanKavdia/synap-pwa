@@ -6,14 +6,14 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { config } from '../../config.js';
-import { openJson } from '../../crypto/envelope.js';
+import { openJson, sealJson } from '../../crypto/envelope.js';
 import { answerFromEvidence, parseQuery, type Evidence } from '../../gemini/ask.js';
 import { embedContent } from '../../gemini/client.js';
 import { readDay, rebuildDay } from '../../pipeline/brief.js';
 import { binding } from '../../pipeline/process.js';
 import * as db from '../../store/firestore.js';
 import type { ConversationDoc } from '../../store/types.js';
-import { nameKey, normalizeName, topicKey } from '../../util/ids.js';
+import { mergeAliasKeys, nameKey, normalizeName, topicKey } from '../../util/ids.js';
 import { requireAuth, type AuthedRequest } from '../auth.js';
 import { HttpError, handler } from '../errors.js';
 
@@ -39,6 +39,7 @@ const patchFollowUpBody = z.object({
 
 const patchPersonBody = z.object({
   confirmed: z.boolean().optional(),
+  name: z.string().trim().min(1).max(120).optional(),
 });
 
 export function brainRoutes(): Router {
@@ -119,11 +120,45 @@ export function brainRoutes(): Router {
       const person = await db.getPerson(req.uid, personId);
       if (!person) throw new HttpError(404, 'not_found', 'Unknown person');
 
+      const profile = openJson<{ name: string; role: string; evidence: string; confidence: number }>(
+        req.dek,
+        person.sealedProfile,
+        binding(req.uid, `person/${personId}`, 'profile'),
+      );
+
+      const renamed = body.data.name !== undefined && body.data.name !== profile.name;
+      if (renamed && !normalizeName(body.data.name ?? '')) {
+        throw new HttpError(400, 'bad_request', 'A person needs a name with letters or digits in it');
+      }
+
+      const name = renamed ? (body.data.name as string) : profile.name;
+      const key = nameKey(req.dek, name);
+      // Keep the old key matchable. The model will go on hearing the name it
+      // heard before, and a rename that stopped matching would simply create a
+      // second person on the next recording.
+      const aliasKeys = mergeAliasKeys(person.aliasKeys, person.nameKey, key);
+
       await db.putPerson(req.uid, {
         ...person,
-        confirmedByUser: body.data.confirmed ?? person.confirmedByUser,
+        nameKey: key,
+        aliasKeys,
+        sealedProfile: renamed
+          ? sealJson(
+              req.dek,
+              { ...profile, name },
+              binding(req.uid, `person/${personId}`, 'profile'),
+            )
+          : person.sealedProfile,
+        // Correcting a name is a confirmation. Anything else would leave the
+        // model free to overwrite the correction on the next recording.
+        confirmedByUser: body.data.confirmed ?? (renamed ? true : person.confirmedByUser),
       });
-      res.status(200).json({ person_id: personId, confirmed_by_user: body.data.confirmed });
+
+      res.status(200).json({
+        person_id: personId,
+        name,
+        confirmed_by_user: body.data.confirmed ?? (renamed ? true : person.confirmedByUser),
+      });
     }),
   );
 
