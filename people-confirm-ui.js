@@ -1,22 +1,4 @@
-/* Confirm and correct the people Synap thinks it heard.
- *
- * Names come out of the transcript, so they are guesses: a mishearing becomes a
- * permanent second person unless someone corrects it. The backend already
- * feeds confirmed names back into the next extraction, so a correction made
- * once improves every recording after it — this file is the missing control
- * that lets a user actually make one.
- *
- * Deliberately kept out of brain-ui.js. That file renders from the local
- * IndexedDB journal and works signed out; this one needs the backend, and a
- * network failure here must not stop the people list from rendering. Everything
- * below degrades to "no controls, list unchanged".
- *
- * Voice enrollment would identify speakers far better, but a stored voice
- * signature is biometric data — special category under GDPR, sensitive personal
- * data under the DPDP Act — and that is a decision to take deliberately rather
- * than to arrive at by shipping a feature. Confirming names gets most of the
- * value and stores nothing new about anyone.
- */
+/* Confirm or correct people detected in Synap memories. */
 (function (root) {
   'use strict';
 
@@ -47,25 +29,17 @@
     return Boolean(root.SynapAuth && root.SynapAuth.isSignedIn && root.SynapAuth.isSignedIn());
   }
 
-  /* Cards are keyed by the name the local journal recorded, so the lookup has
-     to normalize exactly the way the backend does. If the two ever drift, every
-     card silently loses its controls rather than failing loudly — which is why
-     this is a named function with its own test. */
   function indexPeople(result) {
     var byName = new Map();
     var list = result && result.people ? result.people : [];
     for (var i = 0; i < list.length; i++) {
       var person = list[i];
       var key = normalize(person && person.name);
-      // Later entries win: /v1/people is ordered by recency, so the most
-      // recently seen spelling is the one a card is most likely to carry.
       if (key && person && person.person_id) byName.set(key, person);
     }
     return byName;
   }
 
-  /* One fetch, shared by every re-render. A failure caches nothing, so the next
-     render retries rather than remembering that the network was down once. */
   function people() {
     if (cache) return Promise.resolve(cache);
     if (inFlight) return inFlight;
@@ -165,9 +139,6 @@
     input.select();
   }
 
-  /* The card itself is a <button> that jumps to Ask Synap. Controls cannot be
-     nested inside it, so each card is wrapped and the controls sit beside it —
-     which also keeps brain-ui.js's delegated click handler working untouched. */
   function decorate() {
     if (decorating || !doc()) return;
     var list = doc().querySelector(LIST_SELECTOR);
@@ -183,8 +154,6 @@
         cards.forEach(function (card) {
           if (!card.isConnected || card.parentElement.classList.contains('person-entry')) return;
           var person = byName.get(normalize(card.dataset.person));
-          // Someone the backend has not indexed yet — usually a recording that
-          // has not finished processing. Leave the card exactly as it was.
           if (!person || !person.person_id) return;
 
           var entry = doc().createElement('div');
@@ -241,7 +210,6 @@
     }).catch(function (error) {
       var person = personFor(host);
       if (person) renderControls(host, person);
-      // Say what failed. A silently reverted name looks like the app ignored you.
       note(host, (error && error.message) || 'Could not save that. Try again.');
     });
   }
@@ -252,8 +220,6 @@
     var button = event.target.closest('button');
     if (!button) return;
 
-    // These controls sit next to the card, not inside it, but a stray bubble
-    // would still send the user off to Ask Synap mid-edit.
     event.preventDefault();
     event.stopPropagation();
 
@@ -313,8 +279,6 @@
     doc().addEventListener('click', onClick, true);
     doc().addEventListener('submit', onSubmit, true);
 
-    // brain-ui.js creates #peopleList after its own load, so wait for it rather
-    // than assuming it is already in the document.
     if (watch()) return;
     var observer = new root.MutationObserver(function () {
       if (watch()) observer.disconnect();
@@ -322,7 +286,6 @@
     observer.observe(doc().body || doc().documentElement, { childList: true, subtree: true });
   }
 
-  // A new sign-in is a different person's data; a sign-out means there is none.
   if (root.SynapAuth && root.SynapAuth.onChange) root.SynapAuth.onChange(invalidate);
   root.addEventListener('synap-processing-complete', invalidate);
 
