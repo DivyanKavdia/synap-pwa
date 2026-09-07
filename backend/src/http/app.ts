@@ -83,11 +83,25 @@ export function createApp(): Express {
   });
 
   app.use('/v1', authRoutes());
+
+  // Task routes MUST be mounted before any router that calls
+  // router.use(requireAuth()).
+  //
+  // Express runs a router's path-less middleware for every request that enters
+  // it, before matching a single route. Every router below applies requireAuth
+  // that way, so mounting them first meant POST /v1/tasks/process entered
+  // recordingRoutes, was checked as a user session token, and was rejected in
+  // ~2ms — a Cloud Tasks OIDC token is not a Synap session JWT and never could
+  // be. Cloud Tasks then retried to its 10-minute backoff ceiling and gave up,
+  // so no recording was ever processed by the queue. Only the PWA's
+  // /process-now fallback completed anything, which is why short recordings
+  // looked fine and long ones silently came back partial.
+  app.use('/v1', taskRoutes());
+
   app.use('/v1', recordingRoutes());
   app.use('/v1', brainRoutes());
   app.use('/v1', memoryToolRoutes());
   app.use('/v1', voiceProfileRoutes());
-  app.use('/v1', taskRoutes());
 
   app.use((_req, res) => {
     res.status(404).json({ error: { code: 'not_found', message: 'No such endpoint' } });
