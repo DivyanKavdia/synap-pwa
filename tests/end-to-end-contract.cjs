@@ -16,6 +16,7 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   const html = read('index.html');
   const theme = read('theme.js');
   const dashboard = read('dashboard-ui.js');
+  const ask = read('ask-synap.js');
   const compat = read('runtime-compat.js');
   const enhancements = read('enhancements.js');
 
@@ -36,11 +37,15 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   assert.doesNotMatch(bridge, /hold 2s to start|hold ~1s|deliberate tap to stop|hold to remember|hold 5s to sleep\/wake/);
 
   assert.doesNotMatch(events, /script\.src=['"]audio-codec-v3/);
-  assert.match(sw, /1\.0\.0-shell31-dashboard/);
+  assert.match(sw, /1\.0\.0-shell32-ask/);
   assert.match(sw, /\.\/dashboard-ui\.js/);
+  assert.match(sw, /\.\/ask-synap\.js/);
   assert.match(sw, /\.\/runtime-compat\.js/);
   assert.match(sw, /\.\/processing-recovery\.js/);
   assert.match(theme, /dashboard-ui\.js\?v=1\.0\.0-dashboard1/);
+  assert.match(theme, /ask-synap\.js\?v=1\.0\.0-ask1/);
+  assert.match(ask, /SynapAuth\.authedFetch\(ASK_ENDPOINT/);
+  assert.match(ask, /const ASK_ENDPOINT = '\/v1\/ask'/);
   assert.match(dashboard, /todayActionsCollapse/);
   assert.match(dashboard, /todayConversationCollapse/);
   assert.match(dashboard, /data-synap-view/);
