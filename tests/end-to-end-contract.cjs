@@ -33,8 +33,8 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   assert.match(app, /Foreground pendant status resynchronised/);
   assert.match(app, /function validHttpsEndpoint/);
 
-  assert.match(bridge, /Touch: double tap to start\/stop · hold 5s to sleep · triple tap to wake/);
-  assert.doesNotMatch(bridge, /hold 2s to start|hold ~1s|deliberate tap to stop|hold to remember|hold 5s to sleep\/wake/);
+  assert.match(bridge, /Touch: double tap to start\/stop · triple tap to sleep\/wake/);
+  assert.doesNotMatch(bridge, /hold 2s to start|hold ~1s|deliberate tap to stop|hold to remember|hold 5s to sleep/);
 
   assert.doesNotMatch(events, /script\.src=['"]audio-codec-v3/);
   assert.match(sw, /1\.0\.0-shell32-ask/);
@@ -44,6 +44,7 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   assert.match(sw, /\.\/processing-recovery\.js/);
   assert.match(theme, /dashboard-ui\.js\?v=1\.0\.0-dashboard1/);
   assert.match(theme, /ask-synap\.js\?v=1\.0\.0-ask1/);
+  assert.match(theme, /recording-bridge\.js\?v=1\.0\.0-touch5/);
   assert.match(ask, /SynapAuth\.authedFetch\(ASK_ENDPOINT/);
   assert.match(ask, /const ASK_ENDPOINT = '\/v1\/ask'/);
   assert.match(dashboard, /todayActionsCollapse/);
