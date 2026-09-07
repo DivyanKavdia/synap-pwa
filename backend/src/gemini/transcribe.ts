@@ -43,7 +43,6 @@ export interface TranscribeOptions {
 }
 
 const MAX_SPEAKERS_NOTE = 8;
-const MIN_WORD_COVERAGE = 0.95;
 
 export async function transcribeSegment(
   audio: Buffer,
@@ -98,30 +97,33 @@ export async function transcribeSegment(
   };
 }
 
-function comparableLength(value: string): number {
-  // Compare semantic text rather than punctuation/spacing, because word
-  // annotations naturally omit punctuation that exists in the flat transcript.
-  return value.normalize('NFKC').replace(/[\s\p{P}\p{S}]+/gu, '').length;
+function comparableText(value: string): string {
+  // Word annotations naturally omit punctuation/spacing. Strip only those
+  // presentation differences; any remaining mismatch means the annotations are
+  // not a lossless representation of the flat transcript.
+  return value
+    .normalize('NFKC')
+    .toLocaleLowerCase('und')
+    .replace(/[\s\p{P}\p{S}]+/gu, '');
 }
 
 /**
  * Render diarized words back into speaker-attributed lines.
  *
  * The flat transcript is the lossless source of truth. Some ASR responses can
- * contain a complete text result but only partial word-level annotations. The
- * old implementation treated the presence of even one word annotation as proof
- * that the annotations were complete, which could collapse a long recording to
- * only a few seconds. We now use diarized words only when they cover essentially
- * the full flat transcript; otherwise the complete flat text wins.
+ * contain complete text but only partial word-level annotations. The old code
+ * treated the presence of even one annotation as proof the annotations were
+ * complete, so long recordings could collapse to only a few seconds. Speaker
+ * formatting is now used only when the annotations reproduce the complete flat
+ * transcript after punctuation/spacing normalization; otherwise the full flat
+ * text wins.
  */
 export function toSpeakerLines(words: TranscriptWord[], fallback: string): string {
   const flat = String(fallback || '').trim();
   if (words.length === 0) return flat;
 
   const annotated = words.map((word) => String(word.text || '')).join(' ').trim();
-  const flatLength = comparableLength(flat);
-  const annotatedLength = comparableLength(annotated);
-  if (flatLength > 0 && annotatedLength < flatLength * MIN_WORD_COVERAGE) return flat;
+  if (flat && comparableText(annotated) !== comparableText(flat)) return flat;
 
   const lines: string[] = [];
   let speaker: string | null = null;
