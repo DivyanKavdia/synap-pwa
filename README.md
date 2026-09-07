@@ -28,10 +28,10 @@ Production firmware uses the following touch model:
 | Recording | Double tap | Stop recording and enter BLE standby |
 | Idle or recording | Hold ~5 s | Enter deep sleep; active recording stops first |
 | BLE standby | Double tap | Wake and start recording |
-| Deep sleep | Hold continuously ~5 s | Wake and remain awake |
-| Deep sleep | Release before ~5 s | Return immediately to deep sleep |
+| Deep sleep | Triple tap | Wake and continue normal boot |
+| Deep sleep | One or two taps | Return to deep sleep without starting BLE |
 
-For compatible firmware, the PWA also places an idle connected pendant into BLE standby after about 30 seconds. BLE stays connected while the microphone/I2S and status LED are off.
+The first touch electrically wakes the pendant, but BLE stays off until the complete triple-tap sequence is validated. For compatible firmware, the PWA also places an idle connected pendant into BLE standby after about 30 seconds.
 
 ## BLE service
 
@@ -50,14 +50,7 @@ Audio is captured at 16 kHz, mono. Firmware transports independent IMA ADPCM fra
 
 ## Recording and storage
 
-Incoming packets are journaled to IndexedDB before a recording is sealed. The PWA:
-
-- batches packet writes;
-- preserves sequence gaps as silence so timing remains correct;
-- compacts roughly 30-second windows into PCM;
-- recovers unsealed recordings from committed packet data;
-- rolls very long captures into safe parts while keeping them grouped as one continuous session;
-- supports playback and WAV export/share.
+Incoming packets are journaled to IndexedDB before a recording is sealed. The PWA batches packet writes, preserves sequence gaps as silence, compacts processing windows, recovers unsealed recordings, rolls long captures into linked parts, and supports playback plus WAV export/share.
 
 Persistent browser storage is requested when available. Clearing site data can remove local recordings that have not been preserved elsewhere.
 
@@ -71,65 +64,27 @@ Where supported, `navigator.bluetooth.getDevices()` restores previously authoriz
 
 Routine firmware updates are one-click BLE OTA. Users do not need USB, a boot-button sequence, a binary picker or an OTA key.
 
-The PWA:
-
-1. reads the connected pendant identity, target and build;
-2. fetches the target-specific production manifest;
-3. validates target, build, size, SHA-256, URL and ESP image constraints;
-4. transfers the binary over BLE;
-5. resumes a live OTA session after a short reconnect when possible;
-6. waits for firmware commit and reboot.
+The PWA reads the connected pendant identity, target and build; fetches the target-specific production manifest; validates target, build, size, SHA-256, URL and ESP image constraints; transfers the binary over BLE; resumes a live OTA session after a short reconnect when possible; and waits for firmware commit and reboot.
 
 The signed production feed is authoritative for the latest firmware build. A Git commit alone is not a firmware release.
 
 ## Memory and AI
 
-Settings → **Memory & AI** supports two processing modes.
+Settings → **Memory & AI** supports Synap cloud and custom endpoint processing.
 
-### synap cloud
-
-The managed backend in `backend/` handles authentication, encrypted memory storage and AI processing.
-
-Pipeline:
+The managed backend pipeline is:
 
 `audio → transcript → conversations → people / decisions / actions / follow-ups → daily brief → retrieval → grounded answer`
 
-Current capabilities include:
-
-- rolling transcription during long recordings;
-- speaker diarization and optional owner voice profile;
-- people extraction with user confirmation/rename;
-- daily briefs and memory views;
-- local search across names, notes, summaries and transcripts;
-- grounded Ask Synap retrieval;
-- cloud history restore onto another signed-in device.
+Current capabilities include rolling transcription, speaker diarization, optional owner voice profile, people confirmation/rename, daily briefs, local search, grounded Ask Synap retrieval and cloud history restore.
 
 Local recording data always wins during cloud history restoration. Cloud-restored memories do not claim playable audio when the original audio is no longer available.
 
-Security and deployment details are maintained in:
-
-- `docs/ENCRYPTION.md`
-- `docs/GCP_DEPLOYMENT.md`
-- `docs/BACKEND_AI_STT_ENDPOINT_SPEC.md`
-- `docs/VOICE_PROFILE.md`
-
-### Custom endpoints
-
-Users can instead configure HTTPS transcription and LLM endpoints. The local processing queue remains responsible for ordering, idempotency, retry and failure isolation.
+Security and deployment details are maintained in `docs/ENCRYPTION.md`, `docs/GCP_DEPLOYMENT.md`, `docs/BACKEND_AI_STT_ENDPOINT_SPEC.md` and `docs/VOICE_PROFILE.md`.
 
 ## Diagnostics
 
-Settings → **Diagnostics / System status** exposes relevant field data including:
-
-- device identity and connection state;
-- firmware build/target when available;
-- GATT disconnect/reconnect events;
-- reset reason;
-- capture, notification and control drop counts;
-- free/minimum heap and uptime;
-- battery state;
-- browser storage and persistence;
-- network and service-worker state.
+Settings → **Diagnostics / System status** exposes device identity, connection state, firmware target/build, GATT events, reset reason, capture/drop counts, memory, uptime, battery, storage, network and service-worker state.
 
 For recording interruptions, first determine whether a real GATT disconnect occurred. Browser suspension without a disconnect is handled differently from a physical BLE link loss.
 
@@ -145,15 +100,4 @@ Run browser-side regressions with:
 node --test tests/*.cjs
 ```
 
-Before a production release, validate at minimum:
-
-- BLE connect/reconnect;
-- real-microphone recording;
-- touch start/stop/standby/deep-sleep behavior;
-- 5-second hold wake from deep sleep;
-- long-recording rollover;
-- screen-lock/foreground recovery;
-- battery telemetry;
-- OTA update/resume/reboot;
-- post-update reconnect;
-- local storage recovery and cloud processing.
+Before production release, validate BLE connect/reconnect, real-microphone recording, touch start/stop/standby/deep sleep, triple-tap wake without premature BLE reconnect, long-recording rollover, foreground recovery, battery telemetry, OTA update/resume/reboot, post-update reconnect, storage recovery and cloud processing.
