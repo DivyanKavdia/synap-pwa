@@ -51,6 +51,7 @@
     active.add(id);button.disabled=true;button.textContent='Rebuilding transcript…';
     try{
       var start=await request('/v1/recordings/'+encodeURIComponent(id)+'/process-now?force=true',{method:'POST'});
+      if(start.rebuilt!==true)throw new Error('Synap Cloud needs the transcript-rebuild backend update before this recording can be repaired.');
       if(String(start.state||'')!=='ready')await waitUntilReady(id,Date.now()+10*60*1000);
       var memory=await request('/v1/recordings/'+encodeURIComponent(id)+'/memory');
       if(!String(memory.transcript||'').trim())throw new Error('The rebuilt recording still has no transcript.');
