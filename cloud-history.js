@@ -178,11 +178,21 @@
     restoreAndShow(true);
   }
 
+  function loadTranscriptRepair() {
+    if (!root.document || root.SynapTranscriptRepair || root.document.querySelector('script[data-synap-transcript-repair]')) return;
+    var script = root.document.createElement('script');
+    script.src = 'transcript-repair.js?v=1.0.0-transcript1';
+    script.async = false;
+    script.setAttribute('data-synap-transcript-repair', '1');
+    (root.document.body || root.document.head).appendChild(script);
+  }
+
   function init() {
     if (root.SynapAuth && typeof root.SynapAuth.onChange === 'function') {
       root.SynapAuth.onChange(onAuthChange);
     }
     if (signedIn()) restoreAndShow();
+    loadTranscriptRepair();
   }
 
   if (root.document && root.document.readyState === 'loading') {
@@ -191,5 +201,5 @@
     init();
   }
 
-  root.SynapCloudHistory = { restore: restore, restoreAndShow: restoreAndShow, toLocal: toLocal, merge: merge, plan: plan, busy: busy };
+  root.SynapCloudHistory = { restore: restore, restoreAndShow: restoreAndShow, toLocal: toLocal, merge: merge, plan: plan, busy: busy, loadTranscriptRepair: loadTranscriptRepair };
 })(globalThis);
