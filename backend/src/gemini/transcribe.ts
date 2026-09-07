@@ -43,6 +43,7 @@ export interface TranscribeOptions {
 }
 
 const MAX_SPEAKERS_NOTE = 8;
+const MIN_WORD_COVERAGE = 0.95;
 
 export async function transcribeSegment(
   audio: Buffer,
@@ -97,13 +98,30 @@ export async function transcribeSegment(
   };
 }
 
+function comparableLength(value: string): number {
+  // Compare semantic text rather than punctuation/spacing, because word
+  // annotations naturally omit punctuation that exists in the flat transcript.
+  return value.normalize('NFKC').replace(/[\s\p{P}\p{S}]+/gu, '').length;
+}
+
 /**
- * Render diarized words back into speaker-attributed lines. Memory extraction
- * reads far better evidence from "S1: ..." turns than from a flat wall of text,
- * and it is what lets the model tell a proposal from a decision.
+ * Render diarized words back into speaker-attributed lines.
+ *
+ * The flat transcript is the lossless source of truth. Some ASR responses can
+ * contain a complete text result but only partial word-level annotations. The
+ * old implementation treated the presence of even one word annotation as proof
+ * that the annotations were complete, which could collapse a long recording to
+ * only a few seconds. We now use diarized words only when they cover essentially
+ * the full flat transcript; otherwise the complete flat text wins.
  */
 export function toSpeakerLines(words: TranscriptWord[], fallback: string): string {
-  if (words.length === 0) return fallback;
+  const flat = String(fallback || '').trim();
+  if (words.length === 0) return flat;
+
+  const annotated = words.map((word) => String(word.text || '')).join(' ').trim();
+  const flatLength = comparableLength(flat);
+  const annotatedLength = comparableLength(annotated);
+  if (flatLength > 0 && annotatedLength < flatLength * MIN_WORD_COVERAGE) return flat;
 
   const lines: string[] = [];
   let speaker: string | null = null;
