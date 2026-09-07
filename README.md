@@ -26,12 +26,14 @@ Production firmware uses the following touch model:
 | --- | --- | --- |
 | Connected idle | Double tap | Start recording |
 | Recording | Double tap | Stop recording and enter BLE standby |
-| Idle or recording | Hold ~5 s | Enter deep sleep; active recording stops first |
+| Idle, recording or BLE standby | Triple tap | Enter deep sleep; active recording stops first |
 | BLE standby | Double tap | Wake and start recording |
 | Deep sleep | Triple tap | Wake and continue normal boot |
 | Deep sleep | One or two taps | Return to deep sleep without starting BLE |
 
-The first touch electrically wakes the pendant, but BLE stays off until the complete triple-tap sequence is validated. For compatible firmware, the PWA also places an idle connected pendant into BLE standby after about 30 seconds.
+Double-tap Start/Stop is confirmed after a short wait for a possible third tap. This reserves triple tap as the power gesture in both directions.
+
+The first touch electrically wakes the pendant from deep sleep, but BLE stays off until the complete triple-tap sequence is validated. For compatible firmware, the PWA also places an idle connected pendant into BLE standby after about 30 seconds.
 
 ## BLE service
 
@@ -100,4 +102,4 @@ Run browser-side regressions with:
 node --test tests/*.cjs
 ```
 
-Before production release, validate BLE connect/reconnect, real-microphone recording, touch start/stop/standby/deep sleep, triple-tap wake without premature BLE reconnect, long-recording rollover, foreground recovery, battery telemetry, OTA update/resume/reboot, post-update reconnect, storage recovery and cloud processing.
+Before production release, validate BLE connect/reconnect, real-microphone recording, double-tap start/stop, triple-tap deep sleep/wake, wake without premature BLE reconnect, long-recording rollover, foreground recovery, battery telemetry, OTA update/resume/reboot, post-update reconnect, storage recovery and cloud processing.
