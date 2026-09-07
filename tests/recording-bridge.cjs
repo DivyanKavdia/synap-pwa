@@ -24,4 +24,16 @@ assert.match(ai, /continuousContext/);
 assert.match(ai, /one continuous conversation/);
 assert.match(ai, /continuous-45m-parts-30s-stt-5m-blocks-final/);
 
-console.log('PASS: hardware-start journal adoption, triple-tap wake copy, 45-minute rollover, linked parts and continuous AI consolidation.');
+assert.match(source, /AUTO_RECONNECT_KEY = 'dk-pendant-auto-reconnect'/);
+assert.match(source, /POWER_STATE_DEEP_SLEEP = 3/);
+assert.match(source, /function beginIntentionalSleep\(\)/);
+assert.match(source, /localStorage\?\.setItem\(AUTO_RECONNECT_KEY, 'off'\)/,
+  'deep-sleep notification must disable the app reconnect path before GATT disconnect');
+assert.match(source, /if \(bytes\[2\] === POWER_STATE_DEEP_SLEEP\) beginIntentionalSleep\(\)/);
+assert.match(source, /synap-event-packet/);
+assert.match(source, /data-intentional-sleep|dataset\.intentionalSleep/);
+assert.match(source, /synap-gatt-service-ready/);
+assert.match(source, /if \(intentionalSleep\) endIntentionalSleep\(\)/,
+  'the saved reconnect preference is restored only after a real connection returns');
+
+console.log('PASS: hardware journal adoption, intentional-sleep reconnect guard, triple-tap wake copy, rollover and continuous AI consolidation.');
