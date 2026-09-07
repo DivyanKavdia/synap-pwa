@@ -15,7 +15,7 @@
     }
   }catch(_){}
   const key='synap-appearance';
-  const SHELL_REVISION='1.0.0-dashboard1';
+  const SHELL_REVISION='1.0.0-dashboard2-ask';
   const root=document.documentElement;
   const valid=v=>['system','light','dark'].includes(v)?v:'system';
   let preference='system';
@@ -63,6 +63,7 @@
     css('settings-icon-fix.css?v=1.0.0-logo3','settingsicon','logo3');
     script('capture-ui.js?v=1.0.0-ui6');
     script('brain-ui.js?v=0.0.1-brain7');
+    script('ask-synap.js?v=1.0.0-ask1');
     script('product-ui.js?v=1.0.0-ui4');
     script('runtime-ui.js?v=1.0.0-runtime3');
     script('dashboard-ui.js?v=1.0.0-dashboard1');
