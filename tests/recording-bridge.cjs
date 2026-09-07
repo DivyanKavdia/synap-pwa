@@ -17,8 +17,9 @@ assert.match(source, /start\.click\(\)/, 'hardware STREAMING state opens the bro
 assert.match(source, /stop\.click\(\)/, 'long capture performs a controlled rollover');
 assert.match(source, /continuousGroupId/);
 assert.match(source, /continuousPart/);
-assert.match(source, /Touch: double tap to start\/stop · hold 5s to sleep · triple tap to wake/);
-assert.match(theme, /recording-bridge\.js\?v=1\.0\.0-touch4/);
+assert.match(source, /Touch: double tap to start\/stop · triple tap to sleep\/wake/);
+assert.doesNotMatch(source, /hold 5s to sleep|hold 5s to sleep\/wake/);
+assert.match(theme, /recording-bridge\.js\?v=1\.0\.0-touch5/);
 assert.match(worker, /\.\/recording-bridge\.js/);
 assert.match(ai, /continuousContext/);
 assert.match(ai, /one continuous conversation/);
@@ -39,4 +40,4 @@ assert.match(source, /setTimeout\(\(\) => \{[\s\S]*endIntentionalSleep\(\);[\s\S
 assert.match(source, /attributeFilter:\['data-device-state','data-state'\]/);
 assert.match(source, /synap-gatt-service-ready/);
 
-console.log('PASS: hardware journal adoption, bounded intentional-sleep reconnect guard, triple-tap wake copy, rollover and continuous AI consolidation.');
+console.log('PASS: hardware journal adoption, bounded intentional-sleep reconnect guard, triple-tap power copy, rollover and continuous AI consolidation.');
