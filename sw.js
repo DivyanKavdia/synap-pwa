@@ -3,14 +3,13 @@ const APP_VERSION='1.0.0';
 /* app.js owns the client compatibility revision used for update signalling. */
 const CLIENT_REVISION='1.0.0-audio2';
 /* Keep the previous production revision explicit for upgrade diagnostics/tests. */
-const PREVIOUS_CACHE_REVISION='1.0.0-shell29-controls';
-/* Processing recovery remains the production shell revision; install refreshes all cached entries. */
-const CACHE_REVISION='1.0.0-shell30-processing-recovery';
+const PREVIOUS_CACHE_REVISION='1.0.0-shell30-processing-recovery';
+const CACHE_REVISION='1.0.0-shell31-dashboard';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings-icon-fix.css',
   './touch-event-bridge.js','./battery-v2-ui.js','./event-channel.js','./audio-codec-v3.js','./battery-popover-fix.js','./memory-ui-fix.js','./memory-tools.js','./voice-profile.js','./device-identity.js','./runtime-compat.js','./audio-store.js','./ota.js','./releases.js',
-  './app.js','./enhancements.js','./capture-ui.js','./brain-ui.js','./product-ui.js','./runtime-ui.js',
+  './app.js','./enhancements.js','./capture-ui.js','./brain-ui.js','./product-ui.js','./runtime-ui.js','./dashboard-ui.js',
   './ai-providers.js','./recording-bridge.js','./manifest.webmanifest','./logo.webp','./icon.svg','./icon-192.png','./icon-512.png',
   './google-auth.js','./synap-backend.js','./processing-recovery.js','./processing-pipeline-ui.js','./synap-account-ui.js','./people-confirm-ui.js','./cloud-history.js'
 ];
