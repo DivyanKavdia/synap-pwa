@@ -1,0 +1,119 @@
+# Deploy the Synap backend to Cloud Run when backend code reaches main.
+#
+# Authentication is GitHub OIDC through Workload Identity Federation: GitHub
+# presents a short-lived token and Google exchanges it for credentials. No
+# service-account JSON key exists anywhere, so there is none to leak or rotate.
+#
+# The deploy identity (synap-github-deployer) is deliberately separate from the
+# runtime identity (synap-api) that Cloud Run executes as. CI can deploy the
+# service; it cannot read a user's recordings.
+#
+# One-time GCP setup is in docs/GITHUB_DEPLOY.md.
+name: Deploy Synap Backend
+
+on:
+  push:
+    branches: [main]
+    # PWA-only changes must not redeploy Cloud Run. Terraform is deliberately
+    # absent: infrastructure changes stay manual and reviewed.
+    paths:
+      - 'backend/**'
+      - 'infra/deploy.sh'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+# Never cancel a deploy in flight. Interrupting one halfway is worse than
+# queueing the next behind it.
+concurrency:
+  group: synap-backend-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # deploy.sh remains the single production deploy command, run by hand or
+      # by CI. Duplicating its logic here is how the two drift apart.
+      - name: Deploy backend
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: |
+          chmod +x infra/deploy.sh
+          ./infra/deploy.sh
+
+      # Prove the commit this workflow built is the one now serving traffic.
+      # A green deploy step only means gcloud exited 0.
+      - name: Verify the deployed commit
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: |
+          set -euo pipefail
+          URL="$(gcloud run services describe synap-backend \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --format='value(status.url)')"
+          echo "Production URL: $URL"
+
+          health="$(curl --fail --silent --show-error --retry 5 --retry-delay 3 \
+            --retry-all-errors "$URL/health")"
+          echo "$health"
+
+          live="$(printf '%s' "$health" | sed -n 's/.*"commit":"\([^"]*\)".*/\1/p')"
+          if [ "$live" != "${GITHUB_SHA}" ]; then
+            echo "::error::Deployed commit is '$live', expected '${GITHUB_SHA}'."
+            echo "Traffic may still be on an older revision. Check Cloud Run revisions."
+            exit 1
+          fi
+          echo "Verified: $live is live."
+
+      # Rollback is a one-liner, but only if the previous revision is written
+      # down while it is still known. Printed on failure so it is in the log of
+      # the run that broke, not somewhere else.
+      - name: Rollback instructions
+        if: failure()
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: |
+          echo "Deploy failed or could not be verified. Recent revisions:"
+          gcloud run revisions list --service=synap-backend \
+            --project="$PROJECT_ID" --region="$REGION" --limit=5 \
+            --format='table(name,creationTimestamp,active)' || true
+          echo ""
+          echo "To route traffic back to a known-good revision:"
+          echo "  gcloud run services update-traffic synap-backend \\"
+          echo "    --project=$PROJECT_ID --region=$REGION \\"
+          echo "    --to-revisions=<PREVIOUS_REVISION>=100"

@@ -32,6 +32,16 @@ export const config = {
   location: optional('SYNAP_LOCATION', 'asia-south1'),
   port: Number(optional('PORT', '8080')),
 
+  /**
+   * Which build is running. Set at deploy time; empty in local development.
+   * Optional on purpose — a missing value shows as "unknown" on /health rather
+   * than stopping the service from booting.
+   */
+  build: {
+    commit: optional('SYNAP_BUILD_SHA', ''),
+    builtAt: optional('SYNAP_BUILD_TIME', ''),
+  },
+
   /** Google OAuth client ID the PWA signs in with. Audience for ID token checks. */
   googleClientId: required('SYNAP_GOOGLE_CLIENT_ID'),
 

@@ -49,6 +49,13 @@ url="$(gcloud run services describe "${SERVICE}" --region="${REGION}" \
 # into it, and that URL only exists after the first deploy.
 env_vars="SYNAP_SERVICE_URL=${url}"
 
+# Stamp the running build so /health can prove which commit is live. TAG is the
+# short SHA when deploying from a git checkout; GITHUB_SHA wins in CI, where the
+# full SHA is what a workflow run can be matched against.
+build_sha="${GITHUB_SHA:-${TAG}}"
+build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+env_vars="${env_vars},SYNAP_BUILD_SHA=${build_sha},SYNAP_BUILD_TIME=${build_time}"
+
 speaker_url="$(gcloud run services describe "${SPEAKER_SERVICE}" \
   --region="${REGION}" --project="${PROJECT_ID}" \
   --format='value(status.url)' 2>/dev/null || true)"

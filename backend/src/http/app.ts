@@ -78,8 +78,25 @@ export function createApp(): Express {
   // ignores audio/wav and remains scoped to normal API payloads.
   app.use(express.json({ limit: '2mb' }));
 
+  /**
+   * Health, and which build is answering.
+   *
+   * Cloud Run serves the same service on two hostnames and numbers revisions
+   * independently of anything in git, so "did my fix actually deploy?" was only
+   * answerable by probing behaviour and inferring. Reporting the commit removes
+   * the guesswork: curl it and compare against git.
+   *
+   * Unknown values are reported as such rather than omitted, so a build that
+   * forgot to pass them is visibly unidentified instead of quietly looking fine.
+   */
   app.get('/health', (_req, res) => {
-    res.status(200).json({ status: 'ok', version: 1 });
+    res.status(200).json({
+      status: 'ok',
+      version: 1,
+      service: 'synap-backend',
+      commit: config.build.commit || 'unknown',
+      built_at: config.build.builtAt || 'unknown',
+    });
   });
 
   app.use('/v1', authRoutes());
