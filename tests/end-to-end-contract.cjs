@@ -14,6 +14,8 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   const bridge = read('recording-bridge.js');
   const sw = read('sw.js');
   const html = read('index.html');
+  const theme = read('theme.js');
+  const dashboard = read('dashboard-ui.js');
   const compat = read('runtime-compat.js');
   const enhancements = read('enhancements.js');
 
@@ -34,9 +36,15 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   assert.doesNotMatch(bridge, /hold 2s to start|hold ~1s|deliberate tap to stop|hold to remember|hold 5s to sleep\/wake/);
 
   assert.doesNotMatch(events, /script\.src=['"]audio-codec-v3/);
-  assert.match(sw, /1\.0\.0-shell30-processing-recovery/);
+  assert.match(sw, /1\.0\.0-shell31-dashboard/);
+  assert.match(sw, /\.\/dashboard-ui\.js/);
   assert.match(sw, /\.\/runtime-compat\.js/);
   assert.match(sw, /\.\/processing-recovery\.js/);
+  assert.match(theme, /dashboard-ui\.js\?v=1\.0\.0-dashboard1/);
+  assert.match(dashboard, /todayActionsCollapse/);
+  assert.match(dashboard, /todayConversationCollapse/);
+  assert.match(dashboard, /data-synap-view/);
+  assert.match(dashboard, /overflow-x:clip/);
   assert(html.indexOf('runtime-compat.js') < html.indexOf('app.js'), 'runtime compatibility must load before app initialization');
   assert.match(compat, /settingsButton\.addEventListener\('click'/);
   assert.match(compat, /if \(dialog\.open\) return/);
