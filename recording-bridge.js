@@ -8,6 +8,7 @@
   const POWER_EVENT_MAGIC = 0xE2;
   const POWER_EVENT_VERSION = 1;
   const POWER_STATE_DEEP_SLEEP = 3;
+  const SLEEP_RECONNECT_GUARD_MS = 1500;
   let activeSince = 0;
   let rolloverTimer = null;
   let rolloverPending = false;
@@ -16,6 +17,7 @@
   let intentionalSleep = false;
   let reconnectPreferenceBeforeSleep = null;
   let reconnectPreferenceExisted = false;
+  let reconnectRestoreTimer = null;
 
   function readSession() {
     try { return JSON.parse(root.sessionStorage?.getItem(SESSION_KEY) || 'null'); }
@@ -84,6 +86,11 @@
     hardwareAdoptTimer = null;
   }
 
+  function clearReconnectRestoreTimer() {
+    if (reconnectRestoreTimer) root.clearTimeout(reconnectRestoreTimer);
+    reconnectRestoreTimer = null;
+  }
+
   function parseHex(hex) {
     return String(hex || '').trim().split(/\s+/).filter(Boolean).map(value => Number.parseInt(value, 16));
   }
@@ -91,6 +98,7 @@
   function beginIntentionalSleep() {
     if (intentionalSleep) return;
     intentionalSleep = true;
+    clearReconnectRestoreTimer();
     clearRolloverTimer();
     clearHardwareAdoptTimer();
     startingFromHardware = false;
@@ -111,6 +119,7 @@
 
   function endIntentionalSleep() {
     if (!intentionalSleep) return;
+    clearReconnectRestoreTimer();
     try {
       if (reconnectPreferenceExisted) root.localStorage?.setItem(AUTO_RECONNECT_KEY, reconnectPreferenceBeforeSleep);
       else root.localStorage?.removeItem(AUTO_RECONNECT_KEY);
@@ -120,6 +129,16 @@
     reconnectPreferenceExisted = false;
     if (document.body) delete document.body.dataset.intentionalSleep;
     root.dispatchEvent(new CustomEvent('synap-intentional-sleep', {detail:{active:false}}));
+  }
+
+  function scheduleReconnectPreferenceRestore() {
+    if (!intentionalSleep || reconnectRestoreTimer) return;
+    reconnectRestoreTimer = root.setTimeout(() => {
+      reconnectRestoreTimer = null;
+      if (document.body?.dataset?.deviceState === '0' || document.body?.dataset?.state === 'disconnected') {
+        endIntentionalSleep();
+      }
+    }, SLEEP_RECONNECT_GUARD_MS);
   }
 
   function handlePowerEvent(event) {
@@ -186,6 +205,7 @@
   function handleDeviceState() {
     const state = document.body.dataset.deviceState;
     if (state === '2') {
+      clearReconnectRestoreTimer();
       if (intentionalSleep) return;
       adoptHardwareStream();
       if (!activeSince) activeSince = performance.now();
@@ -198,12 +218,15 @@
     clearRolloverTimer();
     activeSince = 0;
     if (state === '1') {
+      clearReconnectRestoreTimer();
       if (intentionalSleep) endIntentionalSleep();
       if (rolloverPending) beginNextPartWhenReady();
       else root.setTimeout(() => {
         if (!rolloverPending && document.body.dataset.deviceState === '1') writeSession(null);
       }, 1200);
+      return;
     }
+    if (intentionalSleep) scheduleReconnectPreferenceRestore();
   }
 
   function improveCopy() {
@@ -229,13 +252,17 @@
     root.addEventListener('synap-gatt-service-ready', () => {
       if (intentionalSleep) endIntentionalSleep();
     });
+    root.addEventListener('pagehide', () => {
+      if (intentionalSleep) endIntentionalSleep();
+    });
     const observer = new MutationObserver(handleDeviceState);
-    observer.observe(document.body, {attributes:true, attributeFilter:['data-device-state']});
+    observer.observe(document.body, {attributes:true, attributeFilter:['data-device-state','data-state']});
     handleDeviceState();
   }
 
   root.SynapRecordingBridge = {
     ROLLOVER_MS,
+    SLEEP_RECONNECT_GUARD_MS,
     readSession,
     patchJournal,
     get intentionalSleep() { return intentionalSleep; },
