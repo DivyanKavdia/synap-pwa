@@ -12,6 +12,7 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   const codec = read('audio-codec-v3.js');
   const events = read('event-channel.js');
   const bridge = read('recording-bridge.js');
+  const sleepGuard = read('sleep-state-guard.js');
   const sw = read('sw.js');
   const html = read('index.html');
   const theme = read('theme.js');
@@ -35,15 +36,20 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
 
   assert.match(bridge, /Touch: double tap to start\/stop · triple tap to sleep\/wake/);
   assert.doesNotMatch(bridge, /hold 2s to start|hold ~1s|deliberate tap to stop|hold to remember|hold 5s to sleep/);
+  assert.match(sleepGuard, /synap-intentional-sleep-v1/);
+  assert.match(sleepGuard, /forceReconnectOff\(\)/);
+  assert.match(sleepGuard, /synap-gatt-service-ready/);
 
   assert.doesNotMatch(events, /script\.src=['"]audio-codec-v3/);
-  assert.match(sw, /1\.0\.0-shell32-ask/);
+  assert.match(sw, /1\.0\.0-shell33-power/);
   assert.match(sw, /\.\/dashboard-ui\.js/);
   assert.match(sw, /\.\/ask-synap\.js/);
+  assert.match(sw, /\.\/sleep-state-guard\.js/);
   assert.match(sw, /\.\/runtime-compat\.js/);
   assert.match(sw, /\.\/processing-recovery\.js/);
   assert.match(theme, /dashboard-ui\.js\?v=1\.0\.0-dashboard1/);
   assert.match(theme, /ask-synap\.js\?v=1\.0\.0-ask1/);
+  assert.match(theme, /sleep-state-guard\.js\?v=1\.0\.0-power1/);
   assert.match(theme, /recording-bridge\.js\?v=1\.0\.0-touch5/);
   assert.match(ask, /SynapAuth\.authedFetch\(ASK_ENDPOINT/);
   assert.match(ask, /const ASK_ENDPOINT = '\/v1\/ask'/);
