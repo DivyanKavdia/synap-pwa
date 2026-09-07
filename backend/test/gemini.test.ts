@@ -89,9 +89,33 @@ test('diarized words become speaker-attributed lines', () => {
       { text: 'ship', speaker: 'S1', start_ms: 200, end_ms: 400 },
       { text: 'Friday?', speaker: 'S2', start_ms: 500, end_ms: 900 },
     ],
-    'fallback',
+    'We ship Friday?',
   );
   assert.equal(lines, '[00:00] S1: We ship\n[00:00] S2: Friday?');
+});
+
+test('partial word annotations never truncate a complete flat transcript', () => {
+  const flat = 'This is the complete transcript and it continues for much longer than the timed words.';
+  const rendered = toSpeakerLines(
+    [
+      { text: 'This', speaker: 'S1', start_ms: 0, end_ms: 150 },
+      { text: 'is', speaker: 'S1', start_ms: 150, end_ms: 250 },
+      { text: 'the', speaker: 'S1', start_ms: 250, end_ms: 350 },
+    ],
+    flat,
+  );
+  assert.equal(rendered, flat);
+});
+
+test('complete word annotations may differ only by punctuation and spacing', () => {
+  const rendered = toSpeakerLines(
+    [
+      { text: 'Hello', speaker: 'S1', start_ms: 0, end_ms: 200 },
+      { text: 'world', speaker: 'S1', start_ms: 200, end_ms: 400 },
+    ],
+    'Hello, world!',
+  );
+  assert.equal(rendered, '[00:00] S1: Hello world');
 });
 
 test('no diarization falls back to the flat transcript', () => {
