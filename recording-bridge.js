@@ -135,7 +135,6 @@
   function handleDeviceState() {
     const state = document.body.dataset.deviceState;
     if (state === '2') {
-      // Adopt a hardware-started stream into the browser journal.
       adoptHardwareStream();
       if (!activeSince) activeSince = performance.now();
       scheduleRollover();
@@ -147,13 +146,10 @@
     clearRolloverTimer();
     activeSince = 0;
     if (state === '1') {
-      if (rolloverPending) {
-        beginNextPartWhenReady();
-      } else {
-        root.setTimeout(() => {
-          if (!rolloverPending && document.body.dataset.deviceState === '1') writeSession(null);
-        }, 1200);
-      }
+      if (rolloverPending) beginNextPartWhenReady();
+      else root.setTimeout(() => {
+        if (!rolloverPending && document.body.dataset.deviceState === '1') writeSession(null);
+      }, 1200);
     }
   }
 
@@ -168,7 +164,7 @@
     if (key && !document.getElementById('touchControlHint')) {
       const hint = document.createElement('span');
       hint.id = 'touchControlHint';
-      hint.textContent = 'Touch: double tap to start/stop · hold 5s to sleep/wake';
+      hint.textContent = 'Touch: double tap to start/stop · hold 5s to sleep · triple tap to wake';
       key.appendChild(hint);
     }
   }
