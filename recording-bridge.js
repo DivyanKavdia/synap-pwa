@@ -4,11 +4,18 @@
 
   const ROLLOVER_MS = 45 * 60 * 1000;
   const SESSION_KEY = 'synap-continuous-capture';
+  const AUTO_RECONNECT_KEY = 'dk-pendant-auto-reconnect';
+  const POWER_EVENT_MAGIC = 0xE2;
+  const POWER_EVENT_VERSION = 1;
+  const POWER_STATE_DEEP_SLEEP = 3;
   let activeSince = 0;
   let rolloverTimer = null;
   let rolloverPending = false;
   let startingFromHardware = false;
   let hardwareAdoptTimer = null;
+  let intentionalSleep = false;
+  let reconnectPreferenceBeforeSleep = null;
+  let reconnectPreferenceExisted = false;
 
   function readSession() {
     try { return JSON.parse(root.sessionStorage?.getItem(SESSION_KEY) || 'null'); }
@@ -77,6 +84,50 @@
     hardwareAdoptTimer = null;
   }
 
+  function parseHex(hex) {
+    return String(hex || '').trim().split(/\s+/).filter(Boolean).map(value => Number.parseInt(value, 16));
+  }
+
+  function beginIntentionalSleep() {
+    if (intentionalSleep) return;
+    intentionalSleep = true;
+    clearRolloverTimer();
+    clearHardwareAdoptTimer();
+    startingFromHardware = false;
+    try {
+      reconnectPreferenceBeforeSleep = root.localStorage?.getItem(AUTO_RECONNECT_KEY) ?? null;
+      reconnectPreferenceExisted = reconnectPreferenceBeforeSleep !== null;
+      root.localStorage?.setItem(AUTO_RECONNECT_KEY, 'off');
+    } catch (_) {
+      reconnectPreferenceBeforeSleep = null;
+      reconnectPreferenceExisted = false;
+    }
+    if (document.body) {
+      document.body.dataset.intentionalSleep = '1';
+      document.body.dataset.powerState = 'deep-sleep';
+    }
+    root.dispatchEvent(new CustomEvent('synap-intentional-sleep', {detail:{active:true}}));
+  }
+
+  function endIntentionalSleep() {
+    if (!intentionalSleep) return;
+    try {
+      if (reconnectPreferenceExisted) root.localStorage?.setItem(AUTO_RECONNECT_KEY, reconnectPreferenceBeforeSleep);
+      else root.localStorage?.removeItem(AUTO_RECONNECT_KEY);
+    } catch (_) {}
+    intentionalSleep = false;
+    reconnectPreferenceBeforeSleep = null;
+    reconnectPreferenceExisted = false;
+    if (document.body) delete document.body.dataset.intentionalSleep;
+    root.dispatchEvent(new CustomEvent('synap-intentional-sleep', {detail:{active:false}}));
+  }
+
+  function handlePowerEvent(event) {
+    const bytes = parseHex(event?.detail?.hex);
+    if (bytes.length !== 6 || bytes[0] !== POWER_EVENT_MAGIC || bytes[1] !== POWER_EVENT_VERSION) return;
+    if (bytes[2] === POWER_STATE_DEEP_SLEEP) beginIntentionalSleep();
+  }
+
   function scheduleRollover() {
     clearRolloverTimer();
     if (!activeSince) activeSince = performance.now();
@@ -109,7 +160,7 @@
   }
 
   function adoptHardwareStream() {
-    if (startingFromHardware || hardwareAdoptTimer) return;
+    if (startingFromHardware || hardwareAdoptTimer || intentionalSleep) return;
     startingFromHardware = true;
     let attempts = 0;
     hardwareAdoptTimer = root.setInterval(() => {
@@ -135,6 +186,7 @@
   function handleDeviceState() {
     const state = document.body.dataset.deviceState;
     if (state === '2') {
+      if (intentionalSleep) return;
       adoptHardwareStream();
       if (!activeSince) activeSince = performance.now();
       scheduleRollover();
@@ -146,6 +198,7 @@
     clearRolloverTimer();
     activeSince = 0;
     if (state === '1') {
+      if (intentionalSleep) endIntentionalSleep();
       if (rolloverPending) beginNextPartWhenReady();
       else root.setTimeout(() => {
         if (!rolloverPending && document.body.dataset.deviceState === '1') writeSession(null);
@@ -172,12 +225,23 @@
   function bind() {
     ensureJournalPatch();
     improveCopy();
+    root.addEventListener('synap-event-packet', handlePowerEvent);
+    root.addEventListener('synap-gatt-service-ready', () => {
+      if (intentionalSleep) endIntentionalSleep();
+    });
     const observer = new MutationObserver(handleDeviceState);
     observer.observe(document.body, {attributes:true, attributeFilter:['data-device-state']});
     handleDeviceState();
   }
 
-  root.SynapRecordingBridge = { ROLLOVER_MS, readSession, patchJournal };
+  root.SynapRecordingBridge = {
+    ROLLOVER_MS,
+    readSession,
+    patchJournal,
+    get intentionalSleep() { return intentionalSleep; },
+    beginIntentionalSleep,
+    endIntentionalSleep
+  };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind, {once:true});
   else bind();
 })(globalThis);
