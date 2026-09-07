@@ -2,7 +2,8 @@
 const APP_VERSION='1.0.0';
 /* app.js owns the client compatibility revision used for update signalling. */
 const CLIENT_REVISION='1.0.0-audio2';
-/* Keep the previous production revision explicit for upgrade diagnostics/tests. */
+/* Keep prior production revisions explicit for upgrade diagnostics/tests. */
+const HISTORICAL_CACHE_REVISION='1.0.0-shell31-dashboard';
 const PREVIOUS_CACHE_REVISION='1.0.0-shell32-ask';
 const CACHE_REVISION='1.0.0-shell33-power';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
