@@ -54,7 +54,7 @@
     const custom=document.createElement('div');custom.id='customEndpointFields';custom.className='processing-fields';custom.append(endpoint.closest('label'),llm.closest('label'));
     const tl=token.closest('label')?.querySelector('span');if(tl){tl.id='apiKeyLabel';tl.textContent='OpenAI API key'}
     token.placeholder='sk-…';token.autocomplete='off';fields.prepend(p,models,custom);
-    script('ai-providers.js?v=0.0.1-brain3');script('recording-bridge.js?v=1.0.0-touch4');
+    script('ai-providers.js?v=0.0.1-brain3');script('recording-bridge.js?v=1.0.0-touch5');
   }
   function bind(){
     document.querySelectorAll('[data-theme-choice]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();choose(b.dataset.themeChoice)}));
