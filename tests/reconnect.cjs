@@ -55,11 +55,11 @@ async function workerTests(){
   const ctx={URL,Set,Promise,self:{registration:{scope},location:{origin:'https://example.test'},addEventListener(t,f){handlers[t]=f;},skipWaiting:async()=>{},clients:{claim:async()=>{}}},caches:{open:async()=>cache,keys:async()=>[],delete:async()=>{}},fetch:async()=>{throw new Error('unexpected fetch');},Response:{error:()=>({error:true})}};
   vm.runInNewContext(fs.readFileSync(path.join(root,'sw.js'),'utf8'),ctx);handlers.install({waitUntil:p=>job=p});await job;
   installed.forEach(p=>assert(fs.existsSync(path.join(root,p.split('?')[0]))));
-  assert(installed.includes('./runtime-compat.js'));assert(installed.includes('./processing-recovery.js'));assert(installed.includes('./dashboard-ui.js'));
+  assert(installed.includes('./runtime-compat.js'));assert(installed.includes('./processing-recovery.js'));assert(installed.includes('./dashboard-ui.js'));assert(installed.includes('./ask-synap.js'));
   async function fetch(url,mode='navigate',method='GET'){let result;handlers.fetch({request:{url,mode,method},respondWith:p=>result=p});return result;}
   assert.equal(await fetch(scope+'?from=home'),'./index.html');
   let reply;handlers.message({data:{type:'GET_VERSION'},source:{postMessage:d=>reply=d}});
-  assert.equal(reply.type,'APP_VERSION');assert.equal(reply.version,'1.0.0');assert.equal(reply.release,'1.0.0');assert.equal(reply.revision,'1.0.0-audio2');assert.equal(reply.shellRevision,'1.0.0-shell31-dashboard');
+  assert.equal(reply.type,'APP_VERSION');assert.equal(reply.version,'1.0.0');assert.equal(reply.release,'1.0.0');assert.equal(reply.revision,'1.0.0-audio2');assert.equal(reply.shellRevision,'1.0.0-shell32-ask');
 }
 
 (async()=>{
