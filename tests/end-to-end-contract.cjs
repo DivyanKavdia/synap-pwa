@@ -30,8 +30,8 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   assert.match(app, /Foreground pendant status resynchronised/);
   assert.match(app, /function validHttpsEndpoint/);
 
-  assert.match(bridge, /Touch: double tap to start\/stop · hold 5s to sleep\/wake/);
-  assert.doesNotMatch(bridge, /hold 2s to start|hold ~1s|deliberate tap to stop|hold to remember/);
+  assert.match(bridge, /Touch: double tap to start\/stop · hold 5s to sleep · triple tap to wake/);
+  assert.doesNotMatch(bridge, /hold 2s to start|hold ~1s|deliberate tap to stop|hold to remember|hold 5s to sleep\/wake/);
 
   assert.doesNotMatch(events, /script\.src=['"]audio-codec-v3/);
   assert.match(sw, /1\.0\.0-shell30-processing-recovery/);
