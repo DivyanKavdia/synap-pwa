@@ -5,8 +5,9 @@
  * OIDC token minted for our own service account. A signed-in PWA may also call
  * /recordings/:recordingId/process-now when an uploaded recording has not been
  * picked up by Cloud Tasks. That recovery path is deliberately narrow: it can
- * only process a recording owned by the authenticated user and only when the
- * backend is still uploaded or has a retryable failure.
+ * only process a recording owned by the authenticated user. A force=true query
+ * is reserved for rebuilding an already-ready recording from its sealed segment
+ * transcripts after a transcript-assembly bug; it does not re-upload audio.
  */
 
 import { Router } from 'express';
@@ -59,8 +60,9 @@ export function taskRoutes(): Router {
       const recordingId = String(req.params.recordingId);
       const recording = await db.getRecording(req.uid, recordingId);
       if (!recording) throw new HttpError(404, 'not_found', 'Unknown recording');
+      const force = String(req.query.force ?? '') === 'true';
 
-      if (recording.state === 'ready') {
+      if (recording.state === 'ready' && !force) {
         res.status(200).json({ recording_id: recordingId, state: 'ready', recovered: false });
         return;
       }
@@ -72,14 +74,33 @@ export function taskRoutes(): Router {
         return;
       }
 
-      if (recording.state === 'failed' && !recording.retryable) {
-        throw new HttpError(409, 'not_retryable', recording.errorCode || 'Processing cannot be retried');
-      }
-      if (recording.state !== 'uploaded' && recording.state !== 'failed') {
-        throw new HttpError(409, 'not_ready', `Recording is ${recording.state}`);
+      if (recording.state === 'ready' && force) {
+        // Segment audio/transcripts remain sealed independently of the final
+        // memory. Moving the recording back to uploaded makes processRecording
+        // re-run understanding/indexing while transcribeAll skips every segment
+        // that already has a sealed transcript. This repairs old truncated final
+        // transcripts without discarding or re-uploading the 30-second windows.
+        log.warn('Rebuilding ready recording from sealed segment transcripts', {
+          uid: req.uid,
+          recordingId,
+          segments: recording.uploadedSegments,
+        });
+        await db.patchRecording(req.uid, recordingId, {
+          state: 'uploaded',
+          progress: 0,
+          errorCode: null,
+          retryable: false,
+        });
+      } else {
+        if (recording.state === 'failed' && !recording.retryable) {
+          throw new HttpError(409, 'not_retryable', recording.errorCode || 'Processing cannot be retried');
+        }
+        if (recording.state !== 'uploaded' && recording.state !== 'failed') {
+          throw new HttpError(409, 'not_ready', `Recording is ${recording.state}`);
+        }
+        log.warn('Using authenticated processing recovery', { uid: req.uid, recordingId, state: recording.state });
       }
 
-      log.warn('Using authenticated processing recovery', { uid: req.uid, recordingId, state: recording.state });
       await processRecording(req.uid, recordingId);
       const updated = await db.getRecording(req.uid, recordingId);
       const state = updated?.state ?? 'ready';
@@ -87,6 +108,7 @@ export function taskRoutes(): Router {
         recording_id: recordingId,
         state,
         recovered: true,
+        rebuilt: force,
       });
     }),
   );
