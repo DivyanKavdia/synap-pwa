@@ -2,20 +2,13 @@
 (function(){
   'use strict';
 
-  // Bluefy/iOS may not expose Web Locks. app.js only needs a page-lifetime
-  // exclusive token here; do not abort initialization and leave every control dead.
   if(typeof navigator!=='undefined'&&!navigator.locks){
     const fallback={async request(name,options,callback){if(typeof options==='function'){callback=options;options={};}return callback({name:String(name||''),mode:'exclusive'});}};
     try{Object.defineProperty(navigator,'locks',{value:fallback,configurable:true});}catch(_){try{navigator.locks=fallback}catch(__){}}
     document.documentElement.dataset.synapLockFallback='1';
   }
 
-  // Audio protocol parsing belongs to app.js. Do not intercept or rewrite Web Bluetooth
-  // characteristic events here: every valid firmware packet must reach the journal.
-
   if(typeof history!=='undefined'&&'scrollRestoration'in history)history.scrollRestoration='manual';
-  /* iOS/PWA can reopen the last fragment (#library/#ask/etc.) and restore into the
-     middle of the app. Remove it before layout so a new synap launch is canonical. */
   try{
     if(typeof location!=='undefined'&&location.hash&&typeof history?.replaceState==='function'){
       history.replaceState(history.state,'',location.pathname+location.search);
@@ -28,15 +21,10 @@
   let preference='system';
   try{preference=valid(localStorage.getItem(key))}catch(_){}
 
-  function autoMode(){
-    const hour=new Date().getHours();
-    return hour>=7&&hour<19?'light':'dark';
-  }
+  function autoMode(){const hour=new Date().getHours();return hour>=7&&hour<19?'light':'dark'}
   function apply(){
     const mode=preference==='system'?autoMode():preference;
-    root.dataset.theme=mode;
-    root.setAttribute('data-theme',mode);
-    root.style.colorScheme=mode;
+    root.dataset.theme=mode;root.setAttribute('data-theme',mode);root.style.colorScheme=mode;
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content',mode==='dark'?'#071426':'#f7f9fc');
     document.querySelectorAll('[data-theme-choice]').forEach(b=>{
       b.setAttribute('aria-pressed',String(b.dataset.themeChoice===preference));
@@ -46,21 +34,14 @@
       }
     });
   }
-  function choose(value){
-    preference=valid(value);
-    try{localStorage.setItem(key,preference)}catch(_){}
-    apply();
-  }
+  function choose(value){preference=valid(value);try{localStorage.setItem(key,preference)}catch(_){}apply()}
   function refreshAuto(){if(preference==='system')apply()}
   function css(href,k,v){
     if(document.querySelector(`link[data-synap-${k}]`))return;
     const l=document.createElement('link');l.rel='stylesheet';l.href=href;
     l.dataset['synap'+k[0].toUpperCase()+k.slice(1)]=v;document.head.appendChild(l);
   }
-  function script(src){
-    if(document.querySelector(`script[src="${src}"]`))return;
-    const s=document.createElement('script');s.src=src;s.defer=true;document.head.appendChild(s);
-  }
+  function script(src){if(document.querySelector(`script[src="${src}"]`))return;const s=document.createElement('script');s.src=src;s.defer=true;document.head.appendChild(s)}
   function $(id){return typeof document.getElementById==='function'?document.getElementById(id):null}
   function installAISettings(){
     if(typeof document.getElementById!=='function')return;
@@ -73,7 +54,7 @@
     const custom=document.createElement('div');custom.id='customEndpointFields';custom.className='processing-fields';custom.append(endpoint.closest('label'),llm.closest('label'));
     const tl=token.closest('label')?.querySelector('span');if(tl){tl.id='apiKeyLabel';tl.textContent='OpenAI API key'}
     token.placeholder='sk-…';token.autocomplete='off';fields.prepend(p,models,custom);
-    script('ai-providers.js?v=0.0.1-brain3');script('recording-bridge.js?v=1.0.0-touch3');
+    script('ai-providers.js?v=0.0.1-brain3');script('recording-bridge.js?v=1.0.0-touch4');
   }
   function bind(){
     document.querySelectorAll('[data-theme-choice]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();choose(b.dataset.themeChoice)}));
@@ -90,10 +71,8 @@
   css('compact.css?v=0.0.1-ui3','compact','ui3');
   css('brain.css?v=0.0.1-brain10','brain','brain10');
   window.addEventListener('storage',e=>{if(e.key===key||e.key===null){preference=valid(e.newValue);apply()}});
-  window.addEventListener('focus',refreshAuto);
-  window.addEventListener('pageshow',refreshAuto);
+  window.addEventListener('focus',refreshAuto);window.addEventListener('pageshow',refreshAuto);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshAuto()});
   if(typeof setInterval==='function')setInterval(refreshAuto,60000);
-  apply();
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind,{once:true});else bind();
+  apply();if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind,{once:true});else bind();
 })();
