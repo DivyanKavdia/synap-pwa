@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { log } from '../util/log.js';
 import { errorHandler } from './errors.js';
 import { authRoutes } from './routes/auth.js';
+import { askV2Routes } from './routes/ask-v2.js';
 import { brainRoutes } from './routes/brain.js';
 import { memoryToolRoutes } from './routes/memory-tools.js';
 import { recordingRoutes } from './routes/recordings.js';
@@ -114,6 +115,13 @@ export function createApp(): Express {
   // /process-now fallback completed anything, which is why short recordings
   // looked fine and long ones silently came back partial.
   app.use('/v1', taskRoutes());
+
+  // Ask v2 uses route-scoped user authentication, so it can safely sit ahead of
+  // the blanket-auth routers without intercepting Cloud Tasks or unrelated API
+  // calls. It grounds answers in the actual encrypted transcript evidence and
+  // supplements the existing semantic conversation index with lexical recall
+  // over completed historical recordings.
+  app.use('/v1', askV2Routes());
 
   app.use('/v1', recordingRoutes());
   app.use('/v1', brainRoutes());
