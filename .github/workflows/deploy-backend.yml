@@ -8,6 +8,13 @@
 # runtime identity (synap-api) that Cloud Run executes as. CI can deploy the
 # service; it cannot read a user's recordings.
 #
+# The identifiers below are inline rather than repository variables, because
+# managing those needs repo-admin access. They are not secrets: a project id,
+# a region, a service-account email and a pool name are all public-safe, and
+# Google's own documentation prints them. The security boundary is the
+# provider's attribute-condition in GCP, which admits only this repository on
+# refs/heads/main — possessing these strings grants nothing.
+#
 # One-time GCP setup is in docs/GITHUB_DEPLOY.md.
 name: Deploy Synap Backend
 
@@ -52,15 +59,14 @@ jobs:
   deploy:
     needs: validate
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - uses: actions/checkout@v4
 
       - id: auth
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOY_SA }}
+          workload_identity_provider: projects/435475937223/locations/global/workloadIdentityPools/github/providers/synap-github
+          service_account: synap-github-deployer@gen-lang-client-0697897308.iam.gserviceaccount.com
 
       - uses: google-github-actions/setup-gcloud@v2
 
@@ -68,8 +74,8 @@ jobs:
       # by CI. Duplicating its logic here is how the two drift apart.
       - name: Deploy backend
         env:
-          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-          REGION: ${{ vars.GCP_REGION }}
+          PROJECT_ID: gen-lang-client-0697897308
+          REGION: asia-south1
         run: |
           chmod +x infra/deploy.sh
           ./infra/deploy.sh
@@ -78,8 +84,8 @@ jobs:
       # A green deploy step only means gcloud exited 0.
       - name: Verify the deployed commit
         env:
-          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-          REGION: ${{ vars.GCP_REGION }}
+          PROJECT_ID: gen-lang-client-0697897308
+          REGION: asia-south1
         run: |
           set -euo pipefail
           URL="$(gcloud run services describe synap-backend \
@@ -105,8 +111,8 @@ jobs:
       - name: Rollback instructions
         if: failure()
         env:
-          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-          REGION: ${{ vars.GCP_REGION }}
+          PROJECT_ID: gen-lang-client-0697897308
+          REGION: asia-south1
         run: |
           echo "Deploy failed or could not be verified. Recent revisions:"
           gcloud run revisions list --service=synap-backend \

@@ -84,27 +84,27 @@ That last grant is the step most setups forget, and it fails partway through the
 first run with a message about object permissions rather than anything obviously
 IAM-shaped.
 
-## 4. Tell GitHub who to be
+## 4. Identifiers
 
-```bash
-gcloud iam workload-identity-pools providers describe synap-github \
-  --project="$PROJECT_ID" --location=global --workload-identity-pool=github \
-  --format='value(name)'
-```
+The workflow carries them inline, so nothing needs to be configured in GitHub:
 
-In **GitHub → Settings → Secrets and variables → Actions → Variables**, add four
-repository variables. These are identifiers, not secrets:
-
-| Variable | Value |
+| Value | Where |
 | --- | --- |
-| `GCP_WIF_PROVIDER` | the resource name printed above |
-| `GCP_DEPLOY_SA` | `synap-github-deployer@<PROJECT_ID>.iam.gserviceaccount.com` |
-| `GCP_PROJECT_ID` | `gen-lang-client-0697897308` |
-| `GCP_REGION` | `asia-south1` |
+| WIF provider | `.github/workflows/deploy-backend.yml`, `workload_identity_provider` |
+| Deploy service account | same file, `service_account` |
+| Project and region | same file, the `env:` blocks |
 
-Do **not** create `GCP_SERVICE_ACCOUNT_KEY` or any JSON credential. If one
-exists from an earlier attempt, delete it — its presence is the risk this whole
-setup avoids.
+They are inline rather than repository variables because managing those needs
+repo-admin access, which a collaborator does not have. Nothing is lost: none of
+these are secrets. A project id, a region, a service-account email and a pool
+name are all public-safe, and Google's own documentation prints them verbatim.
+
+The security boundary is the provider's attribute-condition in GCP, which admits
+only `DivyanKavdia/synap-pwa` on `refs/heads/main`. Someone holding all four
+strings and no access to that repository can obtain nothing.
+
+Never add a `GCP_SERVICE_ACCOUNT_KEY` or any JSON credential. That is the thing
+this setup exists to avoid, and unlike the strings above it *is* a secret.
 
 ## 5. Run it
 
