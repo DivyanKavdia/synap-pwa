@@ -52,8 +52,13 @@ if ! gcloud storage buckets describe "gs://${STAGING_BUCKET}" \
 fi
 
 echo "==> Building ${IMAGE}"
+# Build logs go to our own bucket too. Streaming from Cloud Build's default log
+# bucket requires project Viewer, which for this project means read access to
+# Firestore — every user's memories — just to watch a build scroll past. A
+# bucket the deploy identity already owns costs nothing and keeps the logs.
 gcloud builds submit "${here}/backend" --tag "${IMAGE}" --project="${PROJECT_ID}" \
-  --gcs-source-staging-dir="gs://${STAGING_BUCKET}/source"
+  --gcs-source-staging-dir="gs://${STAGING_BUCKET}/source" \
+  --gcs-log-dir="gs://${STAGING_BUCKET}/logs"
 
 echo "==> Deploying ${SERVICE}"
 gcloud run deploy "${SERVICE}" \
