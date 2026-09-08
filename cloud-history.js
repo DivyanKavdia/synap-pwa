@@ -8,6 +8,20 @@
   var GUARD_KEY = 'synap-cloud-history-reloaded';
   var SYNCED_KEY = 'synap-cloud-history-synced';
   var running = false;
+  var lastRefreshAt = 0;
+  var REFRESH_MS = 60 * 1000;
+
+  /* These fields are produced by Synap Cloud, not authored locally. Once the
+     cloud recording is ready it is the authoritative copy: keeping a non-empty
+     stale local summary/transcript is exactly how an old partial result survived
+     after the backend had already rebuilt the complete memory. Local audio,
+     notes and other user/device fields are intentionally not in this list. */
+  var CLOUD_DERIVED_FIELDS = [
+    'transcript', 'summary', 'meeting', 'people', 'conversations',
+    'processingState', 'processingStage', 'processingProgress',
+    'processingFailedStage', 'processingError', 'processingRetryable',
+    'provider', 'processedAt', 'durationMs'
+  ];
 
   function backend() {
     return root.SynapBackend || null;
@@ -23,7 +37,12 @@
     return journal.open().then(function () { return journal; });
   }
 
-  // Preserve local fields; cloud only fills gaps.
+  function cloudReady(restored) {
+    return Boolean(restored && restored.restoredFromCloud === true &&
+      (restored.processingStage === 'ready' || restored.processingState === 'done'));
+  }
+
+  // Preserve local source/user fields; completed cloud-derived fields win.
   function merge(local, restored) {
     var merged = Object.assign({}, restored, local);
     if (local) {
@@ -33,6 +52,11 @@
           (Array.isArray(current) && current.length === 0);
         if (empty && restored[key] !== undefined) merged[key] = restored[key];
       });
+      if (cloudReady(restored)) {
+        CLOUD_DERIVED_FIELDS.forEach(function (key) {
+          if (restored[key] !== undefined) merged[key] = restored[key];
+        });
+      }
     }
     return merged;
   }
@@ -78,6 +102,10 @@
     }).then(function () { return records.length; });
   }
 
+  /* Retained as a testable cost-planning surface. restore() deliberately asks
+     for transcripts on the actual sync call now: correctness wins over the old
+     optimisation because a populated journal may contain stale/partial derived
+     data or may discover a recording created on another device. */
   function plan(locals, force) {
     if (!locals.length) return { fetch: true, transcript: true };
     var synced = false;
@@ -101,7 +129,10 @@
       var choice = plan(locals, force);
       if (!choice.fetch) return [locals, null];
       try { root.sessionStorage.setItem(SYNCED_KEY, '1'); } catch (error) {}
-      return api.recordings({ limit: LIMIT, transcript: choice.transcript })
+      // Always hydrate the transcript for the bounded recent-history window.
+      // A non-empty local transcript can still be an old partial transcript,
+      // and completed cloud data is now authoritative for derived fields.
+      return api.recordings({ limit: LIMIT, transcript: true })
         .then(function (result) { return [locals, result]; });
     }).then(function (results) {
       var locals = results[0];
@@ -130,6 +161,7 @@
         }
       });
 
+      lastRefreshAt = Date.now();
       if (!writes.length) return { restored: 0, updated: 0 };
       return write(db, writes).then(function () { return { restored: restored, updated: updated }; });
     }).then(function (result) {
@@ -147,12 +179,13 @@
       var changed = (result.restored || 0) + (result.updated || 0);
       if (!changed) return result;
 
-      var reloaded = false;
-      try { reloaded = root.sessionStorage.getItem(GUARD_KEY) === '1'; } catch (error) {}
-      if (reloaded || !root.location || typeof root.location.reload !== 'function') return result;
+      var reloadedAt = 0;
+      try { reloadedAt = Number(root.sessionStorage.getItem(GUARD_KEY) || 0); } catch (error) {}
+      if (reloadedAt && Date.now() - reloadedAt < 5000) return result;
+      if (!root.location || typeof root.location.reload !== 'function') return result;
       if (busy()) return result;
 
-      try { root.sessionStorage.setItem(GUARD_KEY, '1'); } catch (error) {}
+      try { root.sessionStorage.setItem(GUARD_KEY, String(Date.now())); } catch (error) {}
       root.setTimeout(function () { root.location.reload(); }, 400);
       return result;
     });
@@ -187,11 +220,22 @@
     (root.document.body || root.document.head).appendChild(script);
   }
 
+  function refreshVisible() {
+    if (!signedIn() || busy()) return;
+    if (Date.now() - lastRefreshAt < REFRESH_MS) return;
+    restoreAndShow(true);
+  }
+
   function init() {
     if (root.SynapAuth && typeof root.SynapAuth.onChange === 'function') {
       root.SynapAuth.onChange(onAuthChange);
     }
     if (signedIn()) restoreAndShow();
+    if (root.document && typeof root.document.addEventListener === 'function') {
+      root.document.addEventListener('visibilitychange', function () {
+        if (root.document.visibilityState === 'visible') refreshVisible();
+      });
+    }
     loadTranscriptRepair();
   }
 
@@ -201,5 +245,14 @@
     init();
   }
 
-  root.SynapCloudHistory = { restore: restore, restoreAndShow: restoreAndShow, toLocal: toLocal, merge: merge, plan: plan, busy: busy, loadTranscriptRepair: loadTranscriptRepair };
+  root.SynapCloudHistory = {
+    restore: restore,
+    restoreAndShow: restoreAndShow,
+    toLocal: toLocal,
+    merge: merge,
+    plan: plan,
+    busy: busy,
+    loadTranscriptRepair: loadTranscriptRepair,
+    refreshVisible: refreshVisible
+  };
 })(globalThis);
