@@ -17,12 +17,23 @@ test('one logical recording uses 30-second processing windows', () => {
   assert.doesNotMatch(rolling, /sourceFileSeconds|sourceFileCount|ONE_MINUTE_FRAMES/);
 });
 
-test('completed processing windows are sealed and processor is woken during capture', () => {
+test('completed processing windows are sealed and the real processor is woken during capture', () => {
   const rolling = source('battery-popover-fix.js');
   assert.match(rolling, /sealWindow\(this,recordingId,previous\)/);
   assert.match(rolling, /compactSegment\(recordingId,index,data\)/);
-  assert.match(rolling, /runQueueButton/);
+  assert.match(rolling, /__synapProcessingInstance/);
+  assert.match(rolling, /processor\.resume\(\)/);
   assert.match(rolling, /synap-transcription-window-ready/);
+  assert.match(rolling, /class SynapRollingProcessor extends Base/);
+});
+
+test('rolling transcription does not depend on the UI processing button', () => {
+  const rolling = source('battery-popover-fix.js');
+  const app = source('app.js');
+  assert.match(app, /recordingConfirmed \|\| finalizing/,
+    'the manual processing control remains intentionally blocked while recording');
+  assert.match(rolling, /const processor=root\[PROCESSOR_SLOT\]/);
+  assert.match(rolling, /processor&&typeof processor\.resume==='function'/);
 });
 
 test('backend upload performs idempotent rolling transcription', () => {
