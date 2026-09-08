@@ -14,11 +14,43 @@ document.addEventListener('click',e=>{if(e.target?.closest?.('#headerBatteryStat
  * existing 30-second PCM segments are processing windows only.
  */
 (function(root){'use strict';
-const WINDOW_FRAMES=600;
-let installAttempts=0;
+const WINDOW_FRAMES=600,PROCESSOR_SLOT='__synapProcessingInstance';
+let installAttempts=0,processorHookInstalled=false;
 function providerIsSynap(){try{const value=JSON.parse(root.localStorage?.getItem('synap-ai-provider-settings')||'{}');return String(value.provider||'synap')==='synap';}catch(_){return true;}}
 function signedIn(){try{return Boolean(root.SynapAuth?.isSignedIn?.());}catch(_){return false;}}
-function kickProcessor(){if(!providerIsSynap()||!signedIn())return;const button=root.document?.getElementById('runQueueButton');if(button&&!button.disabled)button.click();}
+function wrapProcessor(Base){
+  if(!Base||Base.__synapRollingWrapped)return Base;
+  class SynapRollingProcessor extends Base{
+    constructor(...args){super(...args);root[PROCESSOR_SLOT]=this;}
+  }
+  SynapRollingProcessor.__synapRollingWrapped=true;
+  return SynapRollingProcessor;
+}
+/* This file loads before audio-store.js. Intercept its global constructor
+   assignment so the real FIFO instance created by app.js is discoverable by the
+   rolling bridge. This avoids the old hidden-button path: that UI control is
+   intentionally blocked while recording, which meant windows were sealed live
+   but could sit pending until Stop. */
+function installProcessorHook(){
+  if(processorHookInstalled)return;processorHookInstalled=true;
+  const current=root.DKFIFOProcessor;
+  if(current){root.DKFIFOProcessor=wrapProcessor(current);return;}
+  try{
+    let assigned;
+    Object.defineProperty(root,'DKFIFOProcessor',{configurable:true,enumerable:true,get(){return assigned;},set(value){assigned=wrapProcessor(value);}});
+  }catch(_){}
+}
+function kickProcessor(){
+  if(!providerIsSynap()||!signedIn())return;
+  const processor=root[PROCESSOR_SLOT];
+  if(processor&&typeof processor.resume==='function'){
+    try{const pending=processor.resume();if(pending&&typeof pending.catch==='function')pending.catch(()=>{});return;}catch(_){}
+  }
+  /* Compatibility fallback for a shell that predates processor capture. This is
+     not relied on by current production because the button refuses processing
+     during an active recording. */
+  const button=root.document?.getElementById('runQueueButton');if(button&&!button.disabled)button.click();
+}
 function install(){
   const Store=root.DKAudioStore,codec=root.DKAudioCodec;
   if(!Store||!codec?.assemble)return false;
@@ -42,6 +74,7 @@ function install(){
   Store.prototype.close=async function(recordingId,reason){await(this.__synapRollingSeal||Promise.resolve());const saved=await originalClose.call(this,recordingId,reason);if(this.__synapRollingIndex)this.__synapRollingIndex.delete(recordingId);kickProcessor();return saved;};
   Store.prototype.__synapRollingTranscription=true;return true;
 }
+installProcessorHook();
 if(!install()){const timer=root.setInterval(()=>{if(install()||++installAttempts>400)root.clearInterval(timer)},40);}
 })(globalThis);
 
