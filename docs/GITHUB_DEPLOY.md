@@ -73,16 +73,32 @@ gcloud iam service-accounts add-iam-policy-binding \
   --project="$PROJECT_ID" --member="serviceAccount:${DEPLOY_SA}" \
   --role="roles/iam.serviceAccountUser"
 
-# Cloud Build uploads source to a staging bucket. Granted narrowly to that
-# bucket rather than project-wide storage access.
-gcloud storage buckets add-iam-policy-binding "gs://${PROJECT_ID}_cloudbuild" \
-  --member="serviceAccount:${DEPLOY_SA}" --role="roles/storage.objectAdmin" 2>/dev/null \
-  || echo "Staging bucket not created yet; re-run this line after the first build."
+# CI stages build source in its own bucket, created on first deploy, rather
+# than the shared PROJECT_cloudbuild one. Project-wide storage access would be
+# the usual fix and would also give CI read access to the sealed audio bucket;
+# a dedicated bucket holding only build tarballs is the smaller permission.
+gcloud storage buckets create "gs://${PROJECT_ID}-synap-ci-source" \
+  --project="$PROJECT_ID" --location=asia-south1 --uniform-bucket-level-access \
+  2>/dev/null || echo "(bucket already exists — fine)"
+
+gcloud storage buckets add-iam-policy-binding "gs://${PROJECT_ID}-synap-ci-source" \
+  --member="serviceAccount:${DEPLOY_SA}" --role="roles/storage.admin"
 ```
 
-That last grant is the step most setups forget, and it fails partway through the
-first run with a message about object permissions rather than anything obviously
-IAM-shaped.
+The shared `PROJECT_cloudbuild` bucket is deliberately avoided. Granting a
+deploy identity enough access to use it tends to end at project-wide storage
+permissions, and this project's storage includes the sealed audio bucket. The
+error you get otherwise actively misleads:
+
+```
+ERROR: (gcloud.builds.submit) The user is forbidden from accessing the bucket
+[PROJECT_cloudbuild]. ... or if the user has the "serviceusage.services.use"
+permission.
+```
+
+It names `serviceusage.services.use`, which is already granted a few lines
+above, and `roles/storage.admin` on that bucket does not resolve it either.
+Using a bucket the deploy identity owns outright sidesteps the question.
 
 ## 4. Identifiers
 
@@ -136,7 +152,7 @@ the values — the service is fine, but it cannot tell you what it is.
 | Symptom | Cause |
 | --- | --- |
 | `Permission denied on resource ... workloadIdentityPools` | The attribute condition rejected the token. Check repository and branch match exactly. |
-| Cloud Build fails uploading source | The staging bucket grant in step 3. Re-run that line. |
+| `forbidden from accessing the bucket ..._cloudbuild` | deploy.sh should be staging into `PROJECT-synap-ci-source`. If this appears, an older deploy.sh is running — pull main. |
 | `iam.serviceAccounts.actAs` denied | The `synap-api` binding in step 3 was skipped. |
 | Deploy succeeds, verification fails | Traffic is on an older revision. The failure step prints the rollback command. |
 | Workflow does not run at all | The `paths:` filter — PWA-only changes deliberately do not deploy. |

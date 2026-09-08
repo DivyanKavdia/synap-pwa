@@ -32,8 +32,28 @@ gcloud artifacts repositories create "${REPO}" \
   --repository-format=docker --location="${REGION}" --project="${PROJECT_ID}" \
   --description="Synap backend images"
 
+# Source staging bucket.
+#
+# Left to itself, gcloud builds submit stages into PROJECT_cloudbuild, a shared
+# bucket whose default permissions a narrowly-scoped deploy identity does not
+# satisfy. Granting project-wide storage access would fix it and would also hand
+# CI read access to the sealed audio bucket, which defeats the point of keeping
+# the deploy identity separate from the runtime one.
+#
+# A dedicated bucket holding nothing but build tarballs is both simpler to
+# reason about and the smaller permission.
+STAGING_BUCKET="${STAGING_BUCKET:-${PROJECT_ID}-synap-ci-source}"
+if ! gcloud storage buckets describe "gs://${STAGING_BUCKET}" \
+     --project="${PROJECT_ID}" >/dev/null 2>&1; then
+  echo "==> Creating source staging bucket gs://${STAGING_BUCKET}"
+  gcloud storage buckets create "gs://${STAGING_BUCKET}" \
+    --project="${PROJECT_ID}" --location="${REGION}" \
+    --uniform-bucket-level-access
+fi
+
 echo "==> Building ${IMAGE}"
-gcloud builds submit "${here}/backend" --tag "${IMAGE}" --project="${PROJECT_ID}"
+gcloud builds submit "${here}/backend" --tag "${IMAGE}" --project="${PROJECT_ID}" \
+  --gcs-source-staging-dir="gs://${STAGING_BUCKET}/source"
 
 echo "==> Deploying ${SERVICE}"
 gcloud run deploy "${SERVICE}" \
