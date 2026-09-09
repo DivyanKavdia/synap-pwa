@@ -219,14 +219,14 @@
     activeSince = 0;
     if (state === '1') {
       clearReconnectRestoreTimer();
-      if (intentionalSleep) endIntentionalSleep();
+      if (intentionalSleep && !root.SynapSleepStateGuard) endIntentionalSleep();
       if (rolloverPending) beginNextPartWhenReady();
       else root.setTimeout(() => {
         if (!rolloverPending && document.body.dataset.deviceState === '1') writeSession(null);
       }, 1200);
       return;
     }
-    if (intentionalSleep) scheduleReconnectPreferenceRestore();
+    if (intentionalSleep && !root.SynapSleepStateGuard) scheduleReconnectPreferenceRestore();
   }
 
   function improveCopy() {
@@ -255,10 +255,10 @@
       else handleDeviceState();
     });
     root.addEventListener('synap-gatt-service-ready', () => {
-      if (intentionalSleep) endIntentionalSleep();
+      if (intentionalSleep && !root.SynapSleepStateGuard) endIntentionalSleep();
     });
     if(!root.SynapSleepStateGuard) root.addEventListener('pagehide', () => {
-      if (intentionalSleep) endIntentionalSleep();
+      if (intentionalSleep && !root.SynapSleepStateGuard) endIntentionalSleep();
     });
     const observer = new MutationObserver(handleDeviceState);
     observer.observe(document.body, {attributes:true, attributeFilter:['data-device-state','data-state']});

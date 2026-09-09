@@ -38,44 +38,9 @@
     const appVersion=document.getElementById('appVersion');
     if(appVersion)appVersion.textContent=PUBLIC_VERSION;
 
-    /* Keep queue controls available in Settings without making them part of the primary recording flow. */
+    /* Processing is automatic/product-managed. Low-level queue controls stay internal. */
     const processing=document.getElementById('processing');
-    const queueStatus=document.getElementById('queueStatus');
-    const runQueue=document.getElementById('runQueueButton');
-    const pauseQueue=document.getElementById('pauseQueueButton');
-    const processingSettings=document.querySelector('.processing-settings .settings-row-body');
-    const memoryStatus=document.getElementById('memoryProcessingStatus');
-    if(processing&&queueStatus&&runQueue&&pauseQueue&&processingSettings){
-      processing.hidden=true;
-      let controls=document.getElementById('backgroundMemoryControls');
-      if(!controls){
-        controls=document.createElement('div');
-        controls.id='backgroundMemoryControls';
-        controls.className='background-memory-controls';
-        const label=document.createElement('div');
-        label.className='background-memory-label';
-        label.innerHTML='<strong>Memory processing</strong><small>Runs quietly in the background. Use these controls only when needed.</small>';
-        const state=document.createElement('p');
-        state.id='settingsMemoryStatus';
-        state.className='background-memory-state';
-        state.setAttribute('role','status');
-        state.setAttribute('aria-live','polite');
-        const buttons=document.createElement('div');
-        buttons.className='setting-actions background-memory-actions';
-        buttons.append(runQueue,pauseQueue);
-        controls.append(label,state,buttons);
-        processingSettings.appendChild(controls);
-        const syncProcessing=()=>{
-          const text=(queueStatus.textContent||'').trim();
-          const idle=/^(Ready to process|Queue complete|Paused)/i.test(text);
-          state.textContent=text;
-          state.classList.toggle('is-active',!idle);
-          if(memoryStatus){memoryStatus.textContent=text;memoryStatus.hidden=idle||!text;}
-        };
-        new MutationObserver(syncProcessing).observe(queueStatus,{childList:true,subtree:true,characterData:true});
-        syncProcessing();
-      }
-    }
+    if(processing)processing.hidden=true;
 
     section.classList.add('capture-minimal');
     section.setAttribute('aria-hidden','true');
@@ -114,7 +79,7 @@
       (RECORDING_STATES.has(state)?stop:start).click();
     });
     new MutationObserver(sync).observe(document.body,{attributes:true,attributeFilter:['data-state']});
-    if(timer)new MutationObserver(sync).observe(timer,{childList:true,subtree:true,characterData:true});
+    if(timer)new MutationObserver(()=>{if(RECORDING_STATES.has(document.body.dataset.state||''))toggle.dataset.time=timer.textContent||''}).observe(timer,{childList:true,subtree:true,characterData:true});
     new MutationObserver(sync).observe(start,{attributes:true,attributeFilter:['disabled']});
     new MutationObserver(sync).observe(stop,{attributes:true,attributeFilter:['disabled']});
     sync();

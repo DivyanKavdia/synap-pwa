@@ -18,6 +18,7 @@ const enhancements=read('enhancements.js');
 const dashboard=read('dashboard-ui.js');
 const product=read('product-ui.js');
 const stability=read('capture-stability.js');
+const capture=read('capture-ui.js');
 
 assert(html.includes('globalThis.SYNAP_STATIC_BOOTSTRAP=true'),'production shell must declare deterministic bootstrap');
 const core=[
@@ -50,6 +51,8 @@ assert.match(bridge,/if\(!root\.SynapSleepStateGuard\) root\.addEventListener\('
   'recording bridge must defer power packets to sleep-state guard');
 assert.match(bridge,/root\.addEventListener\('synap-intentional-sleep'/,
   'recording bridge should consume canonical sleep state rather than own reconnect preferences');
+assert.match(bridge,/intentionalSleep && !root\.SynapSleepStateGuard/,
+  'recording bridge must not restore reconnect preference when the sleep guard owns it');
 
 const delays=app.match(/AUTO_RECONNECT_DELAYS_MS\s*=\s*\[([^\]]+)\]/);
 assert(delays,'core recorder must define the reconnect schedule');
@@ -66,6 +69,9 @@ assert.doesNotMatch(brain,/observe\(\$\('#insightsList'\)\|\|document\.body/,
 const bindBrief=enhancements.slice(enhancements.indexOf('function bindBrief()'),enhancements.indexOf("document.addEventListener('click'"));
 assert.doesNotMatch(bindBrief,/MutationObserver/,'daily brief refresh must use explicit memory events');
 assert.doesNotMatch(product,/Advanced & recovery/,'product UI must not recreate the removed Advanced & recovery panel');
+assert.doesNotMatch(capture,/backgroundMemoryControls/,'capture UI must not rebuild manual processing controls');
+assert.doesNotMatch(capture,/if\(timer\)new MutationObserver\(sync\)/,'recording timer must not trigger a full capture-header render every second');
+assert(enhancements.includes("SHELL_REVISION='1.0.0-shell36-architecture'"),'update-notice generation must match the service worker');
 assert.doesNotMatch(stability,/observe\(root\.document\.body, \{ childList: true, subtree: true \}\)/,
   'recovery hiding must not watch the entire document forever');
 assert(sw.includes("const CACHE_REVISION='1.0.0-shell36-architecture';"),'service worker revision must advance with the architecture graph');
