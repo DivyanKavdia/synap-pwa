@@ -150,9 +150,8 @@
   }
 
   function install(){
-    if($('#actionableMemory'))return;
     const brief=$('.day-brief'),glance=brief?.querySelector('.glance-grid');
-    if(brief&&glance){
+    if(brief&&glance&&!$('#actionableMemory')){
       const n=document.createElement('div');
       n.id='actionableMemory';
       n.className='actionable-memory';
