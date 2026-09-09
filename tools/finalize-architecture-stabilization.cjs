@@ -5,12 +5,13 @@ const read=f=>fs.readFileSync(path.join(root,f),'utf8');
 const write=(f,s)=>fs.writeFileSync(path.join(root,f),s);
 function once(s,b,a,label){const i=s.indexOf(b);if(i<0)throw Error(`Missing finalization anchor: ${label}`);if(s.indexOf(b,i+b.length)>=0)throw Error(`Ambiguous finalization anchor: ${label}`);return s.slice(0,i)+a+s.slice(i+b.length)}
 function regexOnce(s,re,a,label){const m=[...s.matchAll(re)];if(m.length!==1)throw Error(`${m.length?'Ambiguous':'Missing'} finalization anchor: ${label} (${m.length})`);return s.replace(re,a)}
+function replaceAllChecked(s,b,a,label,min=1){const count=s.split(b).length-1;if(count<min)throw Error(`Missing finalization anchor: ${label}`);return s.split(b).join(a)}
 
 let s=read('enhancements.js');
 s=once(s,"const SHELL_REVISION='1.0.0-shell26-end-to-end-audio'","const SHELL_REVISION='1.0.0-shell36-architecture'",'enhancement shell generation');write('enhancements.js',s);
 
 s=read('recording-bridge.js');
-s=once(s,"      if (intentionalSleep) endIntentionalSleep();","      if (intentionalSleep && !root.SynapSleepStateGuard) endIntentionalSleep();",'guard owns wake restore');
+s=replaceAllChecked(s,"if (intentionalSleep) endIntentionalSleep();","if (intentionalSleep && !root.SynapSleepStateGuard) endIntentionalSleep();",'guard owns wake restore',2);
 s=once(s,"    if (intentionalSleep) scheduleReconnectPreferenceRestore();","    if (intentionalSleep && !root.SynapSleepStateGuard) scheduleReconnectPreferenceRestore();",'guard owns disconnected sleep lock');write('recording-bridge.js',s);
 
 s=read('capture-ui.js');
