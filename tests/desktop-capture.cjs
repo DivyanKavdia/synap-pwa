@@ -1,0 +1,18 @@
+const fs=require('fs');const assert=require('assert');
+const src=fs.readFileSync('desktop-capture.js','utf8');
+const theme=fs.readFileSync('theme.js','utf8');
+const sw=fs.readFileSync('sw.js','utf8');
+assert.match(theme,/desktop-capture\.js\?v=/,'desktop capture must load in production');
+assert.match(sw,/\.\/desktop-capture\.js/,'desktop capture must be in offline shell');
+assert.match(src,/getDisplayMedia\(\{video:true,audio:true\}\)/,'desktop capture must request user-selected system or tab audio');
+assert.match(src,/getUserMedia\(\{audio:/,'desktop capture must mix the wearer microphone');
+assert.match(src,/new root\.DKAudioStore/,'desktop capture must use the resilient Synap journal');
+assert.match(src,/journal\.begin\(/,'desktop capture must create exactly one source recording');
+assert.match(src,/journal\.append\(/,'desktop capture must stream PCM frames into the recording journal');
+assert.match(src,/journal\.close\(/,'desktop capture must seal the source recording');
+assert.match(src,/TARGET_RATE=16000/,'desktop capture must target the existing 16 kHz processing contract');
+assert.match(src,/FRAME_SAMPLES=800/,'desktop capture must emit 50 ms frames');
+assert.match(src,/FRAME_BYTES=1600/,'desktop capture PCM frame size must match AudioStore');
+assert.match(src,/No bot joins the call/,'desktop capture must disclose its no-bot behavior');
+assert.doesNotMatch(src,/startButton|stopButton|\.click\(\)/,'desktop capture must never drive pendant recording controls');
+console.log('desktop capture contract passed');
