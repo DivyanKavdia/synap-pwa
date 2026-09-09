@@ -1,6 +1,10 @@
 /* Reliable one-tap PWA Remember This handler. Hardware Remember This remains a long press on TTP223. */
-(function(root){'use strict';
+(function(root){
+'use strict';
+
 const HKEY='synap-memory-highlights',DB='dk-pendant-recordings',TODAY_PIPELINE_ID='todayMemoryPipeline',STYLE_ID='synap-today-pipeline-style';
+let pipelineRefreshTimer=0;
+
 function read(){try{return JSON.parse(localStorage.getItem(HKEY)||'[]')}catch(_){return[]}}
 function write(v){try{localStorage.setItem(HKEY,JSON.stringify(v.slice(-500)))}catch(_){}}
 function timerSeconds(){const t=document.getElementById('timer')?.textContent||'';const p=t.split(':').map(Number);if(p.some(Number.isNaN))return null;return p.length===2?p[0]*60+p[1]:p.length===3?p[0]*3600+p[1]*60+p[2]:null}
@@ -25,18 +29,104 @@ function injectTodayPipelineStyles(){if(document.getElementById(STYLE_ID))return
 function jobsByRecording(jobs){const map=new Map();(jobs||[]).forEach(job=>{const id=String(job.recordingId||'');if(!map.has(id))map.set(id,[]);map.get(id).push(job)});return map}
 function chooseFocus(items){return items.find(x=>x.model.tone==='active')||items.find(x=>x.model.tone==='error')||items.find(x=>x.model.tone==='waiting')||items[0]}
 function openLibrary(){const link=document.querySelector('.brain-tabs a[href="#library"]');if(link&&typeof link.click==='function')link.click();else location.hash='#library'}
+function setText(node,value){value=String(value??'');if(node&&node.textContent!==value)node.textContent=value}
+
+function ensureTodayPipeline(brief){
+  let panel=document.getElementById(TODAY_PIPELINE_ID);
+  if(panel)return panel;
+  injectTodayPipelineStyles();
+  panel=document.createElement('section');
+  panel.id=TODAY_PIPELINE_ID;
+  panel.className='today-memory-pipeline';
+  panel.setAttribute('aria-label','Memory processing status');
+
+  const head=document.createElement('div');
+  head.className='today-memory-pipeline-head';
+  const title=document.createElement('strong');
+  title.textContent='MEMORY PROCESSING';
+  const count=document.createElement('span');
+  count.className='today-memory-pipeline-count';
+  head.append(title,count);
+
+  const current=document.createElement('div');
+  current.className='today-memory-pipeline-current';
+  const name=document.createElement('strong');
+  name.className='today-memory-pipeline-name';
+  const status=document.createElement('span');
+  status.className='today-memory-pipeline-status';
+  current.append(name,status);
+
+  const track=document.createElement('div');
+  track.className='today-memory-track';
+
+  const button=document.createElement('button');
+  button.type='button';
+  button.className='today-memory-pipeline-link';
+  button.addEventListener('click',openLibrary);
+
+  panel.append(head,current,track,button);
+  brief.insertAdjacentElement('afterend',panel);
+  return panel;
+}
+
+function updatePipelineSteps(track,steps){
+  const existing=[...track.querySelectorAll('.today-memory-step')];
+  if(existing.length!==steps.length){
+    const fragment=document.createDocumentFragment();
+    steps.forEach(item=>{
+      const step=document.createElement('div');
+      step.className='today-memory-step';
+      const dot=document.createElement('span');
+      dot.className='today-memory-dot';
+      dot.setAttribute('aria-hidden','true');
+      const label=document.createElement('small');
+      step.append(dot,label);
+      fragment.appendChild(step);
+    });
+    track.replaceChildren(fragment);
+  }
+  track.style.setProperty('--today-pipeline-steps',String(steps.length));
+  const nodes=[...track.querySelectorAll('.today-memory-step')];
+  steps.forEach((item,index)=>{
+    const step=nodes[index];if(!step)return;
+    if(step.dataset.state!==String(item.state||''))step.dataset.state=String(item.state||'');
+    setText(step.querySelector('small'),item.label||'');
+  });
+}
+
 async function renderTodayPipeline(){
   const api=root.SynapProcessingPipeline,brief=document.getElementById('dayBriefText');if(!api||typeof api.derive!=='function'||!brief)return;
   const data=await pipelineSnapshot(),selected=document.getElementById('datePicker')?.value||localDay(new Date()),map=jobsByRecording(data.jobs),recordings=(data.recordings||[]).filter(r=>localDay(r.createdAt)===selected).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
   let panel=document.getElementById(TODAY_PIPELINE_ID);if(!recordings.length){panel?.remove();return}
   const items=recordings.map(recording=>({recording,model:api.derive(recording,map.get(String(recording.id))||[])})),ready=items.filter(x=>x.model.tone==='ready').length,focus=chooseFocus(items);if(!focus)return;
-  injectTodayPipelineStyles();if(!panel){panel=document.createElement('section');panel.id=TODAY_PIPELINE_ID;panel.className='today-memory-pipeline';panel.setAttribute('aria-label','Memory processing status');brief.insertAdjacentElement('afterend',panel)}
-  const head=document.createElement('div');head.className='today-memory-pipeline-head';const title=document.createElement('strong');title.textContent='MEMORY PROCESSING';const count=document.createElement('span');count.textContent=ready+' of '+items.length+' ready';head.append(title,count);
-  const current=document.createElement('div');current.className='today-memory-pipeline-current';const name=document.createElement('strong');name.textContent=focus.recording.name||'Latest recording';const status=document.createElement('span');status.textContent=focus.model.status;current.append(name,status);
-  const track=document.createElement('div');track.className='today-memory-track';track.style.setProperty('--today-pipeline-steps',String(focus.model.steps.length));focus.model.steps.forEach(item=>{const step=document.createElement('div');step.className='today-memory-step';step.dataset.state=item.state;const dot=document.createElement('span');dot.className='today-memory-dot';dot.setAttribute('aria-hidden','true');const label=document.createElement('small');label.textContent=item.label;step.append(dot,label);track.appendChild(step)});
-  const button=document.createElement('button');button.type='button';button.className='today-memory-pipeline-link';button.textContent=items.length>1?'View all recording pipelines →':'View recording pipeline →';button.addEventListener('click',openLibrary);
-  panel.replaceChildren(head,current,track,button);
+  panel=ensureTodayPipeline(brief);
+  const count=panel.querySelector('.today-memory-pipeline-count');
+  const name=panel.querySelector('.today-memory-pipeline-name');
+  const status=panel.querySelector('.today-memory-pipeline-status');
+  const track=panel.querySelector('.today-memory-track');
+  const button=panel.querySelector('.today-memory-pipeline-link');
+  setText(count,ready+' of '+items.length+' ready');
+  setText(name,focus.recording.name||'Latest recording');
+  setText(status,focus.model.status||'');
+  if(track){focus.model.steps.forEach(()=>{});updatePipelineSteps(track,focus.model.steps||[])}
+  setText(button,items.length>1?'View all recording pipelines →':'View recording pipeline →');
 }
-function bindTodayPipeline(){guardFirmwareNotice();let timer=0;const schedule=(delay=80)=>{clearTimeout(timer);timer=setTimeout(()=>renderTodayPipeline().catch(()=>{}),delay)};document.getElementById('datePicker')?.addEventListener('change',()=>schedule(40));const queue=document.getElementById('queueStatus');if(queue&&root.MutationObserver)new MutationObserver(()=>schedule(40)).observe(queue,{childList:true,subtree:true,characterData:true});if(root.SynapAuth&&typeof root.SynapAuth.onChange==='function')root.SynapAuth.onChange(()=>schedule(40));document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')schedule(40)});setInterval(()=>{if(document.visibilityState==='visible')schedule(0)},5000);schedule(600)}
+
+function scheduleTodayPipeline(delay=80){
+  clearTimeout(pipelineRefreshTimer);
+  pipelineRefreshTimer=setTimeout(()=>renderTodayPipeline().catch(()=>{}),delay);
+}
+
+function bindTodayPipeline(){
+  guardFirmwareNotice();
+  document.getElementById('datePicker')?.addEventListener('change',()=>scheduleTodayPipeline(40));
+  const queue=document.getElementById('queueStatus');
+  if(queue&&root.MutationObserver)new MutationObserver(()=>scheduleTodayPipeline(40)).observe(queue,{childList:true,subtree:true,characterData:true});
+  if(root.SynapAuth&&typeof root.SynapAuth.onChange==='function')root.SynapAuth.onChange(()=>scheduleTodayPipeline(40));
+  ['synap-processing-state','synap-memory-ready','synap-cloud-history-updated','synap-transcript-updated'].forEach(name=>root.addEventListener?.(name,()=>scheduleTodayPipeline(40)));
+  scheduleTodayPipeline(600);
+}
+
+root.SynapTodayPipeline={refresh:()=>renderTodayPipeline()};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bindTodayPipeline,{once:true});else bindTodayPipeline();
 })(globalThis);
