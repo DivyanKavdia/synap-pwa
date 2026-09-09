@@ -91,8 +91,16 @@ export const config = {
      * Synap uploads ~30 second segments, so that ceiling is never near.
      */
     transcribeModel: optional('SYNAP_GEMINI_STT_MODEL', 'gemini-3.5-transcribe'),
-    /** Structured memory extraction, daily brief and Ask Synap answering. */
-    memoryModel: optional('SYNAP_GEMINI_LLM_MODEL', 'gemini-3.5-flash'),
+    /**
+     * High-volume structured extraction should use the inexpensive Flash-Lite
+     * tier. Synap validates the schema and grounding after generation, so this
+     * stage does not need the premium reasoning model.
+     */
+    memoryModel: optional('SYNAP_GEMINI_MEMORY_MODEL', 'gemini-3.5-flash-lite'),
+    /** Query parsing is classification/filter extraction, not answer generation. */
+    queryModel: optional('SYNAP_GEMINI_QUERY_MODEL', 'gemini-3.5-flash-lite'),
+    /** Final grounded Ask Synap answers get the stronger model, but at low thinking. */
+    askModel: optional('SYNAP_GEMINI_ASK_MODEL', 'gemini-3.8-flash'),
     embedModel: optional('SYNAP_GEMINI_EMBED_MODEL', 'gemini-embedding-001'),
     /** 768 keeps Firestore vector indexes cheap and is a documented sweet spot. */
     embedDimensions: Number(optional('SYNAP_GEMINI_EMBED_DIMENSIONS', '768')),
