@@ -390,12 +390,11 @@
     root.document.addEventListener('toggle', function (event) {
       if (event.target && event.target.classList && event.target.classList.contains('recording-card')) scheduleRefresh(20);
     }, true);
-    root.document.addEventListener('visibilitychange', function () {
-      if (root.document.visibilityState === 'visible') scheduleRefresh(40);
-    });
-    root.setInterval(function () {
-      if (root.document.visibilityState === 'visible') refresh();
-    }, 5000);
+    if (typeof root.addEventListener === 'function') {
+      root.addEventListener('synap-processing-state', function () { scheduleRefresh(20); });
+      root.addEventListener('synap-memory-ready', function () { scheduleRefresh(20); });
+      root.addEventListener('synap-cloud-history-updated', function () { scheduleRefresh(20); });
+    }
     scheduleRefresh(300);
   }
 
@@ -405,5 +404,5 @@
     bind();
   }
 
-  root.SynapProcessingPipeline = { derive: derive, refresh: refresh };
+  root.SynapProcessingPipeline = { derive: derive, refresh: refresh, scheduleRefresh: scheduleRefresh };
 })(globalThis);
