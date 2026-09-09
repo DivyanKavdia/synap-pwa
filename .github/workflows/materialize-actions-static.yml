@@ -1,0 +1,31 @@
+name: Materialize static Actions
+on:
+  push:
+    branches: [fix/actions-static-today]
+permissions:
+  contents: write
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/actions-static-today
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Materialize static Actions shell
+        run: node tools/materialize-actions-static.cjs
+      - name: Validate
+        run: |
+          node --check brain-ui.js
+          node tests/actions-visible.cjs
+          for test_file in tests/*.cjs; do node "$test_file"; done
+      - name: Commit materialized files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html brain-ui.js tests/actions-visible.cjs
+          git commit -m "Make Today Actions a static visible surface"
+          git push origin HEAD:fix/actions-static-today
