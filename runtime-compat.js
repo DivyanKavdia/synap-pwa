@@ -272,7 +272,9 @@
 
   function installLazyLibraryPlayback() {
     const documentObject = root.document;
-    if (!documentObject || documentObject.__synapLazyPlaybackInstalled) return Boolean(documentObject);
+    if (!documentObject || typeof documentObject.addEventListener !== 'function' || documentObject.__synapLazyPlaybackInstalled) {
+      return Boolean(documentObject && typeof documentObject.addEventListener === 'function');
+    }
     documentObject.__synapLazyPlaybackInstalled = true;
 
     const objectUrls = new Set();
@@ -401,10 +403,12 @@
       }
     }
 
-    root.addEventListener('pagehide', function () {
-      objectUrls.forEach(function (url) { try { root.URL.revokeObjectURL(url); } catch (_) {} });
-      objectUrls.clear();
-    }, { once: true });
+    if (typeof root.addEventListener === 'function') {
+      root.addEventListener('pagehide', function () {
+        objectUrls.forEach(function (url) { try { root.URL.revokeObjectURL(url); } catch (_) {} });
+        objectUrls.clear();
+      }, { once: true });
+    }
     return true;
   }
 
