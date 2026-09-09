@@ -51,7 +51,7 @@
 </section>
 <label><input id="autoProcessInput" type="checkbox"> Process memories automatically</label><label><input id="wakeLockInput" type="checkbox" checked> Keep screen awake while listening</label><label><input id="autoReconnectInput" type="checkbox" checked> Reconnect pendant automatically</label><button id="retrySaveButton" type="button">Retry storage</button><button id="recoveryButton" type="button">Recover</button><button id="installButton" type="button" hidden>Install app</button><button type="submit">Save</button><details id="diagnostics" class="settings-row diagnostics-settings"><summary>Diagnostics</summary><div class="settings-row-body"><pre id="diagnosticsLog"></pre><div class="setting-actions"><button id="copyDiagnosticsButton" type="button">Copy diagnostics</button><button id="clearDiagnosticsButton" type="button">Clear diagnostics</button></div></div></details></form></dialog>
 <script src="device-identity.js?v=1.0.0-device1"></script>
-<script>(function(){function renderSynapDeviceId(){var el=document.getElementById('setupDeviceId');if(!el)return;try{var key=(globalThis.SynapDevices&&globalThis.SynapDevices.KEY)||'synap-device-associations-v1';var data=JSON.parse(localStorage.getItem(key)||'null');var devices=Array.isArray(data&&data.devices)?data.devices.slice():[];devices.sort(function(a,b){return String(b.lastConnectedAt||'').localeCompare(String(a.lastConnectedAt||''));});var id=devices[0]&&devices[0].deviceId?String(devices[0].deviceId):'';el.textContent=id?id.toLowerCase():'synap-—';el.title=id;el.dataset.deviceId=id;}catch(e){el.textContent='synap-—';el.title='';el.dataset.deviceId='';}}document.addEventListener('DOMContentLoaded',function(){renderSynapDeviceId();var status=document.getElementById('setupDeviceStatus');if(status)new MutationObserver(renderSynapDeviceId).observe(status,{childList:true,subtree:true,characterData:true});document.getElementById('settingsButton')?.addEventListener('click',function(){setTimeout(renderSynapDeviceId,80)});});globalThis.renderSynapDeviceId=renderSynapDeviceId;})();</script>
+<script>(function(){function renderSynapDeviceId(){var el=document.getElementById('setupDeviceId');if(!el)return;try{var key=(globalThis.SynapDevices&&globalThis.SynapDevices.KEY)||'dk-pendant-known-device';var d=JSON.parse(localStorage.getItem(key)||'null');if(d&&d.deviceId){el.textContent='synap-'+String(d.deviceId).toUpperCase();return}}catch(_){}el.textContent='synap-—'}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',renderSynapDeviceId,{once:true});else renderSynapDeviceId();addEventListener('synap-device-identity',renderSynapDeviceId)})();</script>
 <script src="runtime-compat.js?v=1.0.0-controls1"></script>
 <script src="audio-store.js?v=1.0.0-prod2"></script>
 <script src="battery-popover-fix.js?v=1.0.0-arch1"></script>
@@ -72,7 +72,7 @@
 <script src="people-confirm-ui.js?v=1.0.0-people1"></script>
 <script src="cloud-history.js?v=1.0.0-history2"></script>
 <script src="memory-tools.js?v=1.0.0-transcript4"></script>
-<script src="cost-ui.js?v=1.0.0-cost2"></script>
+<script src="cost-ui.js?v=1.0.0-cost3"></script>
 <script src="transcript-repair.js?v=1.0.0-transcript2"></script>
 <script src="voice-profile.js?v=1.0.0-voice-profile2"></script>
 <script src="ask-synap.js?v=1.0.0-ask2"></script>
