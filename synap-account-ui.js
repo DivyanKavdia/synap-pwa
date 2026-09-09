@@ -120,11 +120,15 @@
     }
     revealConnection(false);
 
-    /* ai-providers.js defaults an unset preference to 'openai' and would then
-       intercept every job looking for a key this build no longer asks for.
-       Write the choice down explicitly so both modules agree on first run. */
+    /*
+     * The production UI no longer exposes OpenAI as a processing authority.
+     * Older PWA builds could leave provider=openai in localStorage, and that
+     * hidden preference was enough for ai-providers.js to call OpenAI directly
+     * with a user key even after Synap Cloud had been introduced. Migrate that
+     * stale value explicitly so one recording has exactly one paid AI pipeline.
+     */
     var stored = prefs().provider;
-    if (stored !== 'synap' && stored !== 'openai' && stored !== 'custom') {
+    if (stored === 'openai' || (stored !== 'synap' && stored !== 'custom')) {
       stored = 'synap';
       savePrefs({ provider: stored });
     }
