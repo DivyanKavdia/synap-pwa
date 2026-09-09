@@ -11,23 +11,26 @@ const tasks=fs.readFileSync(path.join(root,'backend/src/http/routes/tasks.ts'),'
 const transcribe=fs.readFileSync(path.join(root,'backend/src/gemini/transcribe.ts'),'utf8');
 
 test('PWA exposes an authenticated rebuild action for existing recordings',()=>{
-  assert.match(repair,/Refresh transcript/);
+  assert.match(repair,/Refresh memory/);
   assert.match(repair,/process-now\?force=true/);
   assert.match(repair,/\/memory/);
   assert.match(repair,/transcriptRebuiltAt/);
+  assert.match(repair,/semanticRebuiltAt/);
   assert.match(repair,/BUSY=\['recording','starting','stopping','saving','updating'\]/);
 });
 
 test('cloud history loads and offline shell caches transcript repair',()=>{
   assert.match(history,/transcript-repair\.js\?v=1\.0\.0-transcript1/);
   assert.match(sw,/\.\/transcript-repair\.js/);
-  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell34-transcript'/);
+  assert.match(sw,/1\.0\.0-shell34-transcript/);
 });
 
-test('backend rebuilds ready recordings without re-upload and transcript assembly fails safe',()=>{
+test('backend rebuilds ready recordings without re-upload or retranscription and transcript assembly fails safe',()=>{
   assert.match(tasks,/recording\.state === 'ready' && force/);
   assert.match(tasks,/state: 'uploaded'/);
-  assert.match(tasks,/rebuilt: force/);
+  assert.match(tasks,/rebuilt: rebuild/);
+  assert.match(tasks,/retranscribed_segments: 0/);
+  assert.match(tasks,/skipTranscription: true, memoryOnly: true/);
   assert.match(transcribe,/comparableText\(annotated\) !== comparableText\(flat\)/);
   assert.match(transcribe,/return flat/);
 });

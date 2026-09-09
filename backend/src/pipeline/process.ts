@@ -22,7 +22,7 @@ import {
 } from '../crypto/envelope.js';
 import { extractMemory } from '../gemini/memory.js';
 import { embedContent } from '../gemini/client.js';
-import { toSpeakerLines, transcribeSegment } from '../gemini/transcribe.js';
+import { formatMs, toSpeakerLines, transcribeSegment } from '../gemini/transcribe.js';
 import { tagSelfSpeaker } from '../speaker/enrich.js';
 import * as db from '../store/firestore.js';
 import { readSealedSegment } from '../store/gcs.js';
@@ -44,11 +44,35 @@ import { rebuildDay } from './brief.js';
 const TRANSCRIBE_CONCURRENCY = 4;
 const SEGMENT_MS = 30_000;
 
+export interface ProcessRecordingOptions {
+  /** Reuse sealed segment transcripts only. Missing transcript windows are an error; never call STT. */
+  skipTranscription?: boolean;
+  /** Refresh the sealed recording memory/day brief without rewriting retrieval/people/follow-up indexes. */
+  memoryOnly?: boolean;
+}
+
 export function binding(uid: string, scope: string, field: string): Binding {
   return { uid, scope, field };
 }
 
-export async function processRecording(uid: string, recordingId: string): Promise<void> {
+/**
+ * Old segment transcripts predate segment-level timestamp prefixes. Preserve the
+ * exact text but anchor the whole sealed 30-second window at its recorded start.
+ * New transcripts are already grounded and are left untouched. This is what
+ * lets a memory-only rebuild recover chronology without paying for STT again.
+ */
+export function groundSegmentTranscript(text: string, startMs: number): string {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return '';
+  if (/^\[\d{2}:\d{2}(?::\d{2})?\]\s+[^:]+:/u.test(trimmed)) return trimmed;
+  return `[${formatMs(startMs)}] S?: ${trimmed}`;
+}
+
+export async function processRecording(
+  uid: string,
+  recordingId: string,
+  options: ProcessRecordingOptions = {},
+): Promise<void> {
   const user = await db.getUser(uid);
   if (!user) throw new Error(`Unknown user ${uid}`);
 
@@ -62,14 +86,33 @@ export async function processRecording(uid: string, recordingId: string): Promis
   const dek = await keyring.unwrap(uid, user.key);
 
   try {
-    await db.patchRecording(uid, recordingId, { state: 'transcribing', progress: 0.05 });
-    const segments = await transcribeAll(uid, recordingId, dek, recording);
+    let segments: SegmentDoc[];
+    if (options.skipTranscription) {
+      segments = await db.listSegments(uid, recordingId);
+      if (segments.length === 0) throw new Error('Recording has no segments');
+      const missing = segments.filter((segment) => !segment.sealedTranscript);
+      if (missing.length > 0) {
+        throw new Error(
+          `Transcript-only rebuild requires every sealed segment transcript; ${missing.length} window(s) are missing`,
+        );
+      }
+    } else {
+      await db.patchRecording(uid, recordingId, { state: 'transcribing', progress: 0.05 });
+      segments = await transcribeAll(uid, recordingId, dek, recording);
+    }
 
     await db.patchRecording(uid, recordingId, { state: 'understanding', progress: 0.55 });
     const memory = await understand(uid, recordingId, dek, recording, segments);
 
-    await db.patchRecording(uid, recordingId, { state: 'indexing', progress: 0.8 });
-    await index(uid, dek, recording, memory);
+    if (options.memoryOnly) {
+      // A legacy repair should not duplicate people counters or follow-up docs.
+      // Today/Library and the deterministic day brief are sourced from the
+      // recording memory itself, so refreshing that sealed source is sufficient.
+      await db.patchRecording(uid, recordingId, { progress: 0.9 });
+    } else {
+      await db.patchRecording(uid, recordingId, { state: 'indexing', progress: 0.8 });
+      await index(uid, dek, recording, memory);
+    }
 
     await db.patchRecording(uid, recordingId, {
       state: 'ready',
@@ -84,6 +127,8 @@ export async function processRecording(uid: string, recordingId: string): Promis
       recordingId,
       segments: segments.length,
       conversations: memory.conversations.length,
+      transcriptOnly: Boolean(options.skipTranscription),
+      memoryOnly: Boolean(options.memoryOnly),
     });
   } catch (cause) {
     const message = (cause as Error).message ?? 'processing failed';
@@ -228,7 +273,8 @@ async function understand(
     const scope = `recording/${recordingId}/segment/${segment.index}`;
     if (segment.sealedTranscript) {
       const text = openText(dek, segment.sealedTranscript, binding(uid, scope, 'transcript'));
-      if (text.trim()) flat.push(text.trim());
+      const grounded = groundSegmentTranscript(text, segment.startMs);
+      if (grounded) flat.push(grounded);
     }
     if (segment.sealedWords) {
       const segmentWords = openJson<TranscriptWord[]>(dek, segment.sealedWords, binding(uid, scope, 'words'));

@@ -112,6 +112,6 @@ test('the production shell loader and backend recovery endpoint remain wired', (
   assert.match(accountSource, /processing-recovery\.js\?v=1\.0\.0-recovery1/);
   assert.match(taskSource, /\/recordings\/:recordingId\/process-now/);
   assert.match(taskSource, /requireAuth\(\)/);
-  assert.match(taskSource, /await processRecording\(req\.uid, recordingId\)/);
+  assert.match(taskSource, /await processRecording\(\s*req\.uid,\s*recordingId,/s);
   assert.match(taskSource, /ACTIVE_STATES\.has\(recording\.state\)/);
 });

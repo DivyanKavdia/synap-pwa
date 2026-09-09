@@ -6,8 +6,10 @@
  * /recordings/:recordingId/process-now when an uploaded recording has not been
  * picked up by Cloud Tasks. That recovery path is deliberately narrow: it can
  * only process a recording owned by the authenticated user. A force=true query
- * is reserved for rebuilding an already-ready recording from its sealed segment
- * transcripts after a transcript-assembly bug; it does not re-upload audio.
+ * is reserved for refreshing an already-ready memory from its sealed 30-second
+ * transcript windows. Force rebuilds never call STT and never rewrite the
+ * people/follow-up/retrieval indexes; they refresh the recording memory + day
+ * brief only.
  */
 
 import { Router } from 'express';
@@ -61,6 +63,8 @@ export function taskRoutes(): Router {
       const recording = await db.getRecording(req.uid, recordingId);
       if (!recording) throw new HttpError(404, 'not_found', 'Unknown recording');
       const force = String(req.query.force ?? '') === 'true';
+      const rebuild = recording.state === 'ready' && force;
+      let rebuildSegmentCount = 0;
 
       if (recording.state === 'ready' && !force) {
         res.status(200).json({ recording_id: recordingId, state: 'ready', recovered: false });
@@ -74,16 +78,28 @@ export function taskRoutes(): Router {
         return;
       }
 
-      if (recording.state === 'ready' && force) {
-        // Segment audio/transcripts remain sealed independently of the final
-        // memory. Moving the recording back to uploaded makes processRecording
-        // re-run understanding/indexing while transcribeAll skips every segment
-        // that already has a sealed transcript. This repairs old truncated final
-        // transcripts without discarding or re-uploading the 30-second windows.
-        log.warn('Rebuilding ready recording from sealed segment transcripts', {
+      if (rebuild) {
+        const segments = await db.listSegments(req.uid, recordingId);
+        if (segments.length === 0) {
+          throw new HttpError(409, 'no_segments', 'No sealed transcript windows are available to rebuild this memory');
+        }
+        const missing = segments.filter((segment) => !segment.sealedTranscript);
+        if (missing.length > 0) {
+          // Do not silently turn a cheap semantic repair into a paid audio
+          // transcription pass. The existing ready memory stays untouched.
+          throw new HttpError(
+            409,
+            'transcript_windows_incomplete',
+            `Rebuild aborted without retranscribing: ${missing.length} transcript window(s) are missing`,
+            false,
+          );
+        }
+        rebuildSegmentCount = segments.length;
+
+        log.warn('Refreshing ready memory from sealed transcript windows only', {
           uid: req.uid,
           recordingId,
-          segments: recording.uploadedSegments,
+          segments: rebuildSegmentCount,
         });
         await db.patchRecording(req.uid, recordingId, {
           state: 'uploaded',
@@ -101,14 +117,35 @@ export function taskRoutes(): Router {
         log.warn('Using authenticated processing recovery', { uid: req.uid, recordingId, state: recording.state });
       }
 
-      await processRecording(req.uid, recordingId);
+      try {
+        await processRecording(
+          req.uid,
+          recordingId,
+          rebuild ? { skipTranscription: true, memoryOnly: true } : {},
+        );
+      } catch (cause) {
+        if (rebuild) {
+          // processRecording marks failures as failed. For a best-effort legacy
+          // refresh that would hide a perfectly usable old memory, so restore the
+          // ready status and leave the existing sealed memory available.
+          await db.patchRecording(req.uid, recordingId, {
+            state: 'ready',
+            progress: 1,
+            errorCode: null,
+            retryable: false,
+          });
+        }
+        throw cause;
+      }
+
       const updated = await db.getRecording(req.uid, recordingId);
       const state = updated?.state ?? 'ready';
       res.status(state === 'ready' ? 200 : 202).json({
         recording_id: recordingId,
         state,
         recovered: true,
-        rebuilt: force,
+        rebuilt: rebuild,
+        ...(rebuild ? { reused_transcript_segments: rebuildSegmentCount, retranscribed_segments: 0 } : {}),
       });
     }),
   );
