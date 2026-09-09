@@ -44,11 +44,11 @@ export async function parseQuery(
   try {
     const response = await createInteraction(
       {
-        model: config.gemini.memoryModel,
+        model: config.gemini.queryModel,
         input: `Today is ${today}.\n\nQuestion: ${query}`,
         system_instruction: QUERY_INSTRUCTIONS,
         response_format: jsonResponseFormat(QUERY_SCHEMA),
-        generation_config: { thinking_level: 'low' },
+        generation_config: { thinking_level: 'minimal' },
       },
       signal,
     );
@@ -115,10 +115,11 @@ export async function answerFromEvidence(
 
   const response = await createInteraction(
     {
-      model: config.gemini.memoryModel,
+      model: config.gemini.askModel,
       input: `Evidence:\n\n${numbered}\n\nQuestion: ${query}`,
       system_instruction: ANSWER_INSTRUCTIONS,
       response_format: jsonResponseFormat(ANSWER_SCHEMA),
+      generation_config: { thinking_level: 'low' },
     },
     signal,
   );
