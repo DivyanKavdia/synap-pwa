@@ -1,0 +1,16 @@
+const fs=require('fs');const assert=require('assert');
+const src=fs.readFileSync('productivity-tools.js','utf8');
+const theme=fs.readFileSync('theme.js','utf8');
+const sw=fs.readFileSync('sw.js','utf8');
+assert.match(theme,/productivity-tools\.js\?v=/,'productivity tools must load in production');
+assert.match(sw,/\.\/productivity-tools\.js/,'productivity tools must be in offline shell');
+assert.match(src,/function weekRange\(/,'weekly review must use a deterministic week range');
+assert.match(src,/due_date/,'calendar export must originate from extracted due_date evidence');
+assert.match(src,/^.*text\/calendar.*$/m,'calendar output must use the standard text/calendar media type');
+assert.match(src,/BEGIN:VCALENDAR/,'calendar export must produce iCalendar content');
+assert.match(src,/Recording ID:/,'portable AI context must retain the recording source');
+assert.match(src,/clock\(r,offset\(/,'portable AI context must preserve source time references');
+assert.match(src,/Copy today for AI/,'day context export must be visible');
+assert.match(src,/Copy week for AI/,'week context export must be visible');
+assert.doesNotMatch(src,/due_date\s*\|\|\s*new Date/,'calendar must not invent a due date');
+console.log('productivity tools contract passed');
