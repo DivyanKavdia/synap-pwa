@@ -70,6 +70,10 @@
     return '₹' + amount.toFixed(1);
   }
 
+  function setText(element, value) {
+    if (element && element.textContent !== value) element.textContent = value;
+  }
+
   function localDay(value) {
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return '';
@@ -132,10 +136,10 @@
       }
       const value = estimate(recording);
       if (value.totalInr > 0) {
-        label.textContent = 'Approx. AI spend ' + money(value.totalInr) + ' · ' + value.minutes.toFixed(1) + ' min';
+        setText(label, 'Approx. AI spend ' + money(value.totalInr) + ' · ' + value.minutes.toFixed(1) + ' min');
         label.title = 'Estimated transcription + memory-build model cost. Ask Synap, cloud infrastructure, taxes and credits are excluded.';
       } else {
-        label.textContent = 'Projected processing ' + money(value.projectedTotalInr) + ' · ' + value.minutes.toFixed(1) + ' min';
+        setText(label, 'Projected processing ' + money(value.projectedTotalInr) + ' · ' + value.minutes.toFixed(1) + ' min');
         label.title = 'Projected transcription + memory-build model cost once processing runs.';
       }
     });
@@ -162,7 +166,7 @@
       panel.appendChild(row);
     }
     const amount = row.querySelector('strong');
-    amount.textContent = money(total);
+    setText(amount, money(total));
     row.title = processedMinutes.toFixed(1) + ' processed min · transcription + memory build only';
   }
 
