@@ -220,6 +220,35 @@
     (root.document.body || root.document.head).appendChild(script);
   }
 
+  /* Several production-ready modules are intentionally independent of the core
+     recorder. Load them from the always-present history bootstrap so older PWA
+     shells that omitted their script tags still receive capture continuity,
+     long-recording rollover and the complete transcript UI. */
+  function loadRuntimeModule(source, marker, ready) {
+    if (!root.document || (ready && ready())) return;
+    if (root.document.querySelector('script[' + marker + ']')) return;
+    var script = root.document.createElement('script');
+    script.src = source;
+    script.async = false;
+    script.setAttribute(marker, '1');
+    (root.document.body || root.document.head).appendChild(script);
+  }
+
+  function loadProductRuntime() {
+    loadRuntimeModule('capture-stability.js?v=1.0.0-stability1', 'data-synap-capture-stability', function () {
+      return Boolean(root.SynapCaptureStability);
+    });
+    loadRuntimeModule('recording-bridge.js?v=1.0.0-continuity1', 'data-synap-recording-bridge', function () {
+      return Boolean(root.SynapRecordingBridge);
+    });
+    loadRuntimeModule('memory-tools.js?v=1.0.0-transcript2', 'data-synap-memory-tools', function () {
+      return Boolean(root.SynapMemoryTools);
+    });
+    loadRuntimeModule('cost-ui.js?v=1.0.0-cost1', 'data-synap-cost-ui', function () {
+      return Boolean(root.SynapCostUI);
+    });
+  }
+
   function refreshVisible() {
     if (!signedIn() || busy()) return;
     if (Date.now() - lastRefreshAt < REFRESH_MS) return;
@@ -227,6 +256,7 @@
   }
 
   function init() {
+    loadProductRuntime();
     if (root.SynapAuth && typeof root.SynapAuth.onChange === 'function') {
       root.SynapAuth.onChange(onAuthChange);
     }
@@ -253,6 +283,7 @@
     plan: plan,
     busy: busy,
     loadTranscriptRepair: loadTranscriptRepair,
+    loadProductRuntime: loadProductRuntime,
     refreshVisible: refreshVisible
   };
 })(globalThis);
