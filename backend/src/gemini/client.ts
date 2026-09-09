@@ -16,6 +16,7 @@
  */
 
 import { config, loadSecrets } from '../config.js';
+import { log } from '../util/log.js';
 import { sleep } from '../util/retry.js';
 
 export interface InteractionTextPart {
@@ -63,6 +64,8 @@ export interface InteractionRequest {
   system_instruction?: string;
   generation_config?: Record<string, unknown>;
   response_format?: Record<string, unknown>;
+  /** Internal-only billing label. Stripped before the request is sent. */
+  usage_label?: string;
 }
 
 export class GeminiError extends Error {
@@ -137,11 +140,33 @@ async function call<T>(path: string, body: unknown, signal?: AbortSignal): Promi
   throw lastError ?? new GeminiError('Gemini request failed', 0, false);
 }
 
+/**
+ * Emit only numeric usage counters. Never log prompts, responses, transcript
+ * text or identifiers from user content. Cloud Logging can aggregate these
+ * fields by model and stage to explain billing without weakening privacy.
+ */
+export function usageLogFields(
+  model: string,
+  label: string | undefined,
+  usage: Record<string, number> | undefined,
+): Record<string, unknown> | null {
+  if (!usage) return null;
+  const fields: Record<string, unknown> = { model, stage: label || 'unspecified' };
+  for (const [key, value] of Object.entries(usage)) {
+    if (typeof value === 'number' && Number.isFinite(value)) fields[`usage_${key}`] = value;
+  }
+  return fields;
+}
+
 export async function createInteraction(
   request: InteractionRequest,
   signal?: AbortSignal,
 ): Promise<InteractionResponse> {
-  return call<InteractionResponse>('/interactions', { ...request, store: false }, signal);
+  const { usage_label: usageLabel, ...apiRequest } = request;
+  const response = await call<InteractionResponse>('/interactions', { ...apiRequest, store: false }, signal);
+  const fields = usageLogFields(request.model, usageLabel, response.usage);
+  if (fields) log.info('Gemini usage', fields);
+  return response;
 }
 
 /** Concatenate the text content of every model output step. */
