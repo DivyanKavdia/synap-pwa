@@ -77,16 +77,17 @@ function patchCloudHistory(source){
 }
 
 function patchRuntimeUi(source){
-  let s=source;
-  s=replaceOnce(s,
+  return replaceOnce(source,
     '  function init(){bindSettingsBrand();bindFirmwareAffordance();bindTouchRecordingBridge();bindRecordingControls();bindTapResponsiveness();bindBrainTabs();bindReducedMotion()}',
     '  function init(){bindSettingsBrand();bindFirmwareAffordance();if(!globalThis.SynapRecordingBridge)bindTouchRecordingBridge();bindRecordingControls();bindTapResponsiveness();if(!globalThis.SynapDashboardUI)bindBrainTabs();bindReducedMotion()}',
     'single runtime owners');
-  s=replaceOnce(s,
+}
+
+function patchCaptureUi(source){
+  return replaceOnce(source,
     "    if(timer)new MutationObserver(sync).observe(timer,{childList:true,subtree:true,characterData:true});",
     "    if(timer)new MutationObserver(()=>{if(RECORDING_STATES.has(document.body.dataset.state||''))toggle.dataset.time=timer.textContent||''}).observe(timer,{childList:true,subtree:true,characterData:true});",
     'timer-only capture update');
-  return s;
 }
 
 function patchSleepGuard(source){
@@ -116,48 +117,38 @@ function patchRecordingBridge(source){
 }
 
 function patchBrain(source){
-  let s=source;
-  s=replaceOnce(s,
+  return replaceOnce(source,
     "    if(root.MutationObserver){\n      new root.MutationObserver(()=>setTimeout(refresh,100)).observe($('#insightsList')||document.body,{childList:true,subtree:true});\n    }",
     "    let refreshTimer=0;\n    const scheduleRefresh=()=>{clearTimeout(refreshTimer);refreshTimer=setTimeout(refresh,80)};\n    ['synap-cloud-history-updated','synap-memory-ready','synap-transcript-updated'].forEach(name=>root.addEventListener(name,scheduleRefresh));",
     'brain explicit data events');
-  return s;
 }
 
 function patchEnhancements(source){
-  let s=source;
-  s=replaceRegexOnce(s,
+  return replaceRegexOnce(source,
     /function bindBrief\(\)\{document\.getElementById\('datePicker'\)\?\.addEventListener\('change',[\s\S]*?\}\)\}/g,
     "function bindBrief(){let timer=0;const schedule=()=>{clearTimeout(timer);timer=setTimeout(refreshDayBrief,60)};document.getElementById('datePicker')?.addEventListener('change',schedule);document.getElementById('dateStrip')?.addEventListener('click',schedule);['synap-cloud-history-updated','synap-memory-ready','synap-transcript-updated'].forEach(name=>addEventListener(name,schedule))}",
     'brief explicit data events');
-  return s;
 }
 
 function patchDashboard(source){
-  let s=source;
-  s=replaceOnce(s,
+  return replaceOnce(source,
     "  function init(){injectStyle();scan();let queued=false;new MutationObserver(()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;scan()})}).observe(document.body,{childList:true,subtree:true});}",
     "  function init(){injectStyle();scan();let queued=false;const schedule=()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;scan()})};['synap-cloud-history-updated','synap-memory-ready','synap-processing-state','synap-transcript-updated'].forEach(name=>addEventListener(name,schedule));setTimeout(schedule,250);}",
     'dashboard explicit lifecycle');
-  return s;
 }
 
 function patchProduct(source){
-  let s=source;
-  s=replaceRegexOnce(s,
+  return replaceRegexOnce(source,
     /function simplifySettings\(\)\{[\s\S]*?\}\nfunction makeOverflow/g,
     "function simplifySettings(){const form=$('settingsForm');if(!form)return;labelCheckbox('autoProcessInput','Create memories automatically');labelCheckbox('wakeLockInput','Keep screen awake while listening');labelCheckbox('autoReconnectInput','Reconnect automatically');const oldHint=$('appearanceAutoHint');if(oldHint)oldHint.remove();for(const id of ['retrySaveButton','recoveryButton','runQueueButton','pauseQueueButton']){const el=$(id);if(el){el.hidden=true;el.setAttribute('aria-hidden','true')}}const processing=$('processing');if(processing)processing.hidden=true;renameButtons(form)}\nfunction makeOverflow",
     'remove Advanced and recovery product section');
-  return s;
 }
 
 function patchCaptureStability(source){
-  let s=source;
-  s=replaceRegexOnce(s,
+  return replaceRegexOnce(source,
     /  function hideLowLevelRecoveryUi\(\) \{[\s\S]*?\n  \}\n\n  function init\(\)/g,
     "  function hideLowLevelRecoveryUi() {\n    const styleId='synap-hide-low-level-recovery';\n    if(!root.document?.getElementById?.(styleId)){const style=root.document.createElement('style');style.id=styleId;style.textContent='#advancedSettings,.product-advanced,#retrySaveButton,#recoveryButton,#runQueueButton,#pauseQueueButton{display:none!important}';root.document.head?.appendChild(style)}\n    ['retrySaveButton','recoveryButton','runQueueButton','pauseQueueButton'].forEach(id=>{const node=root.document?.getElementById?.(id);if(node){node.hidden=true;node.setAttribute('aria-hidden','true')}});\n  }\n\n  function init()",
     'remove body-wide recovery observer');
-  return s;
 }
 
 function patchServiceWorker(source){
@@ -181,6 +172,7 @@ function main(){
     'battery-popover-fix.js':patchBattery,
     'cloud-history.js':patchCloudHistory,
     'runtime-ui.js':patchRuntimeUi,
+    'capture-ui.js':patchCaptureUi,
     'sleep-state-guard.js':patchSleepGuard,
     'recording-bridge.js':patchRecordingBridge,
     'brain-ui.js':patchBrain,
@@ -195,4 +187,4 @@ function main(){
 }
 
 if(require.main===module)main();
-module.exports={patchIndex,patchApp,patchBattery,patchCloudHistory,patchRuntimeUi,patchSleepGuard,patchRecordingBridge,patchBrain,patchEnhancements,patchDashboard,patchProduct,patchCaptureStability,patchServiceWorker};
+module.exports={patchIndex,patchApp,patchBattery,patchCloudHistory,patchRuntimeUi,patchCaptureUi,patchSleepGuard,patchRecordingBridge,patchBrain,patchEnhancements,patchDashboard,patchProduct,patchCaptureStability,patchServiceWorker};
