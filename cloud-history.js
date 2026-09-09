@@ -6,10 +6,7 @@
   var LIMIT = 100;
   var SYNCED_KEY = 'synap-cloud-history-synced';
   var running = false;
-  var lastRefreshAt = 0;
-  /* Processing itself writes the finished memory locally, so background account
-     reconciliation does not need to redownload up to 100 transcripts every minute. */
-  var REFRESH_MS = 5 * 60 * 1000;
+  var targetedRunning = Object.create(null);
 
   var CLOUD_DERIVED_FIELDS = [
     'transcript', 'summary', 'meeting', 'people', 'conversations',
@@ -18,10 +15,6 @@
     'provider', 'durationMs'
   ];
 
-  /* These are browser bookkeeping timestamps, not memory content. Generating a
-     fresh value on every sync used to make an unchanged recording look changed,
-     which in turn caused repeated location.reload() calls. A reload destroys the
-     Web Bluetooth GATT connection even though the pendant itself is healthy. */
   var VOLATILE_FIELDS = ['restoredAt', 'processedAt', 'processingUpdatedAt'];
 
   function backend() {
@@ -38,6 +31,17 @@
     return journal.open().then(function () { return journal; });
   }
 
+  function currentDay() {
+    try {
+      var picker = root.document && root.document.getElementById
+        ? root.document.getElementById('datePicker')
+        : null;
+      if (picker && picker.value) return String(picker.value);
+    } catch (error) {}
+    var now = new Date();
+    return [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+  }
+
   function cloudReady(restored) {
     return Boolean(restored && restored.restoredFromCloud === true &&
       (restored.processingStage === 'ready' || restored.processingState === 'done'));
@@ -48,7 +52,6 @@
       (Array.isArray(value) && value.length === 0);
   }
 
-  // Preserve local source/user fields; completed cloud-derived fields win.
   function merge(local, restored) {
     var merged = Object.assign({}, restored, local);
     if (!local) return merged;
@@ -63,8 +66,6 @@
       });
     }
 
-    /* Keep established bookkeeping timestamps stable. They are not evidence that
-       a cloud memory changed. */
     VOLATILE_FIELDS.forEach(function (key) {
       if (local[key] !== undefined) merged[key] = local[key];
     });
@@ -131,7 +132,44 @@
     return { fetch: true, transcript: false };
   }
 
-  function restore(force) {
+  function mergeRemote(journal, locals, remote) {
+    var byId = new Map();
+    locals.forEach(function (record) {
+      if (record && record.id) byId.set(String(record.id), record);
+    });
+
+    var writes = [];
+    var restored = 0;
+    var updated = 0;
+
+    (remote || []).forEach(function (item) {
+      if (!item || !item.recording_id) return;
+      var local = byId.get(String(item.recording_id));
+      var mapped = toLocal(item);
+
+      if (!local) {
+        writes.push(mapped);
+        restored += 1;
+        return;
+      }
+
+      var merged = merge(local, mapped);
+      if (meaningfullyChanged(local, merged)) {
+        writes.push(merged);
+        updated += 1;
+      }
+    });
+
+    if (!writes.length) return Promise.resolve({ restored: 0, updated: 0 });
+    return write(journal, writes).then(function () {
+      return { restored: restored, updated: updated };
+    });
+  }
+
+  /* Account/day reconciliation. This is no longer called on a timer or every
+     visibility change. The caller decides when fresh data is useful. */
+  function restore(force, options) {
+    options = options || {};
     if (running || !signedIn()) return Promise.resolve({ restored: 0, updated: 0 });
     var api = backend();
     if (!api || typeof api.recordings !== 'function') return Promise.resolve({ restored: 0, updated: 0 });
@@ -144,48 +182,23 @@
       return db.all(STORE);
     }).then(function (locals) {
       var choice = plan(locals, force);
-      if (!choice.fetch) return [locals, null];
+      if (!choice.fetch && !options.day) return [locals, null];
       try { root.sessionStorage.setItem(SYNCED_KEY, '1'); } catch (error) {}
 
-      /* Correctness still wins for the bounded account-history window: a local
-         transcript can be an old partial result, so reconcile with cloud text. */
-      return api.recordings({ limit: LIMIT, transcript: true })
-        .then(function (result) { return [locals, result]; });
+      var requestOptions = { limit: options.limit || LIMIT };
+      if (options.day) requestOptions.day = options.day;
+      /* A brand-new device may hydrate its bounded history once. Existing
+         devices fetch transcript text lazily when a recording is opened. */
+      requestOptions.transcript = options.transcript === true ||
+        (!locals.length && options.transcript !== false && !options.day);
+      return api.recordings(requestOptions).then(function (result) {
+        return [locals, result];
+      });
     }).then(function (results) {
       var locals = results[0];
       var remote = (results[1] && results[1].recordings) || [];
-      var byId = new Map();
-      locals.forEach(function (record) {
-        if (record && record.id) byId.set(String(record.id), record);
-      });
-
-      var writes = [];
-      var restored = 0;
-      var updated = 0;
-
-      remote.forEach(function (item) {
-        if (!item || !item.recording_id) return;
-        var local = byId.get(String(item.recording_id));
-        var mapped = toLocal(item);
-
-        if (!local) {
-          writes.push(mapped);
-          restored += 1;
-          return;
-        }
-
-        var merged = merge(local, mapped);
-        if (meaningfullyChanged(local, merged)) {
-          writes.push(merged);
-          updated += 1;
-        }
-      });
-
-      lastRefreshAt = Date.now();
-      if (!writes.length) return { restored: 0, updated: 0 };
-      return write(db, writes).then(function () {
-        return { restored: restored, updated: updated };
-      });
+      if (!results[1]) return { restored: 0, updated: 0 };
+      return mergeRemote(db, locals, remote);
     }).then(function (result) {
       running = false;
       return result;
@@ -205,12 +218,16 @@
     return BUSY.indexOf(String(state || '')) !== -1;
   }
 
-  /* Refresh rendered memory in place. Never reload the document: a document
-     reload is also a Bluetooth disconnect on Web Bluetooth clients. */
   function refreshUiInPlace(result) {
     try {
       if (root.SynapMemoryTools && typeof root.SynapMemoryTools.refresh === 'function') {
         Promise.resolve(root.SynapMemoryTools.refresh()).catch(function () {});
+      }
+    } catch (error) {}
+
+    try {
+      if (root.SynapProcessingPipeline && typeof root.SynapProcessingPipeline.refresh === 'function') {
+        Promise.resolve(root.SynapProcessingPipeline.refresh()).catch(function () {});
       }
     } catch (error) {}
 
@@ -220,7 +237,11 @@
         : null;
       if (picker && !busy() && typeof picker.dispatchEvent === 'function') {
         var EventCtor = root.Event;
-        if (typeof EventCtor === 'function') picker.dispatchEvent(new EventCtor('change', { bubbles: true }));
+        if (typeof EventCtor === 'function') {
+          var event = new EventCtor('change', { bubbles: true });
+          try { event.__synapCloudInternal = true; } catch (error) {}
+          picker.dispatchEvent(event);
+        }
       }
     } catch (error) {}
 
@@ -231,12 +252,62 @@
     } catch (error) {}
   }
 
-  function restoreAndShow(force) {
-    return restore(force).then(function (result) {
+  function restoreAndShow(force, options) {
+    return restore(force, options).then(function (result) {
       var changed = (result.restored || 0) + (result.updated || 0);
       if (changed) refreshUiInPlace(result);
       return result;
     });
+  }
+
+  function restoreDay(day) {
+    if (!day || busy()) return Promise.resolve({ restored: 0, updated: 0 });
+    return restoreAndShow(true, { day: String(day), transcript: false });
+  }
+
+  /* Fetch one completed memory/transcript only when it becomes relevant to the
+     user (open card / transcript view / newly-created summary). */
+  function restoreRecording(recordingId, force) {
+    var id = String(recordingId || '');
+    if (!id || !signedIn()) return Promise.resolve({ restored: 0, updated: 0 });
+    var api = backend();
+    if (!api || typeof api.recordingMemory !== 'function') return Promise.resolve({ restored: 0, updated: 0 });
+    if (targetedRunning[id]) return targetedRunning[id];
+
+    var task = store().then(function (journal) {
+      return journal.all(STORE).then(function (locals) {
+        var local = (locals || []).find(function (item) { return item && String(item.id) === id; });
+        var alreadyComplete = local && String(local.transcript || '').trim() && String(local.summary || '').trim() &&
+          (local.processingStage === 'ready' || local.processingState === 'done');
+        if (alreadyComplete && !force) return { restored: 0, updated: 0 };
+
+        return api.recordingMemory(id).then(function (memory) {
+          memory = Object.assign({}, memory || {}, {
+            recording_id: id,
+            state: 'ready',
+            started_at: (memory && memory.started_at) || (local && local.createdAt) || new Date().toISOString(),
+            duration_ms: Number((memory && memory.duration_ms) || (local && local.durationMs) || 0)
+          });
+          var mapped = toLocal(memory);
+          if (!local) {
+            return write(journal, [mapped]).then(function () { return { restored: 1, updated: 0 }; });
+          }
+          var merged = merge(local, mapped);
+          if (!meaningfullyChanged(local, merged)) return { restored: 0, updated: 0 };
+          return write(journal, [merged]).then(function () { return { restored: 0, updated: 1 }; });
+        });
+      });
+    }).then(function (result) {
+      delete targetedRunning[id];
+      if ((result.restored || 0) + (result.updated || 0)) refreshUiInPlace(result);
+      return result;
+    }).catch(function (error) {
+      delete targetedRunning[id];
+      return { restored: 0, updated: 0, error: error };
+    });
+
+    targetedRunning[id] = task;
+    return task;
   }
 
   function onAuthChange(session) {
@@ -244,7 +315,7 @@
       try { root.sessionStorage.removeItem(SYNCED_KEY); } catch (error) {}
       return;
     }
-    restoreAndShow(true);
+    restoreDay(currentDay());
   }
 
   function loadTranscriptRepair() {
@@ -274,7 +345,7 @@
     loadRuntimeModule('recording-bridge.js?v=1.0.0-continuity1', 'data-synap-recording-bridge', function () {
       return Boolean(root.SynapRecordingBridge);
     });
-    loadRuntimeModule('memory-tools.js?v=1.0.0-transcript2', 'data-synap-memory-tools', function () {
+    loadRuntimeModule('memory-tools.js?v=1.0.0-transcript3', 'data-synap-memory-tools', function () {
       return Boolean(root.SynapMemoryTools);
     });
     loadRuntimeModule('cost-ui.js?v=1.0.0-cost1', 'data-synap-cost-ui', function () {
@@ -282,23 +353,64 @@
     });
   }
 
+  /* Retained as an explicit/manual compatibility surface, but no lifecycle hook
+     calls it automatically anymore. */
   function refreshVisible() {
-    if (!signedIn() || busy()) return;
-    if (Date.now() - lastRefreshAt < REFRESH_MS) return;
-    restoreAndShow(true);
+    if (!signedIn() || busy()) return Promise.resolve({ restored: 0, updated: 0 });
+    return restoreDay(currentDay());
+  }
+
+  function recordingIdFromCard(target) {
+    if (!target) return '';
+    var id = String(target.id || '').replace(/^recording-/, '');
+    if (id && id !== target.id) return id;
+    return String(target.dataset && target.dataset.recordingId || '');
+  }
+
+  function bindEventDrivenRefresh() {
+    if (!root.document || typeof root.document.addEventListener !== 'function') return;
+
+    root.document.addEventListener('change', function (event) {
+      var target = event && event.target;
+      if (!target || target.id !== 'datePicker' || event.__synapCloudInternal) return;
+      restoreDay(target.value || currentDay());
+    });
+
+    root.document.addEventListener('toggle', function (event) {
+      var target = event && event.target;
+      if (!target || !target.classList || !target.classList.contains('recording-card') || !target.open) return;
+      var id = recordingIdFromCard(target);
+      if (id) restoreRecording(id, false);
+    }, true);
+
+    root.document.addEventListener('click', function (event) {
+      var button = event && event.target && event.target.closest
+        ? event.target.closest('.synap-memory-tabs button')
+        : null;
+      if (!button || String(button.textContent || '').trim() !== 'Transcript') return;
+      var card = button.closest('.insight-card[data-recording-id]');
+      if (card && card.dataset.recordingId) restoreRecording(card.dataset.recordingId, false);
+    }, true);
+
+    if (typeof root.addEventListener === 'function') {
+      root.addEventListener('synap-memory-ready', function (event) {
+        var id = event && event.detail && event.detail.recordingId;
+        if (id) restoreRecording(id, true);
+      });
+      root.addEventListener('synap-recording-opened', function (event) {
+        var id = event && event.detail && event.detail.recordingId;
+        if (id) restoreRecording(id, false);
+      });
+    }
   }
 
   function init() {
     loadProductRuntime();
+    bindEventDrivenRefresh();
     if (root.SynapAuth && typeof root.SynapAuth.onChange === 'function') {
       root.SynapAuth.onChange(onAuthChange);
     }
-    if (signedIn()) restoreAndShow();
-    if (root.document && typeof root.document.addEventListener === 'function') {
-      root.document.addEventListener('visibilitychange', function () {
-        if (root.document.visibilityState === 'visible') refreshVisible();
-      });
-    }
+    if (signedIn()) restoreDay(currentDay());
     loadTranscriptRepair();
   }
 
@@ -311,6 +423,8 @@
   root.SynapCloudHistory = {
     restore: restore,
     restoreAndShow: restoreAndShow,
+    restoreDay: restoreDay,
+    restoreRecording: restoreRecording,
     toLocal: toLocal,
     merge: merge,
     plan: plan,
@@ -319,6 +433,8 @@
     refreshUiInPlace: refreshUiInPlace,
     loadTranscriptRepair: loadTranscriptRepair,
     loadProductRuntime: loadProductRuntime,
-    refreshVisible: refreshVisible
+    refreshVisible: refreshVisible,
+    currentDay: currentDay,
+    bindEventDrivenRefresh: bindEventDrivenRefresh
   };
 })(globalThis);
