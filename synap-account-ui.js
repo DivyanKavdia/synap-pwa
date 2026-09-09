@@ -128,7 +128,7 @@
      * stale value explicitly so one recording has exactly one paid AI pipeline.
      */
     var stored = prefs().provider;
-    if (stored === 'openai' || (stored !== 'synap' && stored !== 'custom')) {
+    if (stored === 'openai' || (stored !== 'synap' && stored !== 'openai' && stored !== 'custom')) {
       stored = 'synap';
       savePrefs({ provider: stored });
     }
