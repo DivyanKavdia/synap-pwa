@@ -1,17 +1,21 @@
-/* Hardware recording bridge and long-capture rollover. */
+/* Hardware recording bridge.
+ *
+ * A user recording must stay one recording. This bridge adopts a hardware-
+ * initiated stream into the browser journal and coordinates intentional sleep,
+ * but it never stops/restarts a live capture to manufacture local "Part N"
+ * files. Rolling 30-second AI windows remain internal to audio-store.js.
+ */
 (function (root) {
   'use strict';
 
-  const ROLLOVER_MS = 45 * 60 * 1000;
-  const SESSION_KEY = 'synap-continuous-capture';
+  const ROLLOVER_MS = 0; // Synthetic file rollover is intentionally disabled.
+  const LEGACY_SESSION_KEY = 'synap-continuous-capture';
   const AUTO_RECONNECT_KEY = 'dk-pendant-auto-reconnect';
   const POWER_EVENT_MAGIC = 0xE2;
   const POWER_EVENT_VERSION = 1;
   const POWER_STATE_DEEP_SLEEP = 3;
   const SLEEP_RECONNECT_GUARD_MS = 1500;
-  let activeSince = 0;
-  let rolloverTimer = null;
-  let rolloverPending = false;
+
   let startingFromHardware = false;
   let hardwareAdoptTimer = null;
   let intentionalSleep = false;
@@ -19,67 +23,14 @@
   let reconnectPreferenceExisted = false;
   let reconnectRestoreTimer = null;
 
-  function readSession() {
-    try { return JSON.parse(root.sessionStorage?.getItem(SESSION_KEY) || 'null'); }
-    catch (_) { return null; }
+  function clearLegacyContinuousSession() {
+    try { root.sessionStorage?.removeItem(LEGACY_SESSION_KEY); } catch (_) {}
   }
 
-  function writeSession(value) {
-    try {
-      if (value) root.sessionStorage?.setItem(SESSION_KEY, JSON.stringify(value));
-      else root.sessionStorage?.removeItem(SESSION_KEY);
-    } catch (_) {}
-  }
-
-  function newGroup() {
-    return {
-      id: root.crypto?.randomUUID?.() || ('continuous-' + Date.now() + '-' + Math.random().toString(36).slice(2)),
-      part: 1,
-      startedAt: new Date().toISOString()
-    };
-  }
-
-  function patchJournal() {
-    const Store = root.DKAudioStore;
-    if (!Store || Store.prototype.__synapContinuousPatched) return false;
-    const original = Store.prototype.begin;
-    Store.prototype.begin = async function (name, association) {
-      let session = readSession();
-      if (!session) { session = newGroup(); writeSession(session); }
-      const part = Math.max(1, Number(session.part) || 1);
-      const displayName = part > 1 ? name + ' · Part ' + part : name;
-      const id = await original.call(this, displayName, association);
-      await this.atomic(['recordings'], stores => {
-        const request = stores.recordings.get(id);
-        request.onsuccess = () => {
-          if (!request.result) return;
-          stores.recordings.put({
-            ...request.result,
-            continuousGroupId: session.id,
-            continuousPart: part,
-            continuousStartedAt: session.startedAt,
-            captureMode: part > 1 ? 'continuous-part' : 'meeting-or-continuous'
-          });
-        };
-      });
-      return id;
-    };
-    Store.prototype.__synapContinuousPatched = true;
-    return true;
-  }
-
-  function ensureJournalPatch() {
-    if (patchJournal()) return;
-    let attempts = 0;
-    const timer = root.setInterval(() => {
-      if (patchJournal() || ++attempts > 100) root.clearInterval(timer);
-    }, 50);
-  }
-
-  function clearRolloverTimer() {
-    if (rolloverTimer) root.clearTimeout(rolloverTimer);
-    rolloverTimer = null;
-  }
+  /* Compatibility surfaces retained for older callers. There is deliberately no
+     active continuous-part session anymore. */
+  function readSession() { return null; }
+  function patchJournal() { return false; }
 
   function clearHardwareAdoptTimer() {
     if (hardwareAdoptTimer) root.clearInterval(hardwareAdoptTimer);
@@ -99,7 +50,6 @@
     if (intentionalSleep) return;
     intentionalSleep = true;
     clearReconnectRestoreTimer();
-    clearRolloverTimer();
     clearHardwareAdoptTimer();
     startingFromHardware = false;
     try {
@@ -147,37 +97,10 @@
     if (bytes[2] === POWER_STATE_DEEP_SLEEP) beginIntentionalSleep();
   }
 
-  function scheduleRollover() {
-    clearRolloverTimer();
-    if (!activeSince) activeSince = performance.now();
-    const remaining = Math.max(500, ROLLOVER_MS - (performance.now() - activeSince));
-    rolloverTimer = root.setTimeout(() => {
-      const stop = document.getElementById('stopButton');
-      if (!stop || stop.disabled || document.body.dataset.deviceState !== '2') return;
-      rolloverPending = true;
-      stop.click();
-    }, remaining);
-  }
-
-  function beginNextPartWhenReady() {
-    let attempts = 0;
-    const poll = root.setInterval(() => {
-      const start = document.getElementById('startButton');
-      if (start && !start.disabled && document.body.dataset.deviceState === '1') {
-        root.clearInterval(poll);
-        let session = readSession() || newGroup();
-        session.part = Math.max(1, Number(session.part) || 1) + 1;
-        writeSession(session);
-        rolloverPending = false;
-        activeSince = 0;
-        start.click();
-      } else if (++attempts > 120) {
-        root.clearInterval(poll);
-        rolloverPending = false;
-      }
-    }, 100);
-  }
-
+  /* A physical double-tap can put firmware into STREAMING before app.js has an
+     open journal. Adopt that same stream by invoking Start once; firmware START
+     is idempotent, so this opens browser storage without creating a second
+     transport stream. */
   function adoptHardwareStream() {
     if (startingFromHardware || hardwareAdoptTimer || intentionalSleep) return;
     startingFromHardware = true;
@@ -206,24 +129,15 @@
     const state = document.body.dataset.deviceState;
     if (state === '2') {
       clearReconnectRestoreTimer();
-      if (intentionalSleep) return;
-      adoptHardwareStream();
-      if (!activeSince) activeSince = performance.now();
-      scheduleRollover();
+      if (!intentionalSleep) adoptHardwareStream();
       return;
     }
 
     clearHardwareAdoptTimer();
     startingFromHardware = false;
-    clearRolloverTimer();
-    activeSince = 0;
     if (state === '1') {
       clearReconnectRestoreTimer();
       if (intentionalSleep && !root.SynapSleepStateGuard) endIntentionalSleep();
-      if (rolloverPending) beginNextPartWhenReady();
-      else root.setTimeout(() => {
-        if (!rolloverPending && document.body.dataset.deviceState === '1') writeSession(null);
-      }, 1200);
       return;
     }
     if (intentionalSleep && !root.SynapSleepStateGuard) scheduleReconnectPreferenceRestore();
@@ -246,18 +160,23 @@
   }
 
   function bind() {
-    ensureJournalPatch();
+    clearLegacyContinuousSession();
     improveCopy();
-    if(!root.SynapSleepStateGuard) root.addEventListener('synap-event-packet', handlePowerEvent);
+    if (!root.SynapSleepStateGuard) root.addEventListener('synap-event-packet', handlePowerEvent);
     root.addEventListener('synap-intentional-sleep', event => {
-      intentionalSleep=Boolean(event?.detail?.active);
-      if(intentionalSleep){clearReconnectRestoreTimer();clearRolloverTimer();clearHardwareAdoptTimer();startingFromHardware=false;}
-      else handleDeviceState();
+      intentionalSleep = Boolean(event?.detail?.active);
+      if (intentionalSleep) {
+        clearReconnectRestoreTimer();
+        clearHardwareAdoptTimer();
+        startingFromHardware = false;
+      } else {
+        handleDeviceState();
+      }
     });
     root.addEventListener('synap-gatt-service-ready', () => {
       if (intentionalSleep && !root.SynapSleepStateGuard) endIntentionalSleep();
     });
-    if(!root.SynapSleepStateGuard) root.addEventListener('pagehide', () => {
+    if (!root.SynapSleepStateGuard) root.addEventListener('pagehide', () => {
       if (intentionalSleep && !root.SynapSleepStateGuard) endIntentionalSleep();
     });
     const observer = new MutationObserver(handleDeviceState);
@@ -267,6 +186,7 @@
 
   root.SynapRecordingBridge = {
     ROLLOVER_MS,
+    SPLIT_RECORDINGS: false,
     SLEEP_RECONNECT_GUARD_MS,
     readSession,
     patchJournal,
