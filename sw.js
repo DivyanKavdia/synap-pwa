@@ -43,6 +43,7 @@ async function remember(request,response){
 async function networkFirst(request){
   try{return await remember(request,await fetch(request,{cache:'no-store'}))}
   catch(error){return await cached(request)||Promise.reject(error)}
+}
 async function navigation(request){
   try{return await remember(ENTRY_URL,await fetch(request,{cache:'no-store'}))}
   catch(_){return await cached(ENTRY_URL)||await cached(ROOT_URL)||Response.error()}
