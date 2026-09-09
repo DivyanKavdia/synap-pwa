@@ -6,8 +6,8 @@ const CLIENT_REVISION='1.0.0-audio2';
 const HISTORICAL_CACHE_REVISION='1.0.0-shell31-dashboard';
 const ASK_CACHE_REVISION='1.0.0-shell32-ask';
 const POWER_CACHE_REVISION='1.0.0-shell33-power';
-const PREVIOUS_CACHE_REVISION='1.0.0-shell36-architecture';
-const CACHE_REVISION='1.0.0-shell37-productivity';
+const PREVIOUS_CACHE_REVISION='1.0.0-shell34-transcript';
+const CACHE_REVISION='1.0.0-shell36-architecture';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings-icon-fix.css',
@@ -43,7 +43,6 @@ async function remember(request,response){
 async function networkFirst(request){
   try{return await remember(request,await fetch(request,{cache:'no-store'}))}
   catch(error){return await cached(request)||Promise.reject(error)}
-}
 async function navigation(request){
   try{return await remember(ENTRY_URL,await fetch(request,{cache:'no-store'}))}
   catch(_){return await cached(ENTRY_URL)||await cached(ROOT_URL)||Response.error()}
