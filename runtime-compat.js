@@ -270,15 +270,159 @@
     });
   }
 
+  function installLazyLibraryPlayback() {
+    const documentObject = root.document;
+    if (!documentObject || typeof documentObject.addEventListener !== 'function' || documentObject.__synapLazyPlaybackInstalled) {
+      return Boolean(documentObject && typeof documentObject.addEventListener === 'function');
+    }
+    documentObject.__synapLazyPlaybackInstalled = true;
+
+    const objectUrls = new Set();
+    const pending = new WeakMap();
+
+    function recordingIdFromAudio(audio) {
+      const card = audio && audio.closest ? audio.closest('.recording-card') : null;
+      if (!card) return '';
+      const id = String(card.id || '').replace(/^recording-/, '');
+      if (id && id !== card.id) return id;
+      return String(card.dataset && card.dataset.recordingId || '');
+    }
+
+    function statusNode(audio) {
+      const content = audio && audio.closest ? audio.closest('.recording-content') : null;
+      if (!content) return null;
+      let status = content.querySelector('.recording-playback-status');
+      if (!status) {
+        status = documentObject.createElement('p');
+        status.className = 'recording-playback-status';
+        status.setAttribute('role', 'status');
+        status.style.margin = '6px 0 0';
+        status.style.fontSize = '0.72rem';
+        status.style.color = 'var(--muted)';
+        audio.insertAdjacentElement('afterend', status);
+      }
+      return status;
+    }
+
+    function setPlaybackStatus(audio, text, error) {
+      const node = statusNode(audio);
+      if (!node) return;
+      node.textContent = text || '';
+      node.hidden = !text;
+      node.style.color = error ? 'var(--rose)' : 'var(--muted)';
+    }
+
+    function loadAudio(audio) {
+      if (!audio || audio.src || audio.currentSrc) return Promise.resolve(true);
+      if (pending.has(audio)) return pending.get(audio);
+      const recordingId = recordingIdFromAudio(audio);
+      if (!recordingId || !root.DKAudioStore) return Promise.resolve(false);
+
+      audio.setAttribute('aria-busy', 'true');
+      setPlaybackStatus(audio, 'Loading audio…', false);
+
+      const task = (async function () {
+        try {
+          const journal = new root.DKAudioStore({ onError: function () {} });
+          const recording = await journal.get('recordings', recordingId);
+          if (!recording) throw new Error('Recording is not available in this browser.');
+          const blob = recording.blob || await journal.blob(recording);
+          if (!blob || !blob.size) throw new Error('No playable audio is stored for this recording.');
+          const url = root.URL.createObjectURL(blob);
+          objectUrls.add(url);
+          audio.dataset.synapPlaybackUrl = url;
+          audio.src = url;
+          audio.preload = 'metadata';
+          audio.load();
+          setPlaybackStatus(audio, '', false);
+          return true;
+        } catch (error) {
+          const cloudOnly = String(error && error.message || '').includes('No complete audio frames') ||
+            String(error && error.message || '').includes('not available in this browser');
+          setPlaybackStatus(audio,
+            cloudOnly ? 'Source audio is not stored on this browser.' : 'Audio could not be loaded. Try reopening this recording.',
+            true);
+          return false;
+        } finally {
+          audio.removeAttribute('aria-busy');
+          pending.delete(audio);
+        }
+      })();
+
+      pending.set(audio, task);
+      return task;
+    }
+
+    function warmOpenCard(card) {
+      if (!card || !card.open) return;
+      const audio = card.querySelector('audio');
+      if (audio && !audio.src && !audio.currentSrc) loadAudio(audio);
+    }
+
+    documentObject.addEventListener('toggle', function (event) {
+      const card = event && event.target;
+      if (card && card.classList && card.classList.contains('recording-card') && card.open) {
+        warmOpenCard(card);
+      }
+    }, true);
+
+    // If the user reaches Play before the open-card warmup finishes, ensure the
+    // source starts loading immediately rather than leaving a dead native player.
+    documentObject.addEventListener('pointerdown', function (event) {
+      const audio = event && event.target && event.target.closest ? event.target.closest('audio') : null;
+      if (!audio || !audio.closest('.recording-card') || audio.src || audio.currentSrc) return;
+      loadAudio(audio);
+    }, true);
+
+    if (root.MutationObserver) {
+      const list = documentObject.getElementById('recordingsList');
+      if (list) {
+        new root.MutationObserver(function (mutations) {
+          mutations.forEach(function (mutation) {
+            Array.prototype.forEach.call(mutation.addedNodes || [], function (node) {
+              if (!node || node.nodeType !== 1) return;
+              if (node.matches && node.matches('.recording-card')) warmOpenCard(node);
+              if (node.querySelectorAll) node.querySelectorAll('.recording-card[open]').forEach(warmOpenCard);
+            });
+            Array.prototype.forEach.call(mutation.removedNodes || [], function (node) {
+              if (!node || node.nodeType !== 1 || !node.querySelectorAll) return;
+              const audios = [];
+              if (node.matches && node.matches('audio')) audios.push(node);
+              node.querySelectorAll('audio').forEach(function (audio) { audios.push(audio); });
+              audios.forEach(function (audio) {
+                const url = audio.dataset && audio.dataset.synapPlaybackUrl;
+                if (url && objectUrls.has(url)) {
+                  root.URL.revokeObjectURL(url);
+                  objectUrls.delete(url);
+                }
+              });
+            });
+          });
+        }).observe(list, { childList: true, subtree: true });
+        list.querySelectorAll('.recording-card[open]').forEach(warmOpenCard);
+      }
+    }
+
+    if (typeof root.addEventListener === 'function') {
+      root.addEventListener('pagehide', function () {
+        objectUrls.forEach(function (url) { try { root.URL.revokeObjectURL(url); } catch (_) {} });
+        objectUrls.clear();
+      }, { once: true });
+    }
+    return true;
+  }
+
   const synapCloudProcessingBootstrap = bootstrapSynapProcessingPreferences();
   const androidBleDiscoveryCompat = installAndroidBluetoothDiscoveryFallback();
   installWebLocksFallback();
   bindSettingsSafetyNet();
+  installLazyLibraryPlayback();
 
   root.SynapRuntimeCompat = Object.freeze({
     webLocksNative: Boolean(navigatorObject.locks && navigatorObject.locks.request && !String(navigatorObject.locks.request).includes('Lock callback is required')),
     androidBleDiscoveryCompat: androidBleDiscoveryCompat,
     synapCloudProcessingBootstrap: synapCloudProcessingBootstrap,
+    lazyLibraryPlayback: true,
     installed: true
   });
 })(globalThis);
