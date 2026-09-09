@@ -52,7 +52,7 @@ async function captureTests() {
 function costTests() {
   const listeners = {};
   const ctx = {
-    console, Number, String, Object, Date, Promise, Math,
+    console, Number, String, Object, Date, Promise, Math, Map,
     document: { readyState: 'loading', addEventListener(type, fn) { listeners[type] = fn; } },
     globalThis: null
   };
@@ -71,12 +71,24 @@ function costTests() {
   });
   assert.equal(ready.minutes, 60);
   assert(Math.abs(ready.transcribeInr - 28.455) < 0.001);
-  assert(Math.abs(ready.totalInr - 29.25174) < 0.001);
+  assert(ready.memoryInr > 0.79 && ready.memoryInr < 0.81, 'LLM memory extraction must be included');
+  assert(ready.embeddingInr > 0.02 && ready.embeddingInr < 0.04, 'semantic indexing must be included');
+  assert.equal(ready.llmProcessingInr, ready.memoryInr + ready.embeddingInr);
+  assert(Math.abs(ready.totalInr - 29.28161775) < 0.001);
   assert.equal(api.money(ready.totalInr), '₹29.3');
 
   const unprocessed = api.estimate({ durationMs: 10 * 60 * 1000, processingStage: 'uploaded' });
   assert.equal(unprocessed.totalInr, 0);
-  assert(unprocessed.projectedTotalInr > 4.8 && unprocessed.projectedTotalInr < 4.9);
+  assert(unprocessed.projectedTranscribeInr > 4.7, 'projected transcription should be broken out');
+  assert(unprocessed.projectedLlmProcessingInr > 0, 'projected LLM processing should be broken out');
+  assert(unprocessed.projectedTotalInr > 4.87 && unprocessed.projectedTotalInr < 4.90);
+
+  const source = fs.readFileSync(path.join(root, 'cost-ui.js'), 'utf8');
+  assert(source.includes('Transcription'), 'expandable cost UI should name transcription');
+  assert(source.includes('LLM processing'), 'expandable cost UI should name LLM processing');
+  assert(source.includes('Gemini 3.5 Flash-Lite'), 'memory model should be transparent');
+  assert(source.includes('Gemini Embedding 001'), 'indexing model should be transparent');
+  assert(!/visibilitychange/.test(source), 'cost UI must remain event-driven and avoid foreground refresh loops');
 }
 
 function bootstrapTests() {
@@ -95,7 +107,7 @@ function bootstrapTests() {
   await captureTests();
   costTests();
   bootstrapTests();
-  console.log('PASS: capture continuity, full-transcript bootstrap and INR cost estimate checks.');
+  console.log('PASS: capture continuity, transcript bootstrap and expandable INR AI cost breakdown checks.');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
