@@ -7,7 +7,30 @@ function labelCheckbox(id,label){const input=$(id);if(!input)return;const wrap=i
 function simplifySettings(){const form=$('settingsForm');if(!form)return;labelCheckbox('autoProcessInput','Create memories automatically');labelCheckbox('wakeLockInput','Keep screen awake while listening');labelCheckbox('autoReconnectInput','Reconnect automatically');const oldHint=$('appearanceAutoHint');if(oldHint)oldHint.remove();for(const id of ['retrySaveButton','recoveryButton','runQueueButton','pauseQueueButton']){const el=$(id);if(el){el.hidden=true;el.setAttribute('aria-hidden','true')}}const processing=$('processing');if(processing)processing.hidden=true;renameButtons(form)}
 function makeOverflow(actions){if(!actions||actions.dataset.productized==='1')return;renameButtons(actions);actions.dataset.productized='1';const buttons=[...actions.querySelectorAll(':scope > button')];const play=buttons.find(b=>/^play$/i.test(text(b)));const secondary=buttons.filter(b=>b!==play);if(play)play.classList.add('recording-primary-action');if(!secondary.length)return;const more=document.createElement('details');more.className='recording-more';const summary=document.createElement('summary');summary.setAttribute('aria-label','More recording actions');summary.textContent='•••';const menu=document.createElement('div');menu.className='recording-more-menu';secondary.forEach(b=>menu.appendChild(b));more.append(summary,menu);actions.appendChild(more);more.addEventListener('toggle',()=>{if(more.open)document.querySelectorAll('.recording-more[open]').forEach(x=>{if(x!==more)x.open=false})});}
 function simplifyLibrary(){const list=$('recordingsList');if(list){renameButtons(list);list.querySelectorAll('.recording-actions').forEach(makeOverflow)}const clear=$('clearRecordingsButton');if(clear&&!clear.closest('.library-manage')){const wrap=document.createElement('details');wrap.className='library-manage';const summary=document.createElement('summary');summary.setAttribute('aria-label','Manage recordings');summary.textContent='•••';const menu=document.createElement('div');menu.className='library-manage-menu';clear.parentNode.insertBefore(wrap,clear);wrap.append(summary,menu);clear.textContent='Delete all recordings';menu.appendChild(clear)}}
+
+/* Critical product surfaces are singletons. Older cached bootstraps could inject
+   brain-ui.js in addition to the current static bootstrap, which allowed duplicate
+   #ask / follow-up / people sections because their legacy creator was not
+   idempotent. Keep the first canonical surface and remove only later duplicates. */
+function dedupeSelector(selector){const nodes=[...document.querySelectorAll(selector)];for(const node of nodes.slice(1))node.remove();return nodes.length>0?nodes[0]:null;}
+function dedupeSingletons(){
+  dedupeSelector('#ask');
+  dedupeSelector('#followupInbox');
+  dedupeSelector('#peopleMemory');
+  const nav=document.querySelector('.brain-tabs');
+  if(nav){const askLinks=[...nav.querySelectorAll('a[href="#ask"]')];for(const link of askLinks.slice(1))link.remove();}
+}
+
 function injectStyle(){if($('productUiStyle'))return;const s=document.createElement('style');s.id='productUiStyle';s.textContent='.settings-help{margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.45}.product-advanced{margin-top:14px!important;padding:0!important;overflow:hidden}.product-advanced>summary{min-height:52px;display:flex;align-items:center;padding:0 14px;font-size:14px;font-weight:700;cursor:pointer}.product-advanced-body{padding:0 14px 14px;display:flex;gap:8px;flex-wrap:wrap}.product-advanced-body p{width:100%;margin:0 0 4px;color:var(--muted);font-size:12px;line-height:1.45}.product-advanced-body button{flex:1;min-width:120px}.recording-actions{display:flex!important;align-items:center!important;gap:8px!important}.recording-primary-action{min-width:88px}.recording-more,.library-manage{position:relative;margin-left:auto}.recording-more>summary,.library-manage>summary{list-style:none;display:grid;place-items:center;width:42px;height:42px;border:1px solid var(--border);border-radius:12px;background:var(--surface);font-size:18px;font-weight:800;cursor:pointer}.recording-more>summary::-webkit-details-marker,.library-manage>summary::-webkit-details-marker{display:none}.recording-more-menu,.library-manage-menu{position:absolute;right:0;top:48px;z-index:20;min-width:178px;padding:6px;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:0 12px 34px rgba(0,0,0,.16);display:grid;gap:4px}.recording-more-menu button,.library-manage-menu button{width:100%;text-align:left;justify-content:flex-start!important;background:transparent!important;border:0!important;box-shadow:none!important;min-height:40px!important;padding:9px 10px!important}.recording-more:not([open]) .recording-more-menu,.library-manage:not([open]) .library-manage-menu{display:none}.recording-card audio{width:100%;margin-top:8px}.library-manage{align-self:flex-start}.library-manage #clearRecordingsButton{color:var(--danger,#c43b3b)!important}';document.head.appendChild(s)}
-function init(){injectStyle();simplifySettings();simplifyLibrary();const target=$('recordingsList')||document.body;new MutationObserver(()=>simplifyLibrary()).observe(target,{childList:true,subtree:true})}
+function init(){
+  injectStyle();
+  dedupeSingletons();
+  simplifySettings();
+  simplifyLibrary();
+  const target=$('recordingsList')||document.body;
+  new MutationObserver(()=>simplifyLibrary()).observe(target,{childList:true,subtree:true});
+  const main=document.querySelector('main');
+  if(main)new MutationObserver(()=>dedupeSingletons()).observe(main,{childList:true});
+}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
