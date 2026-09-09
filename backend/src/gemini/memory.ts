@@ -89,6 +89,7 @@ export async function extractMemory(
       system_instruction: MEMORY_INSTRUCTIONS,
       response_format: jsonResponseFormat(MEMORY_SCHEMA),
       generation_config: { thinking_level: 'minimal' },
+      usage_label: 'memory_extract',
     },
     signal,
   );
@@ -170,6 +171,7 @@ export async function generateBrief(input: BriefInput, signal?: AbortSignal): Pr
       system_instruction: BRIEF_INSTRUCTIONS,
       response_format: jsonResponseFormat(BRIEF_SCHEMA),
       generation_config: { thinking_level: 'minimal' },
+      usage_label: 'daily_brief_manual',
     },
     signal,
   );
