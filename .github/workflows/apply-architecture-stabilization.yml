@@ -1,0 +1,38 @@
+name: Apply architecture stabilization
+on:
+  push:
+    branches: [audit/architecture-stabilization]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/architecture-stabilization
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Materialize deterministic runtime architecture
+        run: node tools/apply-architecture-stabilization.cjs
+      - name: Validate JavaScript syntax
+        run: |
+          for f in app.js battery-popover-fix.js cloud-history.js runtime-ui.js sleep-state-guard.js recording-bridge.js brain-ui.js enhancements.js dashboard-ui.js product-ui.js capture-stability.js sw.js; do
+            node --check "$f"
+          done
+      - name: Run PWA regression suite
+        run: |
+          for test_file in tests/*.cjs; do node "$test_file"; done
+      - name: Commit stabilized sources
+        run: |
+          if git diff --quiet; then
+            echo "Architecture stabilization already materialized."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html app.js battery-popover-fix.js cloud-history.js runtime-ui.js sleep-state-guard.js recording-bridge.js brain-ui.js enhancements.js dashboard-ui.js product-ui.js capture-stability.js sw.js tests/reconnect.cjs
+          git commit -m "Materialize Synap runtime architecture stabilization"
+          git push origin HEAD:audit/architecture-stabilization
