@@ -7,6 +7,7 @@ import { askV2Routes } from './routes/ask-v2.js';
 import { brainRoutes } from './routes/brain.js';
 import { memoryToolRoutes } from './routes/memory-tools.js';
 import { recordingRoutes } from './routes/recordings.js';
+import { retryRoutes } from './routes/retry.js';
 import { taskRoutes } from './routes/tasks.js';
 import { voiceProfileRoutes } from './routes/voice-profile.js';
 
@@ -123,6 +124,10 @@ export function createApp(): Express {
   // over completed historical recordings.
   app.use('/v1', askV2Routes());
 
+  // Retry is also route-scoped: a failed cloud task needs a fresh task identity,
+  // and replaying finalize cannot provide one because finalize is intentionally
+  // idempotent.
+  app.use('/v1', retryRoutes());
   app.use('/v1', recordingRoutes());
   app.use('/v1', brainRoutes());
   app.use('/v1', memoryToolRoutes());
