@@ -78,7 +78,7 @@ export async function transcribeSegment(
     signal,
   );
 
-  const text = interactionText(response);
+  const rawText = interactionText(response).trim();
   const words: TranscriptWord[] = interactionWords(response).map((word) => ({
     text: word.text,
     speaker: word.speaker ?? null,
@@ -88,8 +88,21 @@ export async function transcribeSegment(
 
   const speakers = [...new Set(words.map((word) => word.speaker).filter(Boolean))] as string[];
 
+  /*
+   * Keep every sealed segment self-grounding even when Gemini returns only
+   * partial/missing word annotations. `understand()` joins segment transcripts;
+   * without this prefix, an all-or-nothing diarization fallback turns the full
+   * capture into untimed prose and the memory extractor has no evidence for
+   * conversation offsets (historically several conversations became 0 ms).
+   *
+   * `toSpeakerLines()` strips this presentation prefix for its completeness
+   * comparison, so fully annotated captures still render with real speaker
+   * labels and word-derived timestamps.
+   */
+  const text = rawText ? `[${formatMs(baseOffsetMs)}] S?: ${rawText}` : '';
+
   return {
-    text: text.trim(),
+    text,
     words,
     // Diarization is documented as experimental beyond three speakers and capped
     // at eight, so a longer list means the labels are not to be trusted.
@@ -99,10 +112,10 @@ export async function transcribeSegment(
 }
 
 function comparableText(value: string): string {
-  // Word annotations naturally omit punctuation/spacing. Strip only those
-  // presentation differences; any remaining mismatch means the annotations are
-  // not a lossless representation of the flat transcript.
+  // Segment-level S? prefixes are provenance, not transcript words. Remove only
+  // that exact synthetic form before comparing annotations with the flat text.
   return value
+    .replace(/^\s*\[\d{2}:\d{2}(?::\d{2})?\]\s+S\?:\s*/gm, '')
     .normalize('NFKC')
     .toLocaleLowerCase('und')
     .replace(/[\s\p{P}\p{S}]+/gu, '');
@@ -117,7 +130,8 @@ function comparableText(value: string): string {
  * complete, so long recordings could collapse to only a few seconds. Speaker
  * formatting is now used only when the annotations reproduce the complete flat
  * transcript after punctuation/spacing normalization; otherwise the full flat
- * text wins.
+ * text wins. Because each sealed segment now carries its own timestamp prefix,
+ * that fallback remains chronologically grounded too.
  */
 export function toSpeakerLines(words: TranscriptWord[], fallback: string): string {
   const flat = String(fallback || '').trim();
