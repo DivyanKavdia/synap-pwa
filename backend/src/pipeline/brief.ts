@@ -2,18 +2,15 @@
  * Daily brief assembly.
  *
  * The brief is derived from structured memory, never from re-reading audio or
- * re-transcribing anything. That is what keeps it cheap enough to regenerate
- * every time a recording finishes or the user corrects a person's name — and
- * regenerating on correction is the whole point, because a brief that still
- * says "Ankit" after the user renamed him is a brief they stop trusting.
+ * re-transcribing anything. Rebuilds are deliberately deterministic: every
+ * recording already paid once for structured memory extraction, so rebuilding
+ * the same day after each new recording must not resend the whole day to an LLM.
  */
 
 import { keyring } from '../crypto/keyring.js';
 import { openJson, sealJson } from '../crypto/envelope.js';
-import { generateBrief } from '../gemini/memory.js';
 import * as db from '../store/firestore.js';
 import type { DailyBrief, StructuredMemory } from '../store/types.js';
-import { log } from '../util/log.js';
 import { binding } from './process.js';
 
 const EMPTY_BRIEF: DailyBrief = {
@@ -31,6 +28,13 @@ const EMPTY_BRIEF: DailyBrief = {
  * Rebuild one day's brief from every ready recording in it.
  * `dek` is passed in when the caller already holds it, to avoid a second
  * unwrap on the hot path after processing.
+ *
+ * Important cost invariant: this function performs no model call. A day may be
+ * rebuilt dozens of times as recordings finish or names are corrected; paying
+ * to summarize all prior memories on every rebuild creates quadratic token
+ * growth. The executive summaries already stored in each StructuredMemory are
+ * the model-generated prose, while decisions/actions/people/topics can be
+ * assembled exactly and cheaply here.
  */
 export async function rebuildDay(uid: string, day: string, dek?: Buffer): Promise<DailyBrief> {
   const user = await db.getUser(uid);
@@ -63,17 +67,7 @@ export async function rebuildDay(uid: string, day: string, dek?: Buffer): Promis
     ),
   }));
 
-  let brief: DailyBrief;
-  try {
-    brief = await generateBrief({ day, memories });
-  } catch (cause) {
-    log.warn('Brief generation failed; falling back to a deterministic summary', {
-      uid,
-      day,
-      error: (cause as Error).message,
-    });
-    brief = fallbackBrief(memories);
-  }
+  const brief = fallbackBrief(memories);
 
   await db.putDay(uid, {
     day,
@@ -92,9 +86,8 @@ export async function readDay(uid: string, day: string, dek: Buffer): Promise<Da
 }
 
 /**
- * Deterministic assembly used when the model call fails. It is less readable
- * than a generated narrative but it is never wrong, which is the right
- * tradeoff for a fallback.
+ * Deterministic assembly used as the production day brief. It preserves exact
+ * provenance and does not reinterpret decisions, commitments or people.
  */
 export function fallbackBrief(
   memories: { recording_id: string; memory: StructuredMemory }[],

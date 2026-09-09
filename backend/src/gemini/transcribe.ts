@@ -73,6 +73,7 @@ export async function transcribeSegment(
       model: config.gemini.transcribeModel,
       input,
       generation_config: { transcription_config: transcriptionConfig },
+      usage_label: 'transcription',
     },
     signal,
   );

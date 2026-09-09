@@ -88,6 +88,8 @@ export async function extractMemory(
       input,
       system_instruction: MEMORY_INSTRUCTIONS,
       response_format: jsonResponseFormat(MEMORY_SCHEMA),
+      generation_config: { thinking_level: 'minimal' },
+      usage_label: 'memory_extract',
     },
     signal,
   );
@@ -156,6 +158,11 @@ export interface BriefInput {
   memories: { recording_id: string; started_at: string; memory: StructuredMemory }[];
 }
 
+/**
+ * Retained as an optional presentation helper for future/user-triggered prose.
+ * The production day rebuild is deterministic (pipeline/brief.ts), so this is
+ * no longer paid once for every recording completion.
+ */
 export async function generateBrief(input: BriefInput, signal?: AbortSignal): Promise<DailyBrief> {
   const response = await createInteraction(
     {
@@ -163,6 +170,8 @@ export async function generateBrief(input: BriefInput, signal?: AbortSignal): Pr
       input: JSON.stringify(input),
       system_instruction: BRIEF_INSTRUCTIONS,
       response_format: jsonResponseFormat(BRIEF_SCHEMA),
+      generation_config: { thinking_level: 'minimal' },
+      usage_label: 'daily_brief_manual',
     },
     signal,
   );

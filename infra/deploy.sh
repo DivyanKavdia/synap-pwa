@@ -74,6 +74,15 @@ url="$(gcloud run services describe "${SERVICE}" --region="${REGION}" \
 # into it, and that URL only exists after the first deploy.
 env_vars="SYNAP_SERVICE_URL=${url}"
 
+# Model routing is pinned on every deploy rather than relying only on application
+# fallbacks. This prevents an old manually-set Cloud Run variable from silently
+# sending high-volume extraction back to an expensive general-purpose model.
+stt_model="${SYNAP_GEMINI_STT_MODEL:-gemini-3.5-transcribe}"
+memory_model="${SYNAP_GEMINI_MEMORY_MODEL:-gemini-3.5-flash-lite}"
+query_model="${SYNAP_GEMINI_QUERY_MODEL:-gemini-3.5-flash-lite}"
+ask_model="${SYNAP_GEMINI_ASK_MODEL:-gemini-3.8-flash}"
+env_vars="${env_vars},SYNAP_GEMINI_STT_MODEL=${stt_model},SYNAP_GEMINI_MEMORY_MODEL=${memory_model},SYNAP_GEMINI_QUERY_MODEL=${query_model},SYNAP_GEMINI_ASK_MODEL=${ask_model}"
+
 # Stamp the running build so /health can prove which commit is live. TAG is the
 # short SHA when deploying from a git checkout; GITHUB_SHA wins in CI, where the
 # full SHA is what a workflow run can be matched against.
@@ -91,7 +100,7 @@ else
   echo "==> Speaker service not present; voice profiling remains disabled"
 fi
 
-echo "==> Pinning runtime service URLs"
+echo "==> Pinning runtime service URLs and model routing"
 gcloud run services update "${SERVICE}" \
   --region="${REGION}" --project="${PROJECT_ID}" \
   --update-env-vars="${env_vars}" --quiet
@@ -101,6 +110,7 @@ curl -fsS "${url}/health" && echo
 
 echo
 echo "Deployed: ${url}"
+echo "Models: STT=${stt_model}, memory=${memory_model}, query=${query_model}, ask=${ask_model}"
 if [[ -n "${speaker_url}" ]]; then
   echo "Voice profile service: configured (private Cloud Run service)"
 fi
