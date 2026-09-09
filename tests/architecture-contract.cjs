@@ -47,7 +47,7 @@ assert.match(battery,/function tryAutoStart\(\)\{if\(root\.SynapRecordingBridge\
   'power helper must not become a second hardware-stream adoption owner');
 
 assert.match(sleep,/owner:'sleep-state-guard'/,'sleep-state guard must publish the canonical intentional-sleep event');
-assert.match(bridge,/if\(!root\.SynapSleepStateGuard\) root\.addEventListener\('synap-event-packet'/,
+assert.match(bridge,/if\s*\(!root\.SynapSleepStateGuard\)\s*root\.addEventListener\('synap-event-packet'/,
   'recording bridge must defer power packets to sleep-state guard');
 assert.match(bridge,/root\.addEventListener\('synap-intentional-sleep'/,
   'recording bridge should consume canonical sleep state rather than own reconnect preferences');
