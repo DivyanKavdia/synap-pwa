@@ -79,8 +79,10 @@ assert.match(transcriptRepairSource, /kind==='consolidate'/,
   'summary completion should emit a memory-ready event');
 
 assert.doesNotMatch(captureSource, /\bconnect\s*\.\s*click\s*\(/,
-  'capture continuity must not run a second synthetic reconnect loop');
-assert.match(captureSource, /start\s*\.\s*click\s*\(/,
-  'capture continuity may resume recording only after app.js has re-established idle GATT state');
+  'capture stability must not run a second synthetic reconnect loop');
+assert.doesNotMatch(captureSource, /start\s*\.\s*click\s*\(/,
+  'capture stability must not create another recording after reconnect');
+assert.match(captureSource, /beginTransportEpoch/,
+  'sequence continuity remains available for a future same-recording transport resume');
 
-console.log('PASS: Synap refresh is event-driven, in-place, and BLE-safe.');
+console.log('PASS: Synap refresh is event-driven, in-place, BLE-safe and does not split recordings on reconnect.');
