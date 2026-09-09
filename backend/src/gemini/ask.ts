@@ -49,6 +49,7 @@ export async function parseQuery(
         system_instruction: QUERY_INSTRUCTIONS,
         response_format: jsonResponseFormat(QUERY_SCHEMA),
         generation_config: { thinking_level: 'minimal' },
+        usage_label: 'ask_parse',
       },
       signal,
     );
@@ -120,6 +121,7 @@ export async function answerFromEvidence(
       system_instruction: ANSWER_INSTRUCTIONS,
       response_format: jsonResponseFormat(ANSWER_SCHEMA),
       generation_config: { thinking_level: 'low' },
+      usage_label: 'ask_answer',
     },
     signal,
   );
