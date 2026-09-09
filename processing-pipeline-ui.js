@@ -21,6 +21,7 @@
   var refreshTimer = 0;
   var refreshRunning = false;
   var refreshAgain = false;
+  var retrying = new Set();
 
   function readJson(key) {
     try {
@@ -166,7 +167,7 @@
     if (failed) {
       var key = failed.kind === 'transcribe' ? 'transcription' : failed.kind === 'summarize' ? 'summary' : 'ready';
       steps.find(function (item) { return item.key === key; }).state = 'error';
-      return { status: 'Needs retry', tone: 'error', error: failed.lastError || 'Processing failed.', steps: steps };
+      return { status: 'Needs retry', tone: 'error', error: failed.lastError || 'Processing failed.', retryable: true, steps: steps };
     }
     if (anyState(transcribe, 'running')) return { status: 'Transcribing', tone: 'active', steps: steps };
     if (anyState(summarize, 'running')) return { status: 'Summarizing', tone: 'active', steps: steps };
@@ -188,11 +189,13 @@
     var style = root.document.createElement('style');
     style.id = STYLE_ID;
     style.textContent =
-      '.recording-pipeline-status{display:inline-flex;align-items:center;gap:5px;width:max-content;max-width:100%;margin-top:4px;padding:3px 7px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:8px;font-weight:720;line-height:1.25;white-space:nowrap}' +
+      '.recording-pipeline-status{display:inline-flex;align-items:center;gap:5px;width:max-content;max-width:100%;margin-top:4px;padding:3px 7px;border-radius:999px;background:var(--surface-2);color:var(--muted);font:inherit;font-size:8px;font-weight:720;line-height:1.25;white-space:nowrap}' +
       '.recording-pipeline-status::before{content:"";width:5px;height:5px;flex:0 0 5px;border-radius:50%;background:currentColor;opacity:.8}' +
       '.recording-pipeline-status[data-tone="active"]{background:var(--accent-soft);color:var(--accent)}' +
       '.recording-pipeline-status[data-tone="ready"]{background:var(--success-soft);color:var(--success)}' +
       '.recording-pipeline-status[data-tone="error"]{background:var(--rose-soft);color:var(--rose)}' +
+      'button.recording-pipeline-status{border:0;cursor:pointer;-webkit-tap-highlight-color:transparent}' +
+      'button.recording-pipeline-status:disabled{cursor:wait;opacity:.65}' +
       '.recording-processing-pipeline{margin:12px 0 4px;padding:12px;border:1px solid var(--border);border-radius:13px;background:var(--surface-2)}' +
       '.recording-processing-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:11px}' +
       '.recording-processing-head strong{font-size:10px;font-weight:760}.recording-processing-head span{font-size:8px;color:var(--muted);text-align:right}' +
@@ -207,6 +210,7 @@
       '.recording-processing-step[data-state="error"]{color:var(--rose);font-weight:720}.recording-processing-step[data-state="error"] .recording-processing-dot{border-color:var(--rose);background:var(--rose)}' +
       '.recording-processing-progress{height:4px;margin-top:10px;border-radius:999px;background:var(--border);overflow:hidden}.recording-processing-progress span{display:block;height:100%;border-radius:inherit;background:var(--accent);transition:width .25s ease}' +
       '.recording-processing-error{margin:9px 0 0;color:var(--rose);font-size:8px;line-height:1.4;overflow-wrap:anywhere}' +
+      '.recording-processing-retry{margin-top:9px}' +
       '@media(min-width:600px){.recording-pipeline-status{font-size:10px}.recording-processing-head strong{font-size:12px}.recording-processing-head span,.recording-processing-error{font-size:10px}.recording-processing-step span:last-child{font-size:9px}}';
     root.document.head.appendChild(style);
   }
@@ -247,21 +251,91 @@
     if (element && element.textContent !== value) element.textContent = value;
   }
 
-  function ensureStatus(card, model) {
-    var info = card.querySelector('.recording-row-info');
-    if (!info) return;
-    var status = info.querySelector('.recording-pipeline-status');
-    if (!status) {
-      status = root.document.createElement('span');
-      status.className = 'recording-pipeline-status';
-      status.setAttribute('aria-live', 'polite');
-      info.appendChild(status);
-    }
-    status.dataset.tone = model.tone || 'waiting';
-    setText(status, model.status);
+  function emitProcessingState(recordingId, state) {
+    if (typeof root.dispatchEvent !== 'function' || typeof root.CustomEvent !== 'function') return;
+    root.dispatchEvent(new root.CustomEvent('synap-processing-state', {
+      detail: { recordingId: recordingId, state: state }
+    }));
   }
 
-  function ensureExpanded(card, model) {
+  async function retryRecording(recording, button) {
+    var id = String(recording && recording.id || '');
+    if (!id || retrying.has(id)) return;
+    if (!root.SynapProcessingQueue || typeof root.SynapProcessingQueue.retryRecording !== 'function') {
+      throw new Error('Processing is not ready yet. Reopen synap and try again.');
+    }
+
+    retrying.add(id);
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Retrying…';
+    }
+    emitProcessingState(id, 'retrying');
+
+    try {
+      var context = runtimeContext(recording);
+      var backendFailed = String(recording.processingStage || '').toLowerCase() === 'failed';
+      if (context.provider === 'synap' && backendFailed) {
+        if (!root.SynapBackend || typeof root.SynapBackend.retryRecording !== 'function') {
+          throw new Error('Cloud retry is not available in this build.');
+        }
+        await root.SynapBackend.retryRecording(id);
+      }
+      await root.SynapProcessingQueue.retryRecording(id);
+      emitProcessingState(id, 'queued');
+      scheduleRefresh(20);
+    } catch (error) {
+      if (button && button.isConnected) {
+        button.disabled = false;
+        button.textContent = 'Retry failed · tap again';
+        button.title = (error && error.message) || String(error);
+      }
+      emitProcessingState(id, 'retry-failed');
+      root.setTimeout(function () { scheduleRefresh(20); }, 1800);
+      throw error;
+    } finally {
+      retrying.delete(id);
+    }
+  }
+
+  function replaceStatus(info, current, tag) {
+    if (current && current.tagName === tag) return current;
+    var next = root.document.createElement(tag.toLowerCase());
+    next.className = 'recording-pipeline-status';
+    next.setAttribute('aria-live', 'polite');
+    if (current) current.replaceWith(next);
+    else info.appendChild(next);
+    return next;
+  }
+
+  function ensureStatus(card, recording, model) {
+    var info = card.querySelector('.recording-row-info');
+    if (!info) return;
+    var canRetry = model.tone === 'error' && model.retryable !== false;
+    var current = info.querySelector('.recording-pipeline-status');
+    var status = replaceStatus(info, current, canRetry ? 'BUTTON' : 'SPAN');
+    status.dataset.tone = model.tone || 'waiting';
+    if (canRetry) {
+      status.type = 'button';
+      status.classList.add('recording-pipeline-retry');
+      status.disabled = retrying.has(String(recording.id));
+      setText(status, status.disabled ? 'Retrying…' : model.status);
+      status.setAttribute('aria-label', 'Retry processing for ' + (recording.name || 'this recording'));
+      status.onclick = function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        retryRecording(recording, status).catch(function (error) {
+          if (root.console && root.console.error) root.console.error('Recording retry failed', error);
+        });
+      };
+    } else {
+      status.classList.remove('recording-pipeline-retry');
+      status.removeAttribute('aria-label');
+      setText(status, model.status);
+    }
+  }
+
+  function ensureExpanded(card, recording, model) {
     var content = card.querySelector('.recording-content');
     if (!content) return;
     var pipeline = content.querySelector('.recording-processing-pipeline');
@@ -280,7 +354,7 @@
     var title = root.document.createElement('strong');
     title.textContent = 'Memory pipeline';
     var status = root.document.createElement('span');
-    status.textContent = model.status;
+    status.textContent = retrying.has(String(recording.id)) ? 'Retrying…' : model.status;
     head.append(title, status);
 
     var track = root.document.createElement('div');
@@ -315,16 +389,29 @@
     if (model.error) {
       var error = root.document.createElement('p');
       error.className = 'recording-processing-error';
-      error.textContent = model.error + (model.retryable === false ? '' : ' Use Process queue to retry.');
+      error.textContent = model.error;
       children.push(error);
+      if (model.retryable !== false) {
+        var retry = root.document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'button button-secondary button-small recording-processing-retry';
+        retry.disabled = retrying.has(String(recording.id));
+        retry.textContent = retry.disabled ? 'Retrying…' : 'Retry processing';
+        retry.addEventListener('click', function () {
+          retryRecording(recording, retry).catch(function (retryError) {
+            if (root.console && root.console.error) root.console.error('Recording retry failed', retryError);
+          });
+        });
+        children.push(retry);
+      }
     }
     pipeline.replaceChildren.apply(pipeline, children);
   }
 
   function decorate(card, recording, jobs) {
     var model = derive(recording, jobs, runtimeContext(recording));
-    ensureStatus(card, model);
-    ensureExpanded(card, model);
+    ensureStatus(card, recording, model);
+    ensureExpanded(card, recording, model);
   }
 
   async function refresh() {
@@ -404,5 +491,10 @@
     bind();
   }
 
-  root.SynapProcessingPipeline = { derive: derive, refresh: refresh, scheduleRefresh: scheduleRefresh };
+  root.SynapProcessingPipeline = {
+    derive: derive,
+    refresh: refresh,
+    scheduleRefresh: scheduleRefresh,
+    retryRecording: retryRecording
+  };
 })(globalThis);
