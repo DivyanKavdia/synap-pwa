@@ -3,27 +3,31 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'recording-bridge.js'), 'utf8');
-const ai = fs.readFileSync(path.join(__dirname, '..', 'ai-providers.js'), 'utf8');
+const capture = fs.readFileSync(path.join(__dirname, '..', 'capture-stability.js'), 'utf8');
 const theme = fs.readFileSync(path.join(__dirname, '..', 'theme.js'), 'utf8');
 const worker = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
 
-const rollover = Number(source.match(/const ROLLOVER_MS = (\d+) \* 60 \* 1000/)?.[1]);
-assert.equal(rollover, 45, 'continuous capture rolls before 16-bit sequence wrap');
-assert(rollover < (65536 * 50 / 60000), 'rollover must stay below protocol wrap');
+assert.match(source, /const ROLLOVER_MS = 0/,
+  'a user recording must not be stopped and restarted into synthetic parts');
+assert.match(source, /SPLIT_RECORDINGS: false/);
+assert.doesNotMatch(source, /continuousGroupId|continuousPart|Part ' \+ part/);
+assert.doesNotMatch(source, /stop\.click\(\)/,
+  'the hardware bridge must never manufacture a file boundary');
 assert.match(source, /function adoptHardwareStream\(\)/);
 assert.match(source, /if \(state === '2'\)/);
 assert.match(source, /attempts >= 40/);
-assert.match(source, /start\.click\(\)/, 'hardware STREAMING state opens the browser journal');
-assert.match(source, /stop\.click\(\)/, 'long capture performs a controlled rollover');
-assert.match(source, /continuousGroupId/);
-assert.match(source, /continuousPart/);
+assert.match(source, /start\.click\(\)/,
+  'hardware STREAMING state still opens the browser journal');
 assert.match(source, /Touch: double tap to start\/stop · triple tap to sleep\/wake/);
 assert.doesNotMatch(source, /hold 5s to sleep|hold 5s to sleep\/wake/);
 assert.match(theme, /recording-bridge\.js\?v=1\.0\.0-touch5/);
 assert.match(worker, /\.\/recording-bridge\.js/);
-assert.match(ai, /continuousContext/);
-assert.match(ai, /one continuous conversation/);
-assert.match(ai, /continuous-45m-parts-30s-stt-5m-blocks-final/);
+
+assert.match(capture, /monotonically increasing/);
+assert.match(capture, /beginTransportEpoch/);
+assert.doesNotMatch(capture, /advanceContinuousPart|resumeStarted|start\.click\(\)/,
+  'BLE recovery must not synthesize a new recording');
+assert.match(capture, /LEGACY_CONTINUOUS_KEY/);
 
 assert.match(source, /AUTO_RECONNECT_KEY = 'dk-pendant-auto-reconnect'/);
 assert.match(source, /POWER_STATE_DEEP_SLEEP = 3/);
@@ -40,4 +44,4 @@ assert.match(source, /setTimeout\(\(\) => \{[\s\S]*endIntentionalSleep\(\);[\s\S
 assert.match(source, /attributeFilter:\['data-device-state','data-state'\]/);
 assert.match(source, /synap-gatt-service-ready/);
 
-console.log('PASS: hardware journal adoption, bounded intentional-sleep reconnect guard, triple-tap power copy, rollover and continuous AI consolidation.');
+console.log('PASS: one-recording invariant, hardware journal adoption and intentional-sleep reconnect guard.');
