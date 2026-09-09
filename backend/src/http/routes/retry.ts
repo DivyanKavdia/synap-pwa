@@ -70,7 +70,16 @@ export function retryRoutes(): Router {
       // A unique suffix bypasses the normal one-hour completed-task dedupe
       // window while the idempotency ledger still protects a repeated tap.
       const taskSuffix = `retry-${fingerprint(key).slice(0, 20)}`;
-      await enqueueProcessing(req.uid, recordingId, taskSuffix);
+      try {
+        await enqueueProcessing(req.uid, recordingId, taskSuffix);
+      } catch (cause) {
+        await db.patchRecording(req.uid, recordingId, {
+          state: 'failed',
+          errorCode: `Could not queue retry: ${(cause as Error).message}`.slice(0, 200),
+          retryable: true,
+        });
+        throw cause;
+      }
 
       const response = {
         recording_id: recordingId,
