@@ -42,13 +42,14 @@ test('all rendered brand references normalize Synap to synap, including dynamic 
   assert.match(runtime,/bindBrandCase\(\)/);
 });
 
-test('rich synap UI feature modules remain present in the release',()=>{
+test('rich synap UI feature modules remain present without exposing developer recovery controls',()=>{
   assert.match(brain,/Ask (?:Synap|synap)/);
   assert.match(brain,/Follow-up inbox/);
   assert.match(brain,/People/);
   assert.match(brain,/Decisions/);
   assert.match(brain,/My commitments/);
-  assert.match(product,/Advanced & recovery/);
+  assert.doesNotMatch(product,/Advanced & recovery/);
+  assert.match(product,/retrySaveButton/);
   assert.match(product,/Create memories automatically/);
 });
 

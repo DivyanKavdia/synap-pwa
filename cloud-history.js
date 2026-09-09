@@ -319,6 +319,7 @@
   }
 
   function loadTranscriptRepair() {
+    if (root.SYNAP_STATIC_BOOTSTRAP) return;
     if (!root.document || root.SynapTranscriptRepair ||
         root.document.querySelector('script[data-synap-transcript-repair]')) return;
     var script = root.document.createElement('script');
@@ -339,6 +340,7 @@
   }
 
   function loadProductRuntime() {
+    if (root.SYNAP_STATIC_BOOTSTRAP) return;
     loadRuntimeModule('capture-stability.js?v=1.0.0-stability2', 'data-synap-capture-stability', function () {
       return Boolean(root.SynapCaptureStability);
     });

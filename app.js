@@ -57,7 +57,8 @@ const APP_REVISION = "1.0.0-audio2";
   const AUDIO_STALL_TIMEOUT_MS = 12000;
   const FOREGROUND_STALL_GRACE_MS = 3000;
   const INCOMPLETE_FRAME_TIMEOUT_MS = 900;
-  const MAX_AUTO_RECONNECT_ATTEMPTS = 3;
+  const AUTO_RECONNECT_DELAYS_MS = [1200, 2600, 5200, 10000, 15000, 20000, 30000, 30000];
+  const MAX_AUTO_RECONNECT_ATTEMPTS = AUTO_RECONNECT_DELAYS_MS.length;
 
   // -------------------------------------------------------------------------
   // DOM
@@ -627,9 +628,8 @@ const APP_REVISION = "1.0.0-audio2";
       return;
     }
 
-    const delays = [1200, 2600, 5200];
     const attempt = reconnectAttempts + 1;
-    const wait = delays[reconnectAttempts];
+    const wait = AUTO_RECONNECT_DELAYS_MS[reconnectAttempts];
 
     log("Automatic reconnect scheduled", {
       attempt: attempt,

@@ -200,9 +200,9 @@
     });
     $('#datePicker')?.addEventListener('change',render);
 
-    if(root.MutationObserver){
-      new root.MutationObserver(()=>setTimeout(refresh,100)).observe($('#insightsList')||document.body,{childList:true,subtree:true});
-    }
+    let refreshTimer=0;
+    const scheduleRefresh=()=>{clearTimeout(refreshTimer);refreshTimer=setTimeout(refresh,80)};
+    ['synap-cloud-history-updated','synap-memory-ready','synap-transcript-updated'].forEach(name=>root.addEventListener(name,scheduleRefresh));
   }
 
   function mark(){

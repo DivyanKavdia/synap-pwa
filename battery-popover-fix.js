@@ -100,7 +100,7 @@ async function writeStandby(){
   catch(error){console.warn('[synap power] standby command failed',error);if(eligibleIdle())standbyTimer=setTimeout(writeStandby,10000);}finally{writeBusy=false}
 }
 function scheduleStandby(){cancelStandby();if(!service||!compatibleStandby()||state()!=='idle'||lastPowerState===POWER_STANDBY)return;standbyTimer=setTimeout(writeStandby,IDLE_TO_STANDBY_MS)}
-function tryAutoStart(){if(!autoStartPending)return;const button=document.getElementById('startButton');if(state()!=='idle'||!button||button.disabled)return;autoStartPending=false;document.body.dataset.powerIntent='';setTimeout(()=>{if(state()==='idle'&&!button.disabled)button.click()},80)}
+function tryAutoStart(){if(root.SynapRecordingBridge)return;if(!autoStartPending)return;const button=document.getElementById('startButton');if(state()!=='idle'||!button||button.disabled)return;autoStartPending=false;document.body.dataset.powerIntent='';setTimeout(()=>{if(state()==='idle'&&!button.disabled)button.click()},80)}
 function onStateChange(){const s=state();if(s==='idle'){tryAutoStart();scheduleStandby()}else cancelStandby()}
 function bindStateObserver(){if(stateObserver||!root.MutationObserver||!document.body)return;stateObserver=new MutationObserver(onStateChange);stateObserver.observe(document.body,{attributes:true,attributeFilter:['data-state','data-device-state']});onStateChange()}
 function parseHex(hex){return String(hex||'').trim().split(/\s+/).filter(Boolean).map(x=>Number.parseInt(x,16))}
@@ -121,12 +121,12 @@ root.SynapPowerLifecycle={IDLE_TO_STANDBY_MS,MIN_SAFE_STANDBY_BUILD,get state(){
 /* Load optional memory tooling through the literal production URL retained by
  * the existing regression contract. */
 (function(root){'use strict';
-if(document.querySelector('script[data-synap-memory-tools]'))return;
+if(root.SYNAP_STATIC_BOOTSTRAP||document.querySelector('script[data-synap-memory-tools]'))return;
 const script=document.createElement('script');script.dataset.synapMemoryTools='1';script.src=new URL('memory-tools.js?v=1.0.0-memory-tools1',document.baseURI).href;script.defer=true;script.onerror=()=>console.warn('[synap memory] optional memory tools could not load');document.head.appendChild(script);
 })(globalThis);
 
 /* Voice profiling is optional and independently loadable. */
 (function(root){'use strict';
-if(document.querySelector('script[data-synap-voice-profile]'))return;
+if(root.SYNAP_STATIC_BOOTSTRAP||document.querySelector('script[data-synap-voice-profile]'))return;
 const script=document.createElement('script');script.dataset.synapVoiceProfile='1';script.src=new URL('voice-profile.js?v=1.0.0-voice-profile1',document.baseURI).href;script.defer=true;script.onerror=()=>console.warn('[synap voice] voice profile module could not load');document.head.appendChild(script);
 })(globalThis);

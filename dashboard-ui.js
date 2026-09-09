@@ -143,7 +143,7 @@ body[data-synap-view] main>section:not(#today):not(#insights):not(#followupInbox
   }
 
   function scan(){wrapActions();wrapConversations();clampBrief();wirePipeline();bindTabs()}
-  function init(){injectStyle();scan();let queued=false;new MutationObserver(()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;scan()})}).observe(document.body,{childList:true,subtree:true});}
+  function init(){injectStyle();scan();let queued=false;const schedule=()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;scan()})};['synap-cloud-history-updated','synap-memory-ready','synap-processing-state','synap-transcript-updated'].forEach(name=>addEventListener(name,schedule));setTimeout(schedule,250);}
   root.SynapDashboardUI={setView};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })(globalThis);
