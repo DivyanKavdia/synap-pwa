@@ -5,8 +5,8 @@ const CLIENT_REVISION='1.0.0-audio2';
 /* Keep prior production revisions explicit for upgrade diagnostics/tests. */
 const HISTORICAL_CACHE_REVISION='1.0.0-shell31-dashboard';
 const ASK_CACHE_REVISION='1.0.0-shell32-ask';
-const PREVIOUS_CACHE_REVISION='1.0.0-shell33-power';
-const CACHE_REVISION='1.0.0-shell34-transcript';
+const PREVIOUS_CACHE_REVISION='1.0.0-shell34-transcript';
+const CACHE_REVISION='1.0.0-shell35-ble-stability';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings-icon-fix.css',
