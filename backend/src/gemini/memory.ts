@@ -28,11 +28,13 @@ Evidence rules, in order of priority:
 1. Never invent a person, owner, due date, decision, number or fact. If the words do not support it, leave it out or use null.
 2. Distinguish a proposal from a confirmed decision. Only record a decision when the speakers settle it. A later explicit decision supersedes an earlier proposal on the same subject.
 3. Record a commitment only when someone actually commits. "I'll send it" is a commitment; "someone should send it" is not.
-4. Every decision, action item and follow-up must carry start_ms and end_ms grounded in the supplied timestamps. Never guess a time range.
+4. Every conversation, decision, action item and follow-up must carry start_ms and end_ms grounded in the supplied timestamps. Never collapse distinct conversations to 0 merely because exact word timing is unavailable; use the nearest supplied segment timestamp.
 5. Identify people only from evidence in the words — self-introduction, direct address, or a clear role statement. Speaker labels like S1 are not names. Use role "self" for the wearer when the audio makes that clear. Do not merge two people because a first name matches.
-6. Segment the timeline into distinct real-world conversations only where there is evidence of a true boundary: a sustained gap, a participant change, an explicit opening or closing, or a hard context switch. Adjacent blocks about the same subject stay in one conversation. A false merge is much better than inventing a meeting.
-7. Windows marked HIGHLIGHT were flagged by the wearer in the moment. Weight them as important, but they are still bound by the evidence rules above.
-8. Language may be English, Hindi or mixed Hinglish. Write summaries in the dominant language of the conversation, preserving names and technical terms as spoken.
+6. For each conversation, separate attendance from subject matter. participants contains only named people evidenced as actually speaking or directly participating in that conversation. mentioned_people contains named people who are discussed or referenced but are not evidenced as participants. A person's name appearing in the transcript is not proof they were on the call.
+7. The conversation summary must say what was actually discussed. Do not use a list of names as a substitute for the summary, and do not imply that a mentioned person spoke unless evidence supports it.
+8. Segment the timeline into distinct real-world conversations only where there is evidence of a true boundary: a sustained gap, a participant change, an explicit opening or closing, or a hard context switch. Adjacent blocks about the same subject stay in one conversation. A false merge is much better than inventing a meeting.
+9. Windows marked HIGHLIGHT were flagged by the wearer in the moment. Weight them as important, but they are still bound by the evidence rules above.
+10. Language may be English, Hindi or mixed Hinglish. Write summaries in the dominant language of the conversation, preserving names and technical terms as spoken.
 
 Return only the requested schema.`;
 
@@ -111,34 +113,59 @@ export function validateMemory(memory: StructuredMemory, durationMs: number): St
     (person) => person.name?.trim() && person.evidence?.trim(),
   );
   const knownNames = new Set(people.map((person) => person.name.trim().toLowerCase()));
+  const cleanNames = (values: unknown, allowSelf = false) => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of Array.isArray(values) ? values : []) {
+      const name = String(raw ?? '').trim();
+      const key = name.toLowerCase();
+      if (!name || seen.has(key)) continue;
+      if (!(knownNames.has(key) || (allowSelf && key === 'self'))) continue;
+      seen.add(key);
+      out.push(name);
+    }
+    return out;
+  };
 
   const conversations = (memory.conversations ?? [])
     .filter((conversation) => inRange(conversation.start_ms, conversation.end_ms))
-    .map((conversation) => ({
-      ...conversation,
-      start_ms: clamp(conversation.start_ms, 0, durationMs),
-      end_ms: clamp(conversation.end_ms, 0, durationMs),
-      people: (conversation.people ?? []).filter((person) => person.name?.trim()),
-      decisions: (conversation.decisions ?? []).filter(
-        (decision) => decision.text?.trim() && inRange(decision.start_ms, decision.end_ms),
-      ),
-      action_items: (conversation.action_items ?? []).filter(
-        (action) =>
-          action.task?.trim() &&
-          inRange(action.start_ms, action.end_ms) &&
-          // An owner must be "self" or someone the model actually identified.
-          (action.owner?.toLowerCase() === 'self' ||
-            knownNames.has(action.owner?.trim().toLowerCase() ?? '')) &&
-          isValidDate(action.due_date),
-      ),
-      follow_ups: (conversation.follow_ups ?? []).filter(
-        (followUp) => followUp.text?.trim() && inRange(followUp.start_ms, followUp.end_ms),
-      ),
-    }))
+    .map((conversation) => {
+      const extended = conversation as typeof conversation & {
+        participants?: string[];
+        mentioned_people?: string[];
+      };
+      const participants = cleanNames(extended.participants, true);
+      const participantKeys = new Set(participants.map((name) => name.toLowerCase()));
+      const mentionedPeople = cleanNames(extended.mentioned_people)
+        .filter((name) => !participantKeys.has(name.toLowerCase()));
+      return {
+        ...conversation,
+        start_ms: clamp(conversation.start_ms, 0, durationMs),
+        end_ms: clamp(conversation.end_ms, 0, durationMs),
+        people: (conversation.people ?? []).filter((person) => person.name?.trim()),
+        participants,
+        mentioned_people: mentionedPeople,
+        decisions: (conversation.decisions ?? []).filter(
+          (decision) => decision.text?.trim() && inRange(decision.start_ms, decision.end_ms),
+        ),
+        action_items: (conversation.action_items ?? []).filter(
+          (action) =>
+            action.task?.trim() &&
+            inRange(action.start_ms, action.end_ms) &&
+            // An owner must be "self" or someone the model actually identified.
+            (action.owner?.toLowerCase() === 'self' ||
+              knownNames.has(action.owner?.trim().toLowerCase() ?? '')) &&
+            isValidDate(action.due_date),
+        ),
+        follow_ups: (conversation.follow_ups ?? []).filter(
+          (followUp) => followUp.text?.trim() && inRange(followUp.start_ms, followUp.end_ms),
+        ),
+      };
+    })
     .sort((a, b) => a.start_ms - b.start_ms);
 
   return {
-    schema_version: 1,
+    schema_version: 2,
     title: memory.title?.trim() || 'Untitled capture',
     executive_summary: memory.executive_summary?.trim() ?? '',
     key_points: (memory.key_points ?? []).filter((point) => point?.trim()),
