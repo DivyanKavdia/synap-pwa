@@ -7,6 +7,8 @@ const vm = require('node:vm');
 const root = path.join(__dirname, '..');
 const historySource = fs.readFileSync(path.join(root, 'cloud-history.js'), 'utf8');
 const captureSource = fs.readFileSync(path.join(root, 'capture-stability.js'), 'utf8');
+const pipelineSource = fs.readFileSync(path.join(root, 'processing-pipeline-ui.js'), 'utf8');
+const transcriptRepairSource = fs.readFileSync(path.join(root, 'transcript-repair.js'), 'utf8');
 
 function loadHistory() {
   const context = {
@@ -25,6 +27,8 @@ function loadHistory() {
 const history = loadHistory();
 assert(history, 'cloud history API should load');
 assert.equal(typeof history.meaningfullyChanged, 'function');
+assert.equal(typeof history.restoreDay, 'function');
+assert.equal(typeof history.restoreRecording, 'function');
 
 const base = {
   id: 'r1', transcript: 'same', summary: 'same', processingState: 'done',
@@ -44,10 +48,39 @@ const historyCode = historySource
   .replace(/^\s*\/\/.*$/gm, '');
 assert.doesNotMatch(historyCode, /location\s*\.\s*reload\s*\(/,
   'cloud sync must never reload the document because reload disconnects Web Bluetooth');
+assert.doesNotMatch(historyCode, /addEventListener\s*\(\s*['"]visibilitychange['"]/,
+  'cloud history must not refresh just because the app becomes visible');
+assert.match(historySource, /datePicker/,
+  'day changes should be an explicit cloud refresh trigger');
+assert.match(historySource, /classList\.contains\('recording-card'\)/,
+  'opening a recording should be an explicit targeted transcript trigger');
+assert.match(historySource, /synap-memory-ready/,
+  'a completed summary should immediately trigger the completed memory refresh');
+
+const pipelineCode = pipelineSource
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '');
+assert.doesNotMatch(pipelineCode, /setInterval\s*\(/,
+  'the processing pipeline must not wake up on a fixed timer');
+assert.doesNotMatch(pipelineCode, /addEventListener\s*\(\s*['"]visibilitychange['"]/,
+  'the processing pipeline must not refresh merely because the app foregrounds');
+for (const event of ['synap-processing-state', 'synap-memory-ready', 'synap-cloud-history-updated']) {
+  assert(pipelineSource.includes(event), `pipeline should refresh from ${event}`);
+}
+
+const repairCode = transcriptRepairSource
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '');
+assert.doesNotMatch(repairCode, /location\s*\.\s*reload\s*\(/,
+  'manual transcript repair must update in place rather than refreshing the whole PWA');
+assert.match(transcriptRepairSource, /recordingMemory/,
+  'targeted recording memory fetch should be available for expand/transcript actions');
+assert.match(transcriptRepairSource, /kind==='consolidate'/,
+  'summary completion should emit a memory-ready event');
 
 assert.doesNotMatch(captureSource, /\bconnect\s*\.\s*click\s*\(/,
   'capture continuity must not run a second synthetic reconnect loop');
 assert.match(captureSource, /start\s*\.\s*click\s*\(/,
   'capture continuity may resume recording only after app.js has re-established idle GATT state');
 
-console.log('PASS: cloud sync is in-place and reconnect has one owner.');
+console.log('PASS: Synap refresh is event-driven, in-place, and BLE-safe.');

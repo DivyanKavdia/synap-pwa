@@ -17,6 +17,9 @@
       return data||{};
     });
   }
+  function emit(name,detail){
+    try{if(typeof root.dispatchEvent==='function'&&typeof root.CustomEvent==='function')root.dispatchEvent(new root.CustomEvent(name,{detail:detail||{}}))}catch(_){}
+  }
   function waitUntilReady(id,deadline){
     return request('/v1/recordings/'+encodeURIComponent(id)+'/processing').then(function(status){
       var state=String(status.state||'');
@@ -57,7 +60,9 @@
       if(!String(memory.transcript||'').trim())throw new Error('The rebuilt recording still has no transcript.');
       await saveMemory(id,memory);
       button.textContent='Transcript restored';
-      root.setTimeout(function(){if(!busy()&&root.location?.reload)root.location.reload()},450);
+      emit('synap-memory-ready',{recordingId:id,source:'transcript-repair'});
+      emit('synap-cloud-history-updated',{recordingId:id,source:'transcript-repair'});
+      root.setTimeout(function(){button.disabled=false;button.textContent='Refresh transcript'},1200);
     }catch(error){
       console.warn('[synap transcript] rebuild failed',error);
       button.disabled=false;button.textContent='Retry transcript';button.title=error?.message||'Transcript rebuild failed';
@@ -72,8 +77,36 @@
     button.textContent='Refresh transcript';button.title='Rebuild the complete transcript from Synap Cloud’s stored 30-second transcript windows.';
     button.addEventListener('click',function(){repair(id,button)});actions.appendChild(button);
   }
+  function installBackendMemoryFetch(){
+    if(!root.SynapBackend||typeof root.SynapBackend.recordingMemory==='function')return;
+    root.SynapBackend.recordingMemory=function(id){return request('/v1/recordings/'+encodeURIComponent(id)+'/memory')};
+  }
+  function installProcessorEvents(){
+    var Processor=root.DKFIFOProcessor;
+    if(!Processor||Processor.prototype.__synapEventRefreshPatched)return false;
+    var original=Processor.prototype.process;
+    if(typeof original!=='function')return false;
+    Processor.prototype.process=function(job){
+      var self=this,args=arguments;
+      emit('synap-processing-state',{recordingId:job&&job.recordingId,kind:job&&job.kind,state:'running'});
+      var result;
+      try{result=original.apply(self,args)}catch(error){emit('synap-processing-state',{recordingId:job&&job.recordingId,kind:job&&job.kind,state:'failed'});throw error}
+      return Promise.resolve(result).then(function(value){
+        emit('synap-processing-state',{recordingId:job&&job.recordingId,kind:job&&job.kind,state:'done'});
+        if(job&&job.kind==='consolidate')emit('synap-memory-ready',{recordingId:job.recordingId,source:'processor'});
+        return value;
+      },function(error){emit('synap-processing-state',{recordingId:job&&job.recordingId,kind:job&&job.kind,state:'failed'});throw error});
+    };
+    Processor.prototype.__synapEventRefreshPatched=true;
+    return true;
+  }
+  function installEventBridge(){
+    installBackendMemoryFetch();
+    if(installProcessorEvents())return;
+    var attempts=0,timer=root.setInterval(function(){attempts+=1;installBackendMemoryFetch();if(installProcessorEvents()||attempts>=80)root.clearInterval(timer)},50);
+  }
   function scan(){root.document?.querySelectorAll?.('.recording-card').forEach(enhance)}
-  function init(){scan();if(!root.document?.body)return;new MutationObserver(scan).observe(root.document.body,{childList:true,subtree:true})}
+  function init(){scan();installEventBridge();if(!root.document?.body)return;new MutationObserver(scan).observe(root.document.body,{childList:true,subtree:true})}
   if(root.document?.readyState==='loading')root.document.addEventListener('DOMContentLoaded',init,{once:true});else init();
-  root.SynapTranscriptRepair={repair:repair,saveMemory:saveMemory,recordingId:recordingId,busy:busy};
+  root.SynapTranscriptRepair={repair:repair,saveMemory:saveMemory,recordingId:recordingId,busy:busy,installEventBridge:installEventBridge};
 })(globalThis);
