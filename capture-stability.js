@@ -1,32 +1,85 @@
-/* Capture continuity guards for Synap PWA.
+/* Capture stability guards for Synap PWA.
  *
- * Responsibilities kept deliberately narrow:
- * 1) normalize firmware frame sequence numbers per local recording;
- * 2) remember that an active capture was interrupted and resume only after the
- *    core recorder has successfully reconnected;
- * 3) hide low-level recovery controls from product UI.
+ * Product invariant: one user recording is one local recording. Transport
+ * recovery must never synthesize an extra Start click or a "Part N" recording.
  *
- * Core app.js owns GATT reconnect scheduling. This module must never synthesize
- * extra Connect clicks because two independent reconnect loops can fight each
- * other and make the UI bounce between Connecting and Offline.
+ * This module only normalizes the firmware's 16-bit frame counter for durable
+ * browser storage and hides low-level recovery controls. The core recorder owns
+ * all start/stop/reconnect decisions.
  */
 (function (root) {
   'use strict';
 
-  const CONTINUOUS_KEY = 'synap-continuous-capture';
-  const RESUME_WINDOW_MS = 2 * 60 * 1000;
-  const sequenceStarts = new Map();
+  const LEGACY_CONTINUOUS_KEY = 'synap-continuous-capture';
+  const sequenceStates = new Map();
 
+  function stateFor(recordingId, rawSequence) {
+    const id = String(recordingId || '');
+    if (!id) return null;
+    let state = sequenceStates.get(id);
+    if (!state) {
+      state = {
+        lastRaw: Number(rawSequence),
+        lastLogical: 0,
+        pendingBase: null
+      };
+      sequenceStates.set(id, state);
+    }
+    return state;
+  }
+
+  /* Convert the firmware's uint16 sequence into a monotonically increasing
+     recording-relative sequence. This safely unwraps 65535 -> 0 instead of
+     overwriting the first frames of a long take. Duplicate chunks for the same
+     frame map to the same logical sequence. */
   function relativeSequence(recordingId, rawSequence) {
     const id = String(recordingId || '');
     const raw = Number(rawSequence);
     if (!id || !Number.isInteger(raw) || raw < 0 || raw > 0xffff) return rawSequence;
-    if (!sequenceStarts.has(id)) sequenceStarts.set(id, raw);
-    return (raw - sequenceStarts.get(id) + 0x10000) & 0xffff;
+
+    const existing = sequenceStates.get(id);
+    if (!existing) {
+      stateFor(id, raw);
+      return 0;
+    }
+
+    if (Number.isInteger(existing.pendingBase)) {
+      existing.lastRaw = raw;
+      existing.lastLogical = existing.pendingBase;
+      existing.pendingBase = null;
+      return existing.lastLogical;
+    }
+
+    if (raw === existing.lastRaw) return existing.lastLogical;
+
+    const forward = (raw - existing.lastRaw + 0x10000) & 0xffff;
+    if (forward > 0 && forward < 0x8000) {
+      existing.lastRaw = raw;
+      existing.lastLogical += forward;
+      return existing.lastLogical;
+    }
+
+    /* A late/out-of-order packet should map backwards without moving the live
+       cursor. Web Bluetooth notifications are ordered, but this keeps storage
+       deterministic if an old packet is delivered during teardown. */
+    const backward = (existing.lastRaw - raw + 0x10000) & 0xffff;
+    return Math.max(0, existing.lastLogical - backward);
+  }
+
+  /* Compatibility hook for a future same-recording transport resume. Calling
+     this before the first frame of a new firmware stream makes that frame follow
+     the existing recording instead of reusing sequence zero. gapFrames may be
+     used to preserve a real-time silence gap. It does not create another file. */
+  function beginTransportEpoch(recordingId, gapFrames = 0) {
+    const state = sequenceStates.get(String(recordingId || ''));
+    if (!state) return false;
+    const gap = Math.max(0, Math.floor(Number(gapFrames) || 0));
+    state.pendingBase = state.lastLogical + 1 + gap;
+    return true;
   }
 
   function forgetSequence(recordingId) {
-    sequenceStarts.delete(String(recordingId || ''));
+    sequenceStates.delete(String(recordingId || ''));
   }
 
   function patchJournalSequences() {
@@ -78,104 +131,30 @@
     }, 25);
   }
 
-  function readContinuousSession() {
-    try { return JSON.parse(root.sessionStorage?.getItem(CONTINUOUS_KEY) || 'null'); }
-    catch (_) { return null; }
-  }
-
-  function advanceContinuousPart() {
-    try {
-      const value = readContinuousSession();
-      if (!value || typeof value !== 'object') return false;
-      value.part = Math.max(1, Number(value.part) || 1) + 1;
-      root.sessionStorage?.setItem(CONTINUOUS_KEY, JSON.stringify(value));
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  function bindReconnectContinuity() {
-    const body = root.document?.body;
-    const start = root.document?.getElementById?.('startButton');
-    const stop = root.document?.getElementById?.('stopButton');
-    if (!body || !start) return false;
-
-    let captureActive = false;
-    let resumePending = false;
-    let resumeUntil = 0;
-    let resumeStarted = false;
-
-    function clearResume() {
-      resumePending = false;
-      resumeUntil = 0;
-      resumeStarted = false;
-    }
-
-    function maybeResume() {
-      if (!resumePending || resumeStarted) return;
-      if (Date.now() > resumeUntil) { clearResume(); return; }
-      if (body.dataset.state !== 'idle' || body.dataset.deviceState !== '1' || start.disabled) return;
-      resumeStarted = true;
-      advanceContinuousPart();
-      root.setTimeout(function () {
-        if (body.dataset.state === 'idle' && !start.disabled) start.click();
-        else resumeStarted = false;
-      }, 350);
-    }
-
-    function sync() {
-      const state = String(body.dataset.state || '');
-      if (state === 'starting' || state === 'recording') captureActive = true;
-
-      if (state === 'recording') {
-        if (resumePending) clearResume();
-        return;
-      }
-
-      if (state === 'disconnected') {
-        if (captureActive) {
-          resumePending = true;
-          resumeUntil = Date.now() + RESUME_WINDOW_MS;
-          resumeStarted = false;
-        }
-        captureActive = false;
-        return;
-      }
-
-      if (state === 'idle') maybeResume();
-    }
-
-    stop?.addEventListener('click', function () {
-      captureActive = false;
-      clearResume();
-    }, true);
-
-    root.addEventListener?.('synap-intentional-sleep', function (event) {
-      if (event?.detail?.active) {
-        captureActive = false;
-        clearResume();
-      }
-    });
-
-    const observer = new MutationObserver(sync);
-    observer.observe(body, {
-      attributes: true,
-      attributeFilter: ['data-state', 'data-device-state', 'data-intentional-sleep']
-    });
-    sync();
-    return true;
+  function clearLegacyContinuousSession() {
+    try { root.sessionStorage?.removeItem(LEGACY_CONTINUOUS_KEY); } catch (_) {}
   }
 
   function hideLowLevelRecoveryUi() {
-    const styleId='synap-hide-low-level-recovery';
-    if(!root.document?.getElementById?.(styleId)){const style=root.document.createElement('style');style.id=styleId;style.textContent='#advancedSettings,.product-advanced,#retrySaveButton,#recoveryButton,#runQueueButton,#pauseQueueButton{display:none!important}';root.document.head?.appendChild(style)}
-    ['retrySaveButton','recoveryButton','runQueueButton','pauseQueueButton'].forEach(id=>{const node=root.document?.getElementById?.(id);if(node){node.hidden=true;node.setAttribute('aria-hidden','true')}});
+    const styleId = 'synap-hide-low-level-recovery';
+    if (!root.document?.getElementById?.(styleId)) {
+      const style = root.document.createElement('style');
+      style.id = styleId;
+      style.textContent = '#advancedSettings,.product-advanced,#retrySaveButton,#recoveryButton,#runQueueButton,#pauseQueueButton{display:none!important}';
+      root.document.head?.appendChild(style);
+    }
+    ['retrySaveButton','recoveryButton','runQueueButton','pauseQueueButton'].forEach(id => {
+      const node = root.document?.getElementById?.(id);
+      if (node) {
+        node.hidden = true;
+        node.setAttribute('aria-hidden', 'true');
+      }
+    });
   }
 
   function init() {
+    clearLegacyContinuousSession();
     hideLowLevelRecoveryUi();
-    bindReconnectContinuity();
   }
 
   ensureJournalPatch();
@@ -187,10 +166,8 @@
 
   root.SynapCaptureStability = Object.freeze({
     relativeSequence,
+    beginTransportEpoch,
     forgetSequence,
-    patchJournalSequences,
-    readContinuousSession,
-    advanceContinuousPart,
-    RESUME_WINDOW_MS
+    patchJournalSequences
   });
 })(globalThis);
