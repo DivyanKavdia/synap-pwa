@@ -61,6 +61,13 @@
     return String(job.dedupe || (job.recordingId + ':' + job.kind)) + ':' + suffix;
   }
 
+  function userRetryKey(recordingId) {
+    var nonce = root.crypto && typeof root.crypto.randomUUID === 'function'
+      ? root.crypto.randomUUID()
+      : String(Date.now()) + '-' + Math.random().toString(36).slice(2);
+    return 'retry:' + recordingId + ':' + nonce;
+  }
+
   /* Finalize metadata must be identical on every retry. Older builds used
      Date.now() when endedAt was absent, which paired a stable Idempotency-Key
      with a changing request body and caused a 409 on retry. Journal recordings
@@ -259,6 +266,11 @@
     ask:function(query,scope){return request('/v1/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:query,scope:scope||{}})});},
     dailyBrief:function(day){return request('/v1/days/'+encodeURIComponent(day)+'/brief');},
     people:function(){return request('/v1/people');},
+    retryRecording:function(recordingId){
+      var id=String(recordingId||'');
+      if(!id)return Promise.reject(permanent('Recording id is required.'));
+      return request('/v1/recordings/'+encodeURIComponent(id)+'/retry',{method:'POST',headers:{'Idempotency-Key':userRetryKey(id)}});
+    },
     /* List recordings with their memory so a device that has never seen this
        account can rebuild its journal. Transcripts are opt-in because they
        dominate the payload and the list views never render them. */

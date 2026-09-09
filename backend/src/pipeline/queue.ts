@@ -6,10 +6,11 @@
  * phone that started it has usually gone back in a pocket. The queue also gives
  * retries, rate limiting and a dead-letter path for free.
  *
- * The task name is derived from the recording, so Cloud Tasks deduplicates a
- * double-finalize into a single processing run.
+ * Normal task names are derived from the recording, so Cloud Tasks deduplicates
+ * a double-finalize into a single processing run. Explicit user retries pass a
+ * unique suffix so they are not blocked by Cloud Tasks' completed-task dedupe
+ * window.
  */
-
 import { CloudTasksClient } from '@google-cloud/tasks';
 import { config } from '../config.js';
 import { log } from '../util/log.js';
@@ -26,7 +27,11 @@ function queuePath(): string {
   return tasks().queuePath(config.projectId, config.tasks.location, config.tasks.queue);
 }
 
-export async function enqueueProcessing(uid: string, recordingId: string): Promise<void> {
+export async function enqueueProcessing(
+  uid: string,
+  recordingId: string,
+  taskSuffix?: string,
+): Promise<void> {
   // Local development and tests run the pipeline inline.
   if (!config.tasks.serviceUrl) {
     log.info('No Cloud Tasks target configured; processing inline', { uid, recordingId });
@@ -37,12 +42,9 @@ export async function enqueueProcessing(uid: string, recordingId: string): Promi
   }
 
   const payload = Buffer.from(JSON.stringify({ uid, recordingId }), 'utf8');
-  // Dedupe window: Cloud Tasks keeps a name for ~1h after completion, which
-  // covers the realistic double-tap and retry cases without blocking a genuine
-  // reprocess later.
-  const name = `${queuePath()}/tasks/${uid.replace(/-/g, '')}-${recordingId.replace(/-/g, '')}-${Math.floor(
-    Date.now() / 3_600_000,
-  )}`;
+  const normalSuffix = String(Math.floor(Date.now() / 3_600_000));
+  const suffix = (taskSuffix || normalSuffix).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80) || normalSuffix;
+  const name = `${queuePath()}/tasks/${uid.replace(/-/g, '')}-${recordingId.replace(/-/g, '')}-${suffix}`;
 
   try {
     await tasks().createTask({

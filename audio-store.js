@@ -301,12 +301,31 @@
       onChange=()=>{},now=()=>Date.now(),canRun=()=>true}={}){
       this.store=store;this.settings=settings;this.fetch=fetcher;this.locks=locks;this.onChange=onChange;this.now=now;
       this.running=false;this.paused=true;this.controllers=new Map();this.timer=null;this.canRun=canRun;
+      root.SynapProcessingQueue={
+        retryRecording:(recordingId)=>this.retryRecording(recordingId),
+        resume:()=>this.resume()
+      };
     }
     pause(){this.paused=true;clearTimeout(this.timer);for(const controller of this.controllers.values())controller.abort();this.onChange('Queue paused');}
     async resume(){if(!this.canRun())return;this.paused=false;return this.run();}
     async retry(){
       const jobs=(await this.store.all('jobs')).sort((a,b)=>a.id-b.id),job=jobs.find(j=>j.state==='failed')||jobs.find(j=>j.state!=='done');
       if(job)await this.store.patchJob(job.id,{state:'pending',attempts:0,nextAt:0,lastError:''});return this.resume();
+    }
+    async retryRecording(recordingId){
+      const id=String(recordingId||'');
+      if(!id)return this.resume();
+      const jobs=(await this.store.all('jobs','recording',id)).sort((a,b)=>a.id-b.id);
+      const failed=jobs.filter(job=>job.state==='failed');
+      for(const job of failed){
+        await this.store.patchJob(job.id,{state:'pending',attempts:0,nextAt:0,lastError:'',startedAt:null,finishedAt:null});
+      }
+      if(!failed.length){
+        const waiting=jobs.find(job=>job.state!=='done'&&job.state!=='running');
+        if(waiting)await this.store.patchJob(waiting.id,{state:'pending',attempts:0,nextAt:0,lastError:''});
+      }
+      this.onChange('Retrying recording');
+      return this.resume();
     }
     async execute(job,config,url){
       await this.store.patchJob(job.id,{state:'running',startedAt:this.now()});
