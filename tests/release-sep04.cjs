@@ -43,7 +43,7 @@ test('all rendered brand references normalize Synap to synap, including dynamic 
 });
 
 test('rich synap UI feature modules remain present in the release',()=>{
-  assert.match(brain,/Ask Synap/);
+  assert.match(brain,/Ask (?:Synap|synap)/);
   assert.match(brain,/Follow-up inbox/);
   assert.match(brain,/People/);
   assert.match(brain,/Decisions/);
