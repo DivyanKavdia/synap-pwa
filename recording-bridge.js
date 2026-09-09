@@ -248,11 +248,16 @@
   function bind() {
     ensureJournalPatch();
     improveCopy();
-    root.addEventListener('synap-event-packet', handlePowerEvent);
+    if(!root.SynapSleepStateGuard) root.addEventListener('synap-event-packet', handlePowerEvent);
+    root.addEventListener('synap-intentional-sleep', event => {
+      intentionalSleep=Boolean(event?.detail?.active);
+      if(intentionalSleep){clearReconnectRestoreTimer();clearRolloverTimer();clearHardwareAdoptTimer();startingFromHardware=false;}
+      else handleDeviceState();
+    });
     root.addEventListener('synap-gatt-service-ready', () => {
       if (intentionalSleep) endIntentionalSleep();
     });
-    root.addEventListener('pagehide', () => {
+    if(!root.SynapSleepStateGuard) root.addEventListener('pagehide', () => {
       if (intentionalSleep) endIntentionalSleep();
     });
     const observer = new MutationObserver(handleDeviceState);

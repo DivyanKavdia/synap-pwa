@@ -331,6 +331,6 @@
 
   installBlobRegistry();
   bindBrandCase();
-  function init(){bindSettingsBrand();bindFirmwareAffordance();bindTouchRecordingBridge();bindRecordingControls();bindTapResponsiveness();bindBrainTabs();bindReducedMotion()}
+  function init(){bindSettingsBrand();bindFirmwareAffordance();if(!globalThis.SynapRecordingBridge)bindTouchRecordingBridge();bindRecordingControls();bindTapResponsiveness();if(!globalThis.SynapDashboardUI)bindBrainTabs();bindReducedMotion()}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();

@@ -168,24 +168,9 @@
   }
 
   function hideLowLevelRecoveryUi() {
-    const styleId = 'synap-hide-low-level-recovery';
-    if (!root.document?.getElementById?.(styleId)) {
-      const style = root.document.createElement('style');
-      style.id = styleId;
-      style.textContent = '#advancedSettings,.product-advanced,#retrySaveButton,#recoveryButton,#runQueueButton,#pauseQueueButton{display:none!important}';
-      root.document.head?.appendChild(style);
-    }
-
-    const hideWrapper = function () {
-      root.document?.querySelectorAll?.('#advancedSettings,.product-advanced').forEach(function (node) {
-        node.hidden = true;
-        node.setAttribute('aria-hidden', 'true');
-      });
-    };
-    hideWrapper();
-    if (root.MutationObserver && root.document?.body) {
-      new MutationObserver(hideWrapper).observe(root.document.body, { childList: true, subtree: true });
-    }
+    const styleId='synap-hide-low-level-recovery';
+    if(!root.document?.getElementById?.(styleId)){const style=root.document.createElement('style');style.id=styleId;style.textContent='#advancedSettings,.product-advanced,#retrySaveButton,#recoveryButton,#runQueueButton,#pauseQueueButton{display:none!important}';root.document.head?.appendChild(style)}
+    ['retrySaveButton','recoveryButton','runQueueButton','pauseQueueButton'].forEach(id=>{const node=root.document?.getElementById?.(id);if(node){node.hidden=true;node.setAttribute('aria-hidden','true')}});
   }
 
   function init() {

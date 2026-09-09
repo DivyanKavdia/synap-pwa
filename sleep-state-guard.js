@@ -29,11 +29,13 @@
     reflectLocked();
   }
   function beginSleepLock(){
-    if(!locked()){
+    const alreadyLocked=locked();
+    if(!alreadyLocked){
       set(SAVED_RECONNECT_KEY,currentReconnectPreference());
       set(SLEEP_STATE_KEY,'1');
     }
     forceReconnectOff();
+    if(!alreadyLocked)root.dispatchEvent?.(new CustomEvent('synap-intentional-sleep',{detail:{active:true,owner:'sleep-state-guard'}}));
   }
   function clearSleepLock(){
     if(!locked())return;
@@ -47,6 +49,7 @@
     }
     const checkbox=document.getElementById('autoReconnectInput');
     if(checkbox)checkbox.checked=previous!=='off';
+    root.dispatchEvent?.(new CustomEvent('synap-intentional-sleep',{detail:{active:false,owner:'sleep-state-guard'}}));
   }
   function handlePowerPacket(event){
     const bytes=parseHex(event?.detail?.hex);
