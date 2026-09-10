@@ -68,11 +68,6 @@
     return 'retry:' + recordingId + ':' + nonce;
   }
 
-  /* Finalize metadata must be identical on every retry. Older builds used
-     Date.now() when endedAt was absent, which paired a stable Idempotency-Key
-     with a changing request body and caused a 409 on retry. Journal recordings
-     always have createdAt and durationMs, so start + duration is the truthful,
-     deterministic fallback. */
   function stableFinalizeEndedAt(recording) {
     var explicit = recording && (recording.endedAt || recording.completedAt);
     if (explicit) {
@@ -85,8 +80,16 @@
     return new Date(started.getTime() + duration).toISOString();
   }
 
-  /* Processing visibility is local metadata only. It never changes the audio,
-     queue ordering, encrypted cloud record, or backend request contract. */
+  function segmentBounds(recording, segmentIndex) {
+    var startMs = Math.max(0, Number(segmentIndex) || 0) * SEGMENT_SECONDS * 1000;
+    var fullEndMs = startMs + SEGMENT_SECONDS * 1000;
+    var durationMs = Math.max(0, Math.round(Number(recording && recording.durationMs) || 0));
+    var sealed = Boolean(recording && recording.sealed && recording.status !== 'recording');
+    var endMs = sealed && durationMs > startMs ? Math.min(fullEndMs, durationMs) : fullEndMs;
+    if (endMs <= startMs) endMs = fullEndMs;
+    return { startMs: startMs, endMs: endMs };
+  }
+
   function patchLocalProcessing(processor, recordingId, fields) {
     if (!processor || !processor.store || typeof processor.store.atomic !== 'function') return Promise.resolve();
     return processor.store.atomic(['recordings'], function (stores) {
@@ -102,18 +105,12 @@
     return patchLocalProcessing(processor, recordingId, fields).catch(function () { return null; });
   }
 
-  /* One create per recording, not one per segment. The endpoint is idempotent,
-     but calling it for every 30s chunk multiplied requests by capture length
-     and widened the window in which a recording's own metadata could change
-     between otherwise identical calls. */
   var createdRecordings = Object.create(null);
 
   function ensureRecording(processor, recordingId) {
     if (createdRecordings[recordingId]) return createdRecordings[recordingId];
     var pending = createRecording(processor, recordingId);
     createdRecordings[recordingId] = pending;
-    /* A failed create must not be cached, or the whole recording is stuck for
-       the life of the page. */
     pending.catch(function () { delete createdRecordings[recordingId]; });
     return pending;
   }
@@ -135,17 +132,24 @@
   }
 
   function uploadSegment(processor, job) {
+    var recording = null;
     return safePatchLocalProcessing(processor, job.recordingId, {
-      processingStage: 'uploading',
-      processingError: '',
-      processingRetryable: true
+      processingStage: 'uploading', processingError: '', processingRetryable: true
     }).then(function () {
       return ensureRecording(processor,job.recordingId);
-    }).then(function(){return processor.store.segment(job.recordingId,job.segmentIndex);}).then(function(data){
+    }).then(function(){
+      return Promise.all([
+        processor.store.segment(job.recordingId,job.segmentIndex),
+        processor.store.get('recordings',job.recordingId)
+      ]);
+    }).then(function(values){
+      var data=values[0];recording=values[1];
       if(!data.blob&&!data.frames.length)throw permanent('Segment has no complete PCM frames.');
-      var wav=data.blob||root.DKAudioCodec.wav(data.frames); return wav.arrayBuffer();
+      var wav=data.blob||root.DKAudioCodec.wav(data.frames);return wav.arrayBuffer();
     }).then(function(buffer){return sha256Hex(buffer).then(function(digest){
-      var startMs=job.segmentIndex*SEGMENT_SECONDS*1000; var headers={'Content-Type':'audio/wav','X-Synap-Start-Ms':String(startMs),'X-Synap-End-Ms':String(startMs+SEGMENT_SECONDS*1000)}; if(digest)headers['X-Synap-Sha256']=digest;
+      var bounds=segmentBounds(recording,job.segmentIndex);
+      var headers={'Content-Type':'audio/wav','X-Synap-Start-Ms':String(bounds.startMs),'X-Synap-End-Ms':String(bounds.endMs)};
+      if(digest)headers['X-Synap-Sha256']=digest;
       return request('/v1/recordings/'+encodeURIComponent(job.recordingId)+'/segments/'+encodeURIComponent(job.segmentIndex),{method:'PUT',headers:headers,body:buffer});
     });}).then(function(){return{transcript:'',uploadedToBackend:true,provider:'synap',uploadedAt:new Date().toISOString()};});
   }
@@ -170,12 +174,7 @@
       return request('/v1/recordings/'+encodeURIComponent(job.recordingId)+'/processing').then(function(status){
         var state=String(status&&status.state||'');
         var progress=Number(status&&status.progress);
-        var fields={
-          processingStage:state||lastBackendStage,
-          processingProgress:Number.isFinite(progress)?progress:null,
-          processingError:(status&&status.error_code)||'',
-          processingRetryable:Boolean(status&&status.retryable)
-        };
+        var fields={processingStage:state||lastBackendStage,processingProgress:Number.isFinite(progress)?progress:null,processingError:(status&&status.error_code)||'',processingRetryable:Boolean(status&&status.retryable)};
         if(state==='failed') fields.processingFailedStage=lastBackendStage;
         else if(state){lastBackendStage=state;fields.processingFailedStage='';}
         return safePatchLocalProcessing(processor,job.recordingId,fields).then(function(){
@@ -207,41 +206,28 @@
     return consolidate(processor,job);
   }
 
-  /* Repair only the known legacy finalize failure. The old key remains in
-     Firestore for up to 48 hours, so finalize-v2 gives the retried request a
-     clean ledger entry. Resetting the local failed job makes already-recorded
-     memories self-heal after this PWA update instead of requiring deletion. */
   function recoverLegacyFinalizeFailures(processor) {
     if (!processor || !processor.store || typeof processor.store.all !== 'function' || typeof processor.store.patchJob !== 'function') return Promise.resolve();
     return processor.store.all('jobs').then(function (jobs) {
       var legacy = (jobs || []).filter(function (job) {
-        return job && job.kind === 'consolidate' && job.state === 'failed' &&
-          String(job.lastError || '').indexOf('Idempotency-Key reused with a different request body') !== -1;
+        return job && job.kind === 'consolidate' && job.state === 'failed' && String(job.lastError || '').indexOf('Idempotency-Key reused with a different request body') !== -1;
       });
-      return Promise.all(legacy.map(function (job) {
-        return processor.store.patchJob(job.id, { state:'pending', attempts:0, nextAt:0, lastError:'' });
-      }));
+      return Promise.all(legacy.map(function (job) {return processor.store.patchJob(job.id, { state:'pending', attempts:0, nextAt:0, lastError:'' });}));
     }).catch(function () { return null; });
   }
 
   function patch(){
     var Processor=root.DKFIFOProcessor;if(!Processor||Processor.prototype.__synapBackendPatched)return;
     var originalProcess=Processor.prototype.process,originalRun=Processor.prototype.run;
-
     Processor.prototype.run=function(){
       if(prefs().provider!=='synap')return originalRun.call(this);
       if(!root.SynapAuth||!root.SynapAuth.isSignedIn()){this.onChange('Sign in with Google to process pending memories.');return Promise.resolve();}
       var endpoint=managedEndpoint();if(!endpoint){this.onChange('Synap Cloud is not configured for this build.');return Promise.resolve();}
-      if(!this.__synapFinalizeRecoveryDone){
-        this.__synapFinalizeRecoveryDone=true;
-        var recoveryProcessor=this;
-        return recoverLegacyFinalizeFailures(this).then(function(){return recoveryProcessor.run();});
-      }
+      if(!this.__synapFinalizeRecoveryDone){this.__synapFinalizeRecoveryDone=true;var recoveryProcessor=this;return recoverLegacyFinalizeFailures(this).then(function(){return recoveryProcessor.run();});}
       var originalSettings=this.settings,self=this;this.settings=function(){var config=originalSettings?originalSettings():{};return Object.assign({},config,{endpoint:endpoint,llmEndpoint:endpoint});};
       var outcome;try{outcome=originalRun.call(this);}catch(error){this.settings=originalSettings;throw error;}
       return Promise.resolve(outcome).then(function(value){self.settings=originalSettings;return value;},function(error){self.settings=originalSettings;throw error;});
     };
-
     Processor.prototype.process=function(job,config,url){
       var settings=prefs();if(settings.provider!=='synap')return originalProcess.call(this,job,config,url);
       if(!root.SynapAuth||!root.SynapAuth.isSignedIn())return Promise.reject(permanent('Sign in with Google in Settings to sync your memories.'));
@@ -251,8 +237,6 @@
     Processor.prototype.__synapBackendPatched=true;
   }
 
-  /* Explicit migration helper retained for old self-host tooling/tests only.
-     Production startup, login and provider switching never call this method. */
   function mirrorEndpoints(){
     if(prefs().provider!=='synap')return;
     var endpoint=managedEndpoint();if(!endpoint)return;
@@ -262,29 +246,15 @@
   patch();
   if(root.document&&root.document.readyState==='loading')root.document.addEventListener('DOMContentLoaded',patch,{once:true});
 
-  root.SynapBackend={patchProcessor:patch,mirrorEndpoints:mirrorEndpoints,toRecordingFields:toRecordingFields,
+  root.SynapBackend={patchProcessor:patch,mirrorEndpoints:mirrorEndpoints,toRecordingFields:toRecordingFields,segmentBounds:segmentBounds,
     ask:function(query,scope){return request('/v1/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:query,scope:scope||{}})});},
     dailyBrief:function(day){return request('/v1/days/'+encodeURIComponent(day)+'/brief');},
     people:function(){return request('/v1/people');},
-    retryRecording:function(recordingId){
-      var id=String(recordingId||'');
-      if(!id)return Promise.reject(permanent('Recording id is required.'));
-      return request('/v1/recordings/'+encodeURIComponent(id)+'/retry',{method:'POST',headers:{'Idempotency-Key':userRetryKey(id)}});
-    },
-    /* List recordings with their memory so a device that has never seen this
-       account can rebuild its journal. Transcripts are opt-in because they
-       dominate the payload and the list views never render them. */
-    recordings:function(options){var opts=options||{};var query=[];
-      if(opts.day)query.push('day='+encodeURIComponent(opts.day));
-      if(opts.limit)query.push('limit='+encodeURIComponent(opts.limit));
-      if(opts.transcript)query.push('include_transcript=true');
-      return request('/v1/recordings'+(query.length?'?'+query.join('&'):''));},
+    retryRecording:function(recordingId){var id=String(recordingId||'');if(!id)return Promise.reject(permanent('Recording id is required.'));return request('/v1/recordings/'+encodeURIComponent(id)+'/retry',{method:'POST',headers:{'Idempotency-Key':userRetryKey(id)}});},
+    recordings:function(options){var opts=options||{};var query=[];if(opts.day)query.push('day='+encodeURIComponent(opts.day));if(opts.limit)query.push('limit='+encodeURIComponent(opts.limit));if(opts.transcript)query.push('include_transcript=true');return request('/v1/recordings'+(query.length?'?'+query.join('&'):''));},
     followUps:function(state,owner){return request('/v1/follow-ups?state='+encodeURIComponent(state||'open')+'&owner='+encodeURIComponent(owner||'all'));},
     resolveFollowUp:function(id,state){return request('/v1/follow-ups/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:state})});},
     confirmPerson:function(personId,confirmed){return request('/v1/people/'+encodeURIComponent(personId),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmed:confirmed!==false})});},
-    /* Renaming implies confirming: the backend then stops letting the model
-       overwrite the name, and keeps the old spelling matchable so the next
-       recording updates this person instead of inventing a second one. */
     renamePerson:function(personId,name){return request('/v1/people/'+encodeURIComponent(personId),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:String(name||'').trim()})});}
   };
 })(globalThis);
