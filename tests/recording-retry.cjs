@@ -28,7 +28,7 @@ async function queueTargetsOnlySelectedRecording() {
     async all(storeName, index, key) {
       if (storeName === 'jobs' && index === 'recording' && key === 'target') {
         return [
-          { id: 11, recordingId: 'target', state: 'failed', attempts: 5, lastError: 'boom' },
+          { id: 11, recordingId: 'target', state: 'failed', attempts: 5, lastError: 'boom', startedAt: 123 },
           { id: 12, recordingId: 'target', state: 'pending', attempts: 0 },
         ];
       }
@@ -50,6 +50,9 @@ async function queueTargetsOnlySelectedRecording() {
   assert.equal(patches[0].fields.state, 'pending');
   assert.equal(patches[0].fields.attempts, 0);
   assert.equal(patches[0].fields.nextAt, 0);
+  assert.equal(patches[0].fields.lastError, '');
+  assert.equal(patches[0].fields.startedAt, null, 'stale running metadata must be cleared before retry');
+  assert.equal(patches[0].fields.finishedAt, null, 'stale completion metadata must be cleared before retry');
   assert.equal(typeof context.SynapProcessingQueue.retryRecording, 'function');
 }
 
@@ -66,9 +69,16 @@ function uiAndBackendContract() {
   assert.match(backendClient, /Idempotency-Key/);
 
   const retryRoute = read('backend/src/http/routes/retry.ts');
-  assert.match(retryRoute, /recording\.state !== 'failed'/);
-  assert.match(retryRoute, /!recording\.retryable/);
-  assert.match(retryRoute, /enqueueProcessing\(req\.uid, recordingId, taskSuffix\)/);
+  assert.match(retryRoute, /ACTIVE_STATES/, 'retry route must recognize a cloud worker that already resumed');
+  assert.match(retryRoute, /UPLOAD_STATES/, 'retry route must let local upload recovery continue without a false 409');
+  assert.match(retryRoute, /already_processing:\s*true/, 'active cloud work must be treated as a successful retry convergence');
+  assert.match(retryRoute, /awaiting_upload:\s*true/, 'created\/uploading cloud state must let the local queue resend missing work');
+  assert.match(retryRoute, /recording\.state !== 'failed'\s*&&\s*recording\.state !== 'uploaded'/,
+    'uploaded and retryable failed recordings must both be eligible for a fresh cloud task');
+  assert.match(retryRoute, /recording\.state === 'failed'\s*&&\s*!recording\.retryable/,
+    'a truly non-retryable failed recording must stay blocked');
+  assert.match(retryRoute, /enqueueProcessing\(req\.uid, recordingId, taskSuffix\)/,
+    'retry must enqueue a unique processing task when cloud work needs restarting');
   assert.match(retryRoute, /state: 'failed'[\s\S]*retryable: true/, 'queue dispatch failure must remain retryable');
 
   const app = read('backend/src/http/app.ts');
@@ -83,7 +93,7 @@ function uiAndBackendContract() {
 (async () => {
   await queueTargetsOnlySelectedRecording();
   uiAndBackendContract();
-  console.log('PASS: Needs retry is actionable and retries only the selected recording across local and cloud processing.');
+  console.log('PASS: Needs retry converges stale local and cloud states and retries only the selected recording.');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
