@@ -18,7 +18,8 @@ assert.match(app,/lastObservedSequence\s*=\s*null/,'raw missing-frame tracking m
 assert.match(app,/recordingResumeBluetoothId/,'resume must remain bound to the same browser Bluetooth device');
 assert.match(app,/recordingResumeDeviceId/,'resume must remain bound to the same permanent pendant identity when available');
 assert.match(app,/connection-lost-timeout/,'an unrecovered interrupted recording must eventually be sealed safely');
-assert.match(app,/Recording paused[^\n]+same recording|same recording[^\n]+Recording paused/i,'the disconnected UI should explain that the current recording is preserved');
+assert.match(app,/Recording paused/i,'the disconnected UI should visibly identify the paused recording state');
+assert.match(app,/continue the same recording/i,'the disconnected UI should explain that reconnect continues the preserved recording');
 assert.equal((app.match(/journal\.begin\(/g)||[]).length,1,'transport recovery must never create a second local recording');
 
 // The normalizer itself must turn a restarted uint16 firmware counter into the
