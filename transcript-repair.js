@@ -164,7 +164,6 @@
       try{result=original.apply(self,args)}catch(error){emit('synap-processing-state',{recordingId:job&&job.recordingId,kind:job&&job.kind,state:'failed'});throw error}
       return Promise.resolve(result).then(function(value){
         emit('synap-processing-state',{recordingId:job&&job.recordingId,kind:job&&job.kind,state:'done'});
-        if(job&&job.kind==='consolidate')emit('synap-memory-ready',{recordingId:job.recordingId,source:'processor'});
         return value;
       },function(error){emit('synap-processing-state',{recordingId:job&&job.recordingId,kind:job&&job.kind,state:'failed'});throw error});
     };
