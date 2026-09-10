@@ -5,13 +5,13 @@ const CLIENT_REVISION='1.0.0-audio2';
 /* Byte-level recovery marker: forces installed PWAs to install this worker and
    refresh the shell assets even though the compatibility/cache generation stays
    unchanged. This repairs users already carrying the disappearing UI bundle. */
-const UI_RECOVERY_REVISION='1.0.0-stable-ui1';
+const UI_RECOVERY_REVISION='1.0.0-refresh1';
 /* Keep prior production revisions explicit for upgrade diagnostics/tests. */
 const HISTORICAL_CACHE_REVISION='1.0.0-shell31-dashboard';
 const ASK_CACHE_REVISION='1.0.0-shell32-ask';
 const POWER_CACHE_REVISION='1.0.0-shell33-power';
 const PREVIOUS_CACHE_REVISION='1.0.0-shell34-transcript';
-const CACHE_REVISION='1.0.0-shell36-architecture';
+const CACHE_REVISION='1.0.0-shell37-refresh';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings-icon-fix.css',

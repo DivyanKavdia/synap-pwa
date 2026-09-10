@@ -21,7 +21,7 @@ function setup({saved=null,hour=12,blocked=false}={}){
 }
 const click=button=>button.click({preventDefault(){}});
 for(const [hour,expected] of [[6,'dark'],[7,'light'],[18,'light'],[19,'dark'],[23,'dark']])assert.equal(setup({hour}).html.dataset.theme,expected,`Auto hour ${hour}`);
-let t=setup({hour:18});assert.equal(t.html.dataset.theme,'light');assert.equal(t.html.attributes['data-theme'],'light');assert.equal(t.meta.content,'#f7f9fc');
+let t=setup({hour:18});assert.equal(t.html.dataset.theme,'light');assert.equal(t.html.attributes['data-theme'],'light');assert.equal(t.meta.content,'#f4f7f5');
 click(t.buttons[2]);assert.equal(t.html.dataset.theme,'dark');assert.equal(t.storage.get('synap-appearance'),'dark');t.setHour(10);t.intervals[0].f();assert.equal(t.html.dataset.theme,'dark','explicit dark overrides Auto refresh');
 click(t.buttons[0]);assert.equal(t.html.dataset.theme,'light');t.setHour(20);t.intervals[0].f();assert.equal(t.html.dataset.theme,'dark','Auto refreshes on the minute');
 t.setHour(9);t.events.focus();assert.equal(t.html.dataset.theme,'light','Auto refreshes on focus');t.setHour(21);t.events.pageshow();assert.equal(t.html.dataset.theme,'dark','Auto refreshes on pageshow');

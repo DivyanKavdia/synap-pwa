@@ -42,13 +42,13 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
 
   assert.doesNotMatch(events, /script\.src=['"]audio-codec-v3/);
   assert.match(sw, /1\.0\.0-shell33-power/);
-  assert.match(sw, /1\.0\.0-stable-ui1/);
+  assert.match(sw, /1\.0\.0-refresh1/);
   assert.match(sw, /\.\/dashboard-ui\.js/);
   assert.match(sw, /\.\/ask-synap\.js/);
   assert.match(sw, /\.\/sleep-state-guard\.js/);
   assert.match(sw, /\.\/runtime-compat\.js/);
   assert.match(sw, /\.\/processing-recovery\.js/);
-  assert.match(theme, /dashboard-ui\.js\?v=1\.0\.0-stable-shell1/);
+  assert.match(theme, /dashboard-ui\.js\?v=1\.0\.0-refresh1/);
   assert.match(theme, /ask-synap\.js\?v=1\.0\.0-ask1/);
   assert.match(theme, /sleep-state-guard\.js\?v=1\.0\.0-power1/);
   assert.match(theme, /recording-bridge\.js\?v=1\.0\.0-touch5/);
