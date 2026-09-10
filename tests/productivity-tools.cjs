@@ -12,5 +12,11 @@ assert.match(src,/Recording ID:/,'portable AI context must retain the recording 
 assert.match(src,/clock\(r,offset\(/,'portable AI context must preserve source time references');
 assert.match(src,/Copy today for AI/,'day context export must be visible');
 assert.match(src,/Copy week for AI/,'week context export must be visible');
+assert.match(src,/synap-week-metric/,'weekly counts must be interactive controls');
+assert.match(src,/data\.weekView=kind/,'weekly controls must identify the requested evidence type');
+assert.match(src,/synapWeekDetail/,'weekly controls must expand an evidence list');
+assert.match(src,/dataset\.recordingId=x\.r\.id/,'weekly evidence rows must retain recording identity');
+assert.match(src,/dataset\.offsetMs=String\(x\.startMs\|\|0\)/,'weekly evidence rows must retain exact source offsets');
+assert.match(src,/SynapProvenance\?\.openSource/,'weekly evidence must use the provenance source navigator');
 assert.doesNotMatch(src,/due_date\s*\|\|\s*new Date/,'calendar must not invent a due date');
-console.log('productivity tools contract passed');
+console.log('PASS: weekly review, calendar and portable context remain grounded and weekly evidence is clickable');
