@@ -23,8 +23,9 @@ assert.match(app,/continue the same recording/i,'the disconnected UI should expl
 assert.equal((app.match(/journal\.begin\(/g)||[]).length,1,'transport recovery must never create a second local recording');
 
 // The normalizer itself must turn a restarted uint16 firmware counter into the
-// next logical frame of the same recording.
-const context={console,Map,Number,String,Math,Object,Promise,setInterval(){return 1},clearInterval(){},sessionStorage:{removeItem(){}},globalThis:null};
+// next logical frame of the same recording. Keep DOM bootstrap deferred: this
+// test is about sequence continuity, not presentation helpers.
+const context={console,Map,Number,String,Math,Object,Promise,setInterval(){return 1},clearInterval(){},sessionStorage:{removeItem(){}},document:{readyState:'loading',addEventListener(){}},globalThis:null};
 context.globalThis=context;
 vm.createContext(context);
 vm.runInContext(stability,context,{filename:'capture-stability.js'});
