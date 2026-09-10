@@ -3,19 +3,21 @@
  *
  * Cloud Tasks is the normal background path. It calls /tasks/process with an
  * OIDC token minted for our own service account. A signed-in PWA may also call
- * /recordings/:recordingId/process-now when an uploaded recording has not been
- * picked up by Cloud Tasks. That recovery path is deliberately narrow: it can
- * only process a recording owned by the authenticated user. A force=true query
- * is reserved for refreshing an already-ready memory from its sealed 30-second
- * transcript windows. Force rebuilds never call STT and never rewrite the
- * people/follow-up/retrieval indexes; they refresh the recording memory + day
- * brief only.
+ * /recordings/:recordingId/process-now when processing stops advancing. The
+ * recovery path is deliberately narrow: it can only process a recording owned
+ * by the authenticated user, and a fresh active worker is always left alone.
+ *
+ * A force=true query is reserved for refreshing an already-ready memory from
+ * its sealed 30-second transcript windows. Force rebuilds never call STT and
+ * never rewrite the people/follow-up/retrieval indexes; they refresh the
+ * recording memory + day brief only.
  */
 
 import { Router } from 'express';
 import { z } from 'zod';
 import { processRecording } from '../../pipeline/process.js';
 import * as db from '../../store/firestore.js';
+import type { RecordingDoc } from '../../store/types.js';
 import { log } from '../../util/log.js';
 import { requireAuth, requireTaskAuth, type AuthedRequest } from '../auth.js';
 import { HttpError, handler } from '../errors.js';
@@ -26,6 +28,16 @@ const taskBody = z.object({
 });
 
 const ACTIVE_STATES = new Set(['transcribing', 'understanding', 'indexing']);
+/** Active stages update progress as work advances. Ten quiet minutes is long
+ * enough to avoid racing a slow model call, while still recovering a worker
+ * that died after persisting an active state. */
+const ACTIVE_STALE_MS = 10 * 60_000;
+
+export function isStaleActiveRecording(recording: RecordingDoc, now = Date.now()): boolean {
+  if (!ACTIVE_STATES.has(recording.state)) return false;
+  const updatedAt = Date.parse(recording.updatedAt);
+  return !Number.isFinite(updatedAt) || now - updatedAt >= ACTIVE_STALE_MS;
+}
 
 export function taskRoutes(): Router {
   const router = Router();
@@ -60,7 +72,7 @@ export function taskRoutes(): Router {
     requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const recordingId = String(req.params.recordingId);
-      const recording = await db.getRecording(req.uid, recordingId);
+      let recording = await db.getRecording(req.uid, recordingId);
       if (!recording) throw new HttpError(404, 'not_found', 'Unknown recording');
       const force = String(req.query.force ?? '') === 'true';
       const rebuild = recording.state === 'ready' && force;
@@ -71,11 +83,29 @@ export function taskRoutes(): Router {
         return;
       }
 
-      // If Cloud Tasks started between the PWA's last poll and this request,
-      // leave that worker alone rather than starting a second pipeline.
+      // A fresh active state means Cloud Tasks is doing useful work. A stale
+      // active state is different: the worker may have died after persisting its
+      // stage. processRecording is restart-safe and skips sealed transcripts, so
+      // return the record to uploaded and resume from durable evidence.
       if (ACTIVE_STATES.has(recording.state)) {
-        res.status(202).json({ recording_id: recordingId, state: recording.state, recovered: false });
-        return;
+        if (!isStaleActiveRecording(recording)) {
+          res.status(202).json({ recording_id: recordingId, state: recording.state, recovered: false });
+          return;
+        }
+        log.warn('Recovering stale active processing state', {
+          uid: req.uid,
+          recordingId,
+          state: recording.state,
+          updatedAt: recording.updatedAt,
+        });
+        await db.patchRecording(req.uid, recordingId, {
+          state: 'uploaded',
+          progress: 0,
+          errorCode: null,
+          retryable: true,
+        });
+        recording = await db.getRecording(req.uid, recordingId);
+        if (!recording) throw new HttpError(404, 'not_found', 'Unknown recording');
       }
 
       if (rebuild) {
