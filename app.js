@@ -50,7 +50,7 @@ const APP_REVISION = "1.0.0-audio2";
     6: "BLE transport changed. Stop and start again."
   };
 
-  const MAX_RECORDING_MS = 50 * 60 * 1000;
+  const RECORDING_RECONNECT_GRACE_MS = 5 * 60 * 1000;
   const START_TIMEOUT_MS = 5000;
   const COMMAND_TIMEOUT_MS = 3500;
   const MIN_STREAM_MTU = 32;
@@ -179,6 +179,12 @@ const APP_REVISION = "1.0.0-audio2";
   let reconnectAttempts = 0;
   let reloadRecoveryRunning = false;
   let lastReloadRecoveryAt = 0;
+  let recordingReconnectPending = false;
+  let recordingDisconnectedAt = 0;
+  let recordingReconnectDeadline = null;
+  let recordingResumeDeviceId = null;
+  let recordingResumeBluetoothId = null;
+  let recordingWasConfirmedBeforeDisconnect = false;
 
   let pendingFrames = new Map();
   let completedPcmFrames = [];
@@ -329,6 +335,17 @@ const APP_REVISION = "1.0.0-audio2";
 
     if (nextState === "disconnected") {
       ui.connectionBadge.classList.add("status-offline");
+      if (recordingReconnectPending) {
+        ui.connectionText.textContent = "Recording paused";
+        ui.connectButtonLabel.textContent = "Reconnect";
+        ui.stopButton.disabled = false;
+        ui.recorderTitle.textContent = "Recording paused.";
+        ui.recorderSubtitle.textContent =
+          message ||
+          "Connection was lost. Reconnect to continue the same recording, or Stop to save it.";
+        ui.levelText.textContent = "Recording preserved";
+        return;
+      }
       ui.connectionText.textContent = "Not connected";
       ui.connectButtonLabel.textContent =
         needsDeviceSelection ? "Reselect pendant" : (bluetoothDevice ? "Reconnect" : "Connect pendant");
@@ -558,23 +575,109 @@ const APP_REVISION = "1.0.0-audio2";
     catch (_) { return true; }
   }
 
+  function clearRecordingReconnectDeadline() {
+    if (recordingReconnectDeadline !== null) {
+      clearTimeout(recordingReconnectDeadline);
+      recordingReconnectDeadline = null;
+    }
+  }
+
+  function clearRecordingReconnectState() {
+    clearRecordingReconnectDeadline();
+    recordingReconnectPending = false;
+    recordingDisconnectedAt = 0;
+    recordingResumeDeviceId = null;
+    recordingResumeBluetoothId = null;
+    recordingWasConfirmedBeforeDisconnect = false;
+    document.body.dataset.recordingInterrupted = "false";
+  }
+
+  function scheduleRecordingReconnectExpiry(sessionId) {
+    clearRecordingReconnectDeadline();
+    recordingReconnectDeadline = window.setTimeout(function () {
+      recordingReconnectDeadline = null;
+      if (!recordingReconnectPending || !isCurrentSession(sessionId)) return;
+      log("Recording reconnect window expired", { session: sessionId });
+      toast("Could not restore the pendant connection. Saving the recording already captured.", "error");
+      finalizeRecording("connection-lost-timeout", sessionId);
+    }, RECORDING_RECONNECT_GRACE_MS);
+  }
+
+  function markRecordingInterrupted(sessionId) {
+    if (!recordingReconnectPending) {
+      recordingReconnectPending = true;
+      recordingDisconnectedAt = performance.now();
+      recordingResumeDeviceId = deviceAssociation?.deviceId || null;
+      recordingResumeBluetoothId = bluetoothDevice?.id || null;
+      recordingWasConfirmedBeforeDisconnect = recordingConfirmed;
+      document.body.dataset.recordingInterrupted = "true";
+      scheduleRecordingReconnectExpiry(sessionId);
+      log("Recording transport paused; journal kept open", {
+        session: sessionId,
+        recordingId: currentRecordingId,
+        deviceId: recordingResumeDeviceId,
+        bluetoothId: recordingResumeBluetoothId
+      });
+    }
+  }
+
+  async function prepareRecordingTransportResume() {
+    if (!recordingReconnectPending || !isCurrentSession(recordingSessionId)) return false;
+    if (openingCapture && !currentRecordingId) {
+      currentRecordingId = await openingCapture;
+      openingCapture = null;
+    }
+    if (!currentRecordingId) throw new Error("Interrupted recording journal is unavailable.");
+    cleanupStaleFrames(true);
+    pendingFrames.clear();
+    completedSequences.clear();
+    lastObservedSequence = null;
+    lastFrameCleanupAt = 0;
+    globalThis.SynapCaptureStability?.beginTransportEpoch(currentRecordingId, 0);
+    setAppState("starting");
+    return true;
+  }
+
+  function completeRecordingTransportResume(source) {
+    if (!recordingReconnectPending) return;
+    const now = performance.now();
+    if (recordingWasConfirmedBeforeDisconnect && recordingStartedAt && recordingDisconnectedAt) {
+      recordingStartedAt += Math.max(0, now - recordingDisconnectedAt);
+    }
+    clearRecordingReconnectState();
+    reconnectAttempts = 0;
+    clearStartTimeout();
+    lastAudioAt = now;
+    foregroundAt = now;
+    startTimer();
+    setAppState("recording");
+    if (settings.wakeLock) acquireWakeLock();
+    log("Recording resumed in existing journal", {
+      source: source,
+      session: recordingSessionId,
+      recordingId: currentRecordingId
+    });
+  }
+
   async function recoverRememberedConnection(reason, force) {
     if (firmwareBusy) return;
+    const activeJournalBlocksRecovery = Boolean(currentRecordingId) && !recordingReconnectPending;
     if (!autoReconnectEnabled() || manualDisconnect || connectInProgress || reloadRecoveryRunning ||
-        finalizing || currentRecordingId || isGattConnected() || document.visibilityState === "hidden") return;
+        finalizing || activeJournalBlocksRecovery || isGattConnected() || document.visibilityState === "hidden") return;
     if (!window.isSecureContext || !navigator.bluetooth) {
       setReconnectCapability("Web Bluetooth is unavailable here. Installing the PWA does not add Bluetooth support to an unsupported browser.");
       return;
     }
-    if (!force && Date.now() - lastReloadRecoveryAt < 30000) return;
+    if (!force && Date.now() - lastReloadRecoveryAt < 30000 && !recordingReconnectPending) return;
     lastReloadRecoveryAt = Date.now();reloadRecoveryRunning = true;
     try {
       // Never open the chooser without a user gesture, and never select by an ambiguous name.
       if (!bluetoothDevice && !await restoreKnownPendant()) return;
+      const journalStillBlocksRecovery = Boolean(currentRecordingId) && !recordingReconnectPending;
       if (!autoReconnectEnabled() || manualDisconnect || connectInProgress || isGattConnected() ||
-          finalizing || currentRecordingId || document.visibilityState === "hidden") return;
-      clearReconnectTimer(true);
-      log("Remembered-device recovery", {reason});
+          finalizing || journalStillBlocksRecovery || document.visibilityState === "hidden") return;
+      clearReconnectTimer(!recordingReconnectPending);
+      log("Remembered-device recovery", {reason, recordingResume: recordingReconnectPending});
       await connectPendant({ silent: true, autoReconnect: true });
     } finally { reloadRecoveryRunning = false; }
   }
@@ -588,7 +691,9 @@ const APP_REVISION = "1.0.0-audio2";
       catch (_) { preference.checked = autoReconnectEnabled();toast("This browser could not save the reconnect preference.", "error"); }
       if (!preference.checked) {
         clearReconnectTimer(true);
-        setReconnectCapability("Automatic reconnect is off. An existing connection is not disconnected.");
+        setReconnectCapability(recordingReconnectPending
+          ? "Automatic reconnect is off. Tap Reconnect to continue the same recording, or Stop to save it."
+          : "Automatic reconnect is off. An existing connection is not disconnected.");
       }
       else { manualDisconnect = false;recoverRememberedConnection("preference-enabled", true); }
     });
@@ -633,7 +738,8 @@ const APP_REVISION = "1.0.0-audio2";
 
     log("Automatic reconnect scheduled", {
       attempt: attempt,
-      delayMs: wait
+      delayMs: wait,
+      recordingResume: recordingReconnectPending
     });
 
     reconnectTimer = window.setTimeout(function () {
@@ -648,6 +754,8 @@ const APP_REVISION = "1.0.0-audio2";
     const settings = options || {};
     const silent = Boolean(settings.silent);
     const autoReconnect = Boolean(settings.autoReconnect);
+    const resumingRecording = recordingReconnectPending &&
+      isCurrentSession(recordingSessionId) && Boolean(currentRecordingId || openingCapture);
 
     if (connectInProgress || finalizing) return;
     if (autoReconnect && !bluetoothDevice) {
@@ -663,7 +771,7 @@ const APP_REVISION = "1.0.0-audio2";
       return;
     }
 
-    clearReconnectTimer(!autoReconnect);
+    clearReconnectTimer(!autoReconnect && !resumingRecording);
     connectInProgress = true;
     manualDisconnect = false;
     setAppState("connecting");
@@ -689,6 +797,11 @@ const APP_REVISION = "1.0.0-audio2";
           name: bluetoothDevice.name || "unnamed",
           id: bluetoothDevice.id
         });
+      }
+
+      if (resumingRecording && recordingResumeBluetoothId &&
+          bluetoothDevice.id !== recordingResumeBluetoothId) {
+        throw new Error("Reconnect the same pendant to continue this recording.");
       }
 
       const epoch = connectionEpoch;
@@ -722,6 +835,10 @@ const APP_REVISION = "1.0.0-audio2";
         log("Device identity unavailable", friendlyError(error));
       }
       assertConnection();
+      if (resumingRecording && recordingResumeDeviceId && connectedDeviceId &&
+          connectedDeviceId !== recordingResumeDeviceId) {
+        throw new Error("Pendant identity changed. The interrupted recording was not attached to another device.");
+      }
 
       audioCharacteristic =
         await queueGattOperation(function () { return service.getCharacteristic(AUDIO_CHAR_UUID); });
@@ -739,6 +856,8 @@ const APP_REVISION = "1.0.0-audio2";
         "characteristicvaluechanged",
         handleStatusNotification
       );
+
+      if (resumingRecording) await prepareRecordingTransportResume();
 
       await queueGattOperation(function () {
         return controlCharacteristic.startNotifications();
@@ -765,17 +884,42 @@ const APP_REVISION = "1.0.0-audio2";
       }
       assertConnection();
 
+      if (resumingRecording && deviceStatus.state === DEVICE_STATE.CONNECTED_IDLE &&
+          deviceStatus.error === 0) {
+        log("Interrupted recording found pendant idle; restarting stream in same journal");
+        await writeCommand(CMD_START);
+        await delay(140);
+        await readControlStatus();
+        assertConnection();
+        if (deviceStatus.state !== DEVICE_STATE.STREAMING || deviceStatus.error !== 0) {
+          throw new Error("Pendant did not resume the interrupted recording stream.");
+        }
+      }
+
       // A browser refresh can leave the peripheral streaming while the new
       // page has no matching recording session. Normalize it to idle before
-      // exposing Start, so the LED and UI cannot disagree.
-      if (deviceStatus.state === DEVICE_STATE.STREAMING) {
+      // exposing Start, so the LED and UI cannot disagree. An in-page transport
+      // recovery is different: it owns an existing journal and keeps streaming.
+      if (!resumingRecording && deviceStatus.state === DEVICE_STATE.STREAMING) {
         log("Recovered orphaned stream; requesting clean stop");
         await writeCommand(CMD_STOP);
         await delay(180);
         await readControlStatus();
       }
 
-      if (
+      if (resumingRecording &&
+          deviceStatus.state === DEVICE_STATE.STREAMING &&
+          deviceStatus.error === 0) {
+        assertConnection();
+        rememberDeviceAssociation(connectedDeviceId, connectingDevice, identityMessage);
+        reconnectAttempts = 0;
+        needsDeviceSelection = false;
+        try { localStorage.setItem("dk-pendant-device-id", bluetoothDevice.id); }
+        catch (_) { log("Device preference could not be saved; current recording remains attached to this connection."); }
+        if (recordingReconnectPending) completeRecordingTransportResume("reconnect");
+        setReconnectCapability("Pendant reconnected. Future brief connection losses will continue this same recording while the app stays open.");
+        if (!silent) toast("Recording resumed");
+      } else if (
         deviceStatus.state === DEVICE_STATE.CONNECTED_IDLE &&
         deviceStatus.error === 0
       ) {
@@ -787,13 +931,13 @@ const APP_REVISION = "1.0.0-audio2";
         try { localStorage.setItem("dk-pendant-device-id", bluetoothDevice.id); }
         catch (_) { log("Device preference could not be saved; name-based reload recovery remains available."); }
         setReconnectCapability(typeof navigator.bluetooth.getDevices === "function"
-          ? "Pendant remembered. Automatic reconnect can restore this permission after reload. It does not resume recording."
+          ? "Pendant remembered. Automatic reconnect can restore this permission after reload; a brief in-app connection loss resumes the same recording."
           : "Connected for this page session. This browser needs device selection again after reload because getDevices() is unavailable.");
         setAppState("idle");
         if (!silent) toast("Pendant connected");
       } else if (deviceStatus.state === DEVICE_STATE.STREAMING) {
         throw new Error(
-          "Pendant is still streaming after recovery Stop. Reconnect it."
+          "Pendant is still streaming without a matching recording session. Reconnect it."
         );
       } else if (deviceStatus.state !== DEVICE_STATE.ERROR) {
         throw new Error("No valid idle acknowledgement. Check that both firmware and PWA are updated.");
@@ -804,7 +948,9 @@ const APP_REVISION = "1.0.0-audio2";
       needsDeviceSelection = Boolean(bluetoothDevice) || needsDeviceSelection;
       if (isGattConnected()) bluetoothDevice.gatt.disconnect();
       cleanupCharacteristics();
-      setAppState("disconnected", message);
+      setAppState("disconnected", recordingReconnectPending
+        ? "Connection is still unavailable. The current recording remains preserved for reconnect."
+        : message);
 
       if (!silent && error && error.name !== "NotFoundError") {
         toast(message, "error");
@@ -844,18 +990,36 @@ const APP_REVISION = "1.0.0-audio2";
   async function handleGattDisconnected(event) {
     if (event && event.target !== bluetoothDevice) return;
     log("GATT disconnected", {
-      manual: manualDisconnect
+      manual: manualDisconnect,
+      state: appState,
+      recordingId: currentRecordingId
     });
 
     const disconnectedSessionId = recordingSessionId;
     const hadRecording =
       recordingConfirmed ||
       completedPcmFrames.length > 0 || Boolean(currentRecordingId) || Boolean(openingCapture);
+    const resumableRecording = !manualDisconnect && hadRecording &&
+      isCurrentSession(disconnectedSessionId) &&
+      (appState === "recording" || appState === "starting" || recordingReconnectPending);
+
+    if (resumableRecording) {
+      markRecordingInterrupted(disconnectedSessionId);
+      cleanupStaleFrames(true);
+    }
 
     cleanupCharacteristics();
 
-    // The connection attempt owns its failure UI and retry scheduling.
+    // The connection attempt owns its failure UI and retry scheduling when no
+    // recording journal is at risk.
     if (connectInProgress && !hadRecording) return;
+
+    if (resumableRecording) {
+      setAppState("disconnected", "Connection was lost. Reconnecting to continue the same recording.");
+      toast("Pendant connection lost · recording preserved", "error");
+      scheduleAutoReconnect();
+      return;
+    }
 
     if (hadRecording) {
       await finalizeRecording(
@@ -1131,12 +1295,17 @@ const APP_REVISION = "1.0.0-audio2";
 
   async function startRecording() {
     if (firmwareBusy) return;
+    if (globalThis.SynapDesktopCapture?.state?.().active) {
+      toast("Stop the online meeting capture before starting the pendant.", "error");
+      return;
+    }
     if (appState !== "idle" || finalizing || !isGattConnected()) return;
     if (journal && unsavedAudio) {
       toast("Resolve the pending local save in Settings before starting another take.", "error");return;
     }
     if (unsavedAudio && !window.confirm("Unsaved audio is still in memory. Download it in Settings first. Discard it and start a new recording?")) return;
     unsavedAudio = false;
+    clearRecordingReconnectState();
     clearFinalizeTimer();
     clearStartTimeout();
     const sessionId = ++recordingSessionId;
@@ -1184,12 +1353,19 @@ const APP_REVISION = "1.0.0-audio2";
 
   function confirmRecordingStarted(source) {
     if (appState !== "starting" && appState !== "recording") return;
-    if (!recordingConfirmed) {
+    const firstConfirmation = !recordingConfirmed;
+    if (firstConfirmation) {
       recordingConfirmed = true;
       recordingStartedAt = performance.now();
       foregroundAt = recordingStartedAt;
       lastAudioAt = recordingStartedAt;
       clearStartTimeout();
+    }
+    if (recordingReconnectPending) {
+      completeRecordingTransportResume(source);
+      return;
+    }
+    if (firstConfirmation) {
       startTimer();
       setAppState("recording");
       log("Recording confirmed", { source: source, session: recordingSessionId });
@@ -1197,6 +1373,12 @@ const APP_REVISION = "1.0.0-audio2";
   }
 
   async function stopRecording() {
+    if (recordingReconnectPending && appState === "disconnected") {
+      const sessionId = recordingSessionId;
+      clearReconnectTimer(true);
+      await finalizeRecording("connection-lost-user-stop", sessionId);
+      return;
+    }
     if (appState !== "recording" && appState !== "starting") return;
     const sessionId = recordingSessionId;
     setAppState("stopping");
@@ -1243,6 +1425,8 @@ const APP_REVISION = "1.0.0-audio2";
     if (!isCurrentSession(sessionId) || finalizing) return;
     finalizedSessionId = sessionId;
     finalizing = true;
+    clearReconnectTimer(true);
+    clearRecordingReconnectState();
     clearFinalizeTimer();
     clearStartTimeout();
     stopTimer();
@@ -1317,6 +1501,7 @@ const APP_REVISION = "1.0.0-audio2";
   }
 
   function resetCollector() {
+    clearRecordingReconnectState();
     pendingFrames.clear();
     completedSequences.clear();
     completedPcmFrames = [];
@@ -1530,17 +1715,6 @@ const APP_REVISION = "1.0.0-audio2";
 
     updateAudioLevel(pcm);
     updateMetrics();
-
-    const durationMs =
-      (sessionStats.pcmBytes / 2 /
-        (deviceStatus.sampleRate || DEFAULT_SAMPLE_RATE)) *
-      1000;
-
-    if (durationMs >= MAX_RECORDING_MS) {
-      log("Maximum recording duration reached");
-      toast("Recording safety limit reached. Saving recording.");
-      stopRecording();
-    }
   }
 
   function cleanupStaleFrames(force) {
@@ -2274,10 +2448,15 @@ const APP_REVISION = "1.0.0-audio2";
       transcript.className = "recording-transcript";
       transcript.value = recording.transcript;
       transcript.setAttribute("aria-label", "Transcript");
-      bindDebouncedSave(transcript, async function () {
-        recording.transcript = transcript.value;
-        await updateRecordingFields(recording.id, { transcript: recording.transcript });
-      });
+      if (recording.processingStage === "ready" || recording.processingState === "done" || recording.summary) {
+        transcript.readOnly = true;
+        transcript.title = "Transcript is source evidence for this memory. Refresh memory to rebuild it safely.";
+      } else {
+        bindDebouncedSave(transcript, async function () {
+          recording.transcript = transcript.value;
+          await updateRecordingFields(recording.id, { transcript: recording.transcript });
+        });
+      }
       card.appendChild(recordingDisclosure("Transcript", transcript));
     }
 
@@ -2450,7 +2629,8 @@ const APP_REVISION = "1.0.0-audio2";
     if (!status) return;
     const connected = isGattConnected();
     const states = {connecting:"Connecting…",starting:"Starting…",recording:"Recording",saving:"Saving…",stopping:"Saving…",updating:"Updating…",error:"Needs attention"};
-    status.textContent = states[appState] || (connected ? "Connected" : "Not connected");
+    status.textContent = recordingReconnectPending && !connected ? "Recording paused" :
+      (states[appState] || (connected ? "Connected" : "Not connected"));
     status.dataset.connected = String(connected);
     const connect = document.getElementById("setupConnect");
     connect.hidden = connected;
@@ -2810,7 +2990,7 @@ const APP_REVISION = "1.0.0-audio2";
     });
     ui.chooseDeviceButton.addEventListener("click", function () {
       if (firmwareBusy) return;
-      if (recordingConfirmed || finalizing || appState === "starting" || appState === "stopping") {
+      if (recordingConfirmed || finalizing || appState === "starting" || appState === "stopping" || recordingReconnectPending) {
         toast("Stop and save this recording before switching devices.", "error");
         return;
       }
@@ -2945,7 +3125,7 @@ const APP_REVISION = "1.0.0-audio2";
     });
 
     window.addEventListener("beforeunload", function (event) {
-      if (firmwareBusy || recordingConfirmed || finalizing || unsavedAudio) {
+      if (firmwareBusy || recordingConfirmed || finalizing || unsavedAudio || recordingReconnectPending) {
         event.preventDefault();
         event.returnValue = "";
       }
