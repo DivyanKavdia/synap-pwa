@@ -4,7 +4,7 @@
   if(root.SynapDashboardUI&&root.SynapDashboardUI.__stableShell)return;
 
   const STYLE_ID='synapDashboardStyle';
-  const VIEW_IDS={today:'#today',memories:'#insights',ask:'#ask',library:'#library'};
+  const VIEW_IDS={today:'#today',capture:'#capture',memories:'#insights',ask:'#ask',library:'#library'};
   const $=s=>document.querySelector(s);
   const $$=s=>[...document.querySelectorAll(s)];
   let observer=null;
@@ -13,7 +13,7 @@
   let activeView='today';
 
   function normalizeView(view){return VIEW_IDS[view]?view:'today'}
-  function viewForHref(href){return href==='#insights'?'memories':href==='#ask'?'ask':href==='#library'?'library':'today'}
+  function viewForHref(href){return href==='#capture'?'capture':href==='#insights'?'memories':href==='#ask'?'ask':href==='#library'?'library':'today'}
   function sectionFor(view){return document.querySelector(VIEW_IDS[normalizeView(view)])}
 
   function injectStyle(){
@@ -34,10 +34,20 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
 .app-shell,main,.brain-home,.day-brief,.actionable-memory,.action-grid,.conversation-lane,.section-card{min-width:0;max-width:100%}
 .section-card{transition:border-color .18s ease,box-shadow .18s ease}
 .brain-tabs{isolation:isolate}
+.brain-tabs:has(a[href="#capture"]):has(a[href="#ask"]){grid-template-columns:repeat(5,minmax(0,1fr))!important}
 .brain-tabs a{touch-action:manipulation}
 .brain-tabs a.active{font-weight:800}
 @media(min-width:760px){.app-shell{max-width:980px}.brain-home,#insights,#followupInbox,#peopleMemory,#ask,#capture,#library{max-width:860px;margin-left:auto!important;margin-right:auto!important}}
 `;
+  }
+
+  function ensureCaptureNav(){
+    const nav=$('.brain-tabs');if(!nav||nav.querySelector('a[href="#capture"]'))return;
+    const link=document.createElement('a');
+    link.href='#capture';
+    link.innerHTML='<svg aria-hidden="true"><use href="#i-mic"></use></svg><span>Capture</span>';
+    const today=nav.querySelector('a[href="#today"]');
+    if(today?.nextSibling)nav.insertBefore(link,today.nextSibling);else nav.prepend(link);
   }
 
   function syncNav(view){
@@ -115,17 +125,14 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
     const brief=document.getElementById('dayBriefText');
     brief?.classList.remove('synap-clamped','synap-expanded');
     document.getElementById('dayBriefMore')?.remove();
-
-    // Repair DOM left behind by the old compact capture layer without replacing
-    // controls or their app.js event listeners.
     const capture=document.getElementById('capture');
     if(capture){capture.classList.remove('capture-minimal');capture.classList.add('capture-product');capture.removeAttribute('aria-hidden')}
   }
 
-  function scan(){injectStyle();healLegacyWrappers();bindTabs();observeSections();updateFromViewport()}
+  function scan(){injectStyle();ensureCaptureNav();healLegacyWrappers();bindTabs();observeSections();updateFromViewport()}
   function init(){
     scan();
-    const mutation=new MutationObserver(()=>requestAnimationFrame(()=>{observeSections();healLegacyWrappers()}));
+    const mutation=new MutationObserver(()=>requestAnimationFrame(()=>{ensureCaptureNav();observeSections();healLegacyWrappers()}));
     mutation.observe(document.body,{childList:true,subtree:true});
     ['synap-cloud-history-updated','synap-memory-ready','synap-processing-state','synap-transcript-updated'].forEach(name=>addEventListener(name,()=>requestAnimationFrame(updateFromViewport)));
     if(location.hash&&VIEW_IDS[viewForHref(location.hash)])setTimeout(()=>setView(viewForHref(location.hash),true),0);
