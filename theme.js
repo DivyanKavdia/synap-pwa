@@ -43,7 +43,7 @@
   }
   function script(src){
     const target=String(src||'').split('?')[0].replace(/^\.\//,'');
-    const exists=[...document.scripts].some(s=>{
+    const exists=[...document.querySelectorAll('script[src]')].some(s=>{
       const raw=String(s.getAttribute('src')||'');
       if(!raw)return false;
       return raw.split('?')[0].replace(/^\.\//,'')===target;
