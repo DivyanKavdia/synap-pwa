@@ -88,6 +88,14 @@ body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-syste
 .synap-refresh :is(.synap-weekly-actions button,.synap-week-metric){min-height:44px;font-size:12px;font-weight:550;border-radius:10px}
 .synap-refresh .synap-week-metric{background:var(--accent-soft);color:var(--accent)}
 .synap-refresh .synap-weekly-actions{justify-content:flex-start;gap:8px}
+.synap-refresh .synap-week-source{min-height:56px;padding:12px;border-radius:12px;grid-template-columns:78px minmax(0,1fr)}
+.synap-refresh .synap-week-source strong{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.synap-refresh .synap-week-source small{font-size:12px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.synap-refresh .synap-week-source time{font-size:11px;line-height:1.6}
+.synap-refresh .synap-week-pagination{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:10px 0 14px}
+.synap-refresh #synapWeekCount,.synap-refresh .synap-week-status{color:var(--muted);font-size:12px;line-height:1.6}
+.synap-refresh :is(#synapWeekMore,#synapRefreshWeek){min-height:44px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;font-size:12px;cursor:pointer}
+.synap-refresh #synapRefreshWeek{margin-left:auto}
 .synap-refresh .section-card{margin-top:24px!important;padding:26px!important;border:1px solid var(--border)!important;border-radius:22px!important;background:var(--surface)!important;box-shadow:none!important}
 .synap-refresh .section-heading{align-items:flex-start;gap:16px;margin-bottom:18px}
 .synap-refresh .section-heading h2{font-size:24px!important;font-weight:600!important;line-height:1.2;letter-spacing:-.75px}

@@ -43,6 +43,60 @@ async function assertWordmarks(page, mode) {
   }
 }
 
+async function assertWeeklyReview(page, mode, width) {
+  // These generated records exist only in this isolated localhost test profile.
+  await page.waitForFunction(()=>window.SynapProductivity&&document.querySelector('#synapWeekDetail .synap-week-source'));
+  assert.equal(await page.locator('#synapWeekDetail .synap-week-source').first().getAttribute('data-recording-id'),'ui-sample');
+  await page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const request=indexedDB.open('dk-pendant-recordings');request.onsuccess=()=>resolve(request.result)});
+    const sample=await new Promise(resolve=>{const request=db.transaction('recordings').objectStore('recordings').get('ui-sample');request.onsuccess=()=>resolve(request.result)});
+    const start=new Date(SynapProductivity.weekRange(new Date().toLocaleDateString('en-CA')).start+'T00:00:00');
+    await new Promise((resolve,reject)=>{const tx=db.transaction('recordings','readwrite'),store=tx.objectStore('recordings');
+      for(let i=0;i<35;i++)store.put({...sample,id:'weekly-history-'+String(i).padStart(2,'0'),name:'Earlier weekly source '+i,createdAt:new Date(start.getTime()+i*60000).toISOString()});
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+    });db.close();window.dispatchEvent(new CustomEvent('synap-memory-ready'));
+  });
+  await page.waitForFunction(()=>document.querySelector('[data-week-view="conversations"]').textContent==='36 conversations');
+  const rows=page.locator('#synapWeekDetail .synap-week-source');
+  assert.equal(await rows.count(),5);assert.equal(await rows.first().getAttribute('data-recording-id'),'ui-sample','today is before all older weekly records');
+  assert.match(await rows.first().locator('time').innerText(),/^Today/);
+  await page.evaluate(()=>SynapCloudHistory.refreshUiInPlace({source:'isolated-weekly-fixture'}));
+  await page.waitForTimeout(180);
+  assert(await page.locator('#synapWeekDetail').isVisible(),'cloud refresh does not collapse Weekly Review');
+  for(let i=0;i<7&&await page.locator('#synapWeekMore').isVisible();i++)await page.locator('#synapWeekMore').click();
+  assert.equal(await rows.count(),36,'older evidence is paginated, never silently discarded');
+  await page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const request=indexedDB.open('dk-pendant-recordings');request.onsuccess=()=>resolve(request.result)});
+    const sample=await new Promise(resolve=>{const request=db.transaction('recordings').objectStore('recordings').get('ui-sample');request.onsuccess=()=>resolve(request.result)});
+    await new Promise((resolve,reject)=>{const tx=db.transaction('recordings','readwrite');tx.objectStore('recordings').put({...sample,id:'weekly-today-new',createdAt:new Date().toISOString(),name:'New conversation today',summary:'',transcript:'',meeting:{},processingStage:'transcribing'});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});
+    db.close();window.dispatchEvent(new CustomEvent('synap-recording-saved'));
+  });
+  await page.waitForTimeout(160);
+  assert.equal(await page.locator('[data-week-view="conversations"]').innerText(),'36 conversations','pending audio is not miscounted as a processed conversation');
+  await page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const request=indexedDB.open('dk-pendant-recordings');request.onsuccess=()=>resolve(request.result)});
+    const sample=await new Promise(resolve=>{const request=db.transaction('recordings').objectStore('recordings').get('weekly-today-new');request.onsuccess=()=>resolve(request.result)});
+    sample.meeting={conversations:[{title:'Today’s new conversation',summary:'A newly processed discussion about the prototype.',start_ms:0}]};sample.summary='A newly processed discussion about the prototype.';sample.processingStage='ready';
+    await new Promise((resolve,reject)=>{const tx=db.transaction('recordings','readwrite');tx.objectStore('recordings').put(sample);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});
+    db.close();window.dispatchEvent(new CustomEvent('synap-processing-complete'));
+  });
+  await page.waitForFunction(()=>document.querySelector('[data-week-view="conversations"]').textContent==='37 conversations');
+  assert.equal(await rows.first().getAttribute('data-recording-id'),'weekly-today-new','newly processed source appears without reload');
+  await page.locator('[data-week-view="decisions"]').click();await page.locator('[data-week-view="conversations"]').click();
+  await page.locator('#synapWeeklyReview').screenshot({path:path.join(output,`weekly-${mode}-${width}.png`)});
+  await rows.first().click();
+  await page.waitForFunction(()=>document.getElementById('recording-weekly-today-new')?.open);
+  assert(await page.locator('#recording-weekly-today-new .recording-content').isVisible(),'weekly source opens its exact Library recording');
+  await page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const request=indexedDB.open('dk-pendant-recordings');request.onsuccess=()=>resolve(request.result)});
+    await new Promise((resolve,reject)=>{const tx=db.transaction('recordings','readwrite'),store=tx.objectStore('recordings');for(let i=0;i<35;i++)store.delete('weekly-history-'+String(i).padStart(2,'0'));store.delete('weekly-today-new');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close();
+    SynapCloudHistory.refreshUiInPlace({source:'isolated-weekly-fixture-cleanup'});await SynapProductivity.refresh(false);
+  });
+  await page.waitForFunction(()=>document.querySelectorAll('.recording-card').length===1);
+  await page.locator('.brain-tabs a[href="#today"]').click();
+  console.log(`PASS weekly/${mode}/${width}: today first, all weekly evidence, processing events, persistent detail, exact source navigation`);
+}
+
 async function run() {
   fs.mkdirSync(output, { recursive:true });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -51,7 +105,7 @@ async function run() {
     ...(process.env.SYNAP_CHROMIUM_PATH ? { executablePath:process.env.SYNAP_CHROMIUM_PATH, args:['--no-sandbox','--no-zygote','--disable-dev-shm-usage'] } : {}) });
   try {
     for (const mode of ['light','dark']) for (const width of [320,390,768,1440]) {
-      const context = await browser.newContext({ viewport:{width,height:900}, reducedMotion:'reduce',colorScheme:mode==='light'?'dark':'light' });
+      const context = await browser.newContext({ viewport:{width,height:900}, reducedMotion:'reduce',colorScheme:mode==='light'?'dark':'light',timezoneId:'Asia/Kolkata' });
       await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
       await context.addInitScript(theme => localStorage.setItem('synap-appearance', theme), mode);
       const page = await context.newPage();
@@ -122,6 +176,7 @@ async function run() {
         await page.waitForFunction(()=>document.querySelectorAll('.recording-card').length===1);
         await page.waitForTimeout(900);
         assert.equal(await page.locator('#glanceRecordings').innerText(),'1');
+        await assertWeeklyReview(page,mode,width);
         await page.locator('.brain-tabs a[href="#insights"]').click();
         await page.locator('.memory-search input').fill('prototype');
         await page.waitForFunction(()=>document.querySelectorAll('.memory-result').length>0);

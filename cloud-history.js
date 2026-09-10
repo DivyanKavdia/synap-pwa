@@ -170,9 +170,9 @@
      visibility change. The caller decides when fresh data is useful. */
   function restore(force, options) {
     options = options || {};
-    if (running || !signedIn()) return Promise.resolve({ restored: 0, updated: 0 });
+    if (running || !signedIn()) return Promise.resolve({ restored: 0, updated: 0, skipped: true });
     var api = backend();
-    if (!api || typeof api.recordings !== 'function') return Promise.resolve({ restored: 0, updated: 0 });
+    if (!api || typeof api.recordings !== 'function') return Promise.resolve({ restored: 0, updated: 0, skipped: true });
 
     running = true;
     var db = null;

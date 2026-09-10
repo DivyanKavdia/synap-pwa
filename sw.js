@@ -11,7 +11,7 @@ const HISTORICAL_CACHE_REVISION='1.0.0-shell31-dashboard';
 const ASK_CACHE_REVISION='1.0.0-shell32-ask';
 const POWER_CACHE_REVISION='1.0.0-shell33-power';
 const PREVIOUS_CACHE_REVISION='1.0.0-shell34-transcript';
-const CACHE_REVISION='1.0.0-shell39-ui-feedback';
+const CACHE_REVISION='1.0.0-shell40-weekly';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings-icon-fix.css',

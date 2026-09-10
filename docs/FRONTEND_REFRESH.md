@@ -33,11 +33,17 @@ reconnect, processing, account, and OTA owners.
   controls live in an accessible per-person menu instead of permanent extra rows.
   Rename Save clicks now reach the native form submission instead of being
   swallowed by the control's delegated click handler.
+- Weekly Review opens with five newest conversations, including Today labels,
+  and offers Show more for all older evidence. Same-day refreshes retain the open
+  review. Read epochs prevent stale IndexedDB results from erasing fresh memory;
+  processing/save events refresh it in place. Incomplete cloud weeks remain
+  retryable with a visible Refresh action. Source links refresh Library before
+  opening newly processed recordings. Only real conversation details are counted.
 - Keyboard focus on navigation, larger touch targets, reduced-motion support,
   and visible firmware status without exposing inactive OTA controls.
 - `compact.css` is the final scoped presentation stylesheet, loaded exactly once
   after the legacy base styles. `dashboard-ui.js` owns navigation, not the palette.
-- Shell cache generation `1.0.0-shell39-ui-feedback`; BLE client compatibility remains
+- Shell cache generation `1.0.0-shell40-weekly`; BLE client compatibility remains
   unchanged. No automatic reload, storage migration, or firmware update is added.
 
 ## Verification
@@ -53,6 +59,11 @@ cross-day pagination, compact People, search, and person recall. Logo checks
 decode real pixels in both themes, with the OS color scheme set to the opposite
 of the app preference. Optional `SYNAP_CHROMIUM_PATH` chooses an installed
 browser and `SYNAP_UI_OUTPUT` chooses the screenshot directory.
+
+Weekly tests also cover 37 conversations, processing completion without reload,
+UTC/local-midnight boundaries, incomplete cloud hydration and week-switch races.
+Browser fixtures use Asia/Kolkata; run `TZ=Asia/Kolkata node --test
+tests/weekly-review.cjs` for timezone-specific unit verification.
 
 These tests do not replace physical pendant testing: connect/reconnect, tap-start
 and tap-stop, triple-tap sleep/wake, live audio, interruption recovery, and OTA
