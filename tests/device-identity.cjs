@@ -54,6 +54,7 @@ async function connect({id=A, local=storage(), stale=false, mismatch=false}={}) 
     }};}}};
   const c={console,globalThis:{SynapDevices:devices},checkFirmwareRelease:null,connectInProgress:false,finalizing:false,
     needsDeviceSelection:false,bluetoothDevice:device,manualDisconnect:false,connectionEpoch:0,gattServer:null,
+    recordingReconnectPending:false,
     navigator:{bluetooth:{}},SERVICE_UUID:'service',AUDIO_CHAR_UUID:'audio',CONTROL_CHAR_UUID:'control',CMD_STOP:0,CMD_GET_STATUS:2,
     DEVICE_STATE:{CONNECTED_IDLE:1,STREAMING:2,ERROR:3},deviceStatus:{state:1,error:0},deviceAssociation:null,deviceIdentityMessage:'',
     clearReconnectTimer(){},setReconnectCapability(){},setAppState(s){c.state=s;},log(){},toast(){},
