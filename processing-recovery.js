@@ -1,19 +1,19 @@
 /* Synap Cloud processing recovery.
  *
- * Cloud Tasks is the preferred background worker. If the backend remains in
- * `uploaded` for 30 seconds, the task has not started. While the user is still
- * signed in and the PWA is open, make one authenticated recovery request to the
- * same Cloud Run service. The backend owns the safety checks and only processes
- * this user's uploaded/retryable recording.
+ * Cloud Tasks is the preferred background worker. The PWA only provides a
+ * bounded safety net: if one backend processing state stops advancing, ask the
+ * authenticated recovery endpoint to inspect it. The backend remains the
+ * authority on whether a worker is genuinely stale and safe to restart.
  *
- * This module observes the existing processing-status polls. It never touches
- * BLE, capture, audio bytes, IndexedDB or custom providers.
+ * This module observes processing-status responses only. It never touches BLE,
+ * capture, audio bytes, IndexedDB or custom providers.
  */
 (function (root) {
   'use strict';
 
   var STALL_MS = 30000;
   var RETRY_MS = 60000;
+  var RECOVERABLE_STATES = new Set(['uploaded', 'transcribing', 'understanding', 'indexing']);
   var entries = new Map();
 
   function now() {
@@ -35,18 +35,22 @@
     at = Number.isFinite(at) ? at : now();
     if (!recordingId) return;
 
-    if (state !== 'uploaded') {
-      if (state === 'transcribing' || state === 'understanding' || state === 'indexing' ||
-          state === 'ready' || state === 'failed') clear(recordingId);
+    if (!RECOVERABLE_STATES.has(state)) {
+      clear(recordingId);
       return;
     }
 
     var entry = entries.get(recordingId);
-    if (!entry) {
-      entry = { since: at, lastAttempt: 0, inFlight: false };
-      entries.set(recordingId, entry);
+    if (!entry || entry.state !== state) {
+      entries.set(recordingId, {
+        state: state,
+        since: at,
+        lastAttempt: 0,
+        inFlight: false
+      });
       return;
     }
+
     if (at - entry.since < STALL_MS || entry.inFlight ||
         (entry.lastAttempt > 0 && at - entry.lastAttempt < RETRY_MS)) return;
     if (typeof originalFetch !== 'function') return;
@@ -59,14 +63,14 @@
       headers: { 'Content-Type': 'application/json' },
       body: '{}'
     }).then(function (response) {
-      if (response && response.ok) return null;
+      if (response && (response.ok || response.status === 202)) return null;
       if (!response || typeof response.text !== 'function') throw new Error('Processing recovery request failed.');
       return response.text().then(function (text) {
         throw new Error(text || ('HTTP ' + response.status));
       });
     }).catch(function () {
-      // Normal polling remains authoritative. A failed recovery may try once
-      // more after RETRY_MS, and the backend/Cloud Tasks can still recover too.
+      // Normal polling remains authoritative. A failed recovery may try again
+      // after RETRY_MS, while Cloud Tasks may independently recover the job.
     }).then(function () {
       entry.inFlight = false;
     });
@@ -78,8 +82,8 @@
     try {
       response.clone().json().then(function (status) {
         observeState(recordingId, status && status.state, originalFetch, now());
-      }).catch(function () { /* A malformed status response must not break polling. */ });
-    } catch (error) {
+      }).catch(function () { /* Malformed status must not break normal polling. */ });
+    } catch (_) {
       // Response cloning is best effort only.
     }
   }
@@ -107,6 +111,7 @@
     clear: clear,
     STALL_MS: STALL_MS,
     RETRY_MS: RETRY_MS,
+    RECOVERABLE_STATES: RECOVERABLE_STATES,
     _entries: entries
   };
 })(globalThis);
