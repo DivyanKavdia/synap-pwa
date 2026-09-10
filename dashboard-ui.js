@@ -21,6 +21,7 @@
     if(!style){style=document.createElement('style');style.id=STYLE_ID;document.head.appendChild(style)}
     style.textContent=`
 html,body{max-width:100%;overflow-x:clip}
+body{background:radial-gradient(circle at 50% -10%,color-mix(in srgb,var(--accent) 8%,transparent),transparent 34%),var(--bg)}
 main{display:block!important}
 body[data-synap-view] #today,
 body[data-synap-view] #insights,
@@ -31,6 +32,7 @@ body[data-synap-view] #capture,
 body[data-synap-view] #library{display:block!important;visibility:visible!important;opacity:1!important}
 #today,#insights,#followupInbox,#peopleMemory,#ask,#capture,#library{scroll-margin-top:84px;content-visibility:visible!important}
 .app-shell,main,.brain-home,.day-brief,.actionable-memory,.action-grid,.conversation-lane,.section-card{min-width:0;max-width:100%}
+.section-card{transition:border-color .18s ease,box-shadow .18s ease}
 .brain-tabs{isolation:isolate}
 .brain-tabs a{touch-action:manipulation}
 .brain-tabs a.active{font-weight:800}
@@ -59,7 +61,6 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
       target.scrollIntoView({behavior:reduced?'auto':'smooth',block:'start'});
       return true;
     }
-    // Brain/Ask sections can be inserted a few milliseconds after DOMContentLoaded.
     setTimeout(()=>{const late=sectionFor(next);if(late)late.scrollIntoView({behavior:'auto',block:'start'})},80);
     return false;
   }
@@ -80,16 +81,11 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
     return best.view;
   }
 
-  function updateFromViewport(){
-    if(Date.now()<navLockUntil)return;
-    syncNav(currentVisibleView());
-  }
+  function updateFromViewport(){if(Date.now()>=navLockUntil)syncNav(currentVisibleView())}
 
   function observeSections(){
     if(typeof IntersectionObserver==='undefined')return;
-    if(!observer){
-      observer=new IntersectionObserver(()=>updateFromViewport(),{root:null,rootMargin:'-18% 0px -55% 0px',threshold:[0,.1,.35,.7]});
-    }
+    if(!observer)observer=new IntersectionObserver(()=>updateFromViewport(),{root:null,rootMargin:'-18% 0px -55% 0px',threshold:[0,.1,.35,.7]});
     for(const selector of Object.values(VIEW_IDS)){
       const node=$(selector);if(node&&!observed.has(node)){observed.add(node);observer.observe(node)}
     }
@@ -110,9 +106,6 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
   }
 
   function healLegacyWrappers(){
-    // Old dashboard revisions moved live memory areas into collapsible <details>.
-    // If a hot-updated page still contains them, unwrap once without replacing
-    // any child nodes or handlers.
     for(const id of ['todayActionsCollapse','todayConversationCollapse']){
       const details=document.getElementById(id);if(!details)continue;
       const parent=details.parentNode;if(!parent)continue;
@@ -122,6 +115,11 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
     const brief=document.getElementById('dayBriefText');
     brief?.classList.remove('synap-clamped','synap-expanded');
     document.getElementById('dayBriefMore')?.remove();
+
+    // Repair DOM left behind by the old compact capture layer without replacing
+    // controls or their app.js event listeners.
+    const capture=document.getElementById('capture');
+    if(capture){capture.classList.remove('capture-minimal');capture.classList.add('capture-product');capture.removeAttribute('aria-hidden')}
   }
 
   function scan(){injectStyle();healLegacyWrappers();bindTabs();observeSections();updateFromViewport()}
