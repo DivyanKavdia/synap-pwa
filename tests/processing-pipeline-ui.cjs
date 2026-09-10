@@ -88,9 +88,11 @@ function cloud(recording,jobs,extra={}){
 
 assert.match(html,/processing-pipeline-ui\.js\?v=1\.0\.0-pipeline1/);
 assert.match(sw,/\.\/processing-pipeline-ui\.js/);
-assert.match(backend,/processingStage:\s*'uploading'/);
-assert.match(backend,/processingStage:'uploaded'/);
-assert.match(backend,/processingStage:'ready'/);
+// These are semantic contracts, not whitespace/style contracts. Cleanup should
+// never be blocked because an object literal gained normal formatting.
+assert.match(backend,/processingStage:\s*['"]uploading['"]/);
+assert.match(backend,/processingStage:\s*['"]uploaded['"]/);
+assert.match(backend,/processingStage:\s*['"]ready['"]/);
 assert.match(backend,/processingFailedStage/);
 assert.match(source,/Memory pipeline/);
 assert.match(source,/Recorded/);
