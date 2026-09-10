@@ -12,7 +12,8 @@ class Element {
 }
 const fixture=i=>({id:String(i),name:'Moment '+i,createdAt:'2026-09-02T09:00:00Z',durationMs:60000,sizeBytes:100,journal:true,notes:'My note',transcript:'Transcript text',summary:'Summary text'});
 const ui={recordingsList:new Element('div'),libraryPagination:new Element('div'),libraryCountLabel:new Element('p'),showMoreRecordingsButton:new Element('button'),showLessRecordingsButton:new Element('button')};
-const c={ui,document:{createElement:tag=>new Element(tag),createElementNS:(_,tag)=>new Element(tag)},libraryVisibleCount:5,libraryRecordings:[],LIBRARY_PAGE_SIZE:5,
+const searchStatus=new Element('p'),searchClear=new Element('button');
+const c={ui,document:{getElementById:id=>id==='librarySearchStatus'?searchStatus:id==='clearLibrarySearch'?searchClear:null,createElement:tag=>new Element(tag),createElementNS:(_,tag)=>new Element(tag)},libraryQuery:'',libraryVisibleCount:5,libraryRecordings:[],LIBRARY_PAGE_SIZE:5,
   formatDuration:()=> '01:00',formatDate:()=> '2 Sep',formatBytes:()=> '100 B',DEFAULT_SAMPLE_RATE:16000,renderedObjectUrls:[],bindDebouncedSave(){}};
 vm.createContext(c);
 vm.runInContext(source.slice(source.indexOf('  function renderLibraryPage()'),source.indexOf('  function bindDebouncedSave(')),c);
@@ -48,6 +49,24 @@ assert.equal(last.querySelector('.recording-transcript').value,'Updated transcri
 c.libraryRecordings=c.libraryRecordings.filter(record=>record.id!=='7');c.renderLibraryPage();
 assert(!ui.recordingsList.children.includes(last),'removed records disappear from the list');assert(player.paused);
 assert.equal(last.children[0].children[0].children[0].attrs['aria-hidden'],'true');
+assert.match(c.recordingRowMeta(fixture(1)),/2026/,'all-date cards identify the source date');
+assert(c.recordingMatchesQuery({name:'Résumé planning',notes:'Bring sketches'},'RÉSUMÉ sketches'),'case-insensitive terms can match name and notes');
+assert(c.recordingMatchesQuery({meeting:{conversations:[{title:'Prototype',summary:'Review the enclosure',people:[{name:'Alex'}],topics:['Design']}] }},'Alex design enclosure'),'search includes structured conversation context');
+assert(!c.recordingMatchesQuery(fixture(1),'missing phrase'));
+ui.recordingsList.children=[];
+c.libraryRecordings=Array.from({length:12},(_,i)=>({...fixture(i),summary:i<7?'Enclosure discussion':'Audio notes'}));
+c.libraryVisibleCount=5;c.libraryQuery='enclosure';c.renderLibraryPage();
+assert.equal(ui.libraryCountLabel.textContent,'5 of 7');
+assert.equal(searchStatus.textContent,'7 matching recordings');
+c.libraryVisibleCount=10;c.renderLibraryPage();
+assert.equal(ui.libraryCountLabel.textContent,'7 of 7');
+c.libraryQuery='unmatched';c.renderLibraryPage();
+assert(ui.recordingsList.children.every(card=>card.hidden));
+assert.equal(ui.libraryPagination.hidden,true);
+assert.match(searchStatus.textContent,/No matching recordings/);
+c.libraryQuery='';c.renderLibraryPage();
+assert.equal(searchStatus.hidden,true);
+assert.equal(searchClear.hidden,true);
 const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
 assert(!html.includes('YOUR LIBRARY'));assert(!html.includes('Saved moments'));
 assert(html.includes('aria-labelledby="libraryTitle"'));

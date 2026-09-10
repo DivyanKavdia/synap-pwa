@@ -65,6 +65,9 @@ async function smartConversations(){
   items.sort((a,b)=>new Date(b.r.createdAt)-new Date(a.r.createdAt)||startMs(a.c)-startMs(b.c));
   const rows=[...list.querySelectorAll('.conversation-card')];
   rows.forEach((row,index)=>{
+    // The current brain renderer owns its complete source card. Retain this
+    // decorator only for older cached markup that lacks the new copy wrapper.
+    if(row.querySelector('.conversation-copy'))return;
     const item=items[index];if(!item)return;
     const time=row.querySelector('.conversation-time');if(time)time.textContent=timeLabel(item.c,index,items);
     const copy=row.querySelector('span:last-child');if(!copy)return;

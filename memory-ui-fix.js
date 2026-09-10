@@ -35,15 +35,15 @@ function ensureTodayPipeline(brief){
   let panel=document.getElementById(TODAY_PIPELINE_ID);
   if(panel)return panel;
   injectTodayPipelineStyles();
-  panel=document.createElement('section');
+  panel=document.createElement('details');
   panel.id=TODAY_PIPELINE_ID;
   panel.className='today-memory-pipeline';
   panel.setAttribute('aria-label','Memory processing status');
 
-  const head=document.createElement('div');
+  const head=document.createElement('summary');
   head.className='today-memory-pipeline-head';
   const title=document.createElement('strong');
-  title.textContent='MEMORY PROCESSING';
+  title.textContent='Memory processing';
   const count=document.createElement('span');
   count.className='today-memory-pipeline-count';
   head.append(title,count);
@@ -65,7 +65,8 @@ function ensureTodayPipeline(brief){
   button.addEventListener('click',openLibrary);
 
   panel.append(head,current,track,button);
-  brief.insertAdjacentElement('afterend',panel);
+  const homeBrief=brief.closest('.brief-intro');
+  (homeBrief||brief).insertAdjacentElement('afterend',panel);
   return panel;
 }
 
@@ -105,7 +106,8 @@ async function renderTodayPipeline(){
   const status=panel.querySelector('.today-memory-pipeline-status');
   const track=panel.querySelector('.today-memory-track');
   const button=panel.querySelector('.today-memory-pipeline-link');
-  setText(count,ready+' of '+items.length+' ready');
+  panel.dataset.tone=focus.model.tone||'waiting';
+  setText(count,(focus.model.tone==='error'?'Needs retry · ':'')+ready+' of '+items.length+' ready');
   setText(name,focus.recording.name||'Latest recording');
   setText(status,focus.model.status||'');
   if(track){focus.model.steps.forEach(()=>{});updatePipelineSteps(track,focus.model.steps||[])}

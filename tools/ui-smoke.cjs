@@ -109,6 +109,9 @@ async function run() {
       await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
       await context.addInitScript(theme => localStorage.setItem('synap-appearance', theme), mode);
       const page = await context.newPage();
+      // A running clock anchored at midday keeps multi-minute QA from crossing
+      // local midnight and changing the meaning of "today" halfway through.
+      await page.clock.install({time:new Date('2026-09-10T10:00:00Z')});
       const errors=[]; page.on('pageerror', error => errors.push(error.message));
       await page.goto(origin);
       await page.waitForFunction(() => window.SynapDashboardUI && document.querySelectorAll('.brain-tabs a').length === 5);
@@ -135,6 +138,21 @@ async function run() {
         assert.equal(await page.locator('.brain-tabs a[aria-current="page"]').count(),1);
         assert.equal(await page.locator('.brain-tabs a[aria-current="page"]').getAttribute('href'),href);
         assert(await page.locator(href).isVisible());
+      }
+      // Focus tabs keep their selection through memory refresh and work by keyboard.
+      await page.locator('#focusCommitments').focus();
+      await page.keyboard.press('ArrowRight');
+      assert.equal(await page.locator('#focusDecisions').getAttribute('aria-selected'),'true');
+      assert(await page.locator('#focusDecisionsPanel').isVisible());
+      assert(!(await page.locator('#focusCommitmentsPanel').isVisible()));
+      await page.keyboard.press('End');
+      assert.equal(await page.locator('#focusWaiting').getAttribute('aria-selected'),'true');
+      await page.keyboard.press('Home');
+      assert.equal(await page.locator('#focusCommitments').getAttribute('aria-selected'),'true');
+      for (const target of ['synapWeeklyReview','peopleMemory','followupInbox']) {
+        await page.locator('[data-workspace-target="'+target+'"]').click();
+        assert.equal(await page.evaluate(()=>document.activeElement.id),target,'shortcut transfers keyboard focus');
+        await page.locator('.brain-tabs a[href="#today"]').click();
       }
       await page.locator('#settingsButton').click();
       assert(await page.locator('#settingsDialog').isVisible());
@@ -166,7 +184,7 @@ async function run() {
           ascii(36,'data');header.setUint32(40,pcm.byteLength,true);
           const createdAt=new Date().toISOString();
           const conversation={title:'Prototype planning',summary:'We agreed to test the new prototype before choosing the final enclosure.',start_ms:0,end_ms:1000,participants:['You','Alex'],people:[{name:'Alex',role:'Collaborator'}],topics:['Prototype'],decisions:['Test the prototype before selecting the enclosure.'],action_items:[{task:'Prepare the prototype test checklist.',owner:'self',status:'open'}],follow_ups:[]};
-          const record={id:'ui-sample',name:'Sample · Prototype planning',createdAt,durationMs:1000,sampleRate:16000,sizeBytes:32044,
+          const record={id:'ui-sample',name:'Sample · Prototype planning',createdAt,durationMs:1000,sampleRate:16000,sizeBytes:32044,processingStage:'ready',
             blob:new Blob([header.buffer,pcm],{type:'audio/wav'}),notes:'Sample data for UI testing only.',
             transcript:'Alex: Let’s test the prototype before deciding on an enclosure. You: I’ll prepare the test checklist.',
             summary:conversation.summary,meeting:{executive_summary:conversation.summary,conversations:[conversation],people:conversation.people,decisions:conversation.decisions,action_items:conversation.action_items,topics:['Prototype']}};
@@ -176,6 +194,22 @@ async function run() {
         await page.waitForFunction(()=>document.querySelectorAll('.recording-card').length===1);
         await page.waitForTimeout(900);
         assert.equal(await page.locator('#glanceRecordings').innerText(),'1');
+        assert.equal(await page.locator('#commitmentCount').innerText(),'1');
+        assert(await page.locator('#conversationList .conversation-summary').innerText());
+        assert.match(await page.locator('#conversationList .conversation-people').innerText(),/Alex/);
+        await page.locator('#focusDecisions').click();
+        await page.evaluate(()=>SynapCloudHistory.refreshUiInPlace({source:'isolated-focus-fixture'}));
+        await page.waitForTimeout(200);
+        assert.equal(await page.locator('#focusDecisions').getAttribute('aria-selected'),'true');
+        await page.locator('#focusCommitments').click();
+        await page.waitForSelector('#todayMemoryPipeline');
+        assert(!(await page.locator('#todayMemoryPipeline').evaluate(node=>node.open)),'processing details start compact');
+        assert.equal(await page.locator('.brief-intro #todayMemoryPipeline').count(),0,'processing status stays outside the hero');
+        await page.locator('#todayMemoryPipeline>summary').click();
+        assert(await page.locator('#todayMemoryPipeline .today-memory-track').isVisible());
+        await page.evaluate(()=>SynapTodayPipeline.refresh());
+        assert(await page.locator('#todayMemoryPipeline').evaluate(node=>node.open),'processing updates preserve the disclosure');
+        await page.locator('#todayMemoryPipeline>summary').click();
         await assertWeeklyReview(page,mode,width);
         await page.locator('.brain-tabs a[href="#insights"]').click();
         await page.locator('.memory-search input').fill('prototype');
@@ -204,13 +238,20 @@ async function run() {
         await page.locator('#askForm button[type="submit"]').click();
         await page.waitForFunction(()=>document.getElementById('askAnswer').textContent.toLowerCase().includes('prototype'));
         await page.locator('.brain-tabs a[href="#today"]').click();
+        await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));
+        await page.screenshot({path:path.join(output,`workspace-${mode}-${width}.png`)});
+        if(width===390){
+          await page.evaluate(()=>{const focus=document.querySelector('.daily-focus');window.scrollTo({top:focus.getBoundingClientRect().top+scrollY-100,behavior:'instant'});});
+          await page.screenshot({path:path.join(output,`workspace-focus-${mode}-${width}.png`)});
+          await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));
+        }
         await page.screenshot({path:path.join(output,`sample-${mode}-${width}.png`),fullPage:true});
         await page.evaluate(async()=>{
           const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('dk-pendant-recordings');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)});
           const sample=await new Promise(resolve=>{const request=db.transaction('recordings').objectStore('recordings').get('ui-sample');request.onsuccess=()=>resolve(request.result)});
           sample.meeting.people=Array.from({length:14},(_,i)=>({name:'Person '+String(i+1).padStart(2,'0'),role:'Collaborator'}));
           await new Promise((resolve,reject)=>{const tx=db.transaction('recordings','readwrite'),store=tx.objectStore('recordings');store.put(sample);
-            for(let i=1;i<=8;i++){const date=new Date();date.setDate(date.getDate()-i);store.put({...sample,id:'ui-older-'+i,name:'Earlier conversation '+i,createdAt:date.toISOString()});}
+            for(let i=1;i<=8;i++){const date=new Date();date.setDate(date.getDate()-i);store.put({...sample,id:'ui-older-'+i,name:'Earlier conversation '+i+(i===8?' · Zephyr':''),createdAt:date.toISOString()});}
             tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
           });db.close();
         });
@@ -219,6 +260,33 @@ async function run() {
         assert.equal(await page.locator('#glanceRecordings').innerText(),'1','Today metrics stay day-scoped');
         await page.locator('.brain-tabs a[href="#library"]').click();
         assert.equal(await page.locator('.recording-card:visible').count(),5,'all dates with pagination');
+        const librarySearch=page.locator('#librarySearch');
+        await librarySearch.fill('Zephyr');
+        assert.equal(await page.locator('.recording-card:visible').count(),1);
+        assert(await page.locator('#recording-ui-older-8').isVisible());
+        assert.match(await page.locator('#librarySearchStatus').innerText(),/1 matching recording$/);
+        await librarySearch.fill('enclosure');
+        assert.match(await page.locator('#librarySearchStatus').innerText(),/9 matching recordings/,'search includes transcript and summary');
+        await page.locator('#showMoreRecordingsButton').click();
+        assert.equal(await page.locator('.recording-card:visible').count(),9);
+        await librarySearch.fill('no-such-discussion');
+        assert.equal(await page.locator('.recording-card:visible').count(),0);
+        assert.match(await page.locator('#librarySearchStatus').innerText(),/No matching recordings/);
+        await page.evaluate(()=>SynapProvenance.openSource('ui-older-8',0));
+        await page.waitForFunction(()=>document.getElementById('recording-ui-older-8')?.open);
+        assert.equal(await librarySearch.inputValue(),'','source navigation clears a search that would hide the source');
+        assert(await page.locator('#recording-ui-older-8 .recording-content').isVisible());
+        await page.evaluate(()=>{const picker=document.getElementById('datePicker');picker.value=new Date().toLocaleDateString('en-CA');picker.dispatchEvent(new Event('change',{bubbles:true}));});
+        await librarySearch.fill('Zephyr');
+        await page.locator('[data-library-scope="day"]').click();
+        await page.waitForFunction(()=>document.getElementById('recordingsCount').textContent==='1');
+        assert.match(await page.locator('#librarySearchStatus').innerText(),/No matching recordings/,'date and query filters combine');
+        await page.locator('#clearLibrarySearch').click();
+        assert.equal(await page.locator('.recording-card:visible').count(),1);
+        await page.locator('[data-library-scope="all"]').click();
+        await page.waitForFunction(()=>document.getElementById('recordingsCount').textContent==='9');
+        await page.locator('.brain-tabs a[href="#library"]').click();
+        await page.screenshot({path:path.join(output,`workspace-library-${mode}-${width}.png`)});
         await page.locator('[data-library-scope="day"]').click();
         await page.waitForFunction(()=>document.getElementById('recordingsCount').textContent==='1');
         await page.locator('[data-library-scope="all"]').click();

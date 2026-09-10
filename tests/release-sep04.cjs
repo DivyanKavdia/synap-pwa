@@ -29,7 +29,7 @@ test('static shell never paints a capitalized synap brand before runtime normali
   const end=html.indexOf('<script src="device-identity.js',start);
   const visibleShell=html.slice(start,end);
   assert.doesNotMatch(visibleShell,/\bSynap\b/);
-  assert.match(visibleShell,/The moments that matter\./);
+  assert.match(visibleShell,/Your day, in focus\./);
   assert.match(visibleShell,/let synap listen/);
   assert.match(visibleShell,/Back to synap/);
 });
