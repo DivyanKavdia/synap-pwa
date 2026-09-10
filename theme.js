@@ -76,9 +76,10 @@
     script('product-ui.js?v=1.0.0-ui4');
     script('runtime-ui.js?v=1.0.0-runtime3');
     script('dashboard-ui.js?v=1.0.0-dashboard1');
-    script('productivity-tools.js?v=1.0.0-productivity2');
-    script('desktop-capture.js?v=1.0.0-desktop1');
-    script('interaction-surfaces.js?v=1.0.0-interactions1');
+    script('productivity-tools.js?v=1.0.0-productivity3');
+    script('desktop-capture.js?v=1.0.0-desktop2');
+    script('interaction-surfaces.js?v=1.0.0-interactions2');
+    script('memory-ready-events.js?v=1.0.0-memory-events1');
     apply();
   }
   css('brand.css?v=1.0.0-brain1','brand','brain1');
