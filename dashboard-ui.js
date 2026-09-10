@@ -132,8 +132,14 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
   function scan(){injectStyle();ensureCaptureNav();healLegacyWrappers();bindTabs();observeSections();updateFromViewport()}
   function init(){
     scan();
-    const mutation=new MutationObserver(()=>requestAnimationFrame(()=>{ensureCaptureNav();observeSections();healLegacyWrappers()}));
-    mutation.observe(document.body,{childList:true,subtree:true});
+    // Dynamic second-brain sections are inserted as direct children of <main>.
+    // Observe only that boundary instead of the entire document: memory renders
+    // can replace many descendant nodes without causing navigation rescans.
+    const main=document.querySelector('main');
+    if(main){
+      const mutation=new MutationObserver(()=>requestAnimationFrame(()=>{ensureCaptureNav();observeSections();healLegacyWrappers()}));
+      mutation.observe(main,{childList:true});
+    }
     ['synap-cloud-history-updated','synap-memory-ready','synap-processing-state','synap-transcript-updated'].forEach(name=>addEventListener(name,()=>requestAnimationFrame(updateFromViewport)));
     if(location.hash&&VIEW_IDS[viewForHref(location.hash)])setTimeout(()=>setView(viewForHref(location.hash),true),0);
   }
