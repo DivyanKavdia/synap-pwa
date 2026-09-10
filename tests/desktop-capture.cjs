@@ -14,5 +14,10 @@ assert.match(src,/TARGET_RATE=16000/,'desktop capture must target the existing 1
 assert.match(src,/FRAME_SAMPLES=800/,'desktop capture must emit 50 ms frames');
 assert.match(src,/FRAME_BYTES=1600/,'desktop capture PCM frame size must match AudioStore');
 assert.match(src,/No bot joins the call/,'desktop capture must disclose its no-bot behavior');
+assert.match(src,/picker\.value=day/,'saved call recording must select its actual Library day');
+assert.match(src,/root\.location\.hash='#library'/,'saved call recording must navigate to Library');
+assert.match(src,/document\.getElementById\('recording-'\+recordingId\)/,'saved call recording must locate its own Library card');
+assert.match(src,/card\.open=true/,'saved call recording must be revealed after Library rendering');
+assert.match(src,/createdAt:saved\?\.createdAt\|\|null/,'recording-saved event must preserve source creation time');
 assert.doesNotMatch(src,/startButton|stopButton|\.click\(\)/,'desktop capture must never drive pendant recording controls');
 console.log('desktop capture contract passed');
