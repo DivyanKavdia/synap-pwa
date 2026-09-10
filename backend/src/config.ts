@@ -84,39 +84,33 @@ export const config = {
       'SYNAP_GEMINI_ENDPOINT',
       'https://generativelanguage.googleapis.com/v1beta',
     ),
-    /**
-     * Dedicated ASR model. Handles 85+ languages with mid-utterance
-     * code-switching, which is what Hinglish capture actually needs.
-     * Diarization/word timestamps cap a request at 30 minutes of audio;
-     * Synap uploads ~30 second segments, so that ceiling is never near.
-     */
+    /** Dedicated ASR for code-switched, timestamped ambient speech. */
     transcribeModel: optional('SYNAP_GEMINI_STT_MODEL', 'gemini-3.5-transcribe'),
     /**
-     * High-volume structured extraction should use the inexpensive Flash-Lite
-     * tier. Synap validates the schema and grounding after generation, so this
-     * stage does not need the premium reasoning model.
+     * Memory quality is the product, not a background optimization. Flash-Lite
+     * was too aggressive a cost trade-off for long, mixed-topic conversations:
+     * use full Flash for conversation segmentation, summaries and commitments.
      */
-    memoryModel: optional('SYNAP_GEMINI_MEMORY_MODEL', 'gemini-3.5-flash-lite'),
-    /** Query parsing is classification/filter extraction, not answer generation. */
-    queryModel: optional('SYNAP_GEMINI_QUERY_MODEL', 'gemini-3.5-flash-lite'),
-    /** Final grounded Ask Synap answers get the stronger model, but at low thinking. */
+    memoryModel: optional('SYNAP_GEMINI_MEMORY_MODEL', 'gemini-3.5-flash'),
+    /** Query interpretation also uses full Flash so names/dates/topics are not silently lost. */
+    queryModel: optional('SYNAP_GEMINI_QUERY_MODEL', 'gemini-3.5-flash'),
+    /** Final grounded Ask Synap answers use the strongest low-latency Flash model. */
     askModel: optional('SYNAP_GEMINI_ASK_MODEL', 'gemini-3.8-flash'),
     embedModel: optional('SYNAP_GEMINI_EMBED_MODEL', 'gemini-embedding-001'),
-    /** 768 keeps Firestore vector indexes cheap and is a documented sweet spot. */
+    /** 768 keeps Firestore vector indexes compact while retaining retrieval quality. */
     embedDimensions: Number(optional('SYNAP_GEMINI_EMBED_DIMENSIONS', '768')),
     requestTimeoutMs: Number(optional('SYNAP_GEMINI_TIMEOUT_MS', '120000')),
   },
 
   /**
    * Optional private speaker-embedding service. It is deliberately separate
-   * from Gemini transcription: if speaker verification is unavailable, Synap
-   * still records, transcribes and understands the meeting normally.
+   * from transcription: if speaker verification is unavailable, Synap still
+   * records, transcribes and understands the meeting normally.
    */
   speaker: {
     serviceUrl: optional('SYNAP_SPEAKER_SERVICE_URL', '').replace(/\/+$/, ''),
     authMode: optional('SYNAP_SPEAKER_SERVICE_AUTH', 'oidc') as 'oidc' | 'none',
     requestTimeoutMs: Number(optional('SYNAP_SPEAKER_TIMEOUT_MS', '30000')),
-    /** Conservative defaults; tune only against real pendant recordings. */
     matchThreshold: Number(optional('SYNAP_SPEAKER_MATCH_THRESHOLD', '0.72')),
     minMatchMargin: Number(optional('SYNAP_SPEAKER_MATCH_MARGIN', '0.06')),
     minSampleMs: Number(optional('SYNAP_SPEAKER_MIN_SAMPLE_MS', '2500')),
@@ -143,7 +137,6 @@ const PLACEHOLDER_GEMINI_KEY = 'REPLACE_WITH_YOUR_GEMINI_API_KEY';
 let cachedSecrets: Secrets | null = null;
 
 async function readSecret(client: SecretManagerServiceClient, name: string): Promise<string> {
-  // Accept either a bare secret id or a fully qualified version resource.
   const resource = name.includes('/secrets/')
     ? name
     : `projects/${config.projectId}/secrets/${name}/versions/latest`;
@@ -153,10 +146,7 @@ async function readSecret(client: SecretManagerServiceClient, name: string): Pro
   return Buffer.from(payload).toString('utf8').trim();
 }
 
-/**
- * Resolve secrets once per process. Local development can short-circuit this
- * with plain env vars; Cloud Run points the *_SECRET vars at Secret Manager.
- */
+/** Resolve secrets once per process. */
 export async function loadSecrets(): Promise<Secrets> {
   if (cachedSecrets) return cachedSecrets;
 
@@ -187,9 +177,6 @@ export async function loadSecrets(): Promise<Secrets> {
   }
 
   if (geminiApiKey === PLACEHOLDER_GEMINI_KEY) {
-    // Terraform seeds a placeholder so the first apply can bring Cloud Run up.
-    // Boot rather than crash-loop, but say so loudly: every Gemini call will
-    // fail until a real key is added as a new secret version.
     process.stderr.write(
       JSON.stringify({
         severity: 'ERROR',
