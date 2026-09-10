@@ -97,6 +97,57 @@ async function assertWeeklyReview(page, mode, width) {
   console.log(`PASS weekly/${mode}/${width}: today first, all weekly evidence, processing events, persistent detail, exact source navigation`);
 }
 
+async function assertDayReading(page,mode,width){
+  await page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const request=indexedDB.open('dk-pendant-recordings');request.onsuccess=()=>resolve(request.result)});
+    const sample=await new Promise(resolve=>{const request=db.transaction('recordings').objectStore('recordings').get('ui-sample');request.onsuccess=()=>resolve(request.result)});
+    const prior=new Date();prior.setDate(prior.getDate()-1);
+    const summary='The prototype needs a quieter microphone mount. '+ 'We reviewed the enclosure, materials, and next steps in detail. '.repeat(12)+'Final detail: bring the revised drawings on Friday.';
+    const conversations=Array.from({length:10},(_,i)=>({...sample.meeting.conversations[0],title:'Design discussion '+i,start_ms:i*100,summary:summary+' Conversation '+i}));
+    await new Promise((resolve,reject)=>{const tx=db.transaction('recordings','readwrite');tx.objectStore('recordings').put({...sample,id:'day-reading',name:'Earlier design review',createdAt:prior.toISOString(),summary,meeting:{executive_summary:summary,conversations}});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close();
+    window.dispatchEvent(new CustomEvent('synap-memory-ready'));
+  });
+  await page.locator('.brain-tabs a[href="#today"]').click();
+  await page.locator('[data-day-step="-1"]').click();
+  await page.waitForFunction(()=>document.querySelector('#conversationCount').textContent==='10');
+  assert.equal(await page.locator('#dayLensTitle').innerText(),'Yesterday');
+  assert.equal(await page.locator('#dateStrip .date-chip').count(),7);
+  assert.match(await page.locator('#dateStrip .selected').getAttribute('aria-label'),/1 saved recording/);
+  assert.equal(await page.locator('.conversation-digest').count(),3);
+  await page.locator('#dayBriefReadMore').click();
+  assert.match(await page.locator('#dayBriefText').innerText(),/Final detail: bring the revised drawings on Friday/);
+  assert(await page.locator('#dayBriefSources').isVisible());
+  assert.equal(await page.locator('#dayBriefReadMore').getAttribute('aria-expanded'),'true');
+  await page.locator('.conversation-digest').nth(1).locator('summary').click();
+  await page.evaluate(()=>SynapBrainUI.refresh());
+  assert(await page.locator('.conversation-digest').nth(1).evaluate(node=>node.open),'refresh preserves expanded reading');
+  while(await page.locator('#showMoreConversations').isVisible())await page.locator('#showMoreConversations').click();
+  assert.equal(await page.locator('.conversation-digest').count(),10,'all conversations remain accessible');
+  assert.equal(await page.locator('#conversationPageCount').innerText(),'10 of 10 summaries');
+  await page.locator('#today').screenshot({path:path.join(output,`day-reading-${mode}-${width}.png`)});
+  await page.locator('.conversation-source').first().click();
+  await page.waitForFunction(()=>document.getElementById('recording-day-reading')?.open);
+  await page.locator('.brain-tabs a[href="#today"]').click();
+  const selected=await page.locator('#datePicker').inputValue();
+  await page.locator('[data-day-step="-7"]').click();
+  assert.notEqual(await page.locator('#datePicker').inputValue(),selected);
+  await page.locator('[data-day-step="7"]').click();
+  assert.equal(await page.locator('#datePicker').inputValue(),selected);
+  await page.locator('#jumpToToday').click();
+  await page.waitForFunction(()=>document.getElementById('conversationCount').textContent==='1');
+  assert(await page.locator('[data-day-step="1"]').isDisabled());
+  assert.equal(await page.locator('#dayBriefReadMore').getAttribute('aria-expanded'),'false');
+  await page.locator('#dateStrip [data-day="'+selected+'"]').click();
+  await page.waitForFunction(()=>document.getElementById('conversationCount').textContent==='10');
+  await page.locator('#jumpToToday').click();
+  await page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const r=indexedDB.open('dk-pendant-recordings');r.onsuccess=()=>resolve(r.result)});
+    await new Promise(resolve=>{const tx=db.transaction('recordings','readwrite');tx.objectStore('recordings').delete('day-reading');tx.oncomplete=resolve});db.close();SynapCloudHistory.refreshUiInPlace({source:'day-reading-cleanup'});
+  });
+  await page.waitForFunction(()=>document.querySelectorAll('.recording-card').length===1);
+  console.log(`PASS reading/${mode}/${width}: day/week/tile navigation, full brief, all 10 summaries, source and reading state`);
+}
+
 async function run() {
   fs.mkdirSync(output, { recursive:true });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -112,7 +163,7 @@ async function run() {
       // A running clock anchored at midday keeps multi-minute QA from crossing
       // local midnight and changing the meaning of "today" halfway through.
       await page.clock.install({time:new Date('2026-09-10T10:00:00Z')});
-      const errors=[]; page.on('pageerror', error => errors.push(error.message));
+      const errors=[]; page.on('pageerror', error => errors.push(error.stack||error.message));
       await page.goto(origin);
       await page.waitForFunction(() => window.SynapDashboardUI && document.querySelectorAll('.brain-tabs a').length === 5);
       await page.waitForTimeout(800);
@@ -195,7 +246,7 @@ async function run() {
         await page.waitForTimeout(900);
         assert.equal(await page.locator('#glanceRecordings').innerText(),'1');
         assert.equal(await page.locator('#commitmentCount').innerText(),'1');
-        assert(await page.locator('#conversationList .conversation-summary').innerText());
+        assert(await page.locator('#conversationList .digest-summary').innerText());
         assert.match(await page.locator('#conversationList .conversation-people').innerText(),/Alex/);
         await page.locator('#focusDecisions').click();
         await page.evaluate(()=>SynapCloudHistory.refreshUiInPlace({source:'isolated-focus-fixture'}));
@@ -211,6 +262,7 @@ async function run() {
         assert(await page.locator('#todayMemoryPipeline').evaluate(node=>node.open),'processing updates preserve the disclosure');
         await page.locator('#todayMemoryPipeline>summary').click();
         await assertWeeklyReview(page,mode,width);
+        await assertDayReading(page,mode,width);
         await page.locator('.brain-tabs a[href="#insights"]').click();
         await page.locator('.memory-search input').fill('prototype');
         await page.waitForFunction(()=>document.querySelectorAll('.memory-result').length>0);
@@ -223,8 +275,24 @@ async function run() {
         assert.equal(await page.locator('.recording-card audio').evaluate(audio=>audio.readyState>=1),true,'playable local WAV');
         const download=page.waitForEvent('download');await page.locator('.recording-action-export').click();
         assert((await download).suggestedFilename().endsWith('.wav'));
+        const speech=page.locator('#recording-ui-sample .speech-enhancement');
+        await speech.locator('[data-speech="enhance"]').click();
+        await speech.locator('[data-speech="export"]').waitFor({state:'visible'});
+        assert.equal(await speech.locator('[data-speech="enhanced"]').getAttribute('aria-pressed'),'true');
+        const enhancedSource=await page.locator('#recording-ui-sample audio').getAttribute('src');
+        await speech.locator('[data-speech="original"]').click();
+        assert.notEqual(await page.locator('#recording-ui-sample audio').getAttribute('src'),enhancedSource);
+        await speech.locator('[data-speech="enhanced"]').click();
+        assert.equal(await page.locator('#recording-ui-sample audio').getAttribute('src'),enhancedSource);
+        const enhancedDownload=page.waitForEvent('download');await speech.locator('[data-speech="export"]').click();
+        const copy=await enhancedDownload;assert(copy.suggestedFilename().endsWith('-enhanced.wav'));
+        const wav=fs.readFileSync(await copy.path());assert.equal(wav.readUInt32LE(24),16000);assert.equal(wav.length,32044);
+        await page.evaluate(()=>{document.body.dataset.state='recording'});
+        assert(await speech.locator('[data-speech="enhance"]').isDisabled(),'enhancement yields resources to live capture');
+        await page.evaluate(()=>{document.body.dataset.state='disconnected'});
+        await speech.screenshot({path:path.join(output,`speech-${mode}-${width}.png`)});
         await page.locator('.brain-tabs a[href="#today"]').click();
-        await page.locator('#conversationList .conversation-card').first().click();
+        await page.locator('#conversationList .conversation-source').first().click();
         await page.waitForFunction(()=>document.querySelector('#recording-ui-sample')?.open);
         await page.waitForTimeout(1000);
         await page.locator('#recording-ui-sample audio').evaluate(audio=>{window.qaAudio=audio;});

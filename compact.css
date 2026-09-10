@@ -425,7 +425,7 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
  .synap-refresh .section-card,.synap-refresh #capture,.brief-intro{padding:18px!important}
  .synap-refresh .brain-heading{flex-wrap:wrap}
  .synap-refresh .brain-calendar{margin-top:0}
- .synap-refresh .date-chip{min-width:40px!important}
+ .synap-refresh .date-chip{min-width:0!important}
  .synap-refresh .gesture-guide{gap:8px}
 }
 @media(prefers-reduced-motion:reduce){
@@ -436,3 +436,44 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
  .synap-refresh .date-chip.selected,.synap-refresh .brain-tabs a.active{outline:2px solid Highlight}
  .synap-refresh :is(button,input,select,.brief-intro){border:1px solid ButtonText!important}
 }
+
+/* Daily reading and source navigation. */
+.synap-refresh .day-navigation{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:20px}
+.synap-refresh :is(.day-navigation,.calendar-week-navigation) button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:44px;padding:8px 10px;border:1px solid var(--border);border-radius:11px;background:var(--surface);color:var(--ink);font:inherit;font-size:12px}
+.synap-refresh :is(.day-navigation,.calendar-week-navigation) svg{width:14px;height:14px}
+.synap-refresh :is(.day-navigation,.calendar-week-navigation,.date-strip) button:disabled{opacity:.4;cursor:default}
+.synap-refresh .calendar-week-navigation{display:flex;align-items:center;justify-content:space-between;margin-top:12px;gap:8px;color:var(--muted);font-size:12px}
+.synap-refresh .calendar-week-navigation button{border-color:transparent;background:transparent;width:44px}
+.synap-refresh .date-strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;margin:4px 0 20px;overflow:visible}
+.synap-refresh .date-chip{min-width:0!important;min-height:76px;padding:8px 2px!important}
+.synap-refresh .date-chip .date-activity{min-height:14px;font-size:9px!important;line-height:14px;opacity:.8}
+.synap-refresh .date-chip.is-today:not(.selected) strong{text-decoration:underline;text-underline-offset:5px;text-decoration-color:var(--accent)}
+.synap-refresh .day-brief-text{white-space:pre-line;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden}
+.synap-refresh .day-brief-text.is-expanded{display:block;-webkit-line-clamp:unset}
+.synap-refresh .brief-read-more{border:0;background:transparent;color:var(--hero-ink);padding:0 0 8px;min-height:40px;text-decoration:underline;text-underline-offset:4px;font:inherit;font-size:12px}
+.synap-refresh .brief-sources{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 12px}
+.synap-refresh .brief-sources button{max-width:100%;border:1px solid #bfd5c644;border-radius:8px;background:#ffffff0a;color:var(--hero-ink);font:inherit;font-size:11px;line-height:1.5;padding:8px 10px;overflow-wrap:anywhere;text-align:left}
+.synap-refresh .brief-status{color:var(--hero-muted);font-size:12px;line-height:1.5}
+.synap-refresh .conversation-help{color:var(--muted);font-size:12px;line-height:1.6;margin:8px 0 14px}
+.synap-refresh .conversation-digest{min-width:0;border:1px solid var(--border);border-radius:16px;background:var(--surface);overflow:hidden}
+.synap-refresh .conversation-digest>.conversation-card{border:0;border-radius:0;cursor:pointer;list-style:none}
+.synap-refresh .conversation-digest>.conversation-card::-webkit-details-marker{display:none}
+.synap-refresh .conversation-digest[open] .conversation-arrow{transform:rotate(90deg)}
+.synap-refresh .conversation-detail{padding:0 18px 18px}
+.synap-refresh .digest-summary{margin:0;color:var(--ink);font-size:14px;line-height:1.8;white-space:pre-line;overflow-wrap:anywhere}
+.synap-refresh .digest-facts{margin:16px 0 0;padding:14px 0 0;border-top:1px solid var(--border)}
+.synap-refresh .digest-facts h4{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0 0 8px}
+.synap-refresh .digest-facts ul{padding-left:18px;margin:0}
+.synap-refresh .digest-facts li{padding:3px 0;font-size:13px;line-height:1.65;overflow-wrap:anywhere}
+.synap-refresh .digest-facts small{display:block;font-size:11px;color:var(--muted)}
+.synap-refresh .digest-topics{color:var(--accent);font-size:11px;line-height:1.6;margin:14px 0 0}
+.synap-refresh :is(.conversation-source,.conversation-pagination button){min-height:42px;margin-top:12px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--accent-soft);color:var(--accent);font:inherit;font-size:12px}
+.synap-refresh .conversation-pagination{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--muted);font-size:11px}
+.synap-refresh .speech-enhancement{padding:14px;margin:14px 0 0;border:1px solid var(--border);border-radius:12px;background:var(--surface-2)}
+.synap-refresh .speech-enhancement h4{margin:0;font-size:13px;color:var(--ink)}
+.synap-refresh .speech-enhancement p{margin:8px 0;font-size:12px;line-height:1.6;color:var(--muted)}
+.synap-refresh .speech-controls{display:flex;flex-wrap:wrap;gap:6px}
+.synap-refresh .speech-controls button{font:inherit;font-size:12px;padding:8px 10px;min-height:40px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--ink)}
+.synap-refresh .speech-controls button[aria-pressed="true"]{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+.synap-refresh .speech-enhancement progress{width:100%;height:6px;accent-color:var(--accent);margin:8px 0}
+.synap-refresh :is(.brief-read-more,.brief-sources,.conversation-pagination button,.speech-enhancement [hidden])[hidden]{display:none!important}

@@ -6,6 +6,9 @@
   var LIMIT = 100;
   var SYNCED_KEY = 'synap-cloud-history-synced';
   var running = false;
+  var queuedDay = null;
+  var activeDay = null;
+  var authGeneration = 0;
   var targetedRunning = Object.create(null);
 
   var CLOUD_DERIVED_FIELDS = [
@@ -176,11 +179,13 @@
 
     running = true;
     var db = null;
+    var authAtStart = authGeneration;
 
     return store().then(function (opened) {
       db = opened;
       return db.all(STORE);
     }).then(function (locals) {
+      if (!signedIn() || authAtStart !== authGeneration) return [locals, null];
       var choice = plan(locals, force);
       if (!choice.fetch && !options.day) return [locals, null];
       try { root.sessionStorage.setItem(SYNCED_KEY, '1'); } catch (error) {}
@@ -195,17 +200,19 @@
         return [locals, result];
       });
     }).then(function (results) {
+      if (!signedIn() || authAtStart !== authGeneration) {
+        return { restored: 0, updated: 0, skipped: true, reason: 'auth-changed' };
+      }
       var locals = results[0];
       var remote = (results[1] && results[1].recordings) || [];
       if (!results[1]) return { restored: 0, updated: 0 };
       return mergeRemote(db, locals, remote);
-    }).then(function (result) {
-      running = false;
-      return result;
     }).catch(function (error) {
-      running = false;
       console.warn('[synap history] could not restore from cloud', error);
       return { restored: 0, updated: 0, error: error };
+    }).finally(function () {
+      running = false;
+      drainDayQueue();
     });
   }
 
@@ -260,9 +267,53 @@
     });
   }
 
+  function skippedDay(day, reason) {
+    var result = { restored: 0, updated: 0, skipped: true, day: day, reason: reason };
+    if (reason === 'superseded') result.superseded = true;
+    return result;
+  }
+
+  function clearQueuedDay(reason) {
+    if (!queuedDay) return;
+    var request = queuedDay;
+    queuedDay = null;
+    request.resolve(skippedDay(request.day, reason));
+  }
+
+  /* One latest selection waits behind any account/weekly restore. Completion
+     drains it once; capture and sign-out skip it rather than starting a retry
+     timer. Intermediate selections never become a stale network backlog. */
+  function drainDayQueue() {
+    if (running || !queuedDay) return;
+    if (!signedIn()) { clearQueuedDay('signed-out'); return; }
+    if (busy()) { clearQueuedDay('capture-busy'); return; }
+    var request = queuedDay;
+    queuedDay = null;
+    activeDay = request;
+    restoreAndShow(true, { day: request.day, transcript: false }).then(function (result) {
+      if (activeDay === request) activeDay = null;
+      request.resolve(Object.assign({ day: request.day }, result));
+    }, function (error) {
+      if (activeDay === request) activeDay = null;
+      request.resolve({ restored: 0, updated: 0, day: request.day, error: error });
+    });
+  }
+
   function restoreDay(day) {
-    if (!day || busy()) return Promise.resolve({ restored: 0, updated: 0 });
-    return restoreAndShow(true, { day: String(day), transcript: false });
+    var key = String(day || '');
+    if (queuedDay && queuedDay.day !== key) clearQueuedDay('superseded');
+    var reason = !key ? 'missing-day' : !signedIn() ? 'signed-out' : busy() ? 'capture-busy' : '';
+    if (reason) {
+      clearQueuedDay(reason);
+      return Promise.resolve(skippedDay(key, reason));
+    }
+    if (activeDay && activeDay.day === key) return activeDay.promise;
+    if (queuedDay) return queuedDay.promise;
+    var request = { day: key };
+    request.promise = new Promise(function (resolve) { request.resolve = resolve; });
+    queuedDay = request;
+    drainDayQueue();
+    return request.promise;
   }
 
   /* Fetch one completed memory/transcript only when it becomes relevant to the
@@ -312,6 +363,9 @@
 
   function onAuthChange(session) {
     if (!session || !session.refreshToken) {
+      authGeneration += 1;
+      activeDay = null;
+      clearQueuedDay('signed-out');
       try { root.sessionStorage.removeItem(SYNCED_KEY); } catch (error) {}
       return;
     }
