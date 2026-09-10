@@ -77,7 +77,7 @@
     script('runtime-ui.js?v=1.0.0-runtime3');
     script('dashboard-ui.js?v=1.0.0-dashboard1');
     script('productivity-tools.js?v=1.0.0-productivity3');
-    script('desktop-capture.js?v=1.0.0-desktop2');
+    script('desktop-capture.js?v=1.0.0-desktop3');
     script('interaction-surfaces.js?v=1.0.0-interactions2');
     script('memory-ready-events.js?v=1.0.0-memory-events1');
     apply();
