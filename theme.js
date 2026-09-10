@@ -76,8 +76,9 @@
     script('product-ui.js?v=1.0.0-ui4');
     script('runtime-ui.js?v=1.0.0-runtime3');
     script('dashboard-ui.js?v=1.0.0-dashboard1');
-    script('productivity-tools.js?v=1.0.0-productivity1');
+    script('productivity-tools.js?v=1.0.0-productivity2');
     script('desktop-capture.js?v=1.0.0-desktop1');
+    script('interaction-surfaces.js?v=1.0.0-interactions1');
     apply();
   }
   css('brand.css?v=1.0.0-brain1','brand','brain1');
