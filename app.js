@@ -146,6 +146,7 @@ const APP_REVISION = "1.0.0-audio2";
   let firmwareUpdater = null;
   let checkFirmwareRelease = null;
   let selectedDayKey = localDateKey(new Date());
+  let dayActivity = new Map();
   const LIBRARY_PAGE_SIZE = 5;
   let libraryRecordings = [];
   let libraryScope = "all";
@@ -2115,11 +2116,25 @@ const APP_REVISION = "1.0.0-audio2";
   }
 
   function selectDay(key) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || localDateKey(dateFromKey(key)) !== key || key > localDateKey(new Date())) return;
     selectedDayKey = key;
     ui.datePicker.value = key;
     renderDateStrip();
     renderRecordings();
+  }
+
+  function requestDay(key) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || localDateKey(dateFromKey(key)) !== key || key > localDateKey(new Date())) return;
+    ui.datePicker.value = key;
+    // Every date entry point uses this event: Today, brain, weekly review and
+    // cloud history must all observe the same selected day.
+    ui.datePicker.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function moveDay(amount) {
+    const date = dateFromKey(selectedDayKey);
+    date.setDate(date.getDate() + amount);
+    requestDay(localDateKey(date));
   }
 
   function renderDateStrip() {
@@ -2127,24 +2142,49 @@ const APP_REVISION = "1.0.0-audio2";
     const todayKey = localDateKey(today);
     ui.datePicker.max = todayKey;
     ui.datePicker.value = selectedDayKey;
+    const selected = dateFromKey(selectedDayKey);
+    const start = new Date(selected);
+    start.setDate(start.getDate() - (start.getDay() + 6) % 7);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    const weekLabel = document.getElementById("calendarWeekLabel");
+    if (weekLabel) weekLabel.textContent = start.toLocaleDateString([], { day: "numeric", month: "short" }) + " – " + end.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+    const todayButton = document.getElementById("jumpToToday");
+    if (todayButton) todayButton.disabled = selectedDayKey === todayKey;
+    document.querySelectorAll("[data-day-step]").forEach(function (button) {
+      const next = new Date(selected);
+      next.setDate(next.getDate() + Number(button.dataset.dayStep));
+      button.disabled = localDateKey(next) > todayKey;
+    });
+    const focusKey = ui.dateStrip.contains(document.activeElement) ? document.activeElement?.dataset.day : "";
     ui.dateStrip.replaceChildren();
-    for (let offset = 4; offset >= 0; offset -= 1) {
-      const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset);
+    for (let offset = 0; offset < 7; offset += 1) {
+      const date = new Date(start);
+      date.setDate(date.getDate() + offset);
       const key = localDateKey(date);
+      const activity = dayActivity.get(key) || 0;
       const button = document.createElement("button");
       button.type = "button";
       button.className = "date-chip";
-      button.setAttribute("aria-label", date.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long", year: "numeric" }));
+      button.dataset.day = key;
+      button.disabled = key > todayKey;
+      button.setAttribute("aria-label", date.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long", year: "numeric" }) + (activity ? ", " + activity + " saved recording" + (activity === 1 ? "" : "s") : ""));
       button.classList.toggle("selected", key === selectedDayKey);
       button.setAttribute("aria-pressed", String(key === selectedDayKey));
       const weekday = document.createElement("span");
-      weekday.textContent = key === todayKey ? "Today" : date.toLocaleDateString([], { weekday: "short" });
+      weekday.textContent = date.toLocaleDateString([], { weekday: "short" });
       const day = document.createElement("strong");
       day.textContent = String(date.getDate());
-      button.append(weekday, day);
-      button.addEventListener("click", function () { selectDay(key); });
+      const marker = document.createElement("span");
+      marker.className = "date-activity";
+      marker.setAttribute("aria-hidden", "true");
+      marker.textContent = activity ? String(activity) : "";
+      button.classList.toggle("is-today", key === todayKey);
+      button.append(weekday, day, marker);
+      button.addEventListener("click", function () { requestDay(key); });
       ui.dateStrip.appendChild(button);
     }
+    if (focusKey) ui.dateStrip.querySelector('[data-day="' + focusKey + '"]')?.focus({ preventScroll: true });
   }
 
   function renderDayLens(recordings) {
@@ -2154,7 +2194,7 @@ const APP_REVISION = "1.0.0-audio2";
     yesterday.setDate(yesterday.getDate() - 1);
     const relative = selectedDayKey === todayKey ? "Today" :
       selectedDayKey === localDateKey(yesterday) ? "Yesterday" :
-        "Timeline";
+        date.toLocaleDateString([], { weekday: "long" });
     const totalDuration = recordings.reduce(function (sum, recording) {
       return sum + (Number(recording.durationMs) || 0);
     }, 0);
@@ -2253,6 +2293,12 @@ const APP_REVISION = "1.0.0-audio2";
     recordings.sort(function (a, b) {
       return new Date(b.createdAt) - new Date(a.createdAt);
     });
+    dayActivity = new Map();
+    recordings.forEach(function (recording) {
+      const key = localDateKey(recording.createdAt);
+      if (key) dayActivity.set(key, (dayActivity.get(key) || 0) + 1);
+    });
+    renderDateStrip();
     const dayRecordings = recordings.filter(function (recording) {
       return localDateKey(recording.createdAt) === dayKey;
     });
@@ -2292,9 +2338,12 @@ const APP_REVISION = "1.0.0-audio2";
     const validIds = new Set(libraryRecordings.map(recording => "recording-" + recording.id));
     Array.from(ui.recordingsList.children).forEach(function (card) {
       if (validIds.has(card.id)) return;
+      globalThis.SynapSpeechUI?.dispose(card);
+      const urls = card.querySelector('.recording-content')?.synapAudioUrls || [];
       card.querySelectorAll("audio").forEach(function (audio) {
         audio.pause();
-        const url = audio.src;
+      });
+      urls.forEach(function (url) {
         if (renderedObjectUrls.includes(url)) {
           URL.revokeObjectURL(url);
           renderedObjectUrls = renderedObjectUrls.filter(value => value !== url);
@@ -2451,6 +2500,7 @@ const APP_REVISION = "1.0.0-audio2";
   function createRecordingContent(recording, rowName) {
     const card = document.createElement("div");
     card.className = "recording-content";
+    card.synapAudioUrls = [];
 
     const titleRow = document.createElement("div");
     titleRow.className = "recording-title-row";
@@ -2491,14 +2541,14 @@ const APP_REVISION = "1.0.0-audio2";
     audio.preload = "none";
     if (recording.blob) {
       const audioUrl = URL.createObjectURL(recording.blob);
-      renderedObjectUrls.push(audioUrl);audio.src = audioUrl;
+      renderedObjectUrls.push(audioUrl);card.synapAudioUrls.push(audioUrl);audio.src = audioUrl;
     }
 
     const actions = document.createElement("div");
     actions.className = "recording-actions";
     if (recording.journal) actions.appendChild(makeActionButton("Load audio", async function () {
       const blob = await journal.blob(recording);
-      const url = URL.createObjectURL(blob);renderedObjectUrls.push(url);audio.src = url;audio.load();
+      const url = URL.createObjectURL(blob);renderedObjectUrls.push(url);card.synapAudioUrls.push(url);audio.src = url;audio.load();
       toast("Audio loaded. Press Play.");
     }));
 
@@ -2542,6 +2592,8 @@ const APP_REVISION = "1.0.0-audio2";
 
     card.appendChild(audio);
     card.appendChild(actions);
+    globalThis.SynapSpeechUI?.attach(card, audio,
+      () => recording.blob || journal.blob(recording), () => recording.name);
     card.appendChild(recordingDisclosure("Notes", notes));
 
     if (recording.transcript) {
@@ -3044,6 +3096,10 @@ const APP_REVISION = "1.0.0-audio2";
 
   function bindEvents() {
     bindCoreControls();
+    document.querySelectorAll("[data-day-step]").forEach(function (button) {
+      button.addEventListener("click", function () { moveDay(Number(button.dataset.dayStep)); });
+    });
+    document.getElementById("jumpToToday")?.addEventListener("click", function () { requestDay(localDateKey(new Date())); });
     document.getElementById("librarySearch")?.addEventListener("input", function (event) {
       libraryQuery = event.target.value;
       libraryVisibleCount = LIBRARY_PAGE_SIZE;

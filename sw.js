@@ -6,18 +6,14 @@ const CLIENT_REVISION='1.0.0-audio2';
    refresh the shell assets even though the compatibility/cache generation stays
    unchanged. This repairs users already carrying the disappearing UI bundle. */
 const UI_RECOVERY_REVISION='1.0.0-refresh1';
-/* Keep prior production revisions explicit for upgrade diagnostics/tests. */
-const HISTORICAL_CACHE_REVISION='1.0.0-shell31-dashboard';
-const ASK_CACHE_REVISION='1.0.0-shell32-ask';
-const POWER_CACHE_REVISION='1.0.0-shell33-power';
-const PREVIOUS_CACHE_REVISION='1.0.0-shell34-transcript';
-const CACHE_REVISION='1.0.0-shell41-workspace';
+const CACHE_REVISION='1.0.0-shell42-day-audio';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings-icon-fix.css',
   './touch-event-bridge.js','./battery-v2-ui.js','./event-channel.js','./audio-codec-v3.js','./battery-popover-fix.js','./memory-ui-fix.js','./memory-tools.js','./voice-profile.js','./device-identity.js','./runtime-compat.js','./audio-store.js','./capture-stability.js','./ota.js','./releases.js',
   './app.js','./enhancements.js','./capture-ui.js','./brain-ui.js','./ask-synap.js','./product-ui.js','./runtime-ui.js','./dashboard-ui.js','./provenance-links.js','./productivity-tools.js','./desktop-capture.js','./interaction-surfaces.js','./memory-ready-events.js','./experience-recovery.js',
-  './ai-providers.js','./sleep-state-guard.js','./recording-bridge.js','./transcript-repair.js','./manifest.webmanifest','./logo.webp','./synap-logo.svg','./synap-logo-light.png','./synap-logo-dark.png','./icon.svg','./icon-192.png','./icon-512.png',
+  './audio-enhancement.js','./audio-enhancement-ui.js','./audio-enhancement-worker.js','./vendor/audio-enhancement/rnnoise-sync.js',
+  './ai-providers.js','./sleep-state-guard.js','./recording-bridge.js','./transcript-repair.js','./manifest.webmanifest','./synap-logo-light.png','./synap-logo-dark.png','./icon.svg','./icon-192.png','./icon-512.png',
   './google-auth.js','./synap-backend.js','./processing-recovery.js','./processing-pipeline-ui.js','./cost-ui.js','./synap-account-ui.js','./people-confirm-ui.js','./cloud-history.js'
 ];
 const SCOPE=self.registration?.scope||'https://local.invalid/';

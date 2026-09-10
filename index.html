@@ -18,8 +18,8 @@
   <link rel="stylesheet" href="brand.css?v=1.0.0-brain1" data-synap-brand="brain1">
   <link rel="stylesheet" href="polish.css?v=1.0.0-ui5">
   <link rel="stylesheet" href="brain.css?v=1.0.0-brain2">
-  <link rel="stylesheet" href="compact.css?v=1.0.0-workspace1" data-synap-compact="refresh1">
-  <script src="theme.js?v=1.0.0-workspace1"></script>
+  <link rel="stylesheet" href="compact.css?v=1.0.0-day-audio1" data-synap-compact="refresh1">
+  <script src="theme.js?v=1.0.0-day-audio1"></script>
 </head>
 <body data-state="disconnected" class="synap-refresh">
   <a class="skip-link" href="#today">Skip to your day</a>
@@ -29,11 +29,16 @@
   <div class="app-shell"><header class="topbar"><a class="brand" href="#today" aria-label="synap"><img class="brand-logo synap-brand-image" src="synap-logo-light.png?v=1.0.0-ui-fix1" width="800" height="216" alt="synap"></a><span class="workspace-label">A little more present.</span><div class="top-actions"><button id="settingsButton" class="icon-button" type="button" aria-label="Open settings"><svg><use href="#i-settings"/></svg></button></div></header><main><p id="updateNotice" class="update-notice" role="status" hidden></p><div id="firmwareNotice" class="update-notice" role="status" hidden><span id="firmwareNoticeText"></span> <button id="firmwareUpdateButton" class="button button-primary button-small" type="button">Update pendant</button></div>
 <section id="today" class="brain-home" tabindex="-1">
   <div class="brain-heading"><div><p class="brain-kicker">YOUR PERSONAL MEMORY</p><h1 id="dayLensTitle">Today</h1><p id="brainDateLine">Stay present. Keep the memory.</p></div><label class="calendar-picker brain-calendar"><svg><use href="#i-calendar"/></svg><span id="selectedDateLabel">Choose date</span><input id="datePicker" type="date" aria-label="Choose a date"></label></div>
+  <div class="day-navigation" aria-label="Browse days"><button type="button" data-day-step="-1" aria-label="Previous day"><svg aria-hidden="true"><use href="#i-chevron-left"/></svg>Previous</button><button id="jumpToToday" type="button">Back to today</button><button type="button" data-day-step="1" aria-label="Next day">Next<svg aria-hidden="true"><use href="#i-chevron"/></svg></button></div>
+  <div class="calendar-week-navigation"><button type="button" data-day-step="-7" aria-label="Previous week"><svg aria-hidden="true"><use href="#i-chevron-left"/></svg></button><span id="calendarWeekLabel"></span><button type="button" data-day-step="7" aria-label="Next week"><svg aria-hidden="true"><use href="#i-chevron"/></svg></button></div>
   <div id="dateStrip" class="date-strip"></div>
   <section class="day-brief">
     <div class="brief-intro">
       <div class="day-brief-head"><span class="brief-mark"><svg aria-hidden="true"><use href="#i-spark"/></svg></span><div><p>DAY BRIEF</p><h2>Your day, in focus.</h2></div></div>
       <p id="dayBriefText" class="day-brief-text">Be in the conversation. Your highlights, decisions and next steps will find a home here.</p>
+      <button id="dayBriefReadMore" class="brief-read-more" type="button" aria-expanded="false" aria-controls="dayBriefText dayBriefSources" hidden>Read full day</button>
+      <div id="dayBriefSources" class="brief-sources" hidden></div>
+      <p id="dayBriefStatus" class="brief-status" role="status" hidden></p>
       <div class="glance-grid"><div><strong id="glanceRecordings">0</strong><span>Moments</span></div><div><strong id="glanceDuration">0m</strong><span>Listened</span></div><div><strong id="glanceSummaries">0</strong><span>Briefs</span></div><div><strong id="glanceTranscripts">0</strong><span>References</span></div></div>
     </div>
     <nav class="day-shortcuts" aria-label="Explore your memory">
@@ -43,6 +48,8 @@
     </nav>
     <div id="actionableMemory" class="actionable-memory">
       <div class="memory-pulse"><div><span class="pulse-label">TODAY AT A GLANCE</span><strong id="pulseLine">Your decisions and next steps, together.</strong></div><div class="pulse-actions"><button id="rememberThis" class="remember-pill" type="button">★ Remember this</button><button id="openAsk" class="ask-pill" type="button">Ask synap ↗</button></div></div>
+      <div id="contextChips" class="context-chips"></div>
+      <section class="conversation-lane"><header><span>Conversation summaries</span><b id="conversationCount">0</b></header><p class="conversation-help">Open a summary for decisions, next steps and the original source.</p><div id="conversationList" class="conversation-list"><p class="brain-empty">Your conversations will appear here after processing.</p></div><div class="conversation-pagination"><span id="conversationPageCount"></span><button id="showMoreConversations" type="button" hidden>More summaries</button></div></section>
       <div class="action-grid daily-focus">
         <div class="focus-heading"><h2>In focus</h2><span>From your conversations</span></div>
         <div class="focus-tabs" role="tablist" aria-label="Daily focus">
@@ -54,8 +61,6 @@
         <section id="focusDecisionsPanel" role="tabpanel" aria-labelledby="focusDecisions" tabindex="0" hidden><div id="decisionList"><p class="brain-empty">Your decisions will appear here.</p></div></section>
         <section id="focusWaitingPanel" role="tabpanel" aria-labelledby="focusWaiting" tabindex="0" hidden><div id="waitingList"><p class="brain-empty">Follow-ups with others will appear here.</p></div></section>
       </div>
-      <div id="contextChips" class="context-chips"></div>
-      <section class="conversation-lane"><header><span>Recent conversations</span><b id="conversationCount">0</b></header><div id="conversationList" class="conversation-list"><p class="brain-empty">Your conversations will appear here after processing.</p></div></section>
     </div>
   </section>
 </section>
@@ -93,25 +98,27 @@
 <script src="event-channel.js?v=1.0.0-events1"></script>
 <script src="ota.js?v=1.0.0-ota4"></script>
 <script src="releases.js?v=1.0.0-prod2"></script>
-<script src="app.js?v=1.0.0-workspace1"></script>
-<script src="enhancements.js?v=1.0.0-arch1"></script>
+<script src="audio-enhancement.js?v=1.0.0-day-audio1"></script>
+<script src="audio-enhancement-ui.js?v=1.0.0-day-audio1"></script>
+<script src="app.js?v=1.0.0-day-audio1"></script>
+<script src="enhancements.js?v=1.0.0-day-audio1"></script>
 <script src="google-auth.js?v=1.0.0-brain1"></script>
 <script src="ai-providers.js?v=1.0.0-brain1"></script>
 <script src="synap-backend.js?v=1.0.0-pipeline1"></script>
 <script src="processing-pipeline-ui.js?v=1.0.0-pipeline1"></script>
-<script src="memory-ui-fix.js?v=1.0.0-workspace1"></script>
+<script src="memory-ui-fix.js?v=1.0.0-day-audio1"></script>
 <script src="synap-account-ui.js?v=1.0.0-brain1"></script>
 <script src="people-confirm-ui.js?v=1.0.0-ui-fix1"></script>
-<script src="cloud-history.js?v=1.0.0-workspace1"></script>
+<script src="cloud-history.js?v=1.0.0-day-audio1"></script>
 <script src="memory-tools.js?v=1.0.0-transcript4"></script>
-<script src="cost-ui.js?v=1.0.0-cost2"></script>
+<script src="cost-ui.js?v=1.0.0-cost3"></script>
 <script src="transcript-repair.js?v=1.0.0-transcript2"></script>
 <script src="voice-profile.js?v=1.0.0-voice-profile2"></script>
-<script src="ask-synap.js?v=1.0.0-ask2"></script>
-<script src="brain-ui.js?v=1.0.0-workspace1"></script>
-<script src="dashboard-ui.js?v=1.0.0-workspace1"></script>
+<script src="ask-synap.js?v=1.0.0-ask3"></script>
+<script src="brain-ui.js?v=1.0.0-day-audio1"></script>
+<script src="dashboard-ui.js?v=1.0.0-day-audio1"></script>
 <script src="runtime-ui.js?v=1.0.0-ui-fix1"></script>
 <script src="capture-ui.js?v=1.0.0-ui-fix1"></script>
-<script src="product-ui.js?v=1.0.0-workspace1"></script>
-<script src="provenance-links.js?v=1.0.0-workspace1"></script>
+<script src="product-ui.js?v=1.0.0-day-audio1"></script>
+<script src="provenance-links.js?v=1.0.0-day-audio1"></script>
 </body></html>

@@ -179,11 +179,13 @@
   function enhanceAskCopy() {
     const section = $('#ask');
     if (!section) return;
-    section.dataset.askMode = cloudReady() ? 'cloud' : 'local';
+    const ready = cloudReady();
+    section.dataset.askMode = ready ? 'cloud' : 'local';
     const copy = section.querySelector('.section-copy');
-    if (copy) copy.textContent = cloudReady()
-      ? 'Ask across your processed Synap memories. Answers are grounded and linked to their sources.'
-      : 'Ask locally from memories on this device. Sign in to Synap Cloud for grounded semantic recall.';
+    const value = ready
+      ? 'Ask across your processed synap memories. Answers are grounded and linked to their sources.'
+      : 'Ask locally from memories on this device. Sign in to synap Cloud for grounded semantic recall.';
+    if (copy && copy.textContent !== value) copy.textContent = value;
   }
 
   function onSubmit(event) {
@@ -229,12 +231,15 @@
     document.addEventListener('click', onClick, true);
     if (root.SynapAuth && root.SynapAuth.onChange) root.SynapAuth.onChange(scan);
     scan();
+    // Ask is inserted as a direct main section. Descendant changes, including
+    // our own copy write, must not schedule another scan every animation frame.
+    const main = $('main') || document.body;
     let queued = false;
     new MutationObserver(function () {
       if (queued) return;
       queued = true;
       requestAnimationFrame(function () { queued = false; scan(); });
-    }).observe(document.body, { childList: true, subtree: true });
+    }).observe(main, { childList: true });
   }
 
   root.SynapAsk = { ask: askCloud, open: openAsk, cloudReady: cloudReady };

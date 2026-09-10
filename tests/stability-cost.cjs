@@ -61,6 +61,10 @@ function costTests() {
   vm.runInContext(fs.readFileSync(path.join(root, 'cost-ui.js'), 'utf8'), ctx);
   const api = ctx.SynapCostUI;
   assert(api, 'cost UI API should be exposed');
+  const emptyDay=api.aggregate([]);
+  assert.equal(emptyDay.minutes.toFixed(1),'0.0','empty-day breakdown must remain renderable');
+  assert.equal(emptyDay.totalInr,0);
+  assert.equal(emptyDay.projectedTotalInr,0);
 
   const ready = api.estimate({
     durationMs: 60 * 60 * 1000,

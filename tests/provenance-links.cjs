@@ -22,7 +22,7 @@ assert.match(source,/clock\(recording,offsetMs\)|clock\(recording,\s*offsetMs\)/
 assert.match(source,/SynapCloudHistory\?\.restoreRecording/,'a cloud-only cited recording must hydrate before source navigation');
 assert.match(source,/recording-content/,'source navigation must wait for lazy Library content before transcript/audio seek');
 assert.match(source,/SynapDashboardUI\?\.setView/,'source navigation must use the dashboard view owner when available');
-assert(html.includes('provenance-links.js?v=1.0.0-workspace1'),'production bootstrap must load provenance links');
+assert(html.includes('provenance-links.js?v=1.0.0-day-audio1'),'production bootstrap must load provenance links');
 assert(worker.includes("'./provenance-links.js'"),'offline shell must cache provenance links');
 
 console.log('PASS: summaries, notes, transcripts, timestamps and source audio stay on one recording provenance chain.');

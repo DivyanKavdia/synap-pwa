@@ -22,7 +22,7 @@ test('PWA exposes an authenticated rebuild action for existing recordings',()=>{
 test('cloud history loads and offline shell caches transcript repair',()=>{
   assert.match(history,/transcript-repair\.js\?v=1\.0\.0-transcript1/);
   assert.match(sw,/\.\/transcript-repair\.js/);
-  assert.match(sw,/1\.0\.0-shell34-transcript/);
+  assert.match(sw,/1\.0\.0-shell42-day-audio/);
 });
 
 test('backend rebuilds ready recordings without re-upload or retranscription and transcript assembly fails safe',()=>{

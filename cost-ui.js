@@ -132,15 +132,16 @@
   }
 
   function aggregate(values) {
-    return (values || []).reduce(function (sum, value) {
-      for (const key of [
+    const keys = [
         'minutes', 'memoryInputTokens', 'memoryOutputTokens', 'embeddingTokens',
         'transcribeInr', 'llmInputInr', 'llmOutputInr', 'memoryInr', 'embeddingInr',
         'llmProcessingInr', 'totalInr', 'projectedTranscribeInr', 'projectedMemoryInr',
         'projectedEmbeddingInr', 'projectedLlmProcessingInr', 'projectedTotalInr'
-      ]) sum[key] = (sum[key] || 0) + (Number(value?.[key]) || 0);
+      ];
+    return (values || []).reduce(function (sum, value) {
+      for (const key of keys) sum[key] += Number(value?.[key]) || 0;
       return sum;
-    }, {});
+    }, Object.fromEntries(keys.map(key => [key, 0])));
   }
 
   function money(value) {
