@@ -62,7 +62,7 @@
     if(items.length)container.querySelector('.brain-empty')?.remove();
     items.slice(0,conversationLimit).forEach(({r,c},index)=>{
       const item=conversationModel(r,c),key=item.key;keys.add(key);
-      let node=previous.get(key);if(!node){node=document.createElement('details');node.className='conversation-digest';node.dataset.key=key;node.open=index===0}
+      let node=previous.get(key);if(!node){node=document.createElement('details');node.className='conversation-digest';node.dataset.key=key;node.open=false}
       const markup=digestMarkup(item);if(node.__markup!==markup){node.innerHTML=markup;node.__markup=markup}
       if(container.children[index]!==node)container.insertBefore(node,container.children[index]||null);
     });

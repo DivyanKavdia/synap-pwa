@@ -8,8 +8,8 @@ const brain=fs.readFileSync(path.join(root,'brain-ui.js'),'utf8');
 const product=fs.readFileSync(path.join(root,'product-ui.js'),'utf8');
 const runtime=fs.readFileSync(path.join(root,'runtime-ui.js'),'utf8');
 
-test('refreshed shell presents the personal-memory identity',()=>{
-  assert.match(html,/<p class="brain-kicker">YOUR PERSONAL MEMORY<\/p>/);
+test('compact shell presents the day without redundant identity copy',()=>{
+  assert.match(html,/<h1 id="dayLensTitle">Today<\/h1>/);
   assert.doesNotMatch(html,/<p class="brain-kicker">YOUR SECOND BRAIN<\/p>/);
 });
 
@@ -29,7 +29,7 @@ test('static shell never paints a capitalized synap brand before runtime normali
   const end=html.indexOf('<script src="device-identity.js',start);
   const visibleShell=html.slice(start,end);
   assert.doesNotMatch(visibleShell,/\bSynap\b/);
-  assert.match(visibleShell,/Your day, in focus\./);
+  assert.match(visibleShell,/Day summary/);
   assert.match(visibleShell,/let synap listen/);
   assert.match(visibleShell,/Back to synap/);
 });

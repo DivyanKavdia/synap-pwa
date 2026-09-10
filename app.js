@@ -208,6 +208,7 @@ const APP_REVISION = "1.0.0-audio2";
   let diagnosticLines = [];
   let installPrompt = null;
   let renderedObjectUrls = [];
+  let waveformPalette = null;
   let databasePromise = null;
   let currentRecordingId = null;
   let openingCapture = null;
@@ -1914,12 +1915,16 @@ const APP_REVISION = "1.0.0-audio2";
 
     const centerY = height / 2;
     const gradient = context.createLinearGradient(0, 0, width, 0);
-    const dark = document.documentElement.dataset.theme === "dark";
-    gradient.addColorStop(0, dark ? "#5ce1ce55" : "#047a7055");
-    gradient.addColorStop(.5, dark ? "#c4adff" : "#6d28d9");
-    gradient.addColorStop(1, dark ? "#f798b855" : "#b72b5555");
+    const paletteKey = document.documentElement.dataset.theme + ':' + document.documentElement.dataset.palette;
+    if (waveformPalette?.key !== paletteKey) {
+      const style = getComputedStyle(document.documentElement);
+      waveformPalette = {key: paletteKey, colors: ['--accent', '--brand-indigo', '--brand-cyan', '--wave-grid'].map(name => style.getPropertyValue(name).trim())};
+    }
+    gradient.addColorStop(0, waveformPalette.colors[0]);
+    gradient.addColorStop(.5, waveformPalette.colors[1]);
+    gradient.addColorStop(1, waveformPalette.colors[2]);
 
-    context.strokeStyle = "rgba(173,207,235,.08)";
+    context.strokeStyle = waveformPalette.colors[3];
     context.lineWidth = ratio;
     context.beginPath();
     context.moveTo(0, centerY);
@@ -2216,9 +2221,10 @@ const APP_REVISION = "1.0.0-audio2";
   }
 
   function createInsightCard(recording) {
-    const card = document.createElement("article");
+    const card = document.createElement("details");
     card.className = "insight-card";
-    const top = document.createElement("div");
+    card.dataset.recordingId = String(recording.id);
+    const top = document.createElement("summary");
     top.className = "insight-top";
     const heading = document.createElement("h3");
     heading.textContent = recording.name;
@@ -2258,16 +2264,28 @@ const APP_REVISION = "1.0.0-audio2";
   }
 
   function renderInsights(recordings) {
-    ui.insightsList.replaceChildren();
+    const existing = new Map(Array.from(ui.insightsList.children).map(card => [card.dataset.recordingId, card]));
     const processed = recordings.filter(function (recording) {
       return Boolean((recording.summary && recording.summary.trim()) ||
         (recording.transcript && recording.transcript.trim()));
     });
     ui.insightsCount.textContent = String(processed.length);
     ui.emptyInsights.classList.toggle("hidden", processed.length > 0);
-    processed.forEach(function (recording) {
-      ui.insightsList.appendChild(createInsightCard(recording));
+    const retained = new Set();
+    processed.forEach(function (recording, index) {
+      const id = String(recording.id), previous = existing.get(id);
+      const signature = JSON.stringify([recording.name, recording.createdAt, recording.summary, recording.transcript, recording.meeting, recording.conversations]);
+      let card = previous;
+      if (!card || card.synapMemorySignature !== signature) {
+        card = createInsightCard(recording);
+        card.synapMemorySignature = signature;
+        card.open = Boolean(previous?.open);
+        previous?.remove();
+      }
+      retained.add(id);
+      if (ui.insightsList.children[index] !== card) ui.insightsList.insertBefore(card, ui.insightsList.children[index] || null);
     });
+    for (const [id, card] of existing) if (!retained.has(id)) card.remove();
   }
 
   async function renderRecordings() {

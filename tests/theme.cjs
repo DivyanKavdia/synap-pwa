@@ -1,16 +1,18 @@
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict');
 const root=path.join(__dirname,'..'),source=fs.readFileSync(path.join(root,'theme.js'),'utf8');
-function setup({saved=null,hour=12,blocked=false}={}){
+function setup({saved=null,palette='olive',hour=12,blocked=false}={}){
   const storage=new Map(saved?[['synap-appearance',saved]]:[]),events={},intervals=[],appended=[];
+  storage.set('synap-palette',palette);
   let currentHour=hour;
   class FakeDate{getHours(){return currentHour}}
   const buttons=['system','light','dark'].map(value=>({dataset:{themeChoice:value},attributes:{},setAttribute(k,v){this.attributes[k]=v;},addEventListener(t,f){this.click=f;}}));
+  const paletteButtons=['olive','blue','pink','lavender'].map(value=>({dataset:{paletteChoice:value},attributes:{},setAttribute(k,v){this.attributes[k]=v;},addEventListener(t,f){this.click=f;}}));
   const html={dataset:{},style:{},attributes:{},setAttribute(k,v){this.attributes[k]=v;}},meta={setAttribute(k,v){this[k]=v;}};
   const logos=[0,1].map(()=>({attributes:{src:'synap-logo-light.png?v=1.0.0-ui-fix1'},getAttribute(k){return this.attributes[k]},setAttribute(k,v){this.attributes[k]=v}}));
   const document={
     documentElement:html,readyState:'complete',hidden:false,
     querySelector(selector){if(selector.startsWith('meta['))return meta;return null;},
-    querySelectorAll(selector){return selector==='[data-theme-choice]'?buttons:selector==='.synap-brand-image'?logos:[];},
+    querySelectorAll(selector){return selector==='[data-theme-choice]'?buttons:selector==='[data-palette-choice]'?paletteButtons:selector==='.synap-brand-image'?logos:[];},
     getElementById(){return null;},
     createElement(tag){return {tag,dataset:{},set rel(v){this._rel=v},set href(v){this._href=v},set src(v){this._src=v},set defer(v){this._defer=v}};},
     head:{appendChild(node){appended.push(node);}},
@@ -18,9 +20,21 @@ function setup({saved=null,hour=12,blocked=false}={}){
   };
   const c={Date:FakeDate,document,history:{scrollRestoration:'auto'},window:{addEventListener(t,f){events[t]=f;}},localStorage:{getItem:k=>{if(blocked)throw Error('blocked');return storage.get(k);},setItem:(k,v)=>{if(blocked)throw Error('blocked');storage.set(k,v);}},setInterval(f,ms){intervals.push({f,ms});return intervals.length;}};
   vm.runInNewContext(source,c);
-  return {html,meta,buttons,logos,storage,events,intervals,appended,setHour:h=>{currentHour=h},document};
+  return {html,meta,buttons,paletteButtons,logos,storage,events,intervals,appended,setHour:h=>{currentHour=h},document};
 }
 const click=button=>button.click({preventDefault(){}});
+for(const palette of ['olive','blue','pink','lavender']){
+  const sample=setup({saved:'dark',palette});
+  assert.equal(sample.html.dataset.palette,palette);assert.equal(sample.html.dataset.theme,'dark');
+  click(sample.paletteButtons[2]);assert.equal(sample.html.dataset.palette,'pink');assert.equal(sample.html.dataset.theme,'dark');
+  assert.equal(sample.storage.get('synap-appearance'),'dark');assert.equal(sample.storage.get('synap-palette'),'pink');
+  assert(sample.logos.every(img=>img.attributes.src==='synap-logo-pink-dark.png?v=1.0.0-ui-fix1'));
+  click(sample.buttons[0]);sample.setHour(8);sample.intervals[0].f();assert.equal(sample.html.dataset.theme,'light');assert.equal(sample.html.dataset.palette,'pink');
+  sample.events.storage({key:'synap-palette',newValue:'blue'});assert.equal(sample.html.dataset.palette,'blue');assert.equal(sample.html.dataset.theme,'light');
+  sample.events.storage({key:null});assert.equal(sample.html.dataset.palette,'olive');assert.equal(sample.html.dataset.theme,'light');
+}
+assert.equal(setup({palette:'invalid'}).html.dataset.palette,'olive');
+{const sample=setup({blocked:true});click(sample.paletteButtons[3]);assert.equal(sample.html.dataset.palette,'lavender');}
 for(const saved of ['light','dark']){
   const sample=setup({saved});
   assert(sample.logos.every(img=>img.attributes.src===`synap-logo-${saved}.png?v=1.0.0-ui-fix1`),'both logos follow explicit app appearance');
@@ -37,7 +51,7 @@ assert.equal(t.buttons.filter(b=>b.attributes['aria-pressed']==='true').length,1
 assert.equal(setup({saved:'dark',hour:10}).html.dataset.theme,'dark');assert.equal(setup({saved:'invalid',hour:20}).html.dataset.theme,'dark');
 t=setup({blocked:true,hour:10});click(t.buttons[2]);assert.equal(t.html.dataset.theme,'dark','blocked storage does not block switching');t.events.storage({key:'synap-appearance',newValue:'light'});assert.equal(t.html.dataset.theme,'light');
 assert(t.appended.some(node=>node._href==='settings-icon-fix.css?v=1.0.0-ui-fix1'),'settings wordmark stylesheet is loaded after DOM is ready');
-assert(t.appended.some(node=>node._src==='capture-ui.js?v=1.0.0-ui-fix1'),'fresh capture UI is loaded');
+assert(t.appended.some(node=>node._src==='capture-ui.js?v=1.0.0-compact1'),'fresh capture UI is loaded');
 assert(t.appended.some(node=>node._src==='runtime-ui.js?v=1.0.0-ui-fix1'),'fresh runtime UI is loaded');
 const css=fs.readFileSync(path.join(root,'styles.css'),'utf8');
 const values=block=>Object.fromEntries([...block.matchAll(/--([\w-]+):([^;]+);/g)].map(m=>[m[1],m[2].trim()]));

@@ -44,6 +44,7 @@ async function assertWordmarks(page, mode) {
 }
 
 async function assertWeeklyReview(page, mode, width) {
+  await page.evaluate(()=>SynapCompactLayout.reveal('synapWeeklyReview'));
   // These generated records exist only in this isolated localhost test profile.
   await page.waitForFunction(()=>window.SynapProductivity&&document.querySelector('#synapWeekDetail .synap-week-source'));
   assert.equal(await page.locator('#synapWeekDetail .synap-week-source').first().getAttribute('data-recording-id'),'ui-sample');
@@ -125,6 +126,7 @@ async function assertDayReading(page,mode,width){
   assert.equal(await page.locator('.conversation-digest').count(),10,'all conversations remain accessible');
   assert.equal(await page.locator('#conversationPageCount').innerText(),'10 of 10 summaries');
   await page.locator('#today').screenshot({path:path.join(output,`day-reading-${mode}-${width}.png`)});
+  await page.locator('.conversation-digest').first().evaluate(node=>node.open=true);
   await page.locator('.conversation-source').first().click();
   await page.waitForFunction(()=>document.getElementById('recording-day-reading')?.open);
   await page.locator('.brain-tabs a[href="#today"]').click();
@@ -176,7 +178,8 @@ async function run() {
         .map(node => node.id || node.className));
       assert.deepEqual(overflow, [], `${mode}/${width}: horizontal overflow`);
       assert.equal(await page.locator('link[href^="compact.css"]').count(),1,'single presentation stylesheet');
-      assert(await page.locator('#startButton').isVisible());
+      assert(!(await page.locator('#startButton').isVisible()),'idle capture starts collapsed');
+      assert(await page.locator('#headerCaptureToggle').isVisible(),'persistent recording shortcut stays available');
       assert(await page.locator('#startButton').isDisabled());
       assert(!(await page.locator('#stopButton').isVisible()));
       if (width===390 || width===1440) {
@@ -191,6 +194,7 @@ async function run() {
         assert(await page.locator(href).isVisible());
       }
       // Focus tabs keep their selection through memory refresh and work by keyboard.
+      await page.locator('#dailyFocus .tile-toggle').click();
       await page.locator('#focusCommitments').focus();
       await page.keyboard.press('ArrowRight');
       assert.equal(await page.locator('#focusDecisions').getAttribute('aria-selected'),'true');
@@ -201,8 +205,8 @@ async function run() {
       await page.keyboard.press('Home');
       assert.equal(await page.locator('#focusCommitments').getAttribute('aria-selected'),'true');
       for (const target of ['synapWeeklyReview','peopleMemory','followupInbox']) {
-        await page.locator('[data-workspace-target="'+target+'"]').click();
-        assert.equal(await page.evaluate(()=>document.activeElement.id),target,'shortcut transfers keyboard focus');
+        await page.evaluate(id=>SynapCompactLayout.reveal(id),target);
+        assert(await page.locator('#'+target+'Body').isVisible(),'secondary tile opens without recreating content');
         await page.locator('.brain-tabs a[href="#today"]').click();
       }
       await page.locator('#settingsButton').click();
@@ -246,6 +250,7 @@ async function run() {
         await page.waitForTimeout(900);
         assert.equal(await page.locator('#glanceRecordings').innerText(),'1');
         assert.equal(await page.locator('#commitmentCount').innerText(),'1');
+        await page.locator('#conversationList .conversation-card').first().click();
         assert(await page.locator('#conversationList .digest-summary').innerText());
         assert.match(await page.locator('#conversationList .conversation-people').innerText(),/Alex/);
         await page.locator('#focusDecisions').click();
@@ -292,6 +297,7 @@ async function run() {
         await page.evaluate(()=>{document.body.dataset.state='disconnected'});
         await speech.screenshot({path:path.join(output,`speech-${mode}-${width}.png`)});
         await page.locator('.brain-tabs a[href="#today"]').click();
+        await page.locator('#conversationList .conversation-digest').first().evaluate(node=>node.open=true);
         await page.locator('#conversationList .conversation-source').first().click();
         await page.waitForFunction(()=>document.querySelector('#recording-ui-sample')?.open);
         await page.waitForTimeout(1000);
@@ -371,6 +377,7 @@ async function run() {
         assert.equal(await page.locator('#peopleList .person-card').count(),3,'compact recent people preview');
         assert((await page.locator('#peopleMemory').boundingBox()).height<380,'People stays compact');
         await page.screenshot({path:path.join(output,`people-${mode}-${width}.png`)});
+        await page.evaluate(()=>SynapCompactLayout.reveal('peopleMemory'));
         await page.locator('#peopleBrowseToggle').click();
         assert.equal(await page.locator('#peopleList .person-card').count(),14);
         assert((await page.locator('#peopleList').boundingBox()).height<=327,'expanded list has bounded height');
