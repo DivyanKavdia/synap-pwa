@@ -36,13 +36,21 @@
 
   function css(href,k,v){
     const target=String(href||'').split('?')[0].replace(/^\.\//,'');
-    const exists=[...document.querySelectorAll('link[rel="stylesheet"][href]')].some(link=>String(link.getAttribute('href')||'').split('?')[0].replace(/^\.\//,'')===target);
+    const exists=[...document.querySelectorAll('link[rel="stylesheet"][href]')].some(link=>{
+      const raw=String(link.getAttribute('href')||'');
+      if(!raw)return false;
+      return raw.split('?')[0].replace(/^\.\//,'')===target;
+    });
     if(exists||document.querySelector(`link[data-synap-${k}]`))return;
     const l=document.createElement('link');l.rel='stylesheet';l.href=href;l.dataset['synap'+k[0].toUpperCase()+k.slice(1)]=v;document.head.appendChild(l);
   }
   function script(src){
     const target=String(src||'').split('?')[0].replace(/^\.\//,'');
-    const exists=[...document.querySelectorAll('script[src]')].some(s=>String(s.getAttribute('src')||'').split('?')[0].replace(/^\.\//,'')===target);
+    const exists=[...document.querySelectorAll('script[src]')].some(s=>{
+      const raw=String(s.getAttribute('src')||'');
+      if(!raw)return false;
+      return raw.split('?')[0].replace(/^\.\//,'')===target;
+    });
     if(exists)return;
     const s=document.createElement('script');s.src=src;s.defer=true;document.head.appendChild(s);
   }
