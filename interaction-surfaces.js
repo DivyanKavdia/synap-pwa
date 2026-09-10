@@ -29,8 +29,65 @@ function makeSourceButton(x,kind){const b=document.createElement('button');b.typ
 function activeMode(){return $('.followup-tabs .active')?.dataset.follow||'mine'}
 function followData(){if(Array.isArray(canonicalFollowups))return canonicalFollowups.map(canonicalFollowEntry).filter(x=>x.text&&x.recordingId);return currentRecords.filter(r=>day(r.createdAt)===selected()).flatMap(followEntries).map(x=>({...x,recordingId:x.r.id}))}
 function renderFollowups(mode){const host=$('#followupList');if(!host)return;const entries=followData(),mineItems=entries.filter(x=>x.mine),waiting=entries.filter(x=>!x.mine),items=mode==='mine'?mineItems:mode==='waiting'?waiting:entries;const count=$('#followupCount');if(count)count.textContent=String(entries.length);host.replaceChildren();if(!items.length){const p=document.createElement('p');p.className='brain-empty';p.textContent='Nothing open right now.';host.appendChild(p);return}items.slice(0,30).forEach(x=>{if(x.id&&Array.isArray(canonicalFollowups)){const row=document.createElement('div');row.className='synap-follow-row';row.appendChild(makeSourceButton(x,x.mine?'mine':'waiting'));const done=document.createElement('button');done.type='button';done.className='synap-follow-done';done.dataset.followupId=x.id;done.textContent='Done';done.setAttribute('aria-label','Mark follow-up done');row.appendChild(done);host.appendChild(row)}else host.appendChild(makeSourceButton(x,x.mine?'mine':'waiting'))})}
-function renderCanonicalPeople(list){const host=$('#peopleList');if(!host)return;host.replaceChildren();const people=(list||[]).slice().sort((a,b)=>new Date(b.last_interaction_at||0)-new Date(a.last_interaction_at||0));if(!people.length){const p=document.createElement('p');p.className='brain-empty';p.textContent='People will appear after synap identifies them in processed conversations.';host.appendChild(p);return}for(const person of people.slice(0,30)){if(!person?.name||mine(person.name))continue;const b=document.createElement('button');b.type='button';b.className='person-card';b.dataset.person=person.name;b.dataset.personId=person.person_id||'';const avatar=document.createElement('span');avatar.className='person-avatar';avatar.textContent=String(person.name).charAt(0).toUpperCase();const copy=document.createElement('span'),strong=document.createElement('strong'),small=document.createElement('small');strong.textContent=person.name;small.textContent=person.role&&person.role!=='unknown'?person.role:((person.conversation_count||0)+' memor'+((person.conversation_count||0)===1?'y':'ies'));copy.append(strong,small);if(person.confirmed_by_user){const em=document.createElement('em');em.textContent='Confirmed';copy.appendChild(em)}b.append(avatar,copy);host.appendChild(b)}}
-function renderLocalPeople(list){const host=$('#peopleList'),api=root.SynapBrainUI;if(!host||!api?.derive)return;const d=api.derive(list);host.replaceChildren();if(!d.people?.length){const p=document.createElement('p');p.className='brain-empty';p.textContent='People will appear after synap identifies them in processed conversations.';host.appendChild(p);return}for(const person of d.people.slice(0,12)){const b=document.createElement('button');b.type='button';b.className='person-card';b.dataset.person=person.name;const avatar=document.createElement('span');avatar.className='person-avatar';avatar.textContent=String(person.name||'?').charAt(0).toUpperCase();const copy=document.createElement('span'),strong=document.createElement('strong'),small=document.createElement('small');strong.textContent=person.name;const topics=[...(person.topics||new Map())].sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>x[0]).join(' · ');small.textContent=person.role&&person.role!=='unknown'?person.role:(topics||person.count+' memories');copy.append(strong,small);const open=(d.waiting||[]).filter(x=>String(x.owner||'').toLowerCase()===String(person.name).toLowerCase()).length;if(open){const em=document.createElement('em');em.textContent=open+' open follow-up'+(open===1?'':'s');copy.appendChild(em)}b.append(avatar,copy);host.appendChild(b)}}
+const PEOPLE_PREVIEW_LIMIT=3;
+let peopleExpanded=false,peopleQuery='',peopleRows=[];
+function ensurePeopleControls(){
+  const section=$('#peopleMemory'),heading=section&&$('.section-heading',section);
+  if(!heading||$('#peopleBrowseToggle'))return;
+  const title=$('h2',heading),copy=$('.section-copy',heading);
+  if(copy)copy.textContent='The people in your conversations.';
+  const count=document.createElement('span');count.id='peopleCount';count.className='count-badge';title?.append(' ',count);
+  const toggle=document.createElement('button');toggle.id='peopleBrowseToggle';toggle.type='button';toggle.className='people-browse-toggle';
+  toggle.setAttribute('aria-controls','peopleList peopleSearch');heading.appendChild(toggle);
+  const search=document.createElement('label');search.id='peopleSearch';search.className='people-search';search.hidden=true;
+  search.innerHTML='<span class="sr-only">Find a person</span><input type="search" placeholder="Find a person…" aria-label="Find a person" autocomplete="off">';
+  heading.after(search);
+  toggle.addEventListener('click',()=>{
+    peopleExpanded=!peopleExpanded;
+    if(!peopleExpanded){peopleQuery='';$('input',search).value='';}
+    renderPeopleRows();
+    if(peopleExpanded)$('input',search).focus({preventScroll:true});
+  });
+  $('input',search).addEventListener('input',event=>{peopleQuery=event.target.value.trim().toLowerCase();renderPeopleRows()});
+}
+function renderPeopleRows(){
+  ensurePeopleControls();
+  const host=$('#peopleList');if(!host)return;
+  const section=$('#peopleMemory'),toggle=$('#peopleBrowseToggle'),count=$('#peopleCount'),search=$('#peopleSearch');
+  if(count)count.textContent=String(peopleRows.length);
+  if(toggle){toggle.hidden=peopleRows.length<=PEOPLE_PREVIEW_LIMIT&&!peopleExpanded;toggle.textContent=peopleExpanded?'Show less':'View all ('+peopleRows.length+')';toggle.setAttribute('aria-expanded',String(peopleExpanded));}
+  if(search)search.hidden=!peopleExpanded;
+  if(section)section.dataset.peopleExpanded=String(peopleExpanded);
+  const matches=peopleRows.filter(person=>!peopleQuery||(person.name+' '+person.detail).toLowerCase().includes(peopleQuery));
+  const shown=peopleExpanded?matches:matches.slice(0,PEOPLE_PREVIEW_LIMIT);
+  host.replaceChildren();
+  if(!shown.length){const empty=document.createElement('p');empty.className='brain-empty';empty.textContent=peopleRows.length?'No matching people. Try another name.':'People appear here after a conversation is processed.';host.appendChild(empty);return;}
+  for(const person of shown){
+    const button=document.createElement('button');button.type='button';button.className='person-card';button.dataset.person=person.name;
+    if(person.id)button.dataset.personId=person.id;
+    button.setAttribute('aria-label','Recall conversations with '+person.name);
+    const avatar=document.createElement('span');avatar.className='person-avatar';avatar.textContent=person.name.charAt(0).toUpperCase();avatar.setAttribute('aria-hidden','true');
+    const copy=document.createElement('span'),name=document.createElement('strong'),detail=document.createElement('small');
+    name.textContent=person.name;detail.textContent=person.detail;copy.append(name,detail);
+    if(person.open){const open=document.createElement('em');open.textContent=person.open+' open follow-up'+(person.open===1?'':'s');copy.appendChild(open);}
+    button.append(avatar,copy);host.appendChild(button);
+  }
+  root.SynapPeopleConfirmUI?.decorate?.();
+}
+function renderCanonicalPeople(list){
+  peopleRows=(list||[]).filter(p=>p?.name&&!mine(p.name)).slice().sort((a,b)=>new Date(b.last_interaction_at||0)-new Date(a.last_interaction_at||0))
+    .map(p=>({name:p.name,id:p.person_id||'',detail:p.role&&p.role!=='unknown'?p.role:(p.conversation_count||0)+' memor'+(p.conversation_count===1?'y':'ies')}));
+  renderPeopleRows();
+}
+function renderLocalPeople(list){
+  const api=root.SynapBrainUI;if(!api?.derive)return;
+  const data=api.derive(list);
+  peopleRows=(data.people||[]).map(p=>({
+    name:p.name,detail:p.role&&p.role!=='unknown'?p.role:([...p.topics].sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>x[0]).join(' · ')||p.count+' memories'),
+    open:(data.waiting||[]).filter(x=>String(x.owner||'').toLowerCase()===p.name.toLowerCase()).length
+  }));
+  renderPeopleRows();
+}
 async function loadCanonical(force=false){const api=root.SynapBackend;if(!signedIn()||!api)return false;if(!force&&canonicalAt&&Date.now()-canonicalAt<15000&&canonicalPeople&&canonicalFollowups)return true;const [p,f]=await Promise.allSettled([api.people?.(),api.followUps?.('open','all')]);if(p.status==='fulfilled'&&Array.isArray(p.value?.people))canonicalPeople=p.value.people;if(f.status==='fulfilled'&&Array.isArray(f.value?.follow_ups))canonicalFollowups=f.value.follow_ups;if(canonicalPeople||canonicalFollowups)canonicalAt=Date.now();return Boolean(canonicalPeople||canonicalFollowups)}
 async function refresh(forceCanonical=false){if(refreshing)return;refreshing=true;try{dedupe();currentRecords=await load().catch(()=>[]);await loadCanonical(forceCanonical);const list=currentRecords.filter(r=>day(r.createdAt)===selected());if(Array.isArray(canonicalPeople))renderCanonicalPeople(canonicalPeople);else renderLocalPeople(list);renderFollowups(activeMode());root.SynapPeopleConfirmUI?.decorate?.()}finally{refreshing=false}}
 async function markDone(id,button){const api=root.SynapBackend;if(!id||!api?.resolveFollowUp)return;button.disabled=true;const old=button.textContent;button.textContent='Saving…';try{await api.resolveFollowUp(id,'done');if(Array.isArray(canonicalFollowups))canonicalFollowups=canonicalFollowups.filter(x=>String(x.id)!==String(id));renderFollowups(activeMode());root.dispatchEvent?.(new CustomEvent('synap-follow-up-updated',{detail:{id,state:'done'}}))}catch(error){button.disabled=false;button.textContent=old;console.warn('[synap follow-up]',error)}}

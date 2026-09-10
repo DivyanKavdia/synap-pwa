@@ -12,7 +12,7 @@
   try{if(typeof location!=='undefined'&&location.hash&&typeof history?.replaceState==='function')history.replaceState(history.state,'',location.pathname+location.search)}catch(_){}
 
   const key='synap-appearance';
-  const SHELL_REVISION='1.0.0-brand2';
+  const SHELL_REVISION='1.0.0-ui-fix1';
   const root=document.documentElement;
   const valid=v=>['system','light','dark'].includes(v)?v:'system';
   let preference='system';
@@ -22,6 +22,10 @@
   function apply(){
     const mode=preference==='system'?autoMode():preference;
     root.dataset.theme=mode;root.setAttribute('data-theme',mode);root.style.colorScheme=mode;
+    document.querySelectorAll('.synap-brand-image').forEach(img=>{
+      const source='synap-logo-'+mode+'.png?v=1.0.0-ui-fix1';
+      if(img.getAttribute('src')!==source)img.setAttribute('src',source);
+    });
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content',mode==='dark'?'#101b17':'#f4f7f5');
     document.querySelectorAll('[data-theme-choice]').forEach(b=>{
       b.setAttribute('aria-pressed',String(b.dataset.themeChoice===preference));
@@ -74,16 +78,16 @@
     document.querySelectorAll('[data-theme-choice]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();choose(b.dataset.themeChoice)}));
     document.addEventListener('click',e=>{const b=e.target.closest?.('[data-theme-choice]');if(b){e.preventDefault();choose(b.dataset.themeChoice)}});
     installAISettings();
-    css('settings-icon-fix.css?v=1.0.0-brand2','settingsicon','brand2');
-    script('capture-ui.js?v=1.0.0-brand2');
+    css('settings-icon-fix.css?v=1.0.0-ui-fix1','settingsicon','brand2');
+    script('capture-ui.js?v=1.0.0-ui-fix1');
     script('brain-ui.js?v=0.0.1-brain7');
     script('ask-synap.js?v=1.0.0-ask1');
     script('product-ui.js?v=1.0.0-ui4');
-    script('runtime-ui.js?v=1.0.0-brand2');
+    script('runtime-ui.js?v=1.0.0-ui-fix1');
     script('dashboard-ui.js?v=1.0.0-refresh1');
     script('productivity-tools.js?v=1.0.0-productivity3');
     script('desktop-capture.js?v=1.0.0-desktop3');
-    script('interaction-surfaces.js?v=1.0.0-interactions2');
+    script('interaction-surfaces.js?v=1.0.0-ui-fix1');
     script('memory-ready-events.js?v=1.0.0-memory-events1');
     script('experience-recovery.js?v=1.0.0-source-recovery2');
     apply();
@@ -92,7 +96,7 @@
   // Core brand/brain styles are already declared in index.html. Do not inject
   // second copies with different cache-busters: stylesheet races were making
   // the same view render differently between launches.
-  css('compact.css?v=1.0.0-brand2','compact','brand2');
+  css('compact.css?v=1.0.0-ui-fix1','compact','brand2');
   window.addEventListener('storage',e=>{if(e.key===key||e.key===null){preference=valid(e.newValue);apply()}});
   window.addEventListener('focus',refreshAuto);window.addEventListener('pageshow',refreshAuto);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshAuto()});

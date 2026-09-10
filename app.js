@@ -148,6 +148,7 @@ const APP_REVISION = "1.0.0-audio2";
   let selectedDayKey = localDateKey(new Date());
   const LIBRARY_PAGE_SIZE = 5;
   let libraryRecordings = [];
+  let libraryScope = "all";
   let libraryVisibleCount = LIBRARY_PAGE_SIZE;
   let libraryRenderEpoch = 0;
 
@@ -2231,15 +2232,9 @@ const APP_REVISION = "1.0.0-audio2";
   async function renderRecordings() {
     const epoch = ++libraryRenderEpoch;
     const dayKey = selectedDayKey;
-    ui.recordingsList.querySelectorAll("audio").forEach(function (audio) { audio.pause(); });
-    renderedObjectUrls.forEach(function (url) {
-      URL.revokeObjectURL(url);
-    });
-    renderedObjectUrls = [];
-    ui.recordingsList.replaceChildren();
-    libraryRecordings = [];
-    libraryVisibleCount = LIBRARY_PAGE_SIZE;
-    ui.libraryPagination.hidden = true;
+    // Keep the current cards visible while IndexedDB/cloud hydration completes.
+    // Reconcile by recording ID below: replacing the list closes the tile and
+    // destroys its native audio player immediately after a source is opened.
 
     let recordings = [];
 
@@ -2257,12 +2252,17 @@ const APP_REVISION = "1.0.0-audio2";
     recordings.sort(function (a, b) {
       return new Date(b.createdAt) - new Date(a.createdAt);
     });
-    recordings = recordings.filter(function (recording) {
+    const dayRecordings = recordings.filter(function (recording) {
       return localDateKey(recording.createdAt) === dayKey;
     });
+    renderDayLens(dayRecordings);
+    renderInsights(dayRecordings);
+    if (libraryScope === "day") recordings = dayRecordings;
     ui.recordingsCount.textContent = String(recordings.length);
-    renderDayLens(recordings);
-    renderInsights(recordings);
+    const hint = document.getElementById("libraryScopeHint");
+    if (hint) hint.textContent = libraryScope === "all" ? "All recordings saved in this browser" : "Recordings for " + formatDate(dateFromKey(dayKey));
+    const emptyCopy = document.querySelector("#emptyRecordings p");
+    if (emptyCopy) emptyCopy.textContent = libraryScope === "all" ? "No recordings saved in this browser yet. Capture a moment, or sign in to restore your history." : "No recordings for this day. Choose All dates to see your other recordings.";
 
     ui.emptyRecordings.classList.toggle(
       "hidden",
@@ -2279,8 +2279,29 @@ const APP_REVISION = "1.0.0-audio2";
 
   function renderLibraryPage() {
     const count = Math.min(libraryVisibleCount, libraryRecordings.length);
-    for (let index = ui.recordingsList.children.length; index < count; index += 1) {
-      ui.recordingsList.appendChild(createRecordingCard(libraryRecordings[index]));
+    const validIds = new Set(libraryRecordings.map(recording => "recording-" + recording.id));
+    Array.from(ui.recordingsList.children).forEach(function (card) {
+      if (validIds.has(card.id)) return;
+      card.querySelectorAll("audio").forEach(function (audio) {
+        audio.pause();
+        const url = audio.src;
+        if (renderedObjectUrls.includes(url)) {
+          URL.revokeObjectURL(url);
+          renderedObjectUrls = renderedObjectUrls.filter(value => value !== url);
+        }
+      });
+      card.remove();
+    });
+    for (let index = 0; index < count; index += 1) {
+      const recording = libraryRecordings[index];
+      let card = Array.from(ui.recordingsList.children).find(node => node.id === "recording-" + recording.id);
+      if (card) updateRecordingCard(card, recording);
+      else card = createRecordingCard(recording);
+      const position = ui.recordingsList.children[index];
+      if (position !== card) {
+        if (position) ui.recordingsList.insertBefore(card, position);
+        else ui.recordingsList.appendChild(card);
+      }
     }
     Array.from(ui.recordingsList.children).forEach(function (card, index) {
       card.hidden = index >= count;
@@ -2295,6 +2316,37 @@ const APP_REVISION = "1.0.0-audio2";
     ui.showMoreRecordingsButton.hidden = remaining <= 0;
     ui.showMoreRecordingsButton.textContent = "Show " + Math.min(LIBRARY_PAGE_SIZE, remaining) + " more";
     ui.showLessRecordingsButton.hidden = count <= LIBRARY_PAGE_SIZE;
+  }
+
+  function updateRecordingCard(card, recording) {
+    Object.assign(card.synapRecording, recording);
+    const name = card.querySelector(".recording-row-name");
+    if (name) name.textContent = recording.name || "Untitled recording";
+    const meta = card.querySelector(".recording-row-meta");
+    if (meta) meta.textContent = new Date(recording.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " · " + formatDuration(recording.durationMs);
+    const content = card.querySelector(".recording-content");
+    if (!content) return;
+    // Update generated evidence in place, never replace a playing audio element
+    // or an editable note/name field while a background refresh is arriving.
+    let transcript = content.querySelector(".recording-transcript");
+    if (recording.transcript && !transcript) {
+      transcript = document.createElement("textarea");
+      transcript.className = "recording-transcript";
+      transcript.setAttribute("aria-label", "Transcript");
+      transcript.readOnly = true;
+      content.appendChild(recordingDisclosure("Transcript", transcript));
+    }
+    if (transcript && document.activeElement !== transcript) {
+      if (recording.processingStage === "ready" || recording.summary) transcript.readOnly = true;
+      if (transcript.readOnly) transcript.value = recording.transcript || "";
+    }
+    let summary = content.querySelector(".recording-summary");
+    if (recording.summary && !summary) {
+      summary = document.createElement("p");
+      summary.className = "recording-summary";
+      content.appendChild(recordingDisclosure("Summary", summary));
+    }
+    if (summary) summary.textContent = recording.summary || "";
   }
 
   function revealRecording(id) {
@@ -2315,6 +2367,7 @@ const APP_REVISION = "1.0.0-audio2";
     const card = document.createElement("details");
     card.className = "recording-card recording-accordion";
     card.id = "recording-" + recording.id;
+    card.synapRecording = recording;
     const summary = document.createElement("summary");
     summary.className = "recording-row";
     const info = document.createElement("span");
@@ -2943,6 +2996,16 @@ const APP_REVISION = "1.0.0-audio2";
 
   function bindEvents() {
     bindCoreControls();
+    document.querySelectorAll("[data-library-scope]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        libraryScope = button.dataset.libraryScope === "day" ? "day" : "all";
+        libraryVisibleCount = LIBRARY_PAGE_SIZE;
+        document.querySelectorAll("[data-library-scope]").forEach(function (choice) {
+          choice.setAttribute("aria-pressed", String(choice.dataset.libraryScope === libraryScope));
+        });
+        renderRecordings();
+      });
+    });
     ui.showMoreRecordingsButton.addEventListener("click", function () {
       libraryVisibleCount += LIBRARY_PAGE_SIZE;
       renderLibraryPage();
