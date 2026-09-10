@@ -3,11 +3,12 @@ import { config } from '../config.js';
 import { log } from '../util/log.js';
 import { errorHandler } from './errors.js';
 import { authRoutes } from './routes/auth.js';
-import { askV2Routes } from './routes/ask-v2.js';
+import { askV3Routes } from './routes/ask-v3.js';
 import { brainRoutes } from './routes/brain.js';
 import { memoryToolRoutes } from './routes/memory-tools.js';
 import { recordingRoutes } from './routes/recordings.js';
 import { retryRoutes } from './routes/retry.js';
+import { sourceRoutes } from './routes/source.js';
 import { taskRoutes } from './routes/tasks.js';
 import { voiceProfileRoutes } from './routes/voice-profile.js';
 
@@ -80,17 +81,6 @@ export function createApp(): Express {
   // ignores audio/wav and remains scoped to normal API payloads.
   app.use(express.json({ limit: '2mb' }));
 
-  /**
-   * Health, and which build is answering.
-   *
-   * Cloud Run serves the same service on two hostnames and numbers revisions
-   * independently of anything in git, so "did my fix actually deploy?" was only
-   * answerable by probing behaviour and inferring. Reporting the commit removes
-   * the guesswork: curl it and compare against git.
-   *
-   * Unknown values are reported as such rather than omitted, so a build that
-   * forgot to pass them is visibly unidentified instead of quietly looking fine.
-   */
   app.get('/health', (_req, res) => {
     res.status(200).json({
       status: 'ok',
@@ -103,28 +93,18 @@ export function createApp(): Express {
 
   app.use('/v1', authRoutes());
 
-  // Task routes MUST be mounted before any router that calls
-  // router.use(requireAuth()).
-  //
-  // Express runs a router's path-less middleware for every request that enters
-  // it, before matching a single route. Every router below applies requireAuth
-  // that way, so mounting them first meant POST /v1/tasks/process entered
-  // recordingRoutes, was checked as a user session token, and was rejected in
-  // ~2ms — a Cloud Tasks OIDC token is not a Synap session JWT and never could
-  // be. Cloud Tasks then retried to its 10-minute backoff ceiling and gave up,
-  // so no recording was ever processed by the queue. Only the PWA's
-  // /process-now fallback completed anything, which is why short recordings
-  // looked fine and long ones silently came back partial.
+  // Cloud Tasks OIDC must reach its task guard before any blanket user-session
+  // router. This ordering is load-bearing for long recording completion.
   app.use('/v1', taskRoutes());
 
-  // Ask v2 uses route-scoped user authentication, so it can safely sit ahead of
-  // the blanket-auth routers without intercepting Cloud Tasks or unrelated API
-  // calls. It grounds answers in the actual encrypted transcript evidence and
-  // supplements the existing semantic conversation index with lexical recall
-  // over completed historical recordings.
-  app.use('/v1', askV2Routes());
+  // Source recovery and Ask use route-scoped user auth. They intentionally sit
+  // ahead of recordingRoutes(), which applies requireAuth() to every path that
+  // enters that router. The source route reconstructs transcripts from durable
+  // segment windows and exposes retained encrypted source audio to the owner.
+  app.use('/v1', sourceRoutes());
+  app.use('/v1', askV3Routes());
 
-  // Retry is also route-scoped: a failed cloud task needs a fresh task identity,
+  // Retry is route-scoped too: a failed cloud task needs a fresh task identity,
   // and replaying finalize cannot provide one because finalize is intentionally
   // idempotent.
   app.use('/v1', retryRoutes());
