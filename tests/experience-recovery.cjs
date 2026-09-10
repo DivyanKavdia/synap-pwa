@@ -20,6 +20,14 @@ assert.match(runtime, /SynapAuth\.authedFetch/);
 assert.match(source, /openBytes/);
 assert.match(source, /X-Synap-Audio-Gaps/);
 
+// A stale/revoked blob URL is still a non-empty src, so loading logic alone
+// cannot detect it. A media decode/load error must explicitly fall through to
+// the authenticated cloud copy and must not loop if cloud decoding also fails.
+assert.match(runtime, /addEventListener\('error'[\s\S]*recoverMediaError\(audio\)/);
+assert.match(runtime, /function recoverMediaError\(audio\)/);
+assert.match(runtime, /audio\.dataset\.synapAudioSource === 'cloud'/);
+assert.match(runtime, /cloudFallback\(audio, id\)/);
+
 // Opening a recording must hydrate from the authoritative source, not treat any
 // non-empty local transcript as proof that the transcript is complete.
 assert.match(runtime, /\/source/);
@@ -42,4 +50,4 @@ assert(app.indexOf("app.use('/v1', askV3Routes())") < app.indexOf("app.use('/v1'
 assert.match(theme, /experience-recovery\.js\?v=1\.0\.0-source-recovery1/);
 assert.match(sw, /\.\/experience-recovery\.js/);
 
-console.log('PASS: source recovery keeps playback, full transcript hydration and Ask on one durable evidence path.');
+console.log('PASS: source recovery keeps playback, media-error fallback, full transcript hydration and Ask on one durable evidence path.');
