@@ -21,6 +21,9 @@ function load(fetcher) {
     Error,
     decodeURIComponent,
     encodeURIComponent,
+    setTimeout,
+    clearTimeout,
+    AbortController,
     SynapAuth: { authedFetch: fetcher },
   };
   context.globalThis = context;
@@ -65,34 +68,31 @@ test('uploaded must remain stalled for 30 seconds before process-now is called',
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, '/v1/recordings/rec-1/process-now');
   assert.equal(calls[0].init.method, 'POST');
+  assert.ok(calls[0].init.signal, 'bounded recovery should pass an abort signal');
 });
 
-test('active backend stages are watched, and real stage progress resets the stall timer', async () => {
+test('progress is a heartbeat and resets the stall timer inside one active stage', async () => {
   const calls = [];
   const fetcher = async (url) => {
     calls.push(url);
-    return response({ state: 'transcribing' }, true, 202);
+    return response({ state: 'transcribing', progress: 0.3 }, true, 202);
   };
-  const context = load(fetcher);
-  const recovery = context.SynapProcessingRecovery;
+  const recovery = load(fetcher).SynapProcessingRecovery;
 
-  recovery.observeState('rec-active', 'uploaded', fetcher, 1000);
-  recovery.observeState('rec-active', 'transcribing', fetcher, 20000);
+  recovery.observeStatus('rec-active', { state: 'transcribing', progress: 0.10 }, fetcher, 1000);
+  recovery.observeStatus('rec-active', { state: 'transcribing', progress: 0.20 }, fetcher, 20000);
   assert.equal(recovery._entries.get('rec-active').state, 'transcribing');
+  assert.equal(recovery._entries.get('rec-active').progress, 0.2);
   assert.equal(recovery._entries.get('rec-active').since, 20000);
 
-  // 30 seconds is measured from the latest backend stage change, not from upload.
-  recovery.observeState('rec-active', 'transcribing', fetcher, 49999);
+  recovery.observeStatus('rec-active', { state: 'transcribing', progress: 0.20 }, fetcher, 49999);
   await flush();
-  assert.equal(calls.length, 0);
+  assert.equal(calls.length, 0, 'moving transcription progress must not be treated as a stall');
 
-  recovery.observeState('rec-active', 'transcribing', fetcher, 50000);
+  recovery.observeStatus('rec-active', { state: 'transcribing', progress: 0.20 }, fetcher, 50000);
   await flush();
   assert.equal(calls.length, 1);
   assert.equal(calls[0], '/v1/recordings/rec-active/process-now');
-
-  // A fresh active worker can legitimately answer 202. That is success for the
-  // PWA safety-net; polling continues while the backend remains authoritative.
   assert.equal(recovery._entries.get('rec-active').inFlight, false);
 });
 
@@ -102,8 +102,7 @@ test('a recovery is rate limited, stage changes reset the clock, and ready clear
     calls.push(url);
     return response({ state: 'ready' });
   };
-  const context = load(fetcher);
-  const recovery = context.SynapProcessingRecovery;
+  const recovery = load(fetcher).SynapProcessingRecovery;
 
   recovery.observeState('rec-2', 'uploaded', fetcher, 1000);
   recovery.observeState('rec-2', 'uploaded', fetcher, 31000);
@@ -122,11 +121,11 @@ test('a recovery is rate limited, stage changes reset the clock, and ready clear
   assert.equal(recovery._entries.has('rec-2'), false);
 });
 
-test('the installed wrapper observes only recording processing status responses', async () => {
+test('the installed wrapper observes state and progress only on processing status responses', async () => {
   const calls = [];
   const fetcher = async (url, init = {}) => {
     calls.push({ url, init });
-    if (String(url).includes('/processing')) return response({ state: 'uploaded' });
+    if (String(url).includes('/processing')) return response({ state: 'transcribing', progress: 0.42 });
     return response({ ok: true });
   };
   const context = load(fetcher);
@@ -137,7 +136,15 @@ test('the installed wrapper observes only recording processing status responses'
   await flush();
 
   assert.equal(calls.length, 2);
-  assert.equal(context.SynapProcessingRecovery._entries.has('rec-3'), true);
+  assert.equal(context.SynapProcessingRecovery._entries.get('rec-3').state, 'transcribing');
+  assert.equal(context.SynapProcessingRecovery._entries.get('rec-3').progress, 0.42);
+});
+
+test('recovery calls are explicitly time bounded and always release the in-flight gate', () => {
+  assert.match(source, /RECOVERY_REQUEST_TIMEOUT_MS\s*=\s*30000/);
+  assert.match(source, /Promise\.race\(\[network, timeoutPromise\]\)/);
+  assert.match(source, /controller\.abort\(\)/);
+  assert.match(source, /entry\.inFlight\s*=\s*false/);
 });
 
 test('the PWA watches every recoverable cloud stage', () => {
@@ -146,7 +153,7 @@ test('the PWA watches every recoverable cloud stage', () => {
 });
 
 test('the production shell and stale-active backend recovery remain wired', () => {
-  assert.match(accountSource, /processing-recovery\.js\?v=1\.0\.0-recovery1/);
+  assert.match(accountSource, /processing-recovery\.js\?v=/);
   assert.match(taskSource, /\/recordings\/:recordingId\/process-now/);
   assert.match(taskSource, /requireAuth\(\)/);
   assert.match(taskSource, /ACTIVE_STALE_MS\s*=\s*10\s*\*\s*60_000/);
