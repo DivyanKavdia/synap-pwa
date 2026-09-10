@@ -46,8 +46,9 @@ assert.match(ask, /groundedFallback/);
 assert(app.indexOf("app.use('/v1', sourceRoutes())") < app.indexOf("app.use('/v1', recordingRoutes())"));
 assert(app.indexOf("app.use('/v1', askV3Routes())") < app.indexOf("app.use('/v1', recordingRoutes())"));
 
-// The recovery runtime must actually ship in both online and installed-PWA paths.
-assert.match(theme, /experience-recovery\.js\?v=1\.0\.0-source-recovery1/);
+// The recovery runtime must ship in both online and installed-PWA paths. The
+// source-recovery2 cache-buster contains the stale-media-url fallback from PR #43.
+assert.match(theme, /experience-recovery\.js\?v=1\.0\.0-source-recovery2/);
 assert.match(sw, /\.\/experience-recovery\.js/);
 
 console.log('PASS: source recovery keeps playback, media-error fallback, full transcript hydration and Ask on one durable evidence path.');

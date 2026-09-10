@@ -42,21 +42,28 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
 
   assert.doesNotMatch(events, /script\.src=['"]audio-codec-v3/);
   assert.match(sw, /1\.0\.0-shell33-power/);
+  assert.match(sw, /1\.0\.0-stable-ui1/);
   assert.match(sw, /\.\/dashboard-ui\.js/);
   assert.match(sw, /\.\/ask-synap\.js/);
   assert.match(sw, /\.\/sleep-state-guard\.js/);
   assert.match(sw, /\.\/runtime-compat\.js/);
   assert.match(sw, /\.\/processing-recovery\.js/);
-  assert.match(theme, /dashboard-ui\.js\?v=1\.0\.0-dashboard1/);
+  assert.match(theme, /dashboard-ui\.js\?v=1\.0\.0-stable-shell1/);
   assert.match(theme, /ask-synap\.js\?v=1\.0\.0-ask1/);
   assert.match(theme, /sleep-state-guard\.js\?v=1\.0\.0-power1/);
   assert.match(theme, /recording-bridge\.js\?v=1\.0\.0-touch5/);
   assert.match(ask, /SynapAuth\.authedFetch\(ASK_ENDPOINT/);
   assert.match(ask, /const ASK_ENDPOINT = '\/v1\/ask'/);
-  assert.match(dashboard, /todayActionsCollapse/);
-  assert.match(dashboard, /todayConversationCollapse/);
-  assert.match(dashboard, /data-synap-view/);
+
+  // UI architecture: all product surfaces stay mounted. The dashboard only
+  // navigates to them; it never collapses/reparents or display:none's the app.
+  assert.match(dashboard, /capture:'#capture'/);
+  assert.match(dashboard, /scrollIntoView/);
+  assert.match(dashboard, /IntersectionObserver/);
   assert.match(dashboard, /overflow-x:clip/);
+  assert.doesNotMatch(dashboard, /function wrapActions|function wrapConversations/);
+  assert.doesNotMatch(dashboard, /data-synap-view="today"[^\n]*display:none/);
+
   assert(html.indexOf('runtime-compat.js') < html.indexOf('app.js'), 'runtime compatibility must load before app initialization');
   assert.match(compat, /settingsButton\.addEventListener\('click'/);
   assert.match(compat, /if \(dialog\.open\) return/);

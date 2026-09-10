@@ -9,13 +9,10 @@
   }
 
   if(typeof history!=='undefined'&&'scrollRestoration'in history)history.scrollRestoration='manual';
-  try{
-    if(typeof location!=='undefined'&&location.hash&&typeof history?.replaceState==='function'){
-      history.replaceState(history.state,'',location.pathname+location.search);
-    }
-  }catch(_){}
+  try{if(typeof location!=='undefined'&&location.hash&&typeof history?.replaceState==='function')history.replaceState(history.state,'',location.pathname+location.search)}catch(_){}
+
   const key='synap-appearance';
-  const SHELL_REVISION='1.0.0-dashboard2-ask';
+  const SHELL_REVISION='1.0.0-stable-shell1';
   const root=document.documentElement;
   const valid=v=>['system','light','dark'].includes(v)?v:'system';
   let preference='system';
@@ -36,10 +33,16 @@
   }
   function choose(value){preference=valid(value);try{localStorage.setItem(key,preference)}catch(_){}apply()}
   function refreshAuto(){if(preference==='system')apply()}
+
   function css(href,k,v){
-    if(document.querySelector(`link[data-synap-${k}]`))return;
-    const l=document.createElement('link');l.rel='stylesheet';l.href=href;
-    l.dataset['synap'+k[0].toUpperCase()+k.slice(1)]=v;document.head.appendChild(l);
+    const target=String(href||'').split('?')[0].replace(/^\.\//,'');
+    const exists=[...document.querySelectorAll('link[rel="stylesheet"][href]')].some(link=>{
+      const raw=String(link.getAttribute('href')||'');
+      if(!raw)return false;
+      return raw.split('?')[0].replace(/^\.\//,'')===target;
+    });
+    if(exists||document.querySelector(`link[data-synap-${k}]`))return;
+    const l=document.createElement('link');l.rel='stylesheet';l.href=href;l.dataset['synap'+k[0].toUpperCase()+k.slice(1)]=v;document.head.appendChild(l);
   }
   function script(src){
     const target=String(src||'').split('?')[0].replace(/^\.\//,'');
@@ -52,6 +55,7 @@
     const s=document.createElement('script');s.src=src;s.defer=true;document.head.appendChild(s);
   }
   function $(id){return typeof document.getElementById==='function'?document.getElementById(id):null}
+
   function installAISettings(){
     if(typeof document.getElementById!=='function')return;
     const fields=document.querySelector('.processing-fields'),endpoint=$('endpointInput'),llm=$('llmEndpointInput'),token=$('tokenInput');
@@ -65,6 +69,7 @@
     token.placeholder='sk-…';token.autocomplete='off';fields.prepend(p,models,custom);
     script('ai-providers.js?v=0.0.1-brain3');script('sleep-state-guard.js?v=1.0.0-power1');script('recording-bridge.js?v=1.0.0-touch5');
   }
+
   function bind(){
     document.querySelectorAll('[data-theme-choice]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();choose(b.dataset.themeChoice)}));
     document.addEventListener('click',e=>{const b=e.target.closest?.('[data-theme-choice]');if(b){e.preventDefault();choose(b.dataset.themeChoice)}});
@@ -75,17 +80,19 @@
     script('ask-synap.js?v=1.0.0-ask1');
     script('product-ui.js?v=1.0.0-ui4');
     script('runtime-ui.js?v=1.0.0-runtime3');
-    script('dashboard-ui.js?v=1.0.0-dashboard1');
+    script('dashboard-ui.js?v=1.0.0-stable-shell1');
     script('productivity-tools.js?v=1.0.0-productivity3');
     script('desktop-capture.js?v=1.0.0-desktop3');
     script('interaction-surfaces.js?v=1.0.0-interactions2');
     script('memory-ready-events.js?v=1.0.0-memory-events1');
-    script('experience-recovery.js?v=1.0.0-source-recovery1');
+    script('experience-recovery.js?v=1.0.0-source-recovery2');
     apply();
   }
-  css('brand.css?v=1.0.0-brain1','brand','brain1');
-  css('compact.css?v=0.0.1-ui3','compact','ui3');
-  css('brain.css?v=0.0.1-brain10','brain','brain10');
+
+  // Core brand/brain styles are already declared in index.html. Do not inject
+  // second copies with different cache-busters: stylesheet races were making
+  // the same view render differently between launches.
+  css('compact.css?v=1.0.0-stable-shell1','compact','stable-shell1');
   window.addEventListener('storage',e=>{if(e.key===key||e.key===null){preference=valid(e.newValue);apply()}});
   window.addEventListener('focus',refreshAuto);window.addEventListener('pageshow',refreshAuto);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshAuto()});
