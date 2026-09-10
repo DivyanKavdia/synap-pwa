@@ -9,6 +9,7 @@ const historySource = fs.readFileSync(path.join(root, 'cloud-history.js'), 'utf8
 const captureSource = fs.readFileSync(path.join(root, 'capture-stability.js'), 'utf8');
 const pipelineSource = fs.readFileSync(path.join(root, 'processing-pipeline-ui.js'), 'utf8');
 const transcriptRepairSource = fs.readFileSync(path.join(root, 'transcript-repair.js'), 'utf8');
+const memoryReadySource = fs.readFileSync(path.join(root, 'memory-ready-events.js'), 'utf8');
 
 function loadHistory() {
   const context = {
@@ -55,7 +56,7 @@ assert.match(historySource, /datePicker/,
 assert.match(historySource, /classList\.contains\('recording-card'\)/,
   'opening a recording should be an explicit targeted transcript trigger');
 assert.match(historySource, /synap-memory-ready/,
-  'a completed summary should immediately trigger the completed memory refresh');
+  'a durable completed memory should immediately trigger the completed memory refresh');
 
 const pipelineCode = pipelineSource
   .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -75,8 +76,12 @@ assert.doesNotMatch(repairCode, /location\s*\.\s*reload\s*\(/,
   'manual transcript repair must update in place rather than refreshing the whole PWA');
 assert.match(transcriptRepairSource, /recordingMemory/,
   'targeted recording memory fetch should be available for expand/transcript actions');
-assert.match(transcriptRepairSource, /kind==='consolidate'/,
-  'summary completion should emit a memory-ready event');
+assert.doesNotMatch(transcriptRepairSource, /kind==='consolidate'\)emit\('synap-memory-ready'/,
+  'model completion must not announce ready before the recording commit');
+assert.match(memoryReadySource, /Processor\.prototype\.execute/,
+  'durable readiness must hook the FIFO execute boundary after finishJob');
+assert.match(memoryReadySource, /processingStage==='ready'|processingState==='done'/,
+  'durable readiness must verify committed ready/done state before emitting');
 
 assert.doesNotMatch(captureSource, /\bconnect\s*\.\s*click\s*\(/,
   'capture stability must not run a second synthetic reconnect loop');
@@ -85,4 +90,4 @@ assert.doesNotMatch(captureSource, /start\s*\.\s*click\s*\(/,
 assert.match(captureSource, /beginTransportEpoch/,
   'sequence continuity remains available for a future same-recording transport resume');
 
-console.log('PASS: Synap refresh is event-driven, in-place, BLE-safe and does not split recordings on reconnect.');
+console.log('PASS: Synap refresh is event-driven, post-commit, in-place, BLE-safe and does not split recordings on reconnect.');
