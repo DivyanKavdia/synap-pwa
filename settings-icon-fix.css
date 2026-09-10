@@ -28,9 +28,9 @@
   box-shadow:none!important;
   filter:none!important;
 }
-/* Home uses the same source artwork and turns it white in dark mode. Keep Settings identical. */
+/* The self-contained wordmark adapts to the embedding page color scheme. */
 :root[data-theme="dark"] .pendant-settings-top .settings-brand-logo{
-  filter:brightness(0) invert(1)!important;
+  filter:none!important;
 }
 :root[data-theme="dark"] .pendant-settings-top .settings-device-art.settings-brand-lockup{
   background:transparent!important;

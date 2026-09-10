@@ -20,12 +20,12 @@ test('startup reset remains isolated while explicit tab navigation is controlled
   assert.match(runtime,/history\.replaceState\(history\.state,'',location\.pathname\+location\.search\)/);
 });
 
-test('restored Home and Settings wordmarks retain pre-consolidation styling',()=>{
+test('Home and Settings share the self-theming wordmark',()=>{
   const home=html.match(/class="brand-logo synap-brand-image"\s+src="([^"]+)"/);
   const settings=html.match(/class="synap-brand-image settings-brand-logo"\s+src="([^"]+)"/);
   assert(home&&settings,'both wordmarks must exist');
   assert.equal(settings[1],home[1]);
-  assert.match(brandCss,/:root\[data-theme="dark"\] \.pendant-settings-top \.settings-brand-logo[\s\S]*brightness\(0\) invert\(1\)!important/);
+  assert.match(brandCss,/:root\[data-theme="dark"\] \.pendant-settings-top \.settings-brand-logo[\s\S]*filter:none!important/);
   assert.match(runtime,/bindSettingsBrand/);
   assert.match(runtime,/home-wordmark/);
 });

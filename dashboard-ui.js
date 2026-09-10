@@ -21,7 +21,6 @@
     if(!style){style=document.createElement('style');style.id=STYLE_ID;document.head.appendChild(style)}
     style.textContent=`
 html,body{max-width:100%;overflow-x:clip}
-body{background:radial-gradient(circle at 50% -10%,color-mix(in srgb,var(--accent) 8%,transparent),transparent 34%),var(--bg)}
 main{display:block!important}
 body[data-synap-view] #today,
 body[data-synap-view] #insights,
@@ -37,7 +36,6 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
 .brain-tabs:has(a[href="#capture"]):has(a[href="#ask"]){grid-template-columns:repeat(5,minmax(0,1fr))!important}
 .brain-tabs a{touch-action:manipulation}
 .brain-tabs a.active{font-weight:800}
-@media(min-width:760px){.app-shell{max-width:980px}.brain-home,#insights,#followupInbox,#peopleMemory,#ask,#capture,#library{max-width:860px;margin-left:auto!important;margin-right:auto!important}}
 `;
   }
 
@@ -67,6 +65,8 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
     navLockUntil=Date.now()+900;
     const target=sectionFor(next);
     if(target){
+      if(!target.hasAttribute('tabindex'))target.setAttribute('tabindex','-1');
+      target.focus({preventScroll:true});
       const reduced=typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
       target.scrollIntoView({behavior:reduced?'auto':'smooth',block:'start'});
       return true;
@@ -76,9 +76,14 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
   }
 
   function currentVisibleView(){
+    // Today and Capture share the first desktop row; opening the app starts on
+    // Today, while an explicit Capture selection remains authoritative there.
+    if(window.scrollY<4)return activeView==='capture'?'capture':'today';
     const header=$('.topbar');
     const top=(header?.getBoundingClientRect().bottom||64)+18;
-    const bottom=window.innerHeight-Math.max(78,$('.brain-tabs')?.offsetHeight||0);
+    // A desktop side rail does not obscure the bottom of the viewport.
+    const nav=$('.brain-tabs')?.getBoundingClientRect();
+    const bottom=nav&&nav.top>window.innerHeight/2?nav.top-12:window.innerHeight;
     let best={view:'today',score:-1};
     for(const [view,selector] of Object.entries(VIEW_IDS)){
       const node=$(selector);if(!node)continue;

@@ -60,7 +60,7 @@
       const homeLogo=document.querySelector('.topbar .brand-logo');
       const settingsLogo=document.querySelector('.pendant-settings-top .settings-brand-logo');
       if(!settingsLogo)return;
-      const source=homeLogo?.getAttribute('src')||'logo.webp?v=1.0.0';
+      const source=homeLogo?.getAttribute('src')||'synap-logo.svg?v=1.0.0-brand2';
       if(settingsLogo.getAttribute('src')!==source)settingsLogo.setAttribute('src',source);
       settingsLogo.alt='synap';
       settingsLogo.removeAttribute('width');

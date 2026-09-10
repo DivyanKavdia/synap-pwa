@@ -8,8 +8,8 @@ const brain=fs.readFileSync(path.join(root,'brain-ui.js'),'utf8');
 const product=fs.readFileSync(path.join(root,'product-ui.js'),'utf8');
 const runtime=fs.readFileSync(path.join(root,'runtime-ui.js'),'utf8');
 
-test('Sep 4 official fallback uses Digital Twin identity',()=>{
-  assert.match(html,/<p class="brain-kicker">YOUR DIGITAL TWIN<\/p>/);
+test('refreshed shell presents the personal-memory identity',()=>{
+  assert.match(html,/<p class="brain-kicker">YOUR PERSONAL MEMORY<\/p>/);
   assert.doesNotMatch(html,/<p class="brain-kicker">YOUR SECOND BRAIN<\/p>/);
 });
 
@@ -29,7 +29,7 @@ test('static shell never paints a capitalized synap brand before runtime normali
   const end=html.indexOf('<script src="device-identity.js',start);
   const visibleShell=html.slice(start,end);
   assert.doesNotMatch(visibleShell,/\bSynap\b/);
-  assert.match(visibleShell,/What synap remembers/);
+  assert.match(visibleShell,/The moments that matter\./);
   assert.match(visibleShell,/let synap listen/);
   assert.match(visibleShell,/Back to synap/);
 });
@@ -53,4 +53,4 @@ test('rich synap UI feature modules remain present without exposing developer re
   assert.match(product,/Create memories automatically/);
 });
 
-console.log('PASS: Sep 4 Digital Twin release identity, lowercase brand rendering and rich UI fallback contract');
+console.log('PASS: personal-memory identity, lowercase brand rendering and rich UI fallback contract');
