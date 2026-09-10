@@ -17,7 +17,7 @@ const block=(from,to)=>source.slice(source.indexOf(from),source.indexOf(to));
   // The compact connection card must preserve actionable update failures on disconnect.
   const stateNodes=new Map();const stateNode=id=>{if(!stateNodes.has(id))stateNodes.set(id,{textContent:'',hidden:false,disabled:false,dataset:{}});return stateNodes.get(id);};
   let connected=false;
-  const card={appState:'disconnected',firmwareBusy:false,connectInProgress:false,recordingConfirmed:false,finalizing:false,currentRecordingId:null,
+  const card={appState:'disconnected',firmwareBusy:false,connectInProgress:false,recordingConfirmed:false,finalizing:false,currentRecordingId:null,recordingReconnectPending:false,
     isGattConnected:()=>connected,document:{getElementById:stateNode},ui:{chooseDeviceButton:stateNode('chooseDeviceButton')}};
   vm.createContext(card);vm.runInContext(block('  function renderDeviceSetup()','  function openSettings()'),card);
   stateNode('otaStatus').textContent='Update paused · Reconnect to continue';card.renderDeviceSetup();
