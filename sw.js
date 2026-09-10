@@ -12,7 +12,7 @@ const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings-icon-fix.css',
   './touch-event-bridge.js','./battery-v2-ui.js','./event-channel.js','./audio-codec-v3.js','./battery-popover-fix.js','./memory-ui-fix.js','./memory-tools.js','./voice-profile.js','./device-identity.js','./runtime-compat.js','./audio-store.js','./capture-stability.js','./ota.js','./releases.js',
-  './app.js','./enhancements.js','./capture-ui.js','./brain-ui.js','./ask-synap.js','./product-ui.js','./runtime-ui.js','./dashboard-ui.js','./provenance-links.js','./productivity-tools.js','./desktop-capture.js','./interaction-surfaces.js',
+  './app.js','./enhancements.js','./capture-ui.js','./brain-ui.js','./ask-synap.js','./product-ui.js','./runtime-ui.js','./dashboard-ui.js','./provenance-links.js','./productivity-tools.js','./desktop-capture.js','./interaction-surfaces.js','./memory-ready-events.js',
   './ai-providers.js','./sleep-state-guard.js','./recording-bridge.js','./transcript-repair.js','./manifest.webmanifest','./logo.webp','./icon.svg','./icon-192.png','./icon-512.png',
   './google-auth.js','./synap-backend.js','./processing-recovery.js','./processing-pipeline-ui.js','./cost-ui.js','./synap-account-ui.js','./people-confirm-ui.js','./cloud-history.js'
 ];
