@@ -9,7 +9,6 @@
 (function (root) {
   'use strict';
 
-  var DB_NAME = 'dk-pendant-recordings';
   var hydrated = new Set();
   var sourcePending = Object.create(null);
   var audioPending = new WeakMap();
@@ -73,8 +72,6 @@
       sourceSegmentCount: Number(source.segment_count || 0)
     };
 
-    // Only declare a memory ready when the backend does. This avoids a partial
-    // transcript accidentally turning a failed/in-flight recording into Ready.
     if (String(source.state || '') === 'ready' && root.SynapBackend && typeof root.SynapBackend.toRecordingFields === 'function') {
       fields = Object.assign(fields, root.SynapBackend.toRecordingFields(source) || {}, {
         transcript: typeof source.transcript === 'string' ? source.transcript : String(current.transcript || ''),
@@ -147,13 +144,17 @@
     node.style.color = error ? 'var(--rose)' : 'var(--muted)';
   }
 
+  function releaseOwnedUrl(audio) {
+    var old = audio && audio.dataset && audio.dataset.synapExperienceUrl;
+    if (!old || !objectUrls.has(old)) return;
+    try { root.URL.revokeObjectURL(old); } catch (_) {}
+    objectUrls.delete(old);
+    delete audio.dataset.synapExperienceUrl;
+  }
+
   function attachBlob(audio, blob, source) {
     if (!blob || !blob.size) throw new Error('No playable audio bytes are available.');
-    var old = audio.dataset && audio.dataset.synapExperienceUrl;
-    if (old && objectUrls.has(old)) {
-      try { root.URL.revokeObjectURL(old); } catch (_) {}
-      objectUrls.delete(old);
-    }
+    releaseOwnedUrl(audio);
     var url = root.URL.createObjectURL(blob);
     objectUrls.add(url);
     audio.dataset.synapExperienceUrl = url;
@@ -187,8 +188,30 @@
     return response.blob();
   }
 
+  function cloudFallback(audio, id) {
+    if (!audio || !id || audioPending.has(audio)) return audioPending.get(audio) || Promise.resolve(false);
+    audio.setAttribute('aria-busy', 'true');
+    audio.dataset.synapCloudRecovery = '1';
+    playbackStatus(audio, 'Recovering audio from Synap Cloud…', false);
+    var task = cloudAudio(id)
+      .then(function (blob) { return attachBlob(audio, blob, 'cloud'); })
+      .catch(function (error) {
+        playbackStatus(audio, error && error.status === 410
+          ? 'Source audio is no longer retained in Synap Cloud.'
+          : 'Audio could not be loaded. The recording itself is still preserved.', true);
+        return false;
+      })
+      .finally(function () {
+        audio.removeAttribute('aria-busy');
+        audioPending.delete(audio);
+      });
+    audioPending.set(audio, task);
+    return task;
+  }
+
   function ensureAudio(audio) {
-    if (!audio || audio.src || audio.currentSrc) return Promise.resolve(true);
+    if (!audio) return Promise.resolve(false);
+    if (audio.src || audio.currentSrc) return Promise.resolve(true);
     if (audioPending.has(audio)) return audioPending.get(audio);
     var card = audio.closest && audio.closest('.recording-card');
     var id = recordingIdFromCard(card);
@@ -199,7 +222,6 @@
     var task = localAudio(id)
       .then(function (blob) { return attachBlob(audio, blob, 'local'); })
       .catch(function () {
-        playbackStatus(audio, 'Recovering audio from Synap Cloud…', false);
         return cloudAudio(id).then(function (blob) { return attachBlob(audio, blob, 'cloud'); });
       })
       .catch(function (error) {
@@ -216,12 +238,28 @@
     return task;
   }
 
+  function recoverMediaError(audio) {
+    if (!audio || !audio.closest || !audio.closest('.recording-card')) return;
+    // If the authenticated cloud copy itself cannot be decoded, do not loop.
+    if (audio.dataset.synapAudioSource === 'cloud' || audio.dataset.synapCloudRecovery === '1') {
+      playbackStatus(audio, 'Audio could not be decoded by this browser.', true);
+      return;
+    }
+    var id = recordingIdFromCard(audio.closest('.recording-card'));
+    if (!id) return;
+    releaseOwnedUrl(audio);
+    try {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+    } catch (_) {}
+    cloudFallback(audio, id);
+  }
+
   function bind() {
     if (!root.document || root.document.__synapExperienceRecoveryInstalled) return;
     root.document.__synapExperienceRecoveryInstalled = true;
 
-    // Make every older caller (cloud-history/transcript-repair included) use the
-    // authoritative source response rather than the stale recording snapshot.
     if (root.SynapBackend) {
       root.SynapBackend.recordingMemory = function (id) {
         return json('/v1/recordings/' + encodeURIComponent(String(id || '')) + '/source');
@@ -243,6 +281,14 @@
     root.document.addEventListener('pointerdown', function (event) {
       var audio = event && event.target && event.target.closest ? event.target.closest('audio') : null;
       if (audio && audio.closest('.recording-card') && !audio.src && !audio.currentSrc) ensureAudio(audio);
+    }, true);
+
+    // Media error does not bubble, therefore capture phase is intentional. It
+    // catches stale/revoked object URLs created by the older Library player too.
+    root.document.addEventListener('error', function (event) {
+      var audio = event && event.target;
+      if (!audio || String(audio.tagName || '').toUpperCase() !== 'AUDIO') return;
+      recoverMediaError(audio);
     }, true);
 
     root.document.addEventListener('click', function (event) {
@@ -277,6 +323,7 @@
     hydrateSource: hydrateSource,
     ensureAudio: ensureAudio,
     cloudAudio: cloudAudio,
+    recoverMediaError: recoverMediaError,
     recordingIdFromCard: recordingIdFromCard,
     bind: bind
   };
