@@ -40,7 +40,7 @@
     var parent = root.document.head || root.document.documentElement;
     if (!parent || typeof parent.appendChild !== 'function') return;
     var script = root.document.createElement('script');
-    script.src = 'processing-recovery.js?v=1.0.0-recovery1';
+    script.src = 'processing-recovery.js?v=1.0.0-recovery2';
     script.async = true;
     script.setAttribute('data-synap-processing-recovery', '1');
     parent.appendChild(script);
