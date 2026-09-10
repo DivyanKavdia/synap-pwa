@@ -1,4 +1,4 @@
-/* Synap desktop meeting capture: system/tab audio + microphone into the same local journal. */
+/* Synap desktop meeting/call capture: system/tab audio + microphone into the same local journal. */
 (function(root){
 'use strict';
 const TARGET_RATE=16000,FRAME_SAMPLES=800,FRAME_BYTES=1600;
@@ -11,6 +11,25 @@ function setStatus(message){const el=document.getElementById('synapDesktopCaptur
 function emitError(error){const message=error?.message||String(error||'Desktop capture failed.');console.warn('[synap desktop capture]',error);setStatus(message);root.dispatchEvent?.(new CustomEvent('synap-desktop-capture-error',{detail:{message}}))}
 function cleanupResources(resources){if(!resources)return;try{resources.display?.getTracks?.().forEach(t=>t.stop())}catch(_){}try{resources.mic?.getTracks?.().forEach(t=>t.stop())}catch(_){}try{resources.processor?.disconnect?.()}catch(_){}try{resources.systemSource?.disconnect?.()}catch(_){}try{resources.micSource?.disconnect?.()}catch(_){}try{resources.destination?.disconnect?.()}catch(_){}if(resources.context&&resources.context.state!=='closed')Promise.resolve(resources.context.close()).catch(()=>{})}
 function pendantBusy(){const state=String(document.body?.dataset?.state||'');return document.body?.dataset?.recordingInterrupted==='true'||['starting','recording','stopping','saving','updating'].includes(state)}
+function localDayKey(value){const date=value instanceof Date?value:new Date(value);if(Number.isNaN(date.getTime()))return'';return[date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-')}
+function revealSavedRecording(recordingId,saved){
+  const createdAt=saved?.createdAt||saved?.startedAt||new Date().toISOString();
+  const day=localDayKey(createdAt),picker=document.getElementById('datePicker');
+  if(picker&&day){picker.value=day;picker.dispatchEvent(new Event('change',{bubbles:true}))}
+  try{root.location.hash='#library'}catch(_){}
+  let attempts=0;
+  const reveal=()=>{
+    const card=document.getElementById('recording-'+recordingId);
+    if(card){
+      card.open=true;
+      try{card.scrollIntoView({behavior:'smooth',block:'start'})}catch(_){}
+      return;
+    }
+    attempts+=1;
+    if(attempts<8)root.setTimeout(reveal,60);
+  };
+  root.setTimeout(reveal,0);
+}
 async function start(options={}){
   if(session)throw new Error('Desktop capture is already running.');
   if(pendantBusy())throw new Error('Finish or save the pendant recording before starting an online meeting capture.');
@@ -63,13 +82,13 @@ async function stop(reason='desktop-capture'){
     s.processor.onaudioprocess=null;
     if(s.pending.length){while(s.pending.length<FRAME_SAMPLES)s.pending.push(0);s.journal.append(s.recordingId,{sequence:s.sequence++,chunk:0,total:1,payload:pcm16(s.pending.splice(0,FRAME_SAMPLES))})}
     const saved=await s.journal.close(s.recordingId,reason);
-    setStatus(saved?.durationMs?'Meeting saved':'No complete meeting audio was captured');
-    const picker=document.getElementById('datePicker');if(picker)picker.dispatchEvent(new Event('change',{bubbles:true}));
+    setStatus(saved?.durationMs?'Meeting saved in Library':'No complete meeting audio was captured');
+    if(saved?.durationMs)revealSavedRecording(s.recordingId,saved);
     root.SynapProcessingPipeline?.refresh?.();
     root.SynapProductivity?.refresh?.(false);
     root.SynapInteractionSurfaces?.refresh?.(false);
     if(autoProcessEnabled())Promise.resolve(root.SynapProcessingQueue?.resume?.()).catch(()=>{});
-    root.dispatchEvent?.(new CustomEvent('synap-recording-saved',{detail:{recordingId:s.recordingId,source:'desktop-meeting',reason}}));
+    root.dispatchEvent?.(new CustomEvent('synap-recording-saved',{detail:{recordingId:s.recordingId,source:'desktop-meeting',reason,createdAt:saved?.createdAt||null,durationMs:saved?.durationMs||0}}));
     return s.recordingId;
   }catch(error){emitError(error);throw error}
   finally{cleanupResources(s);syncButton()}
@@ -77,6 +96,6 @@ async function stop(reason='desktop-capture'){
 function state(){return session?{active:true,recordingId:session.recordingId}:{active:false,recordingId:null}}
 function syncButton(){const button=document.getElementById('synapDesktopCaptureButton');if(!button)return;button.textContent=session?'Stop meeting':'Capture meeting';button.dataset.active=String(Boolean(session));button.disabled=!session&&pendantBusy()}
 function install(){if(!supported()||document.getElementById('synapDesktopCapture'))return;const capture=document.getElementById('capture');if(!capture)return;const box=document.createElement('div');box.id='synapDesktopCapture';box.className='desktop-capture-card';box.innerHTML='<div><strong>Online meeting</strong><small>Capture this computer’s meeting audio + your microphone. No bot joins the call.</small><small id="synapDesktopCaptureStatus" role="status"></small></div><button type="button" id="synapDesktopCaptureButton">Capture meeting</button>';const style=document.createElement('style');style.textContent='.desktop-capture-card{margin-top:12px;padding:11px 12px;border:1px solid var(--border,#d9e2ec);border-radius:14px;display:flex;gap:10px;align-items:center;justify-content:space-between;background:var(--surface,#fff)}.desktop-capture-card strong,.desktop-capture-card small{display:block}.desktop-capture-card small{margin-top:3px;font-size:10px;color:var(--muted,#64748b)}.desktop-capture-card button{border:0;border-radius:10px;padding:8px 11px;font:inherit;font-size:11px;font-weight:800;background:#102744;color:#fff;cursor:pointer}.desktop-capture-card button[data-active="true"]{background:#9f1d35}.desktop-capture-card button:disabled{opacity:.5;cursor:not-allowed}@media(max-width:560px){.desktop-capture-card{display:none}}';document.head.appendChild(style);capture.appendChild(box);const button=document.getElementById('synapDesktopCaptureButton');button.addEventListener('click',async()=>{button.disabled=true;try{if(session)await stop();else await start()}catch(error){emitError(error)}finally{syncButton()}});new MutationObserver(syncButton).observe(document.body,{attributes:true,attributeFilter:['data-state','data-recording-interrupted']});syncButton()}
-root.SynapDesktopCapture={supported,start,stop,state,TARGET_RATE,FRAME_SAMPLES,FRAME_BYTES,autoProcessEnabled,pendantBusy};
+root.SynapDesktopCapture={supported,start,stop,state,TARGET_RATE,FRAME_SAMPLES,FRAME_BYTES,autoProcessEnabled,pendantBusy,localDayKey,revealSavedRecording};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })(globalThis);
