@@ -9,6 +9,13 @@ all primary sections mounted and preserves the existing recording, journal,
 reconnect, processing, account, and OTA owners.
 
 - Mint and deep-green semantic palettes, with light/dark contrast tests.
+- The original Synap silhouette is preserved in a self-contained, alpha-masked
+  `synap-logo.svg`: green/mint mark and ink wordmark in light mode, mint mark and
+  light wordmark in dark mode. The SVG follows the embedding page's color scheme.
+  `logo.webp` remains the source artwork; it is no longer the live UI wordmark.
+- The favicon and installed-app PNGs now share the Synap monogram on deep green,
+  including a maskable safe zone. Regenerate PNGs from `icon.svg` with
+  `node tools/rasterize-brand.cjs` (requires `sharp`).
 - A desktop navigation rail and two-column overview; a safe-area-aware phone dock.
 - A dedicated recorder, full-width Start/Stop controls, and the agreed gesture guide:
   double tap records on/off; triple tap sleeps/wakes.
@@ -17,7 +24,7 @@ reconnect, processing, account, and OTA owners.
   and visible firmware status without exposing inactive OTA controls.
 - `compact.css` is the final scoped presentation stylesheet, loaded exactly once
   after the legacy base styles. `dashboard-ui.js` owns navigation, not the palette.
-- Shell cache generation `1.0.0-shell37-refresh`; BLE client compatibility remains
+- Shell cache generation `1.0.0-shell38-branding`; BLE client compatibility remains
   unchanged. No automatic reload, storage migration, or firmware update is added.
 
 ## Verification

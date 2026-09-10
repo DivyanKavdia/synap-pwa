@@ -26,7 +26,7 @@ body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-syste
 .synap-refresh .topbar{min-height:88px;gap:20px;background:var(--chrome);border-bottom:1px solid var(--border)}
 .synap-refresh .brand-logo.synap-brand-image{width:118px!important;height:32px!important;object-fit:contain}
 .synap-brand-image{display:block;object-fit:contain;object-position:center}
-:root[data-theme="dark"] .brand-logo.synap-brand-image{filter:brightness(0) invert(1)}
+.synap-refresh .brand-logo.synap-brand-image{filter:none!important}
 .workspace-label{margin-right:auto;padding-left:20px;border-left:1px solid var(--border);font-size:12px;color:var(--muted)}
 .synap-refresh .top-actions{display:flex;align-items:center;gap:10px}
 .synap-refresh .icon-button{width:44px;height:44px;border:1px solid var(--border);background:var(--surface);border-radius:14px}

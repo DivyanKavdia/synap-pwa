@@ -43,6 +43,8 @@ async function run() {
       await page.waitForTimeout(800);
       assert.equal(await page.locator('.brain-tabs a[aria-current="page"]').getAttribute('href'),'#today','initial view');
       assert.equal(await page.locator('html').getAttribute('data-theme'), mode);
+      assert.match(await page.locator('.brand-logo').getAttribute('src'),/^synap-logo\.svg\?v=1\.0\.0-brand2$/);
+      assert.equal(await page.locator('.brand-logo').evaluate(node=>getComputedStyle(node).filter),'none','preserve two-tone branding');
       const overflow = await page.evaluate(() => [...document.querySelectorAll('.app-shell,.topbar,main>section,.brain-tabs')]
         .filter(node => { const r=node.getBoundingClientRect(); return r.width && (r.left < -1 || r.right > innerWidth + 1); })
         .map(node => node.id || node.className));
@@ -54,6 +56,7 @@ async function run() {
       if (width===390 || width===1440) {
         await page.screenshot({path:path.join(output,`${mode}-${width}.png`),fullPage:true});
         await page.screenshot({path:path.join(output,`home-${mode}-${width}.png`)});
+        await page.locator('.brand-logo').screenshot({path:path.join(output,`brand-${mode}-${width}.png`)});
       }
       for (const href of ['#capture','#insights','#ask','#library','#today']) {
         await page.locator(`.brain-tabs a[href="${href}"]`).click();
@@ -63,6 +66,8 @@ async function run() {
       }
       await page.locator('#settingsButton').click();
       assert(await page.locator('#settingsDialog').isVisible());
+      assert.equal(await page.locator('.settings-brand-logo').getAttribute('src'),await page.locator('.brand-logo').getAttribute('src'));
+      assert.equal(await page.locator('.settings-brand-logo').evaluate(node=>getComputedStyle(node).filter),'none');
       assert(await page.locator('#otaStatus').isVisible());
       assert(!(await page.locator('#otaLatest').isVisible()),'no phantom firmware update');
       assert(!(await page.locator('#otaCancel').isVisible()),'no phantom OTA cancel');

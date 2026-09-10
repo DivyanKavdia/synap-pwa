@@ -29,9 +29,9 @@ t.setHour(8);t.document.hidden=false;t.events['document:visibilitychange']();ass
 assert.equal(t.buttons.filter(b=>b.attributes['aria-pressed']==='true').length,1);assert.equal(t.buttons[0].title,'Auto: light 7 AM–7 PM, dark 7 PM–7 AM');
 assert.equal(setup({saved:'dark',hour:10}).html.dataset.theme,'dark');assert.equal(setup({saved:'invalid',hour:20}).html.dataset.theme,'dark');
 t=setup({blocked:true,hour:10});click(t.buttons[2]);assert.equal(t.html.dataset.theme,'dark','blocked storage does not block switching');t.events.storage({key:'synap-appearance',newValue:'light'});assert.equal(t.html.dataset.theme,'light');
-assert(t.appended.some(node=>node._href==='settings-icon-fix.css?v=1.0.0-logo3'),'settings wordmark stylesheet is loaded after DOM is ready');
-assert(t.appended.some(node=>node._src==='capture-ui.js?v=1.0.0-ui6'),'fresh capture UI is loaded');
-assert(t.appended.some(node=>node._src==='runtime-ui.js?v=1.0.0-runtime3'),'fresh runtime UI is loaded');
+assert(t.appended.some(node=>node._href==='settings-icon-fix.css?v=1.0.0-brand2'),'settings wordmark stylesheet is loaded after DOM is ready');
+assert(t.appended.some(node=>node._src==='capture-ui.js?v=1.0.0-brand2'),'fresh capture UI is loaded');
+assert(t.appended.some(node=>node._src==='runtime-ui.js?v=1.0.0-brand2'),'fresh runtime UI is loaded');
 const css=fs.readFileSync(path.join(root,'styles.css'),'utf8');
 const values=block=>Object.fromEntries([...block.matchAll(/--([\w-]+):([^;]+);/g)].map(m=>[m[1],m[2].trim()]));
 const light=values(css.match(/:root\{([^}]+)\}/)[1]);const dark={...light,...values(css.match(/:root\[data-theme="dark"\]\{([^}]+)\}/)[1])};

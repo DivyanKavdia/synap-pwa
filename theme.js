@@ -12,7 +12,7 @@
   try{if(typeof location!=='undefined'&&location.hash&&typeof history?.replaceState==='function')history.replaceState(history.state,'',location.pathname+location.search)}catch(_){}
 
   const key='synap-appearance';
-  const SHELL_REVISION='1.0.0-refresh1';
+  const SHELL_REVISION='1.0.0-brand2';
   const root=document.documentElement;
   const valid=v=>['system','light','dark'].includes(v)?v:'system';
   let preference='system';
@@ -74,12 +74,12 @@
     document.querySelectorAll('[data-theme-choice]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();choose(b.dataset.themeChoice)}));
     document.addEventListener('click',e=>{const b=e.target.closest?.('[data-theme-choice]');if(b){e.preventDefault();choose(b.dataset.themeChoice)}});
     installAISettings();
-    css('settings-icon-fix.css?v=1.0.0-logo3','settingsicon','logo3');
-    script('capture-ui.js?v=1.0.0-ui6');
+    css('settings-icon-fix.css?v=1.0.0-brand2','settingsicon','brand2');
+    script('capture-ui.js?v=1.0.0-brand2');
     script('brain-ui.js?v=0.0.1-brain7');
     script('ask-synap.js?v=1.0.0-ask1');
     script('product-ui.js?v=1.0.0-ui4');
-    script('runtime-ui.js?v=1.0.0-runtime3');
+    script('runtime-ui.js?v=1.0.0-brand2');
     script('dashboard-ui.js?v=1.0.0-refresh1');
     script('productivity-tools.js?v=1.0.0-productivity3');
     script('desktop-capture.js?v=1.0.0-desktop3');
@@ -92,7 +92,7 @@
   // Core brand/brain styles are already declared in index.html. Do not inject
   // second copies with different cache-busters: stylesheet races were making
   // the same view render differently between launches.
-  css('compact.css?v=1.0.0-refresh1','compact','refresh1');
+  css('compact.css?v=1.0.0-brand2','compact','brand2');
   window.addEventListener('storage',e=>{if(e.key===key||e.key===null){preference=valid(e.newValue);apply()}});
   window.addEventListener('focus',refreshAuto);window.addEventListener('pageshow',refreshAuto);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshAuto()});
