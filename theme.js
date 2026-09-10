@@ -41,7 +41,16 @@
     const l=document.createElement('link');l.rel='stylesheet';l.href=href;
     l.dataset['synap'+k[0].toUpperCase()+k.slice(1)]=v;document.head.appendChild(l);
   }
-  function script(src){if(document.querySelector(`script[src="${src}"]`))return;const s=document.createElement('script');s.src=src;s.defer=true;document.head.appendChild(s)}
+  function script(src){
+    const target=String(src||'').split('?')[0].replace(/^\.\//,'');
+    const exists=[...document.scripts].some(s=>{
+      const raw=String(s.getAttribute('src')||'');
+      if(!raw)return false;
+      return raw.split('?')[0].replace(/^\.\//,'')===target;
+    });
+    if(exists)return;
+    const s=document.createElement('script');s.src=src;s.defer=true;document.head.appendChild(s);
+  }
   function $(id){return typeof document.getElementById==='function'?document.getElementById(id):null}
   function installAISettings(){
     if(typeof document.getElementById!=='function')return;
