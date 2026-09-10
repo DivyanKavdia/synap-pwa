@@ -48,7 +48,7 @@ export async function parseQuery(
         input: `Today is ${today}.\n\nQuestion: ${query}`,
         system_instruction: QUERY_INSTRUCTIONS,
         response_format: jsonResponseFormat(QUERY_SCHEMA),
-        generation_config: { thinking_level: 'minimal' },
+        generation_config: { thinking_level: 'low' },
         usage_label: 'ask_parse',
       },
       signal,
@@ -149,9 +149,6 @@ export function resolveAnswer(raw: RawAnswer, evidence: Evidence[]): GroundedAns
     (index) => Number.isInteger(index) && index >= 0 && index < evidence.length,
   );
 
-  // An index outside the evidence array means the model invented a source.
-  // That discredits the whole answer, not just the one citation — if it will
-  // fabricate a reference it will fabricate the claim resting on it.
   if (indices.length !== claimed.length) return NOT_FOUND;
   if (indices.length === 0 || raw.confidence === 'none') return NOT_FOUND;
   if (!raw.answer?.trim()) return NOT_FOUND;
@@ -164,7 +161,6 @@ export function resolveAnswer(raw: RawAnswer, evidence: Evidence[]): GroundedAns
       conversation_id: item.conversationId,
       start_ms: item.startMs,
       end_ms: item.endMs,
-      // Only keep a quote that appears verbatim in the evidence we supplied.
       quote: quote && item.summary.includes(quote) ? quote : null,
     };
   });
