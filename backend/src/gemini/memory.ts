@@ -90,7 +90,9 @@ export async function extractMemory(
       input,
       system_instruction: MEMORY_INSTRUCTIONS,
       response_format: jsonResponseFormat(MEMORY_SCHEMA),
-      generation_config: { thinking_level: 'minimal' },
+      // Conversation segmentation, decisions and commitments are product-facing
+      // semantics. The cost-saving minimal setting caused visible quality loss.
+      generation_config: { thinking_level: 'medium' },
       usage_label: 'memory_extract',
     },
     signal,
@@ -152,7 +154,6 @@ export function validateMemory(memory: StructuredMemory, durationMs: number): St
           (action) =>
             action.task?.trim() &&
             inRange(action.start_ms, action.end_ms) &&
-            // An owner must be "self" or someone the model actually identified.
             (action.owner?.toLowerCase() === 'self' ||
               knownNames.has(action.owner?.trim().toLowerCase() ?? '')) &&
             isValidDate(action.due_date),
@@ -197,7 +198,7 @@ export async function generateBrief(input: BriefInput, signal?: AbortSignal): Pr
       input: JSON.stringify(input),
       system_instruction: BRIEF_INSTRUCTIONS,
       response_format: jsonResponseFormat(BRIEF_SCHEMA),
-      generation_config: { thinking_level: 'minimal' },
+      generation_config: { thinking_level: 'medium' },
       usage_label: 'daily_brief_manual',
     },
     signal,
