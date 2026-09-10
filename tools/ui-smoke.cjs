@@ -25,6 +25,78 @@ const server = http.createServer((req, res) => {
   });
 });
 
+async function assertWordmarks(page, mode) {
+  for (const selector of ['.brand-logo','.settings-brand-logo']) {
+    const logo=page.locator(selector);
+    assert.match(await logo.getAttribute('src'),new RegExp('synap-logo-'+mode+'\\.png\\?v=1\\.0\\.0-ui-fix1$'));
+    const pixels=await logo.evaluate(async img=>{
+      await img.decode();
+      const canvas=document.createElement('canvas');canvas.width=800;canvas.height=216;
+      const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0,800,216);
+      const data=ctx.getImageData(208,0,592,216).data;let count=0,r=0,g=0,b=0;
+      for(let i=0;i<data.length;i+=4)if(data[i+3]>220){count++;r+=data[i];g+=data[i+1];b+=data[i+2];}
+      return {width:img.naturalWidth,count,r:r/count,g:g/count,b:b/count};
+    });
+    assert.equal(pixels.width,800);assert(pixels.count>5000,'wordmark has actual visible pixels');
+    const expected=mode==='dark'?[237,245,239]:[24,60,52];
+    ['r','g','b'].forEach((c,i)=>assert(Math.abs(pixels[c]-expected[i])<2,`${mode} wordmark color ${c}`));
+  }
+}
+
+async function assertWeeklyReview(page, mode, width) {
+  // These generated records exist only in this isolated localhost test profile.
+  await page.waitForFunction(()=>window.SynapProductivity&&document.querySelector('#synapWeekDetail .synap-week-source'));
+  assert.equal(await page.locator('#synapWeekDetail .synap-week-source').first().getAttribute('data-recording-id'),'ui-sample');
+  await page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const request=indexedDB.open('dk-pendant-recordings');request.onsuccess=()=>resolve(request.result)});
+    const sample=await new Promise(resolve=>{const request=db.transaction('recordings').objectStore('recordings').get('ui-sample');request.onsuccess=()=>resolve(request.result)});
+    const start=new Date(SynapProductivity.weekRange(new Date().toLocaleDateString('en-CA')).start+'T00:00:00');
+    await new Promise((resolve,reject)=>{const tx=db.transaction('recordings','readwrite'),store=tx.objectStore('recordings');
+      for(let i=0;i<35;i++)store.put({...sample,id:'weekly-history-'+String(i).padStart(2,'0'),name:'Earlier weekly source '+i,createdAt:new Date(start.getTime()+i*60000).toISOString()});
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+    });db.close();window.dispatchEvent(new CustomEvent('synap-memory-ready'));
+  });
+  await page.waitForFunction(()=>document.querySelector('[data-week-view="conversations"]').textContent==='36 conversations');
+  const rows=page.locator('#synapWeekDetail .synap-week-source');
+  assert.equal(await rows.count(),5);assert.equal(await rows.first().getAttribute('data-recording-id'),'ui-sample','today is before all older weekly records');
+  assert.match(await rows.first().locator('time').innerText(),/^Today/);
+  await page.evaluate(()=>SynapCloudHistory.refreshUiInPlace({source:'isolated-weekly-fixture'}));
+  await page.waitForTimeout(180);
+  assert(await page.locator('#synapWeekDetail').isVisible(),'cloud refresh does not collapse Weekly Review');
+  for(let i=0;i<7&&await page.locator('#synapWeekMore').isVisible();i++)await page.locator('#synapWeekMore').click();
+  assert.equal(await rows.count(),36,'older evidence is paginated, never silently discarded');
+  await page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const request=indexedDB.open('dk-pendant-recordings');request.onsuccess=()=>resolve(request.result)});
+    const sample=await new Promise(resolve=>{const request=db.transaction('recordings').objectStore('recordings').get('ui-sample');request.onsuccess=()=>resolve(request.result)});
+    await new Promise((resolve,reject)=>{const tx=db.transaction('recordings','readwrite');tx.objectStore('recordings').put({...sample,id:'weekly-today-new',createdAt:new Date().toISOString(),name:'New conversation today',summary:'',transcript:'',meeting:{},processingStage:'transcribing'});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});
+    db.close();window.dispatchEvent(new CustomEvent('synap-recording-saved'));
+  });
+  await page.waitForTimeout(160);
+  assert.equal(await page.locator('[data-week-view="conversations"]').innerText(),'36 conversations','pending audio is not miscounted as a processed conversation');
+  await page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const request=indexedDB.open('dk-pendant-recordings');request.onsuccess=()=>resolve(request.result)});
+    const sample=await new Promise(resolve=>{const request=db.transaction('recordings').objectStore('recordings').get('weekly-today-new');request.onsuccess=()=>resolve(request.result)});
+    sample.meeting={conversations:[{title:'Today’s new conversation',summary:'A newly processed discussion about the prototype.',start_ms:0}]};sample.summary='A newly processed discussion about the prototype.';sample.processingStage='ready';
+    await new Promise((resolve,reject)=>{const tx=db.transaction('recordings','readwrite');tx.objectStore('recordings').put(sample);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});
+    db.close();window.dispatchEvent(new CustomEvent('synap-processing-complete'));
+  });
+  await page.waitForFunction(()=>document.querySelector('[data-week-view="conversations"]').textContent==='37 conversations');
+  assert.equal(await rows.first().getAttribute('data-recording-id'),'weekly-today-new','newly processed source appears without reload');
+  await page.locator('[data-week-view="decisions"]').click();await page.locator('[data-week-view="conversations"]').click();
+  await page.locator('#synapWeeklyReview').screenshot({path:path.join(output,`weekly-${mode}-${width}.png`)});
+  await rows.first().click();
+  await page.waitForFunction(()=>document.getElementById('recording-weekly-today-new')?.open);
+  assert(await page.locator('#recording-weekly-today-new .recording-content').isVisible(),'weekly source opens its exact Library recording');
+  await page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const request=indexedDB.open('dk-pendant-recordings');request.onsuccess=()=>resolve(request.result)});
+    await new Promise((resolve,reject)=>{const tx=db.transaction('recordings','readwrite'),store=tx.objectStore('recordings');for(let i=0;i<35;i++)store.delete('weekly-history-'+String(i).padStart(2,'0'));store.delete('weekly-today-new');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close();
+    SynapCloudHistory.refreshUiInPlace({source:'isolated-weekly-fixture-cleanup'});await SynapProductivity.refresh(false);
+  });
+  await page.waitForFunction(()=>document.querySelectorAll('.recording-card').length===1);
+  await page.locator('.brain-tabs a[href="#today"]').click();
+  console.log(`PASS weekly/${mode}/${width}: today first, all weekly evidence, processing events, persistent detail, exact source navigation`);
+}
+
 async function run() {
   fs.mkdirSync(output, { recursive:true });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -33,7 +105,7 @@ async function run() {
     ...(process.env.SYNAP_CHROMIUM_PATH ? { executablePath:process.env.SYNAP_CHROMIUM_PATH, args:['--no-sandbox','--no-zygote','--disable-dev-shm-usage'] } : {}) });
   try {
     for (const mode of ['light','dark']) for (const width of [320,390,768,1440]) {
-      const context = await browser.newContext({ viewport:{width,height:900}, reducedMotion:'reduce' });
+      const context = await browser.newContext({ viewport:{width,height:900}, reducedMotion:'reduce',colorScheme:mode==='light'?'dark':'light',timezoneId:'Asia/Kolkata' });
       await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
       await context.addInitScript(theme => localStorage.setItem('synap-appearance', theme), mode);
       const page = await context.newPage();
@@ -43,7 +115,7 @@ async function run() {
       await page.waitForTimeout(800);
       assert.equal(await page.locator('.brain-tabs a[aria-current="page"]').getAttribute('href'),'#today','initial view');
       assert.equal(await page.locator('html').getAttribute('data-theme'), mode);
-      assert.match(await page.locator('.brand-logo').getAttribute('src'),/^synap-logo\.svg\?v=1\.0\.0-brand2$/);
+      await assertWordmarks(page,mode);
       assert.equal(await page.locator('.brand-logo').evaluate(node=>getComputedStyle(node).filter),'none','preserve two-tone branding');
       const overflow = await page.evaluate(() => [...document.querySelectorAll('.app-shell,.topbar,main>section,.brain-tabs')]
         .filter(node => { const r=node.getBoundingClientRect(); return r.width && (r.left < -1 || r.right > innerWidth + 1); })
@@ -73,12 +145,15 @@ async function run() {
       assert(!(await page.locator('#otaCancel').isVisible()),'no phantom OTA cancel');
       await page.locator('[data-theme-choice="dark"]').click();
       assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
+      await assertWordmarks(page,'dark');
       await page.locator('[data-theme-choice="light"]').click();
       assert.equal(await page.locator('html').getAttribute('data-theme'),'light');
+      await assertWordmarks(page,'light');
+      await page.locator(`[data-theme-choice="${mode}"]`).click();
       if(width===390) await page.screenshot({path:path.join(output,'settings-390.png')});
       await page.locator('#closeSettingsButton').click();
       assert(!(await page.locator('#settingsDialog').isVisible()));
-      if (mode==='light' && (width===390 || width===1440)) {
+      if (width===390 || width===1440) {
         // Isolated localhost fixture; these sample records never touch user data.
         await page.evaluate(async () => {
           const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('dk-pendant-recordings');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
@@ -101,6 +176,7 @@ async function run() {
         await page.waitForFunction(()=>document.querySelectorAll('.recording-card').length===1);
         await page.waitForTimeout(900);
         assert.equal(await page.locator('#glanceRecordings').innerText(),'1');
+        await assertWeeklyReview(page,mode,width);
         await page.locator('.brain-tabs a[href="#insights"]').click();
         await page.locator('.memory-search input').fill('prototype');
         await page.waitForFunction(()=>document.querySelectorAll('.memory-result').length>0);
@@ -113,12 +189,89 @@ async function run() {
         assert.equal(await page.locator('.recording-card audio').evaluate(audio=>audio.readyState>=1),true,'playable local WAV');
         const download=page.waitForEvent('download');await page.locator('.recording-action-export').click();
         assert((await download).suggestedFilename().endsWith('.wav'));
+        await page.locator('.brain-tabs a[href="#today"]').click();
+        await page.locator('#conversationList .conversation-card').first().click();
+        await page.waitForFunction(()=>document.querySelector('#recording-ui-sample')?.open);
+        await page.waitForTimeout(1000);
+        await page.locator('#recording-ui-sample audio').evaluate(audio=>{window.qaAudio=audio;});
+        // Cloud/source hydration sends this same-day refresh after a tile opens.
+        await page.evaluate(()=>document.getElementById('datePicker').dispatchEvent(new Event('change',{bubbles:true})));
+        await page.waitForTimeout(700);
+        assert(await page.locator('#recording-ui-sample').evaluate(card=>card.open),'source tile stays open after background hydration');
+        assert(await page.locator('#recording-ui-sample audio').evaluate(audio=>audio===window.qaAudio),'refresh preserves the same native audio player');
         await page.locator('.brain-tabs a[href="#ask"]').click();
         await page.locator('#askInput').fill('What did I decide today?');
         await page.locator('#askForm button[type="submit"]').click();
         await page.waitForFunction(()=>document.getElementById('askAnswer').textContent.toLowerCase().includes('prototype'));
         await page.locator('.brain-tabs a[href="#today"]').click();
-        await page.screenshot({path:path.join(output,`sample-${width}.png`),fullPage:true});
+        await page.screenshot({path:path.join(output,`sample-${mode}-${width}.png`),fullPage:true});
+        await page.evaluate(async()=>{
+          const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('dk-pendant-recordings');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)});
+          const sample=await new Promise(resolve=>{const request=db.transaction('recordings').objectStore('recordings').get('ui-sample');request.onsuccess=()=>resolve(request.result)});
+          sample.meeting.people=Array.from({length:14},(_,i)=>({name:'Person '+String(i+1).padStart(2,'0'),role:'Collaborator'}));
+          await new Promise((resolve,reject)=>{const tx=db.transaction('recordings','readwrite'),store=tx.objectStore('recordings');store.put(sample);
+            for(let i=1;i<=8;i++){const date=new Date();date.setDate(date.getDate()-i);store.put({...sample,id:'ui-older-'+i,name:'Earlier conversation '+i,createdAt:date.toISOString()});}
+            tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+          });db.close();
+        });
+        await page.reload();
+        await page.waitForFunction(()=>document.getElementById('recordingsCount').textContent==='9'&&document.getElementById('peopleCount')?.textContent==='14');
+        assert.equal(await page.locator('#glanceRecordings').innerText(),'1','Today metrics stay day-scoped');
+        await page.locator('.brain-tabs a[href="#library"]').click();
+        assert.equal(await page.locator('.recording-card:visible').count(),5,'all dates with pagination');
+        await page.locator('[data-library-scope="day"]').click();
+        await page.waitForFunction(()=>document.getElementById('recordingsCount').textContent==='1');
+        await page.locator('[data-library-scope="all"]').click();
+        await page.waitForFunction(()=>document.getElementById('recordingsCount').textContent==='9');
+        await page.evaluate(()=>SynapProvenance.openSource('ui-older-8',0));
+        await page.waitForFunction(()=>document.getElementById('recording-ui-older-8')?.open);
+        await page.waitForTimeout(1000);
+        assert(await page.locator('#recording-ui-older-8 .recording-content').isVisible(),'source beyond first page is revealed');
+        const cardRect=await page.locator('#recording-ui-older-8').boundingBox();
+        assert(cardRect.y<800&&cardRect.y+cardRect.height>100,'source card is actually in the viewport');
+        await page.screenshot({path:path.join(output,`library-${mode}-${width}.png`)});
+        await page.evaluate(()=>{const date=new Date();const picker=document.getElementById('datePicker');picker.value=[date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-');picker.dispatchEvent(new Event('change',{bubbles:true}));});
+        await page.locator('#peopleMemory').scrollIntoViewIfNeeded();
+        assert.equal(await page.locator('#peopleList .person-card').count(),3,'compact recent people preview');
+        assert((await page.locator('#peopleMemory').boundingBox()).height<380,'People stays compact');
+        await page.screenshot({path:path.join(output,`people-${mode}-${width}.png`)});
+        await page.locator('#peopleBrowseToggle').click();
+        assert.equal(await page.locator('#peopleList .person-card').count(),14);
+        assert((await page.locator('#peopleList').boundingBox()).height<=327,'expanded list has bounded height');
+        await page.locator('#peopleSearch input').fill('Person 14');
+        assert.equal(await page.locator('#peopleList .person-card').count(),1);
+        await page.locator('#peopleList .person-card').click();
+        assert.equal(await page.locator('#askInput').inputValue(),'Person 14','person opens grounded recall');
+        await page.locator('#peopleBrowseToggle').click();
+        assert.equal(await page.locator('#peopleList .person-card').count(),3);
+        // Canonical People uses the same compact layout, including real name controls.
+        await page.evaluate(async()=>{
+          window.SynapAuth={isSignedIn:()=>true};
+          window.qaPeople=Array.from({length:14},(_,i)=>({person_id:'person-'+i,name:'Person '+String(i+1).padStart(2,'0'),role:'Collaborator',conversation_count:2,confirmed_by_user:i===0}));
+          window.SynapBackend={...window.SynapBackend,people:async()=>({people:window.qaPeople.map(person=>({...person}))}),followUps:async()=>({follow_ups:[]}),
+            renamePerson:async(id,name)=>Object.assign(window.qaPeople.find(person=>person.person_id===id),{name,confirmed_by_user:true}),
+            confirmPerson:async(id)=>Object.assign(window.qaPeople.find(person=>person.person_id===id),{confirmed_by_user:true})};
+          SynapPeopleConfirmUI.invalidate();await SynapInteractionSurfaces.refresh(true);
+        });
+        await page.waitForFunction(()=>document.querySelectorAll('#peopleList .person-verify').length===3);
+        assert.equal(await page.locator('#peopleList .person-card').count(),3);
+        assert((await page.locator('#peopleMemory').boundingBox()).height<380,'canonical People controls stay compact');
+        await page.locator('#peopleMemory').scrollIntoViewIfNeeded();
+        await page.screenshot({path:path.join(output,`people-canonical-${mode}-${width}.png`)});
+        const manage=page.locator('#peopleList .person-management').first();
+        await manage.locator('summary').click();
+        await manage.locator('[data-action="rename"]').click();
+        assert(await manage.locator('input[aria-label="Correct this person’s name"]').isVisible(),'name editor remains available');
+        await manage.locator('input').fill('Alex Example');
+        await manage.locator('button[type="submit"]').click();
+        await page.waitForFunction(()=>document.querySelector('#peopleList .person-card strong').textContent==='Alex Example');
+        await manage.locator('summary').click();
+        const unconfirmed=page.locator('#peopleList .person-management').nth(1);
+        await unconfirmed.locator('summary').click();
+        await unconfirmed.locator('[data-action="confirm"]').click();
+        await page.waitForFunction(()=>document.querySelectorAll('#peopleList .person-confirmed').length===2);
+        await unconfirmed.locator('summary').click();
+        console.log(`PASS feedback/${mode}/${width}: themed pixels, source tiles, refresh identity, date scope, pagination, compact/searchable People`);
         console.log(`PASS populated/${width}: local storage, search, playback, WAV export, grounded local Ask`);
       }
       // Presentation-only state simulation. No recording/BLE session is started.

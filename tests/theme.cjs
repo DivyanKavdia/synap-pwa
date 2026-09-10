@@ -6,10 +6,11 @@ function setup({saved=null,hour=12,blocked=false}={}){
   class FakeDate{getHours(){return currentHour}}
   const buttons=['system','light','dark'].map(value=>({dataset:{themeChoice:value},attributes:{},setAttribute(k,v){this.attributes[k]=v;},addEventListener(t,f){this.click=f;}}));
   const html={dataset:{},style:{},attributes:{},setAttribute(k,v){this.attributes[k]=v;}},meta={setAttribute(k,v){this[k]=v;}};
+  const logos=[0,1].map(()=>({attributes:{src:'synap-logo-light.png?v=1.0.0-ui-fix1'},getAttribute(k){return this.attributes[k]},setAttribute(k,v){this.attributes[k]=v}}));
   const document={
     documentElement:html,readyState:'complete',hidden:false,
     querySelector(selector){if(selector.startsWith('meta['))return meta;return null;},
-    querySelectorAll(selector){return selector==='[data-theme-choice]'?buttons:[];},
+    querySelectorAll(selector){return selector==='[data-theme-choice]'?buttons:selector==='.synap-brand-image'?logos:[];},
     getElementById(){return null;},
     createElement(tag){return {tag,dataset:{},set rel(v){this._rel=v},set href(v){this._href=v},set src(v){this._src=v},set defer(v){this._defer=v}};},
     head:{appendChild(node){appended.push(node);}},
@@ -17,9 +18,15 @@ function setup({saved=null,hour=12,blocked=false}={}){
   };
   const c={Date:FakeDate,document,history:{scrollRestoration:'auto'},window:{addEventListener(t,f){events[t]=f;}},localStorage:{getItem:k=>{if(blocked)throw Error('blocked');return storage.get(k);},setItem:(k,v)=>{if(blocked)throw Error('blocked');storage.set(k,v);}},setInterval(f,ms){intervals.push({f,ms});return intervals.length;}};
   vm.runInNewContext(source,c);
-  return {html,meta,buttons,storage,events,intervals,appended,setHour:h=>{currentHour=h},document};
+  return {html,meta,buttons,logos,storage,events,intervals,appended,setHour:h=>{currentHour=h},document};
 }
 const click=button=>button.click({preventDefault(){}});
+for(const saved of ['light','dark']){
+  const sample=setup({saved});
+  assert(sample.logos.every(img=>img.attributes.src===`synap-logo-${saved}.png?v=1.0.0-ui-fix1`),'both logos follow explicit app appearance');
+  const next=saved==='light'?'dark':'light';click(sample.buttons[next==='dark'?2:1]);
+  assert(sample.logos.every(img=>img.attributes.src===`synap-logo-${next}.png?v=1.0.0-ui-fix1`),'both logos update immediately on theme change');
+}
 for(const [hour,expected] of [[6,'dark'],[7,'light'],[18,'light'],[19,'dark'],[23,'dark']])assert.equal(setup({hour}).html.dataset.theme,expected,`Auto hour ${hour}`);
 let t=setup({hour:18});assert.equal(t.html.dataset.theme,'light');assert.equal(t.html.attributes['data-theme'],'light');assert.equal(t.meta.content,'#f4f7f5');
 click(t.buttons[2]);assert.equal(t.html.dataset.theme,'dark');assert.equal(t.storage.get('synap-appearance'),'dark');t.setHour(10);t.intervals[0].f();assert.equal(t.html.dataset.theme,'dark','explicit dark overrides Auto refresh');
@@ -29,9 +36,9 @@ t.setHour(8);t.document.hidden=false;t.events['document:visibilitychange']();ass
 assert.equal(t.buttons.filter(b=>b.attributes['aria-pressed']==='true').length,1);assert.equal(t.buttons[0].title,'Auto: light 7 AM–7 PM, dark 7 PM–7 AM');
 assert.equal(setup({saved:'dark',hour:10}).html.dataset.theme,'dark');assert.equal(setup({saved:'invalid',hour:20}).html.dataset.theme,'dark');
 t=setup({blocked:true,hour:10});click(t.buttons[2]);assert.equal(t.html.dataset.theme,'dark','blocked storage does not block switching');t.events.storage({key:'synap-appearance',newValue:'light'});assert.equal(t.html.dataset.theme,'light');
-assert(t.appended.some(node=>node._href==='settings-icon-fix.css?v=1.0.0-brand2'),'settings wordmark stylesheet is loaded after DOM is ready');
-assert(t.appended.some(node=>node._src==='capture-ui.js?v=1.0.0-brand2'),'fresh capture UI is loaded');
-assert(t.appended.some(node=>node._src==='runtime-ui.js?v=1.0.0-brand2'),'fresh runtime UI is loaded');
+assert(t.appended.some(node=>node._href==='settings-icon-fix.css?v=1.0.0-ui-fix1'),'settings wordmark stylesheet is loaded after DOM is ready');
+assert(t.appended.some(node=>node._src==='capture-ui.js?v=1.0.0-ui-fix1'),'fresh capture UI is loaded');
+assert(t.appended.some(node=>node._src==='runtime-ui.js?v=1.0.0-ui-fix1'),'fresh runtime UI is loaded');
 const css=fs.readFileSync(path.join(root,'styles.css'),'utf8');
 const values=block=>Object.fromEntries([...block.matchAll(/--([\w-]+):([^;]+);/g)].map(m=>[m[1],m[2].trim()]));
 const light=values(css.match(/:root\{([^}]+)\}/)[1]);const dark={...light,...values(css.match(/:root\[data-theme="dark"\]\{([^}]+)\}/)[1])};

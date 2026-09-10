@@ -25,7 +25,7 @@ body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-syste
 .synap-refresh .app-shell{max-width:900px;margin:0 auto;padding:0 max(22px,env(safe-area-inset-right)) calc(120px + env(safe-area-inset-bottom)) max(22px,env(safe-area-inset-left));background:none;box-shadow:none;border-radius:0}
 .synap-refresh .topbar{min-height:88px;gap:20px;background:var(--chrome);border-bottom:1px solid var(--border)}
 .synap-refresh .brand-logo.synap-brand-image{width:118px!important;height:32px!important;object-fit:contain}
-.synap-brand-image{display:block;object-fit:contain;object-position:center}
+.synap-brand-image{display:block!important;object-fit:contain;object-position:center;visibility:visible!important;opacity:1!important;filter:none!important}
 .synap-refresh .brand-logo.synap-brand-image{filter:none!important}
 .workspace-label{margin-right:auto;padding-left:20px;border-left:1px solid var(--border);font-size:12px;color:var(--muted)}
 .synap-refresh .top-actions{display:flex;align-items:center;gap:10px}
@@ -88,6 +88,14 @@ body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-syste
 .synap-refresh :is(.synap-weekly-actions button,.synap-week-metric){min-height:44px;font-size:12px;font-weight:550;border-radius:10px}
 .synap-refresh .synap-week-metric{background:var(--accent-soft);color:var(--accent)}
 .synap-refresh .synap-weekly-actions{justify-content:flex-start;gap:8px}
+.synap-refresh .synap-week-source{min-height:56px;padding:12px;border-radius:12px;grid-template-columns:78px minmax(0,1fr)}
+.synap-refresh .synap-week-source strong{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.synap-refresh .synap-week-source small{font-size:12px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.synap-refresh .synap-week-source time{font-size:11px;line-height:1.6}
+.synap-refresh .synap-week-pagination{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:10px 0 14px}
+.synap-refresh #synapWeekCount,.synap-refresh .synap-week-status{color:var(--muted);font-size:12px;line-height:1.6}
+.synap-refresh :is(#synapWeekMore,#synapRefreshWeek){min-height:44px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;font-size:12px;cursor:pointer}
+.synap-refresh #synapRefreshWeek{margin-left:auto}
 .synap-refresh .section-card{margin-top:24px!important;padding:26px!important;border:1px solid var(--border)!important;border-radius:22px!important;background:var(--surface)!important;box-shadow:none!important}
 .synap-refresh .section-heading{align-items:flex-start;gap:16px;margin-bottom:18px}
 .synap-refresh .section-heading h2{font-size:24px!important;font-weight:600!important;line-height:1.2;letter-spacing:-.75px}
@@ -155,7 +163,30 @@ body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-syste
 .synap-refresh .followup-tabs{gap:6px}
 .synap-refresh .followup-tabs button{min-height:44px;padding:8px 14px;font-size:13px!important;background:var(--bg);border-color:var(--border);font-weight:550}
 .synap-refresh .followup-tabs button.active{background:var(--action);color:var(--on-action);border-color:var(--action)}
-.synap-refresh .person-card{min-height:76px;padding:16px;box-shadow:none;background:var(--bg);border-radius:15px}
+.synap-refresh #peopleMemory{padding:18px!important;align-self:start}
+.synap-refresh #peopleMemory .section-heading{display:flex;flex-direction:row!important;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px}
+.synap-refresh #peopleMemory .section-eyebrow{display:none}
+.synap-refresh #peopleMemory h2{font-size:20px!important;letter-spacing:-.5px}
+.synap-refresh #peopleMemory .section-copy{display:none}
+.synap-refresh #peopleMemory .people-grid{grid-template-columns:1fr;gap:6px;margin-top:0}
+.synap-refresh #peopleMemory[data-people-expanded="true"] .people-grid{max-height:320px;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:3px}
+.synap-refresh #peopleMemory .brain-empty{margin:0;padding:10px 0;font-size:12px}
+.synap-refresh .people-browse-toggle{flex-shrink:0;min-height:44px;padding:8px 10px;border:0;border-radius:10px;background:var(--accent-soft);color:var(--accent);font:inherit;font-size:12px;font-weight:650;cursor:pointer}
+.synap-refresh .people-search{display:block;margin-bottom:10px}
+.synap-refresh .people-search input{width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit;font-size:16px}
+.synap-refresh .person-card{min-height:60px;padding:10px 12px;gap:10px;box-shadow:none;background:var(--bg);border-radius:12px}
+.synap-refresh .person-avatar{flex:0 0 32px;height:32px;font-size:13px}
+.synap-refresh .person-entry{display:grid;grid-template-columns:minmax(0,1fr) 44px;align-items:center;gap:0;border:1px solid var(--border);border-radius:12px;background:var(--bg)}
+.synap-refresh .person-entry>.person-card{border:0}
+.synap-refresh .person-management{position:relative}
+.synap-refresh .person-management>summary{display:grid;place-items:center;width:44px;min-height:44px;border-radius:10px;list-style:none;color:var(--muted);cursor:pointer}
+.synap-refresh .person-management>summary::-webkit-details-marker{display:none}
+.synap-refresh .person-management[open]>summary{background:var(--accent-soft);color:var(--accent)}
+.synap-refresh .person-management:not([open])>.person-verify{display:none}
+.synap-refresh .person-management>.person-verify{position:absolute;z-index:10;right:0;top:48px;width:230px;padding:12px;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px var(--shadow)}
+.synap-refresh .person-verify form{flex-wrap:wrap}
+.synap-refresh .person-verify input{min-height:44px;font-size:16px;flex-basis:100%}
+.synap-refresh .person-verify button{min-height:44px;font-size:11px}
 .synap-refresh .person-card strong{font-size:14px!important}
 .synap-refresh .person-card small{font-size:12px!important}
 .synap-refresh .ask-orb{background:var(--accent-soft);color:var(--accent);border-radius:15px}
@@ -173,6 +204,11 @@ body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-syste
 .synap-refresh .recording-content{padding:16px!important}
 .synap-refresh .recording-actions>button{min-height:44px!important;border-radius:10px!important;font-size:13px!important}
 .synap-refresh .recording-card audio{min-height:44px;width:100%}
+.synap-refresh .library-toolbar{display:flex;align-items:center;gap:10px 16px;flex-wrap:wrap;margin-bottom:16px}
+.synap-refresh .library-scope{display:flex;gap:4px;padding:4px;border-radius:12px;background:var(--bg)}
+.synap-refresh .library-scope button{min-height:44px;padding:8px 12px;border:0;border-radius:9px;font:inherit;font-size:12px;color:var(--muted);background:transparent;cursor:pointer}
+.synap-refresh .library-scope button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:650}
+.synap-refresh #libraryScopeHint{margin:0;font-size:12px;color:var(--muted)}
 .synap-refresh .synap-follow-done{min-height:44px;font-size:12px}
 .header-pendant-status{display:flex;align-items:center;gap:8px;height:40px;max-width:136px;padding:0 12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--muted);font:inherit}
 .header-status-dot{width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:var(--muted)}
@@ -197,10 +233,13 @@ body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-syste
 .synap-refresh .settings-form{padding:20px!important}
 .synap-refresh .modal-header{top:-20px!important;min-height:64px;margin:-20px -20px 20px!important;padding:10px 20px!important;background:var(--chrome);border-bottom:1px solid var(--border)!important}
 .synap-refresh .settings-card{padding:20px!important;border:1px solid var(--border)!important;border-radius:18px!important;box-shadow:none!important}
-.synap-refresh .pendant-settings-card{grid-template-columns:42px minmax(0,1fr) auto!important;gap:12px!important}
-.synap-refresh .pendant-settings-top .settings-device-art{width:42px!important;height:42px!important;background:var(--accent-soft)!important}
-body.synap-refresh .pendant-settings-top .settings-device-art.settings-brand-lockup{width:42px!important;height:42px!important;overflow:hidden!important;display:grid!important;place-items:center!important}
-body.synap-refresh .pendant-settings-top .settings-brand-logo{width:36px!important;height:28px!important;max-width:100%!important;padding:0!important;object-fit:contain!important}
+.synap-refresh .pendant-settings-card{grid-template-columns:96px minmax(0,1fr)!important;gap:14px!important}
+body.synap-refresh .pendant-settings-top .settings-device-art.settings-brand-lockup{width:96px!important;height:40px!important;overflow:visible!important;display:grid!important;place-items:center!important;background:transparent!important}
+body.synap-refresh .pendant-settings-top .settings-brand-logo{width:96px!important;height:32px!important;max-width:100%!important;padding:0!important;object-fit:contain!important}
+.synap-refresh .pendant-actions{display:flex!important;grid-column:1/-1;grid-row:2;gap:8px}
+.synap-refresh .pendant-actions button{flex:1}
+.synap-refresh .firmware-inline{display:grid!important;grid-column:1/-1;grid-row:3;gap:8px}
+.synap-refresh .firmware-actions{display:flex!important;flex-wrap:wrap;gap:8px}
 .synap-refresh #setupConnect,.synap-refresh #chooseDeviceButton{min-height:44px!important;font-size:12px!important;border-radius:10px!important;padding:8px 12px!important}
 .synap-refresh #otaStatus{display:block!important;grid-column:1/-1;grid-row:2;margin:0!important;font-size:12px!important}
 .synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel){grid-column:1/-1;grid-row:3;width:100%!important;min-height:44px!important;height:auto!important;padding:10px 14px!important;border:1px solid var(--border)!important;border-radius:11px!important;background:var(--surface-2)!important;color:var(--ink)!important;font-size:13px!important}
