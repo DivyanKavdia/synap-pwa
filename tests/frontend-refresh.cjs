@@ -33,11 +33,11 @@ test('desktop navigation accounts for side rail and keyboard focus', () => {
 test('fresh and cached shells share the refresh generation without changing BLE compatibility', () => {
   const sw=read('sw.js');
   const revision=sw.match(/const CACHE_REVISION='([^']+)'/)[1];
-  assert.equal(revision,'1.0.0-shell40-weekly');
+  assert.equal(revision,'1.0.0-shell41-workspace');
   assert(read('enhancements.js').includes(`SHELL_REVISION='${revision}'`));
   assert.match(sw,/CLIENT_REVISION='1\.0\.0-audio2'/);
   assert.match(sw,/'\.\/compact\.css'/);
-  assert.match(read('theme.js'),/compact\.css\?v=1\.0\.0-weekly4/);
+  assert.match(read('theme.js'),/compact\.css\?v=1\.0\.0-workspace1/);
 });
 
 test('refreshed light and dark semantic palettes meet text and control contrast', () => {

@@ -12,7 +12,7 @@
   try{if(typeof location!=='undefined'&&location.hash&&typeof history?.replaceState==='function')history.replaceState(history.state,'',location.pathname+location.search)}catch(_){}
 
   const key='synap-appearance';
-  const SHELL_REVISION='1.0.0-weekly4';
+  const SHELL_REVISION='1.0.0-workspace1';
   const root=document.documentElement;
   const valid=v=>['system','light','dark'].includes(v)?v:'system';
   let preference='system';
@@ -80,12 +80,12 @@
     installAISettings();
     css('settings-icon-fix.css?v=1.0.0-ui-fix1','settingsicon','brand2');
     script('capture-ui.js?v=1.0.0-ui-fix1');
-    script('brain-ui.js?v=0.0.1-brain7');
+    script('brain-ui.js?v=1.0.0-workspace1');
     script('ask-synap.js?v=1.0.0-ask1');
-    script('product-ui.js?v=1.0.0-ui4');
+    script('product-ui.js?v=1.0.0-workspace1');
     script('runtime-ui.js?v=1.0.0-ui-fix1');
-    script('dashboard-ui.js?v=1.0.0-refresh1');
-    script('productivity-tools.js?v=1.0.0-weekly4');
+    script('dashboard-ui.js?v=1.0.0-workspace1');
+    script('productivity-tools.js?v=1.0.0-workspace1');
     script('desktop-capture.js?v=1.0.0-desktop3');
     script('interaction-surfaces.js?v=1.0.0-ui-fix1');
     script('memory-ready-events.js?v=1.0.0-memory-events1');
@@ -96,7 +96,7 @@
   // Core brand/brain styles are already declared in index.html. Do not inject
   // second copies with different cache-busters: stylesheet races were making
   // the same view render differently between launches.
-  css('compact.css?v=1.0.0-weekly4','compact','brand2');
+  css('compact.css?v=1.0.0-workspace1','compact','brand2');
   window.addEventListener('storage',e=>{if(e.key===key||e.key===null){preference=valid(e.newValue);apply()}});
   window.addEventListener('focus',refreshAuto);window.addEventListener('pageshow',refreshAuto);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshAuto()});

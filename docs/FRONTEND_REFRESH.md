@@ -1,5 +1,27 @@
 # Frontend refresh
 
+Next pass: [Home — light](workspace-home-light.png) ·
+[Home — dark](workspace-home-dark.png) · [Daily focus](workspace-focus.png) ·
+[Desktop](workspace-desktop.png) · [Library](workspace-library.png).
+These previews use isolated fictional recordings, not a connected account.
+
+The daily workspace puts listening totals inside the brief and adds direct
+shortcuts to Weekly Review, People and Follow-ups. To do, Decisions and Waiting
+share one compact panel with counts. Its tabs support arrows, Home and End, and
+retain selection during background updates. Core app sections stay mounted.
+
+Conversation cards show the actual local start time, a summary and explicit
+participants. People who are only mentioned are not presented as attendees.
+The older card decorator yields to the current renderer. Processing status sits
+outside the brief in an expandable row; retry status stays visible when collapsed.
+Opening it preserves the full processing steps and cost breakdown.
+
+Library searches saved names, notes, transcript text and structured conversation
+context without a network request. Search combines with the date filter and
+paginates matching recordings. Source navigation clears a search that would hide
+the requested recording, preserves its ID/offset, and reveals its page. Cards
+include their date and a summary preview, and use two columns on desktop.
+
 Previews: [phone](frontend-refresh-mobile.png) · [desktop](frontend-refresh-desktop.png).
 Feedback update: [People — light](ui-feedback-people-light.png) ·
 [People — dark](ui-feedback-people-dark.png) · [Library](ui-feedback-library.png) ·
@@ -43,7 +65,7 @@ reconnect, processing, account, and OTA owners.
   and visible firmware status without exposing inactive OTA controls.
 - `compact.css` is the final scoped presentation stylesheet, loaded exactly once
   after the legacy base styles. `dashboard-ui.js` owns navigation, not the palette.
-- Shell cache generation `1.0.0-shell40-weekly`; BLE client compatibility remains
+- Shell cache generation `1.0.0-shell41-workspace`; BLE client compatibility remains
   unchanged. No automatic reload, storage migration, or firmware update is added.
 
 ## Verification
@@ -64,6 +86,11 @@ Weekly tests also cover 37 conversations, processing completion without reload,
 UTC/local-midnight boundaries, incomplete cloud hydration and week-switch races.
 Browser fixtures use Asia/Kolkata; run `TZ=Asia/Kolkata node --test
 tests/weekly-review.cjs` for timezone-specific unit verification.
+
+Workspace browser checks cover keyboard tab selection, focused shortcut
+navigation, processing disclosures, search/empty results, combined date/search
+filters, pagination, and source navigation while search is active. The browser
+clock runs from a fixed midday start so "today" cannot change during a test run.
 
 These tests do not replace physical pendant testing: connect/reconnect, tap-start
 and tap-stop, triple-tap sleep/wake, live audio, interruption recovery, and OTA

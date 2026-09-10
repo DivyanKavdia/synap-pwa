@@ -149,6 +149,7 @@ const APP_REVISION = "1.0.0-audio2";
   const LIBRARY_PAGE_SIZE = 5;
   let libraryRecordings = [];
   let libraryScope = "all";
+  let libraryQuery = "";
   let libraryVisibleCount = LIBRARY_PAGE_SIZE;
   let libraryRenderEpoch = 0;
 
@@ -2278,7 +2279,16 @@ const APP_REVISION = "1.0.0-audio2";
   }
 
   function renderLibraryPage() {
-    const count = Math.min(libraryVisibleCount, libraryRecordings.length);
+    const matches = libraryRecordings.filter(recording => recordingMatchesQuery(recording, libraryQuery));
+    const count = Math.min(libraryVisibleCount, matches.length);
+    const searchStatus = document.getElementById("librarySearchStatus");
+    if (searchStatus) {
+      searchStatus.hidden = !libraryQuery.trim();
+      searchStatus.textContent = matches.length ? matches.length + " matching recording" + (matches.length === 1 ? "" : "s") :
+        "No matching recordings. Try another name, topic or phrase.";
+    }
+    const clearSearch = document.getElementById("clearLibrarySearch");
+    if (clearSearch) clearSearch.hidden = !libraryQuery;
     const validIds = new Set(libraryRecordings.map(recording => "recording-" + recording.id));
     Array.from(ui.recordingsList.children).forEach(function (card) {
       if (validIds.has(card.id)) return;
@@ -2293,7 +2303,7 @@ const APP_REVISION = "1.0.0-audio2";
       card.remove();
     });
     for (let index = 0; index < count; index += 1) {
-      const recording = libraryRecordings[index];
+      const recording = matches[index];
       let card = Array.from(ui.recordingsList.children).find(node => node.id === "recording-" + recording.id);
       if (card) updateRecordingCard(card, recording);
       else card = createRecordingCard(recording);
@@ -2310,12 +2320,40 @@ const APP_REVISION = "1.0.0-audio2";
         card.querySelectorAll("audio").forEach(function (audio) { audio.pause(); });
       }
     });
-    const remaining = libraryRecordings.length - count;
-    ui.libraryPagination.hidden = libraryRecordings.length <= LIBRARY_PAGE_SIZE;
-    ui.libraryCountLabel.textContent = count + " of " + libraryRecordings.length;
+    const remaining = matches.length - count;
+    ui.libraryPagination.hidden = matches.length <= LIBRARY_PAGE_SIZE;
+    ui.libraryCountLabel.textContent = count + " of " + matches.length;
     ui.showMoreRecordingsButton.hidden = remaining <= 0;
     ui.showMoreRecordingsButton.textContent = "Show " + Math.min(LIBRARY_PAGE_SIZE, remaining) + " more";
     ui.showLessRecordingsButton.hidden = count <= LIBRARY_PAGE_SIZE;
+  }
+
+  function recordingMatchesQuery(recording, query) {
+    const terms = String(query || "").trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return true;
+    const meeting = recording.meeting || {};
+    const conversations = Array.isArray(meeting.conversations) ? meeting.conversations :
+      (Array.isArray(recording.conversations) ? recording.conversations : []);
+    const people = Array.isArray(meeting.people) ? meeting.people : [];
+    const text = [recording.name, recording.notes, recording.transcript, recording.summary, meeting.executive_summary,
+      ...people.map(person => person.name),
+      ...conversations.flatMap(conversation => [conversation.title, conversation.summary,
+        ...(Array.isArray(conversation.people) ? conversation.people.map(person => person.name) : []),
+        ...(Array.isArray(conversation.topics) ? conversation.topics : [])])
+    ].join(" ").toLocaleLowerCase();
+    return terms.every(term => text.includes(term));
+  }
+
+  function recordingRowMeta(recording) {
+    const date = new Date(recording.createdAt);
+    const label = date.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+    return label + " · " + date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " · " + formatDuration(recording.durationMs);
+  }
+
+  function resetLibrarySearch() {
+    libraryQuery = "";
+    const input = document.getElementById("librarySearch");
+    if (input) input.value = "";
   }
 
   function updateRecordingCard(card, recording) {
@@ -2323,7 +2361,12 @@ const APP_REVISION = "1.0.0-audio2";
     const name = card.querySelector(".recording-row-name");
     if (name) name.textContent = recording.name || "Untitled recording";
     const meta = card.querySelector(".recording-row-meta");
-    if (meta) meta.textContent = new Date(recording.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " · " + formatDuration(recording.durationMs);
+    if (meta) meta.textContent = recordingRowMeta(recording);
+    const preview = card.querySelector(".recording-row-preview");
+    if (preview) {
+      preview.textContent = recording.summary || recording.meeting?.executive_summary || "";
+      preview.hidden = !preview.textContent;
+    }
     const content = card.querySelector(".recording-content");
     if (!content) return;
     // Update generated evidence in place, never replace a playing audio element
@@ -2350,6 +2393,7 @@ const APP_REVISION = "1.0.0-audio2";
   }
 
   function revealRecording(id) {
+    resetLibrarySearch();
     const index = libraryRecordings.findIndex(function (recording) { return recording.id === id; });
     if (index < 0) return;
     libraryVisibleCount = Math.max(libraryVisibleCount, Math.ceil((index + 1) / LIBRARY_PAGE_SIZE) * LIBRARY_PAGE_SIZE);
@@ -2377,12 +2421,16 @@ const APP_REVISION = "1.0.0-audio2";
     name.textContent = recording.name || "Untitled recording";
     const meta = document.createElement("span");
     meta.className = "recording-row-meta";
-    meta.textContent = new Date(recording.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " · " + formatDuration(recording.durationMs);
+    meta.textContent = recordingRowMeta(recording);
+    const preview = document.createElement("span");
+    preview.className = "recording-row-preview";
+    preview.textContent = recording.summary || recording.meeting?.executive_summary || "";
+    preview.hidden = !preview.textContent;
     const chevron = document.createElement("span");
     chevron.className = "recording-row-chevron";
     chevron.appendChild(recordingIcon("i-chevron"));
     chevron.setAttribute("aria-hidden", "true");
-    info.append(name, meta);
+    info.append(name, meta, preview);
     const badge = document.createElement("span");
     badge.className = "recording-row-icon";
     badge.appendChild(recordingIcon("i-wave"));
@@ -2996,6 +3044,23 @@ const APP_REVISION = "1.0.0-audio2";
 
   function bindEvents() {
     bindCoreControls();
+    document.getElementById("librarySearch")?.addEventListener("input", function (event) {
+      libraryQuery = event.target.value;
+      libraryVisibleCount = LIBRARY_PAGE_SIZE;
+      renderLibraryPage();
+    });
+    document.getElementById("clearLibrarySearch")?.addEventListener("click", function () {
+      resetLibrarySearch();
+      libraryVisibleCount = LIBRARY_PAGE_SIZE;
+      renderLibraryPage();
+      document.getElementById("librarySearch")?.focus();
+    });
+    window.addEventListener("synap-library-source", function (event) {
+      resetLibrarySearch();
+      const index = libraryRecordings.findIndex(recording => String(recording.id) === String(event.detail?.recordingId));
+      if (index >= 0) libraryVisibleCount = Math.max(libraryVisibleCount, Math.ceil((index + 1) / LIBRARY_PAGE_SIZE) * LIBRARY_PAGE_SIZE);
+      renderLibraryPage();
+    });
     document.querySelectorAll("[data-library-scope]").forEach(function (button) {
       button.addEventListener("click", function () {
         libraryScope = button.dataset.libraryScope === "day" ? "day" : "all";

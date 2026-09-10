@@ -134,7 +134,52 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
     if(capture){capture.classList.remove('capture-minimal');capture.classList.add('capture-product');capture.removeAttribute('aria-hidden')}
   }
 
-  function scan(){injectStyle();ensureCaptureNav();healLegacyWrappers();bindTabs();observeSections();updateFromViewport()}
+  function bindDailyWorkspace(){
+    const shortcuts=$('.day-shortcuts');
+    if(shortcuts&&!shortcuts.dataset.bound){
+      shortcuts.dataset.bound='1';
+      shortcuts.addEventListener('click',event=>{
+        const link=event.target.closest?.('[data-workspace-target]');
+        if(!link||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+        const target=document.getElementById(link.dataset.workspaceTarget);
+        if(!target)return;
+        event.preventDefault();
+        syncNav(target.id==='synapWeeklyReview'?'today':'memories');
+        navLockUntil=Date.now()+900;
+        if(!target.hasAttribute('tabindex'))target.setAttribute('tabindex','-1');
+        target.focus({preventScroll:true});
+        target.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
+      });
+    }
+    const tabs=$('.focus-tabs');
+    if(!tabs||tabs.dataset.bound)return;
+    tabs.dataset.bound='1';
+    const buttons=[...tabs.querySelectorAll('[data-focus-tab]')];
+    function select(button,focus=false){
+      for(const item of buttons){
+        const active=item===button;
+        item.setAttribute('aria-selected',String(active));
+        item.tabIndex=active?0:-1;
+        const panel=document.getElementById(item.dataset.focusTab);
+        if(panel)panel.hidden=!active;
+      }
+      if(focus)button.focus();
+    }
+    tabs.addEventListener('click',event=>{
+      const button=event.target.closest?.('[data-focus-tab]');
+      if(button)select(button);
+    });
+    tabs.addEventListener('keydown',event=>{
+      const index=buttons.indexOf(event.target);
+      if(index<0||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();
+      const next=event.key==='Home'?0:event.key==='End'?buttons.length-1:
+        (index+(event.key==='ArrowRight'?1:-1)+buttons.length)%buttons.length;
+      select(buttons[next],true);
+    });
+  }
+
+  function scan(){injectStyle();ensureCaptureNav();healLegacyWrappers();bindTabs();bindDailyWorkspace();observeSections();updateFromViewport()}
   function init(){
     scan();
     // Dynamic second-brain sections are inserted as direct children of <main>.
