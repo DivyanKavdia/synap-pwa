@@ -80,7 +80,7 @@
       status.classList.toggle('is-connected',connected);
       status.classList.toggle('is-recording',recording);
       const label=status.querySelector('.header-status-text');
-      if(label)label.textContent=recording?'Listening':connected?'Connected':state==='connecting'?'Connecting':'Offline';
+      if(label)label.textContent=state==='updating'?'Updating':recording?'Listening':connected?'Connected':state==='connecting'?'Connecting':'Offline';
       toggle.classList.toggle('is-recording',recording);
       toggle.disabled=busy&&!recording?true:(recording?stop.disabled:start.disabled);
       toggle.setAttribute('aria-label',recording?'Stop listening':'Start listening');

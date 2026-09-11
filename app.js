@@ -2984,6 +2984,18 @@
     const cancel = document.getElementById("otaCancel");
     const status = document.getElementById("otaStatus");
     const progress = document.getElementById("otaProgress");
+    const notice=document.getElementById("firmwareNotice"),noticeText=document.getElementById("firmwareNoticeText");
+    const bannerProgress=document.getElementById("firmwareNoticeProgress"),spinner=document.getElementById("firmwareUpdateSpinner");
+    const latestButton=document.getElementById("otaLatest"),bannerButton=document.getElementById("firmwareUpdateButton");
+    const showProgress=(message,value=null,committing=false)=>{
+      status.textContent=message;noticeText.textContent=message;notice.hidden=false;
+      spinner.hidden=false;latestButton.hidden=true;bannerButton.hidden=true;cancel.disabled=committing;
+      for(const bar of [progress,bannerProgress]){
+        bar.hidden=false;
+        if(Number.isFinite(value))bar.value=Math.max(0,Math.min(1,value));
+        else bar.removeAttribute('value');
+      }
+    };
     const targetId = () => deviceAssociation?.deviceId || null;
     const requireTarget = info => {
       if(info.protocol!==3) throw Error(globalThis.SynapOTA.MIGRATION_MESSAGE);
@@ -2994,9 +3006,7 @@
     firmwareUpdater = new globalThis.SynapOTA.Client({
       connected:isGattConnected, queue:queueGattOperation,
       getService:()=>queueGattOperation(()=>gattServer.getPrimaryService(SERVICE_UUID),"Find pendant service"),
-      progress:(message,value,committing)=>{
-        status.textContent=message;progress.value=value;progress.hidden=false;cancel.disabled=committing;
-      }
+      progress:showProgress
     });
     const eligible = ()=>isGattConnected() && !connectInProgress && !recordingConfirmed &&
       !finalizing && !currentRecordingId && !openingCapture && !unsavedAudio &&
@@ -3008,17 +3018,16 @@
       for (const id of ["otaLatest","otaReleaseCheck","firmwareUpdateButton"]) {
         const control=document.getElementById(id);if(control)control.disabled=value;
       }
+      if(!value){spinner.hidden=true;bannerProgress.hidden=true;latestButton.hidden=!offered;bannerButton.hidden=!offered;}
       ui.runQueueButton.disabled=value;
       setAppState(isGattConnected() ? (deviceStatus.error ? "error" : "idle") : "disconnected");
     };
     cancel.addEventListener("click",()=>{
-      firmwareUpdater.cancel();cancel.disabled=true;status.textContent="Cancelling transfer…";
+      firmwareUpdater.cancel();showProgress("Cancelling transfer…",null,true);
     });
 
     if (!globalThis.SynapReleases) return;
     const releases=globalThis.SynapReleases;
-    const notice=document.getElementById("firmwareNotice"),noticeText=document.getElementById("firmwareNoticeText");
-    const latestButton=document.getElementById("otaLatest"),bannerButton=document.getElementById("firmwareUpdateButton");
     let offered=null,offeredDevice=null,lastCheck=0,downloadController=null;
     const pendingKey=id=>"synap-ota-pending-device:"+id;
     const savePending=(id,m)=>{try{if(m)localStorage.setItem(pendingKey(id),JSON.stringify(m));else localStorage.removeItem(pendingKey(id));}catch(_){} };
@@ -3085,7 +3094,9 @@
       if(!offered||offeredDevice!==targetId()){await inspect(true);return;}
       const m=offered,id=targetId();
       if(!window.confirm(`Update synap to ${m.build}?\n${id}\n\nKeep your pendant nearby and this app open.`))return;
-      openSettings();lock(true);processor?.pause();ui.queueStatus.textContent="Paused · Tap Process recordings to resume";progress.value=0;
+      if(!ui.settingsDialog.open)openSettings();
+      lock(true);showProgress('Preparing update…',null,true);
+      processor?.pause();ui.queueStatus.textContent="Paused · Tap Process recordings to resume";
       let commitSent=false,resumeInterrupted=false;
       try {
         const info=await firmwareUpdater.check();
@@ -3094,7 +3105,7 @@
         if(!releases.compatible(m,info,board))throw Error('This release is already installed or older than the running firmware.');
         if(![1,3,4,6].includes(info.state))throw Error('An update is already pending. Wait for reboot or transfer timeout.');
         const epoch=connectionEpoch;
-        await acquireWakeLock();status.textContent='Downloading update…';cancel.disabled=false;
+        await acquireWakeLock();showProgress('Downloading update…');
         downloadController=new AbortController();
         const binary=await releases.download(m,info.capacity,undefined,downloadController.signal);
         if(downloadController.signal.aborted)throw Error('Download cancelled. Nothing was flashed.');
@@ -3102,11 +3113,12 @@
         savePending(id,m);
         try{await firmwareUpdater.update(binary,id);commitSent=true;}
         catch(error){if(!firmwareUpdater.committing){if(error.resumable)resumeInterrupted=true;else savePending(id,null);throw error;}commitSent=true;}
-        status.textContent='Restarting pendant…';cancel.disabled=true;
+        showProgress('Restarting pendant…',1,true);
         const deadline=Date.now()+8000;
         while(isGattConnected()&&Date.now()<deadline)await delay(100);
         if(isGattConnected())disconnectGatt("Firmware update completed; reconnect for verification");
         await delay(1500);
+        showProgress('Reconnecting to verify update…',1,true);
         let verified=false;
         for(let attempt=0;attempt<4;attempt++) {
           if(!isGattConnected())await connectPendant({silent:true,autoReconnect:true});
@@ -3121,7 +3133,7 @@
         if(!verified)throw Error(`Update not confirmed. Reconnect to check.`);
         savePending(id,null);offered=null;bannerButton.hidden=true;latestButton.hidden=true;
         announce(`Update complete · ${m.build}`);
-      }catch(error){announce(error.resumable?'Update paused · Reconnect to continue':friendlyError(error));}
+      }catch(error){if(error.resumable)offerLabel(true);announce(error.resumable?'Update paused · Reconnect to continue':friendlyError(error));}
       finally{
         downloadController=null;firmwareUpdater.reset();
         await releaseWakeLock();lock(false);
