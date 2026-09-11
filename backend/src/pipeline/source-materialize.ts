@@ -11,9 +11,11 @@ import { openText } from '../crypto/envelope.js';
 import * as db from '../store/firestore.js';
 import type { RecordingDoc, SegmentDoc } from '../store/types.js';
 import { binding } from './process.js';
+import { applySpeakerNames, readSpeakerNames } from '../speaker/names.js';
 
 export interface MaterializedTranscript {
   text: string;
+  originalText: string;
   source: 'recording' | 'segments' | 'none';
   segmentCount: number;
   transcriptSegments: number;
@@ -96,6 +98,8 @@ export async function materializeTranscript(
   const selected = chooseTranscript(stored, windows);
   return {
     ...selected,
+    originalText: selected.text,
+    text: applySpeakerNames(selected.text, readSpeakerNames(uid, recording, dek)),
     segmentCount: segments.length,
     transcriptSegments,
     complete: segments.length > 0 && transcriptSegments === segments.length,

@@ -68,6 +68,8 @@ export interface RecordingDoc {
   sealedMemory: Sealed | null;
   /** Sealed full transcript text, joined across segments. */
   sealedTranscript: Sealed | null;
+  /** User-confirmed names for this recording's original speaker labels. */
+  sealedSpeakerNames?: Sealed | null;
   createdAt: string;
   updatedAt: string;
 }

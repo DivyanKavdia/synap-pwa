@@ -650,6 +650,17 @@ body.synap-refresh :is(#capture,#insights,#myActions,#library,#synapWeeklyReview
 .synap-refresh .settings-device-label{font-size:14px!important;font-weight:650;margin:0 0 4px}
 :root[data-theme] .synap-refresh .brain-tabs{background:var(--chrome)}
 /* One action workspace; existing forms and lists stay mounted in their panels. */
+.synap-refresh .speaker-names{margin:0 0 10px;padding:0;border-bottom:1px solid var(--border)}
+.synap-refresh .speaker-names>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--accent);font-size:13px}
+.synap-refresh .speaker-names-hint,.synap-refresh .speaker-names-status{font-size:12px;line-height:1.5;color:var(--muted);margin:8px 0}
+.synap-refresh .speaker-name-fields{display:grid;gap:12px;border:0;padding:0;margin:12px 0;min-width:0}
+.synap-refresh .speaker-name-fields label{display:grid;gap:5px;min-width:0}
+.synap-refresh .speaker-name-fields strong{font-size:13px}
+.synap-refresh .speaker-name-fields small{color:var(--muted);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.synap-refresh .speaker-name-fields input{box-sizing:border-box;width:100%;min-height:44px;padding:10px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--ink);font-size:16px}
+.synap-refresh .speaker-name-actions{display:flex;flex-wrap:wrap;gap:8px}
+.synap-refresh .speaker-name-actions button{min-height:44px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--accent);font-size:12px}
+.synap-refresh .speaker-name-actions button[type="submit"]{background:var(--action);color:var(--on-action)}
 .synap-refresh #myActions{scroll-margin-top:0}
 .synap-refresh #myActionsBody{padding:0}
 .synap-refresh #myActions .actions-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;margin:0;padding:0 8px;border-bottom:1px solid var(--border);background:transparent}

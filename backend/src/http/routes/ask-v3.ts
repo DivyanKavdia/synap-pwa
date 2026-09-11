@@ -6,6 +6,7 @@ import { answerFromEvidence, parseQuery, type Evidence } from '../../gemini/ask.
 import { embedContent } from '../../gemini/client.js';
 import { binding } from '../../pipeline/process.js';
 import { materializeTranscript } from '../../pipeline/source-materialize.js';
+import { applySpeakerNames, readSpeakerNames } from '../../speaker/names.js';
 import * as db from '../../store/firestore.js';
 import type { ConversationDoc, SegmentDoc, StructuredMemory } from '../../store/types.js';
 import { nameKey, normalizeName, topicKey } from '../../util/ids.js';
@@ -85,6 +86,12 @@ function memoryScopeMatches(memory: StructuredMemory | null, people: string[], t
 
 async function conversationEvidence(uid: string, dek: Buffer, conversations: ConversationDoc[], queryTerms: string[]): Promise<Evidence[]> {
   const cache = new Map<string, Promise<SegmentDoc[]>>();
+  const recordings = new Map<string, ReturnType<typeof db.getRecording>>();
+  const recordingFor = (id: string) => {
+    let value = recordings.get(id);
+    if (!value) { value = db.getRecording(uid, id); recordings.set(id, value); }
+    return value;
+  };
   const segmentsFor = (recordingId: string) => {
     let value = cache.get(recordingId);
     if (!value) { value = db.listSegments(uid, recordingId); cache.set(recordingId, value); }
@@ -96,6 +103,17 @@ async function conversationEvidence(uid: string, dek: Buffer, conversations: Con
       const content = openJson<{ title: string; summary: string }>(
         dek, conversation.sealedContent, binding(uid, `conversation/${conversation.conversationId}`, 'content'),
       );
+      const recording = await recordingFor(conversation.recordingId);
+      if (!recording) return null;
+      const names = readSpeakerNames(uid, recording, dek);
+      // Speaker edits preserve index IDs and follow-up state. Read the current
+      // memory here so older search entries cannot reintroduce stale names.
+      if (recording.sealedSpeakerNames && recording.sealedMemory) {
+        const memory = openJson<StructuredMemory>(dek, recording.sealedMemory, binding(uid, `recording/${conversation.recordingId}`, 'memory'));
+        const current = memory.conversations.filter(item => item.end_ms >= conversation.startMs && item.start_ms <= conversation.endMs);
+        content.title = current[0]?.title || memory.title;
+        content.summary = current.map(item => item.summary).join('\n') || memory.executive_summary;
+      }
       const segmentText: string[] = [];
       for (const segment of await segmentsFor(conversation.recordingId)) {
         if (!segment.sealedTranscript || segment.endMs < conversation.startMs || segment.startMs > conversation.endMs) continue;
@@ -106,7 +124,7 @@ async function conversationEvidence(uid: string, dek: Buffer, conversations: Con
           ));
         } catch { /* one damaged window must not hide the remaining evidence */ }
       }
-      const transcript = excerpt(segmentText.join('\n'), queryTerms);
+      const transcript = excerpt(applySpeakerNames(segmentText.join('\n'), names), queryTerms);
       return {
         recordingId: conversation.recordingId,
         conversationId: conversation.conversationId,

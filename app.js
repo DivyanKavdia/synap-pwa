@@ -2612,6 +2612,7 @@
       content.appendChild(recordingDisclosure("Summary", summary));
     }
     if (summary) summary.textContent = recording.summary || "";
+    globalThis.SynapSpeakerNames?.attach(card, recording);
   }
 
   function revealRecording(id) {
@@ -2794,6 +2795,7 @@
     }
 
     card.appendChild(recordingDisclosure("Edit name & details", titleRow, meta));
+    globalThis.SynapSpeakerNames?.attach(card, recording);
     return card;
   }
 
@@ -3310,6 +3312,9 @@
       if (ui.datePicker.value && ui.datePicker.value <= localDateKey(new Date())) {
         selectDay(ui.datePicker.value);
       }
+    });
+    window.addEventListener("synap-memory-ready", function (event) {
+      if (event.detail?.source === "speaker-names") void renderRecordings();
     });
     ui.runQueueButton.addEventListener("click", function () {
       if (firmwareBusy || recordingConfirmed || finalizing || appState === "starting") {

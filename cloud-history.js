@@ -12,7 +12,7 @@
   var targetedRunning = Object.create(null);
 
   var CLOUD_DERIVED_FIELDS = [
-    'transcript', 'summary', 'meeting', 'people', 'conversations',
+    'transcript', 'rawTranscript', 'speakerNames', 'summary', 'meeting', 'people', 'conversations',
     'processingState', 'processingStage', 'processingProgress',
     'processingFailedStage', 'processingError', 'processingRetryable',
     'provider', 'durationMs'

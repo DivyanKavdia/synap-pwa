@@ -9,6 +9,7 @@ import { memoryToolRoutes } from './routes/memory-tools.js';
 import { recordingRoutes } from './routes/recordings.js';
 import { retryRoutes } from './routes/retry.js';
 import { sourceRoutes } from './routes/source.js';
+import { speakerNameRoutes } from './routes/speaker-names.js';
 import { taskRoutes } from './routes/tasks.js';
 import { voiceProfileRoutes } from './routes/voice-profile.js';
 
@@ -108,6 +109,7 @@ export function createApp(): Express {
   // and replaying finalize cannot provide one because finalize is intentionally
   // idempotent.
   app.use('/v1', retryRoutes());
+  app.use('/v1', speakerNameRoutes());
   app.use('/v1', recordingRoutes());
   app.use('/v1', brainRoutes());
   app.use('/v1', memoryToolRoutes());

@@ -10,6 +10,7 @@ import { segmentPath, writeSealedSegment } from '../../store/gcs.js';
 import type { HighlightDoc, RecordingDoc, SegmentDoc, StructuredMemory } from '../../store/types.js';
 import { fingerprint, localDay, sha256 } from '../../util/ids.js';
 import { log } from '../../util/log.js';
+import { speakerTranscriptFields } from '../../speaker/names.js';
 import { requireAuth, type AuthedRequest } from '../auth.js';
 import { HttpError, handler } from '../errors.js';
 
@@ -383,7 +384,7 @@ export function recordingRoutes(): Router {
             withTranscript && recording.sealedTranscript
               ? openText(req.dek, recording.sealedTranscript, binding(req.uid, scope, 'transcript'))
               : undefined;
-          return { ...base, ...memory, ...(transcript === undefined ? {} : { transcript }) };
+          return { ...base, ...memory, ...speakerTranscriptFields(req.uid, recording, req.dek, transcript) };
         } catch (cause) {
           // One unreadable record must not cost the user the rest of their
           // history. This should be impossible — it would mean the sealed bytes
@@ -431,6 +432,7 @@ export function recordingRoutes(): Router {
         duration_ms: recording.durationMs,
         transcript,
         ...memory,
+        ...speakerTranscriptFields(req.uid, recording, req.dek, transcript),
       });
     }),
   );
