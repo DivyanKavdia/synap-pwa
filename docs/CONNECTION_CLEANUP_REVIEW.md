@@ -1,5 +1,7 @@
 # PWA cleanup and connection stability
 
+Validation scope correction: this pass did not complete merge/unmerge journeys. The subsequent [memory workflow repair](MEMORY_WORKFLOW_REPAIR.md) documents the reproduced failures, fixes and added browser deployment checks. Source-contract checks alone do not establish that a user workflow works.
+
 This pass audits the PWA's startup graph, recording path, Bluetooth ownership, processing locks and runtime rendering. It removes obsolete browser code while preserving the production features. Firmware and backend behavior are unchanged.
 
 ## Connection fixes

@@ -4,7 +4,7 @@
 const DB='dk-pendant-recordings';
 const $=(s,h=document)=>h.querySelector(s),$$=(s,h=document)=>[...h.querySelectorAll(s)];
 const mine=o=>/^(me|i|myself|self|you|user)$/i.test(String(o||'').trim());
-let currentRecords=[],canonicalPeople=null,canonicalFollowups=null,canonicalAt=0,refreshing=false;
+let currentRecords=[],canonicalPeople=null,canonicalFollowups=null,canonicalAt=0,refreshing=false,canonicalScope='';
 function day(v){const d=new Date(v);if(Number.isNaN(d.getTime()))return'';return[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
 function selected(){return $('#datePicker')?.value||day(Date.now())}
 function signedIn(){try{return Boolean(root.SynapAuth?.isSignedIn?.())}catch(_){return false}}
@@ -88,9 +88,35 @@ function renderLocalPeople(list){
   }));
   renderPeopleRows();
 }
-async function loadCanonical(force=false){const api=root.SynapBackend;if(!signedIn()||!api)return false;if(!force&&canonicalAt&&Date.now()-canonicalAt<15000&&canonicalPeople&&canonicalFollowups)return true;const [p,f]=await Promise.allSettled([api.people?.(),api.followUps?.('open','all')]);if(p.status==='fulfilled'&&Array.isArray(p.value?.people))canonicalPeople=p.value.people;if(f.status==='fulfilled'&&Array.isArray(f.value?.follow_ups))canonicalFollowups=f.value.follow_ups;if(canonicalPeople||canonicalFollowups)canonicalAt=Date.now();return Boolean(canonicalPeople||canonicalFollowups)}
+function accountKey(){return signedIn()?String(root.SynapAuth?.session?.()?.profile?.uid||'signed-in'):''}
+async function loadCanonical(force=false){
+  const api=root.SynapBackend,key=accountKey();
+  if(key!==canonicalScope){canonicalScope=key;canonicalPeople=null;canonicalFollowups=null;canonicalAt=0;}
+  if(!key||!api)return false;
+  if(!force&&canonicalAt&&Date.now()-canonicalAt<15000&&canonicalPeople&&canonicalFollowups)return true;
+  const [p,f]=await Promise.allSettled([api.people?.(),api.followUps?.('open','all')]);
+  if(key!==accountKey())return false;
+  if(p.status==='fulfilled'&&Array.isArray(p.value?.people))canonicalPeople=p.value.people;
+  if(f.status==='fulfilled'&&Array.isArray(f.value?.follow_ups))canonicalFollowups=f.value.follow_ups;
+  if(canonicalPeople||canonicalFollowups)canonicalAt=Date.now();
+  return Boolean(canonicalPeople||canonicalFollowups);
+}
 async function refresh(forceCanonical=false){if(refreshing)return;refreshing=true;try{dedupe();currentRecords=await load().catch(()=>[]);await loadCanonical(forceCanonical);const list=currentRecords.filter(r=>day(r.createdAt)===selected());if(Array.isArray(canonicalPeople))renderCanonicalPeople(canonicalPeople);else renderLocalPeople(list);renderFollowups(activeMode());root.SynapPeopleConfirmUI?.decorate?.()}finally{refreshing=false}}
-async function markDone(id,button){const api=root.SynapBackend;if(!id||!api?.resolveFollowUp)return;button.disabled=true;const old=button.textContent;button.textContent='Saving…';try{await api.resolveFollowUp(id,'done');if(Array.isArray(canonicalFollowups))canonicalFollowups=canonicalFollowups.filter(x=>String(x.id)!==String(id));renderFollowups(activeMode());root.dispatchEvent?.(new CustomEvent('synap-follow-up-updated',{detail:{id,state:'done'}}))}catch(error){button.disabled=false;button.textContent=old;console.warn('[synap follow-up]',error)}}
+function followError(message){
+  let node=$('#followupError');
+  if(!node){node=document.createElement('p');node.id='followupError';node.className='synap-merge-error';node.setAttribute('role','alert');$('#followupList')?.before(node)}
+  node.textContent=message;node.hidden=!message;
+}
+async function markDone(id,button){
+  const api=root.SynapBackend;
+  if(!id||!api?.resolveFollowUp){followError('Follow-ups are unavailable. Please retry after reconnecting.');return}
+  followError('');button.disabled=true;const old=button.textContent;button.textContent='Saving…';
+  try{
+    await api.resolveFollowUp(id,'done');
+    if(Array.isArray(canonicalFollowups))canonicalFollowups=canonicalFollowups.filter(x=>String(x.id)!==String(id));
+    renderFollowups(activeMode());root.dispatchEvent?.(new CustomEvent('synap-follow-up-updated',{detail:{id,state:'done'}}));
+  }catch(error){button.disabled=false;button.textContent=old;followError(error.message||'Could not save follow-up. Please retry.')}
+}
 function recordingForInsight(card){const id=card?.dataset?.recordingId;if(id)return id;const dt=card?.querySelector('time')?.dateTime;if(!dt)return'';const target=new Date(dt).getTime();return currentRecords.find(r=>new Date(r.createdAt).getTime()===target)?.id||''}
 function bind(){
   document.addEventListener('click',event=>{

@@ -269,9 +269,10 @@ async function run() {
         await assertWeeklyReview(page,mode,width);
         await assertDayReading(page,mode,width);
         await page.locator('.brain-tabs a[href="#insights"]').click();
-        await page.locator('.memory-search input').fill('prototype');
-        await page.waitForFunction(()=>document.querySelectorAll('.memory-result').length>0);
-        await page.locator('.memory-search input').fill('');
+        await page.locator('#synapSearchMemories').click();
+        await page.locator('#librarySearch').fill('prototype');
+        await page.waitForFunction(()=>document.querySelector('#librarySearchStatus').textContent==='1 matching recording');
+        await page.locator('#clearLibrarySearch').click();
         await page.locator('.brain-tabs a[href="#library"]').click();
         await page.locator('.recording-card>summary').click();
         await page.waitForFunction(()=>document.querySelector('.recording-action-export')?.disabled===false);

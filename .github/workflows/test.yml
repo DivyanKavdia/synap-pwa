@@ -17,6 +17,25 @@ jobs:
       - run: |
           for test_file in tests/*.cjs; do node "$test_file"; done
 
+  workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-save --package-lock=false playwright@1.51.1
+      - run: npx playwright install --with-deps chromium
+      - run: node tools/workflow-smoke.cjs
+        env:
+          SYNAP_WORKFLOW_OUTPUT: artifacts/workflows
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workflow-screenshots
+          path: artifacts/workflows
+          if-no-files-found: ignore
+
   backend:
     runs-on: ubuntu-latest
     defaults:

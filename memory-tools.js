@@ -1,41 +1,259 @@
-/* Synap memory tools: reversible merge/unmerge and first-class transcript views. */
-(function(root){'use strict';
-const DB='dk-pendant-recordings',STYLE_ID='synapMemoryToolsStyle';
-let records=[],merges=[],apiSupported=false,selectionMode=false,selected=new Set(),enhancing=false,busy=false;
-const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
-function day(v){const d=new Date(v);if(Number.isNaN(d.getTime()))return'';return[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
-function currentDay(){return $('#datePicker')?.value||day(Date.now())}
-function signedIn(){try{return Boolean(root.SynapAuth?.isSignedIn?.())}catch(_){return false}}
-function activeUid(){try{return String(root.SynapAuth?.session?.()?.profile?.uid||'')}catch(_){return''}}
-function providerIsSynap(){try{return String(JSON.parse(localStorage.getItem('synap-ai-provider-settings')||'{}').provider||'synap')==='synap'}catch(_){return true}}
-function injectStyle(){if(document.getElementById(STYLE_ID))return;const s=document.createElement('style');s.id=STYLE_ID;s.textContent=`
-.synap-memory-actions{display:flex;align-items:center;gap:8px;margin-left:auto}.synap-memory-actions button,.synap-merge-toolbar button,.synap-memory-tabs button,.synap-unmerge{font:inherit}.synap-merge-button{border:1px solid var(--border,#d9e2ec);background:var(--surface,#fff);border-radius:999px;padding:8px 13px;font-size:12px;font-weight:700;cursor:pointer}.synap-merge-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:10px 12px;border:1px solid var(--border,#d9e2ec);border-radius:14px;background:var(--surface,#fff)}.synap-merge-toolbar span{flex:1;min-width:160px;font-size:12px;color:var(--muted,#64748b)}.synap-merge-toolbar button{border:0;border-radius:10px;padding:8px 12px;font-weight:700;cursor:pointer}.synap-merge-toolbar .primary{background:#102744;color:#fff}.synap-merge-toolbar button:disabled{opacity:.45;cursor:not-allowed}.synap-merge-check{width:26px;height:26px;flex:0 0 26px;border:1.5px solid #9badc1;border-radius:8px;background:transparent;display:grid;place-items:center;cursor:pointer;color:transparent}.synap-merge-check[aria-pressed="true"]{background:#102744;border-color:#102744;color:#fff}.synap-merge-check[aria-pressed="true"]::after{content:'✓';font-size:15px;font-weight:800}.synap-memory-tabs{display:inline-flex;gap:3px;padding:3px;margin:8px 0 10px;border-radius:10px;background:rgba(127,145,165,.12)}.synap-memory-tabs button{border:0;background:transparent;border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;color:var(--muted,#64748b);cursor:pointer}.synap-memory-tabs button[aria-selected="true"]{background:var(--surface,#fff);color:inherit;box-shadow:0 1px 4px rgba(15,23,42,.1)}.synap-memory-panel{white-space:pre-wrap}.synap-transcript{display:grid;gap:8px;max-height:420px;overflow:auto;padding-right:4px}.synap-transcript-line{display:grid;grid-template-columns:48px 52px minmax(0,1fr);gap:8px;align-items:start;font-size:12px;line-height:1.45}.synap-transcript-time{color:var(--muted,#64748b);font-variant-numeric:tabular-nums}.synap-transcript-speaker{font-weight:800}.synap-transcript-speaker.you{color:#237a57}.synap-transcript-line p{margin:0}.synap-transcript-flat{margin:0;white-space:pre-wrap;font-size:12px;line-height:1.55}.synap-merged-card{border-style:dashed!important}.synap-merged-badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;margin-left:8px;font-size:9px;font-weight:800;letter-spacing:.03em;background:rgba(78,121,167,.12);color:#426a96}.synap-merged-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid var(--border,#e2e8f0)}.synap-merged-footer small{color:var(--muted,#64748b)}.synap-unmerge{border:0;background:transparent;color:#466b92;font-size:11px;font-weight:750;cursor:pointer}.synap-memory-source-hidden{display:none!important}@media(max-width:560px){.synap-memory-actions{width:100%;margin:8px 0 0}.synap-transcript-line{grid-template-columns:42px 46px minmax(0,1fr);gap:6px;font-size:11px}}
-`;document.head.appendChild(s)}
-function request(path,options){if(!root.SynapAuth?.authedFetch)return Promise.reject(new Error('Synap account is unavailable.'));return root.SynapAuth.authedFetch(path,options||{}).then(async response=>{let data=null;try{data=await response.json()}catch(_){}if(!response.ok){const e=new Error(data?.error?.message||('HTTP '+response.status));e.status=response.status;throw e}return data})}
-function openDb(){return new Promise((resolve,reject)=>{const q=indexedDB.open(DB);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)})}
-async function loadRecords(){const db=await openDb();try{return await new Promise((resolve,reject)=>{const q=db.transaction('recordings').objectStore('recordings').getAll();q.onsuccess=()=>resolve(q.result||[]);q.onerror=()=>reject(q.error)})}finally{db.close()}}
-function visibleRecords(){const uid=activeUid();return records.filter(r=>day(r.createdAt)===currentDay()&&((r.summary&&String(r.summary).trim())||(r.transcript&&String(r.transcript).trim()))&&(!uid||!r.ownerUid||String(r.ownerUid)===uid)).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt))}
-async function loadMerges(){merges=[];apiSupported=false;if(!signedIn()||!providerIsSynap())return;try{const data=await request('/v1/memory-merges?day='+encodeURIComponent(currentDay()));merges=Array.isArray(data?.merges)?data.merges:[];apiSupported=true}catch(error){if(error?.status!==404&&error?.status!==401)console.warn('[synap memory] merge capability unavailable',error)}}
-function formatSummary(memory){const lines=[];if(memory?.executive_summary)lines.push(memory.executive_summary);if(memory?.key_points?.length){lines.push('',...memory.key_points.map(x=>'• '+x))}return lines.join('\n').trim()||'Merged memory'}
-function transcriptNode(text){const wrap=document.createElement('div');wrap.className='synap-transcript';const lines=String(text||'').split(/\n+/).filter(Boolean),parsed=[];for(const line of lines){const m=line.match(/^\[([^\]]+)\]\s+([^:]+):\s*(.*)$/);if(m)parsed.push(m);else if(line.trim())parsed.push(null)}if(!lines.length)return wrap;if(parsed.some(Boolean)){lines.forEach(line=>{const m=line.match(/^\[([^\]]+)\]\s+([^:]+):\s*(.*)$/);if(!m){const p=document.createElement('p');p.className='synap-transcript-flat';p.textContent=line;wrap.appendChild(p);return}const row=document.createElement('div');row.className='synap-transcript-line';const time=document.createElement('span');time.className='synap-transcript-time';time.textContent=m[1];const speaker=document.createElement('span');speaker.className='synap-transcript-speaker';const normalized=/^(YOU|SELF|ME)$/i.test(m[2].trim())?'You':m[2].trim();speaker.textContent=normalized;if(normalized==='You')speaker.classList.add('you');const p=document.createElement('p');p.textContent=m[3];row.append(time,speaker,p);wrap.appendChild(row)})}else{const p=document.createElement('p');p.className='synap-transcript-flat';p.textContent=text;wrap.appendChild(p)}return wrap}
-function viewSwitcher(summaryText,transcriptText){const host=document.createElement('div');host.className='synap-memory-view';const tabs=document.createElement('div');tabs.className='synap-memory-tabs';tabs.setAttribute('role','tablist');const summary=document.createElement('div');summary.className='synap-memory-panel';summary.textContent=summaryText||'';const transcript=document.createElement('div');transcript.className='synap-memory-panel';transcript.hidden=true;transcript.appendChild(transcriptNode(transcriptText));const choices=[];function add(name,panel){const b=document.createElement('button');b.type='button';b.setAttribute('role','tab');b.textContent=name;choices.push([b,panel]);b.addEventListener('click',()=>choices.forEach(([x,p])=>{const active=x===b;x.setAttribute('aria-selected',String(active));p.hidden=!active}));tabs.appendChild(b)}if(summaryText)add('Summary',summary);if(transcriptText)add('Transcript',transcript);if(!tabs.children.length)return host;choices.forEach(([b,p],i)=>{b.setAttribute('aria-selected',String(i===0));p.hidden=i!==0});host.append(tabs,...choices.map(x=>x[1]));return host}
-function enhanceSourceCard(card,recording){const previous=card.dataset.recordingId;if(previous&&previous!==recording.id){card.dataset.synapMemoryEnhanced='';card.querySelectorAll('.synap-memory-view:not([data-synap-provenance])').forEach(x=>x.remove())}card.dataset.recordingId=recording.id;if(card.dataset.synapMemoryEnhanced==='1')return;card.dataset.synapMemoryEnhanced='1';const label=card.querySelector('.insight-label'),summary=card.querySelector('.insight-summary'),details=card.querySelector('.transcript-preview');const summaryText=summary?.textContent?.trim()||recording.summary||'',transcriptText=details?.querySelector('p')?.textContent?.trim()||recording.transcript||'';if(label)label.hidden=true;if(summary)summary.hidden=true;if(details)details.hidden=true;const top=card.querySelector('.insight-top');const view=viewSwitcher(summaryText,transcriptText);if(view.childNodes.length)top?.insertAdjacentElement('afterend',view)}
-function recordingForCard(card,list){const dt=card?.querySelector('time')?.dateTime;if(dt){const target=new Date(dt).getTime(),exact=list.find(r=>new Date(r.createdAt).getTime()===target);if(exact)return exact}const id=card?.dataset?.recordingId;if(id){const exact=list.find(r=>String(r.id)===String(id));if(exact)return exact}return null}
-function mergedCard(merge){const card=document.createElement('article');card.className='insight-card synap-merged-card';card.dataset.mergeId=merge.merge_id;const top=document.createElement('div');top.className='insight-top';const h=document.createElement('h3');h.textContent=merge.memory?.title||'Merged memory';const badge=document.createElement('span');badge.className='synap-merged-badge';badge.textContent='Merged · '+merge.source_recording_ids.length;h.appendChild(badge);const time=document.createElement('time');time.dateTime=merge.started_at;time.textContent=new Date(merge.started_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});top.append(h,time);card.append(top,viewSwitcher(formatSummary(merge.memory),merge.transcript||''));const foot=document.createElement('div');foot.className='synap-merged-footer';const note=document.createElement('small');note.textContent='Source audio stays unchanged in Library.';const undo=document.createElement('button');undo.type='button';undo.className='synap-unmerge';undo.textContent='Unmerge';undo.addEventListener('click',()=>unmerge(merge.merge_id,undo));foot.append(note,undo);card.appendChild(foot);return card}
-function sourceCards(){return $$('#insightsList .insight-card:not(.synap-merged-card)')}
-function ensureControls(){const section=$('#insights'),heading=section?.querySelector('.section-heading');if(!section||!heading)return;let actions=heading.querySelector('.synap-memory-actions');if(!actions){actions=document.createElement('div');actions.className='synap-memory-actions';const merge=document.createElement('button');merge.type='button';merge.id='synapMergeMemories';merge.className='synap-merge-button';merge.textContent='Merge memories';merge.addEventListener('click',enterSelection);actions.appendChild(merge);heading.appendChild(actions)}let toolbar=section.querySelector('.synap-merge-toolbar');if(!toolbar){toolbar=document.createElement('div');toolbar.className='synap-merge-toolbar';toolbar.hidden=true;const status=document.createElement('span');status.id='synapMergeStatus';const go=document.createElement('button');go.type='button';go.className='primary';go.id='synapMergeConfirm';go.textContent='Merge';go.addEventListener('click',mergeSelected);const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';cancel.addEventListener('click',exitSelection);toolbar.append(status,go,cancel);heading.insertAdjacentElement('afterend',toolbar)}}
-function selectedIsConsecutive(list){const positions=[...selected].map(id=>list.findIndex(r=>r.id===id)).sort((a,b)=>a-b);return positions.length>=2&&positions.length<=5&&positions.every(x=>x>=0)&&positions[positions.length-1]-positions[0]+1===positions.length}
-function refreshToolbar(){const list=visibleRecords().filter(r=>!merges.some(m=>m.source_recording_ids.includes(r.id))),toolbar=$('.synap-merge-toolbar'),status=$('#synapMergeStatus'),go=$('#synapMergeConfirm');if(!toolbar||!status||!go)return;toolbar.hidden=!selectionMode;if(!selectionMode)return;const count=selected.size,ok=selectedIsConsecutive(list);status.textContent=count===0?'Select 2–5 consecutive memories.':count===1?'1 selected · choose an adjacent memory.':ok?count+' selected · ready to merge.':count+' selected · selection must be consecutive.';go.disabled=!ok||busy}
-function toggleSelection(id,button){if(selected.has(id)){selected.delete(id)}else{if(selected.size>=5){const s=$('#synapMergeStatus');if(s)s.textContent='Maximum 5 memories can be merged at once.';return}selected.add(id)}button.setAttribute('aria-pressed',String(selected.has(id)));refreshToolbar()}
-function applySelectors(){sourceCards().forEach(card=>card.querySelector('.synap-merge-check')?.remove());if(!selectionMode)return;const occupied=new Set(merges.flatMap(m=>m.source_recording_ids));sourceCards().forEach(card=>{const id=card.dataset.recordingId;if(!id||occupied.has(id))return;const top=card.querySelector('.insight-top');if(!top)return;const b=document.createElement('button');b.type='button';b.className='synap-merge-check';b.setAttribute('aria-label','Select memory to merge');b.setAttribute('aria-pressed',String(selected.has(id)));b.addEventListener('click',e=>{e.stopPropagation();toggleSelection(id,b)});top.prepend(b)})}
-function applyMergedViews(){const list=$('#insightsList');if(!list)return;$$('#insightsList .synap-merged-card').forEach(x=>x.remove());sourceCards().forEach(c=>c.classList.remove('synap-memory-source-hidden'));const occupied=new Set();for(const merge of merges){merge.source_recording_ids.forEach(id=>occupied.add(id));const sources=merge.source_recording_ids.map(id=>list.querySelector(`.insight-card[data-recording-id="${CSS.escape(id)}"]`)).filter(Boolean);if(!sources.length)continue;sources.forEach(c=>c.classList.add('synap-memory-source-hidden'));sources[0].before(mergedCard(merge))}const visibleSource=sourceCards().filter(c=>!c.classList.contains('synap-memory-source-hidden')).length;const count=$('#insightsCount');if(count)count.textContent=String(visibleSource+merges.length);const mergeButton=$('#synapMergeMemories');if(mergeButton)mergeButton.hidden=!apiSupported||!signedIn()||visibleSource<2||selectionMode;applySelectors();refreshToolbar()}
-async function syncCards(){if(enhancing)return;enhancing=true;try{records=await loadRecords().catch(()=>[]);const list=visibleRecords(),cards=sourceCards();cards.forEach(card=>{const recording=recordingForCard(card,list);if(recording)enhanceSourceCard(card,recording)});ensureControls();applyMergedViews()}finally{enhancing=false}}
-function enterSelection(){selectionMode=true;selected.clear();applyMergedViews()}
-function exitSelection(){selectionMode=false;selected.clear();applyMergedViews()}
-async function mergeSelected(){if(busy)return;const candidates=visibleRecords().filter(r=>!merges.some(m=>m.source_recording_ids.includes(r.id)));if(!selectedIsConsecutive(candidates))return;busy=true;refreshToolbar();try{const ids=candidates.filter(r=>selected.has(r.id)).sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt)).map(r=>r.id);await request('/v1/memory-merges',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recording_ids:ids})});selectionMode=false;selected.clear();await loadMerges();await syncCards()}catch(error){const s=$('#synapMergeStatus');if(s)s.textContent=error.message||'Could not merge memories.'}finally{busy=false;refreshToolbar()}}
-async function unmerge(id,button){if(busy)return;busy=true;button.disabled=true;try{await request('/v1/memory-merges/'+encodeURIComponent(id),{method:'DELETE'});await loadMerges();await syncCards()}catch(error){console.warn('[synap memory] unmerge failed',error);button.disabled=false}finally{busy=false}}
-async function refresh(){injectStyle();records=await loadRecords().catch(()=>[]);await loadMerges();await syncCards()}
-function bind(){injectStyle();ensureControls();const list=$('#insightsList');if(list&&root.MutationObserver)new MutationObserver(()=>setTimeout(syncCards,0)).observe(list,{childList:true,subtree:true});$('#datePicker')?.addEventListener('change',()=>setTimeout(refresh,60));if(root.SynapAuth?.onChange)root.SynapAuth.onChange(()=>setTimeout(refresh,0));document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refresh()});refresh()}
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind,{once:true});else bind();
-root.SynapMemoryTools={refresh,recordingForCard,get merges(){return merges.slice()},get mergeSupported(){return apiSupported}};
+/* Reversible cloud merges. Source recordings and their audio remain untouched. */
+(function (root) {
+  'use strict';
+  const $ = selector => document.querySelector(selector);
+  const sourceCards = () => [...document.querySelectorAll('#insightsList .insight-card[data-recording-id]')];
+  const selected = new Set();
+  let records = [], merges = [], apiSupported = false, selectionMode = false, busy = false;
+  let scopeKey = '', refreshEpoch = 0, recordsEpoch = 0, refreshTimer = 0, errorText = '';
+
+  function day(value) {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? '' : [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
+  }
+  function scope() {
+    const uid = String(root.SynapAuth?.session?.()?.profile?.uid || '');
+    const date = $('#datePicker')?.value || day(Date.now());
+    const signedIn = Boolean(root.SynapAuth?.isSignedIn?.());
+    return { uid, date, key: uid + '|' + date + '|' + signedIn, signedIn };
+  }
+  function resetScope() {
+    const current = scope();
+    if (current.key !== scopeKey) {
+      scopeKey = current.key;
+      records = []; merges = []; selected.clear(); selectionMode = false; errorText = ''; apiSupported = false;
+    }
+    return current;
+  }
+  async function request(path, options = {}) {
+    if (!root.SynapAuth?.authedFetch) throw new Error('Sign in to merge cloud memories.');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 90000);
+    try {
+      const response = await root.SynapAuth.authedFetch(path, { ...options, signal: controller.signal });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        const error = new Error(data?.error?.message || (response.status === 404
+          ? 'Memory merging is unavailable on the server. Try again later.' : 'Could not complete the request. Please retry.'));
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    } finally { clearTimeout(timer); }
+  }
+  async function loadRecords() {
+    const db = await new Promise((resolve, reject) => {
+      const q = indexedDB.open('dk-pendant-recordings');
+      q.onsuccess = () => resolve(q.result); q.onerror = () => reject(q.error);
+    });
+    try {
+      return await new Promise((resolve, reject) => {
+        const q = db.transaction('recordings').objectStore('recordings').getAll();
+        q.onsuccess = () => resolve(q.result || []); q.onerror = () => reject(q.error);
+      });
+    } finally { db.close(); }
+  }
+  function visibleRecords() {
+    const current = scope();
+    return records.filter(r => day(r.createdAt) === current.date &&
+      (String(r.summary || '').trim() || String(r.transcript || '').trim()) &&
+      (!current.uid || !r.ownerUid || String(r.ownerUid) === current.uid))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }
+  function recordingForCard(card, list) {
+    const id = card?.dataset?.recordingId;
+    if (id) return list.find(r => String(r.id) === id) || null;
+    const stamp = card?.querySelector('time')?.dateTime;
+    return stamp ? list.find(r => new Date(r.createdAt).getTime() === new Date(stamp).getTime()) || null : null;
+  }
+  function occupiedIds() { return new Set(merges.flatMap(m => m.source_recording_ids)); }
+  function selectedIsConsecutive(list) {
+    const positions = [...selected].map(id => list.findIndex(r => String(r.id) === id)).sort((a, b) => a - b);
+    const occupied = occupiedIds();
+    return positions.length >= 2 && positions.length <= 5 && positions.every(x => x >= 0) &&
+      positions[positions.length - 1] - positions[0] + 1 === positions.length &&
+      [...selected].every(id => !occupied.has(id));
+  }
+  function ensureControls() {
+    const section = $('#insights'), heading = section?.querySelector('.section-heading');
+    if (!heading || $('#synapMergeMemories')) return;
+    const actions = document.createElement('div'); actions.className = 'synap-memory-actions';
+    const merge = document.createElement('button'); merge.type = 'button'; merge.id = 'synapMergeMemories';
+    merge.className = 'synap-merge-button'; merge.textContent = 'Merge'; merge.setAttribute('aria-label', 'Merge memories');
+    merge.addEventListener('click', enterSelection);
+    const search = document.createElement('button'); search.type = 'button'; search.id = 'synapSearchMemories';
+    search.className = 'icon-button'; search.setAttribute('aria-label', 'Search memories');
+    search.innerHTML = '<svg aria-hidden="true"><use href="#i-search"/></svg>';
+    search.addEventListener('click', () => {
+      root.SynapDashboardUI?.setView('library');
+      document.querySelector('[data-library-scope="all"]')?.click();
+      $('#librarySearch')?.focus({ preventScroll: true });
+    });
+    actions.append(search, merge); heading.appendChild(actions);
+    const tools = document.createElement('div'); tools.className = 'synap-merge-tools';
+    tools.innerHTML = '<p id="synapMergeError" class="synap-merge-error" role="alert" hidden></p>' +
+      '<div class="synap-merge-toolbar" hidden><span id="synapMergeStatus" role="status"></span>' +
+      '<button type="button" id="synapMergeConfirm" class="primary">Merge</button>' +
+      '<button type="button" id="synapMergeCancel">Cancel</button></div>';
+    heading.after(tools);
+    $('#synapMergeConfirm').addEventListener('click', mergeSelected);
+    $('#synapMergeCancel').addEventListener('click', () => {
+      if (busy) return;
+      selectionMode = false; selected.clear(); errorText = ''; render();
+    });
+  }
+  function setText(node, value) { if (node && node.textContent !== value) node.textContent = value; }
+  function renderToolbar() {
+    ensureControls();
+    const toolbar = $('.synap-merge-toolbar'), go = $('#synapMergeConfirm'), button = $('#synapMergeMemories');
+    if (!toolbar) return;
+    const count = selected.size, valid = selectedIsConsecutive(visibleRecords());
+    toolbar.hidden = !selectionMode;
+    setText($('#synapMergeStatus'), busy ? 'Merging memories…' : !count ? 'Select 2–5 consecutive memories.' :
+      count === 1 ? '1 selected · choose an adjacent memory.' : valid ? count + ' selected · ready to merge.' :
+        count + ' selected · choose consecutive memories.');
+    go.disabled = !valid || busy;
+    $('#synapMergeCancel').disabled = busy;
+    const available = visibleRecords().filter(r => !occupiedIds().has(String(r.id))).length;
+    button.hidden = selectionMode || available < 2;
+    button.disabled = busy;
+    const error = $('#synapMergeError'); error.hidden = !errorText; setText(error, errorText);
+  }
+  function renderSelectors() {
+    const occupied = occupiedIds();
+    for (const card of sourceCards()) {
+      const id = card.dataset.recordingId;
+      let button = card.querySelector('.synap-merge-check');
+      if (!selectionMode || occupied.has(id)) { button?.remove(); continue; }
+      if (!button) {
+        button = document.createElement('button'); button.type = 'button'; button.className = 'synap-merge-check';
+        button.setAttribute('aria-label', 'Select ' + (card.querySelector('h3')?.textContent || 'memory') + ' to merge');
+        button.addEventListener('click', event => {
+          event.preventDefault(); event.stopPropagation();
+          if (busy) return;
+          errorText = '';
+          if (selected.has(id)) selected.delete(id);
+          else if (selected.size >= 5) errorText = 'Select up to 5 memories at a time.';
+          else selected.add(id);
+          renderSelectors(); renderToolbar();
+        });
+        card.querySelector('.insight-top')?.prepend(button);
+      }
+      button.setAttribute('aria-pressed', String(selected.has(id)));
+      button.disabled = busy;
+    }
+  }
+  function mergedCard(merge) {
+    const card = document.createElement('details'); card.className = 'insight-card synap-merged-card';
+    card.dataset.mergeId = merge.merge_id;
+    const top = document.createElement('summary'); top.className = 'insight-top';
+    const title = document.createElement('h3'); title.textContent = merge.memory?.title || 'Merged memory';
+    const badge = document.createElement('span'); badge.className = 'synap-merged-badge';
+    badge.textContent = 'Merged · ' + merge.source_recording_ids.length;
+    const time = document.createElement('time'); time.dateTime = merge.started_at;
+    time.textContent = new Date(merge.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    title.appendChild(badge); top.append(title, time); card.appendChild(top);
+    const summary = [merge.memory?.executive_summary || '', ...(merge.memory?.key_points || []).map(x => '• ' + x)].filter(Boolean).join('\n');
+    card.appendChild(root.SynapProvenance.buildMemoryView({ summary, transcript: merge.transcript || '' }));
+    const sources = document.createElement('div'); sources.className = 'synap-merged-sources';
+    for (const id of merge.source_recording_ids) {
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'synap-source-link';
+      button.dataset.recordingId = id; button.dataset.offsetMs = '0';
+      button.textContent = records.find(r => String(r.id) === id)?.name || 'Open source recording'; sources.appendChild(button);
+    }
+    const foot = document.createElement('div'); foot.className = 'synap-merged-footer';
+    const note = document.createElement('small'); note.textContent = 'Source audio stays unchanged in Library.';
+    const undo = document.createElement('button'); undo.type = 'button'; undo.className = 'synap-unmerge'; undo.textContent = 'Unmerge';
+    undo.addEventListener('click', () => unmerge(merge.merge_id));
+    foot.append(note, undo); card.append(sources, foot); return card;
+  }
+  function render() {
+    const list = $('#insightsList'); if (!list) return;
+    const cards = sourceCards(), occupied = occupiedIds();
+    const validIds = new Set(visibleRecords().map(r => String(r.id)));
+    for (const id of selected) if (!validIds.has(id) || occupied.has(id)) selected.delete(id);
+    cards.forEach(card => card.classList.toggle('synap-memory-source-hidden', occupied.has(card.dataset.recordingId)));
+    const existing = new Map([...list.querySelectorAll('.synap-merged-card')].map(card => [card.dataset.mergeId, card]));
+    for (const merge of merges) {
+      const source = cards.find(card => merge.source_recording_ids.includes(card.dataset.recordingId));
+      if (!source) continue;
+      const card = existing.get(merge.merge_id) || mergedCard(merge);
+      if (card.nextElementSibling !== source) source.before(card);
+      card.querySelector('.synap-unmerge').disabled = busy;
+      existing.delete(merge.merge_id);
+    }
+    existing.forEach(card => card.remove());
+    setText($('#insightsCount'), String(cards.filter(card => !occupied.has(card.dataset.recordingId)).length + list.querySelectorAll('.synap-merged-card').length));
+    renderSelectors(); renderToolbar();
+  }
+  async function refresh(fetchMerges = true) {
+    const current = resetScope(), epoch = fetchMerges ? ++refreshEpoch : refreshEpoch, recordEpoch = ++recordsEpoch;
+    try {
+      const loaded = await loadRecords();
+      if (scope().key !== current.key) return;
+      if (recordEpoch === recordsEpoch) { records = loaded; render(); }
+      if (epoch !== refreshEpoch) return;
+      if (!fetchMerges || busy) return;
+      if (!current.signedIn) { merges = []; apiSupported = false; render(); return; }
+      const data = await request('/v1/memory-merges?day=' + encodeURIComponent(current.date));
+      if (epoch !== refreshEpoch || scope().key !== current.key) return;
+      if (!Array.isArray(data?.merges)) throw new Error('Could not load merged memories. Please retry.');
+      merges = data.merges; apiSupported = true; errorText = ''; render();
+    } catch (error) {
+      if (epoch !== refreshEpoch || scope().key !== current.key) return;
+      if (error.status === 401 || error.status === 404) apiSupported = false;
+      errorText = error.message || 'Could not load memories. Please retry.'; renderToolbar();
+    }
+  }
+  async function enterSelection() {
+    root.SynapCompactLayout?.reveal('insights');
+    resetScope(); errorText = '';
+    if (!scope().signedIn) { errorText = 'Sign in in Settings to merge cloud memories.'; renderToolbar(); return; }
+    if (!apiSupported) await refresh();
+    if (!apiSupported || busy) return;
+    selectionMode = true; selected.clear(); render();
+  }
+  async function mergeSelected() {
+    const candidates = visibleRecords();
+    if (busy || !selectedIsConsecutive(candidates)) return;
+    const current = scope();
+    const ids = candidates.filter(r => selected.has(String(r.id))).reverse().map(r => String(r.id));
+    busy = true; errorText = ''; ++refreshEpoch; render();
+    try {
+      const merge = await request('/v1/memory-merges', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recording_ids: ids }) });
+      if (scope().key !== current.key) return;
+      if (!merge?.merge_id || !Array.isArray(merge.source_recording_ids)) throw new Error('Could not confirm the merge. Refresh Memories before retrying.');
+      merges = [...merges.filter(m => m.merge_id !== merge.merge_id), merge];
+      selectionMode = false; selected.clear(); render();
+      const card = [...document.querySelectorAll('.synap-merged-card')].find(c => c.dataset.mergeId === merge.merge_id);
+      if (card) { card.open = true; card.scrollIntoView({ block: 'center' }); }
+    } catch (error) {
+      if (scope().key === current.key) errorText = error.name === 'AbortError'
+        ? 'The merge timed out. Refresh Memories to check its result before retrying.' : error.message || 'Could not merge memories. Please retry.';
+    } finally { busy = false; render(); }
+  }
+  async function unmerge(id) {
+    if (busy) return;
+    const current = scope(); busy = true; errorText = ''; ++refreshEpoch; render();
+    try {
+      await request('/v1/memory-merges/' + encodeURIComponent(id), { method: 'DELETE' });
+      if (scope().key === current.key) merges = merges.filter(m => m.merge_id !== id);
+    } catch (error) {
+      if (scope().key === current.key) errorText = error.message || 'Could not unmerge. Please retry.';
+    } finally { busy = false; render(); }
+  }
+  function scheduleRefresh() { clearTimeout(refreshTimer); refreshTimer = setTimeout(() => refresh(), 60); }
+  function bind() {
+    ensureControls();
+    // Core owns source-card reconciliation. Only its completed render triggers ours.
+    root.addEventListener('synap-insights-rendered', () => refresh(false));
+    $('#datePicker')?.addEventListener('change', () => { resetScope(); render(); scheduleRefresh(); });
+    root.SynapAuth?.onChange?.(() => { resetScope(); render(); scheduleRefresh(); });
+    root.addEventListener('online', scheduleRefresh);
+    root.addEventListener('synap-memory-ready', scheduleRefresh);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') scheduleRefresh(); });
+    refresh();
+  }
+  root.SynapMemoryTools = { refresh, recordingForCard, get merges() { return merges.slice(); }, get mergeSupported() { return apiSupported; } };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind, { once: true }); else bind();
 })(globalThis);
