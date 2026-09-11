@@ -10,8 +10,8 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg?v=1.0.0-brand2" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png?v=1.0.0-brand2">
-  <script src="touch-event-bridge.js?v=0.0.1-touch5"></script>
-  <script src="audio-codec-v3.js?v=1.0.0-audio4"></script>
+  <script src="touch-event-bridge.js?v=1.0.0-cleanup1"></script>
+  <script src="audio-codec-v3.js?v=1.0.0-cleanup1"></script>
   <script src="battery-v2-ui.js?v=1.0.0-battery2"></script>
   <script>globalThis.SYNAP_STATIC_BOOTSTRAP=true;</script>
   <link rel="stylesheet" href="styles.css?v=1.0.0-diag1">
@@ -19,7 +19,8 @@
   <link rel="stylesheet" href="polish.css?v=1.0.0-ui5">
   <link rel="stylesheet" href="brain.css?v=1.0.0-brain2">
   <link rel="stylesheet" href="compact.css?v=1.0.0-capture-help1" data-synap-compact="refresh1">
-  <script src="theme.js?v=1.0.0-compact1"></script>
+  <link rel="stylesheet" href="settings-icon-fix.css?v=1.0.0-ui-fix1">
+  <script src="theme.js?v=1.0.0-cleanup1"></script>
 </head>
 <body data-state="disconnected" class="synap-refresh">
   <a class="skip-link" href="#today">Skip to your day</a>
@@ -81,21 +82,21 @@
   <div class="processing-fields" id="customEndpointFields"><label><span>Transcription endpoint</span><input id="endpointInput"></label><label><span>Summary endpoint</span><input id="llmEndpointInput"></label><label><span id="apiKeyLabel">Access token</span><input id="tokenInput" type="password"></label></div>
 </section>
 <label><input id="autoProcessInput" type="checkbox"> Process memories automatically</label><label><input id="wakeLockInput" type="checkbox" checked> Keep screen awake while listening</label><label><input id="autoReconnectInput" type="checkbox" checked> Reconnect pendant automatically</label><button id="retrySaveButton" type="button">Retry storage</button><button id="recoveryButton" type="button">Recover</button><button id="installButton" type="button" hidden>Install app</button><button type="submit">Save</button><details id="diagnostics" class="settings-row diagnostics-settings"><summary>Diagnostics</summary><div class="settings-row-body"><pre id="diagnosticsLog"></pre><div class="setting-actions"><button id="copyDiagnosticsButton" type="button">Copy diagnostics</button><button id="clearDiagnosticsButton" type="button">Clear diagnostics</button></div></div></details></form></dialog>
-<script src="device-identity.js?v=1.0.0-device1"></script>
+<script src="device-identity.js?v=1.0.0-cleanup1"></script>
 <script>(function(){function renderSynapDeviceId(){var el=document.getElementById('setupDeviceId');if(!el)return;try{var key=(globalThis.SynapDevices&&globalThis.SynapDevices.KEY)||'synap-device-associations-v1';var data=JSON.parse(localStorage.getItem(key)||'null');var devices=Array.isArray(data&&data.devices)?data.devices.slice():[];devices.sort(function(a,b){return String(b.lastConnectedAt||'').localeCompare(String(a.lastConnectedAt||''));});var id=devices[0]&&devices[0].deviceId?String(devices[0].deviceId):'';el.textContent=id?id.toLowerCase():'synap-—';el.title=id;el.dataset.deviceId=id;}catch(e){el.textContent='synap-—';el.title='';el.dataset.deviceId='';}}document.addEventListener('DOMContentLoaded',function(){renderSynapDeviceId();var status=document.getElementById('setupDeviceStatus');if(status)new MutationObserver(renderSynapDeviceId).observe(status,{childList:true,subtree:true,characterData:true});document.getElementById('settingsButton')?.addEventListener('click',function(){setTimeout(renderSynapDeviceId,80)});});globalThis.renderSynapDeviceId=renderSynapDeviceId;})();</script>
-<script src="runtime-compat.js?v=1.0.0-controls1"></script>
+<script src="runtime-compat.js?v=1.0.0-cleanup1"></script>
 <script src="audio-store.js?v=1.0.0-prod2"></script>
-<script src="battery-popover-fix.js?v=1.0.0-arch1"></script>
-<script src="capture-stability.js?v=1.0.0-stability3"></script>
+<script src="battery-popover-fix.js?v=1.0.0-cleanup1"></script>
+<script src="capture-stability.js?v=1.0.0-cleanup1"></script>
 <script src="sleep-state-guard.js?v=1.0.0-sleep2"></script>
-<script src="recording-bridge.js?v=1.0.0-continuity2"></script>
-<script src="event-channel.js?v=1.0.0-events1"></script>
+<script src="recording-bridge.js?v=1.0.0-cleanup1"></script>
+<script src="event-channel.js?v=1.0.0-cleanup1"></script>
 <script src="ota.js?v=1.0.0-ota4"></script>
 <script src="releases.js?v=1.0.0-prod2"></script>
 <script src="audio-enhancement.js?v=1.0.0-day-audio1"></script>
 <script src="audio-enhancement-ui.js?v=1.0.0-day-audio1"></script>
-<script src="app.js?v=1.0.0-compact1"></script>
-<script src="enhancements.js?v=1.0.0-compact1"></script>
+<script src="app.js?v=1.0.0-cleanup1"></script>
+<script src="enhancements.js?v=1.0.0-cleanup1"></script>
 <script src="google-auth.js?v=1.0.0-brain1"></script>
 <script src="ai-providers.js?v=1.0.0-brain1"></script>
 <script src="synap-backend.js?v=1.0.0-pipeline1"></script>
@@ -103,7 +104,7 @@
 <script src="memory-ui-fix.js?v=1.0.0-day-audio1"></script>
 <script src="synap-account-ui.js?v=1.0.0-brain1"></script>
 <script src="people-confirm-ui.js?v=1.0.0-ui-fix1"></script>
-<script src="cloud-history.js?v=1.0.0-day-audio1"></script>
+<script src="cloud-history.js?v=1.0.0-cleanup1"></script>
 <script src="memory-tools.js?v=1.0.0-transcript4"></script>
 <script src="cost-ui.js?v=1.0.0-cost3"></script>
 <script src="transcript-repair.js?v=1.0.0-transcript2"></script>
@@ -112,8 +113,13 @@
 <script src="brain-ui.js?v=1.0.0-compact1"></script>
 <script src="dashboard-ui.js?v=1.0.0-compact1"></script>
 <script src="compact-layout.js?v=1.0.0-compact1"></script>
-<script src="runtime-ui.js?v=1.0.0-ui-fix1"></script>
+<script src="runtime-ui.js?v=1.0.0-cleanup1"></script>
 <script src="capture-ui.js?v=1.0.0-compact1"></script>
 <script src="product-ui.js?v=1.0.0-day-audio1"></script>
 <script src="provenance-links.js?v=1.0.0-day-audio1"></script>
+<script src="productivity-tools.js?v=1.0.0-day-audio1"></script>
+<script src="desktop-capture.js?v=1.0.0-desktop3"></script>
+<script src="interaction-surfaces.js?v=1.0.0-compact1"></script>
+<script src="memory-ready-events.js?v=1.0.0-memory-events1"></script>
+<script src="experience-recovery.js?v=1.0.0-source-recovery2"></script>
 </body></html>

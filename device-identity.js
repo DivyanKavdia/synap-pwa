@@ -11,14 +11,29 @@
     if (!validId(id)) throw Error('Invalid pendant device identifier.');
     return id;
   }
-  function publishService(service) {
+  let connection = null;
+  function clearService() {
+    connection = null;
+    root.dispatchEvent?.(new CustomEvent('synap-gatt-disconnected'));
+  }
+  function publishService(service, queue, assertConnection) {
     if (!service) return;
-    root.__synapGattService = service;
-    try { root.dispatchEvent(new CustomEvent('synap-gatt-service-ready', { detail: { service } })); }
+    const context = { service, queue(action, label) {
+      return queue(async () => {
+        assertConnection();
+        if (connection !== context) throw Error('Pendant connection changed.');
+        const value = await action();
+        assertConnection();
+        if (connection !== context) throw Error('Pendant connection changed.');
+        return value;
+      }, label);
+    } };
+    connection = context;
+    try { root.dispatchEvent(new CustomEvent('synap-gatt-service-ready', { detail: context })); }
     catch (_) {}
   }
   async function read(service, queue, assertConnection) {
-    publishService(service);
+    publishService(service, queue, assertConnection);
     let characteristic;
     try { characteristic = await queue(() => service.getCharacteristic(UUID), 'Find device identifier'); }
     catch (error) {
@@ -70,6 +85,6 @@
       return { ...record, installationId: data.installationId };
     }
   }
-  root.SynapDevices = { UUID, KEY, decode, read, Registry, publishService };
+  root.SynapDevices = { UUID, KEY, decode, read, Registry, publishService, clearService, get connection() { return connection; } };
   if (typeof module !== 'undefined') module.exports = root.SynapDevices;
 })(globalThis);

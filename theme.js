@@ -2,12 +2,6 @@
 (function(){
   'use strict';
 
-  if(typeof navigator!=='undefined'&&!navigator.locks){
-    const fallback={async request(name,options,callback){if(typeof options==='function'){callback=options;options={};}return callback({name:String(name||''),mode:'exclusive'});}};
-    try{Object.defineProperty(navigator,'locks',{value:fallback,configurable:true});}catch(_){try{navigator.locks=fallback}catch(__){}}
-    document.documentElement.dataset.synapLockFallback='1';
-  }
-
   if(typeof history!=='undefined'&&'scrollRestoration'in history)history.scrollRestoration='manual';
   try{if(typeof location!=='undefined'&&location.hash&&typeof history?.replaceState==='function')history.replaceState(history.state,'',location.pathname+location.search)}catch(_){}
 
@@ -46,65 +40,12 @@
   function choosePalette(value){palette=validPalette(value);try{localStorage.setItem(paletteKey,palette)}catch(_){}apply()}
   function refreshAuto(){if(preference==='system')apply()}
 
-  function css(href,k,v){
-    const target=String(href||'').split('?')[0].replace(/^\.\//,'');
-    const exists=[...document.querySelectorAll('link[rel="stylesheet"][href]')].some(link=>{
-      const raw=String(link.getAttribute('href')||'');
-      if(!raw)return false;
-      return raw.split('?')[0].replace(/^\.\//,'')===target;
-    });
-    if(exists||document.querySelector(`link[data-synap-${k}]`))return;
-    const l=document.createElement('link');l.rel='stylesheet';l.href=href;l.dataset['synap'+k[0].toUpperCase()+k.slice(1)]=v;document.head.appendChild(l);
-  }
-  function script(src){
-    const target=String(src||'').split('?')[0].replace(/^\.\//,'');
-    const exists=[...document.querySelectorAll('script[src]')].some(s=>{
-      const raw=String(s.getAttribute('src')||'');
-      if(!raw)return false;
-      return raw.split('?')[0].replace(/^\.\//,'')===target;
-    });
-    if(exists)return;
-    const s=document.createElement('script');s.src=src;s.defer=true;document.head.appendChild(s);
-  }
-  function $(id){return typeof document.getElementById==='function'?document.getElementById(id):null}
-
-  function installAISettings(){
-    if(typeof document.getElementById!=='function')return;
-    const fields=document.querySelector('.processing-fields'),endpoint=$('endpointInput'),llm=$('llmEndpointInput'),token=$('tokenInput');
-    if(!fields||!endpoint||!llm||!token||$('providerInput'))return;
-    const p=document.createElement('label');p.className='field';
-    p.innerHTML='<span>AI provider</span><select id="providerInput"><option value="openai">OpenAI</option><option value="custom">Custom / other provider</option></select><small>OpenAI needs only an API key. Custom mode keeps endpoint support.</small>';
-    const models=document.createElement('div');models.id='openAIModelFields';models.className='processing-fields';
-    models.innerHTML='<label class="field"><span>Transcription model</span><select id="sttModelInput"><option value="gpt-4o-mini-transcribe">GPT-4o mini Transcribe</option><option value="gpt-4o-transcribe">GPT-4o Transcribe</option><option value="gpt-4o-transcribe-diarize">GPT-4o Transcribe Diarize</option></select></label><label class="field"><span>Memory model</span><select id="llmModelInput"><option value="gpt-5-mini">GPT-5 mini</option><option value="gpt-5">GPT-5</option><option value="gpt-4.1-mini">GPT-4.1 mini</option></select><small>Builds conversations, people, decisions, commitments and follow-ups.</small></label><label class="field"><span>Transcription language</span><select id="languageInput"><option value="auto">Auto detect</option><option value="en">English</option><option value="hi">Hindi / Hinglish</option><option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option><option value="ja">Japanese</option></select></label>';
-    const custom=document.createElement('div');custom.id='customEndpointFields';custom.className='processing-fields';custom.append(endpoint.closest('label'),llm.closest('label'));
-    const tl=token.closest('label')?.querySelector('span');if(tl){tl.id='apiKeyLabel';tl.textContent='OpenAI API key'}
-    token.placeholder='sk-…';token.autocomplete='off';fields.prepend(p,models,custom);
-    script('ai-providers.js?v=0.0.1-brain3');script('sleep-state-guard.js?v=1.0.0-power1');script('recording-bridge.js?v=1.0.0-touch5');
-  }
-
   function bind(){
     document.querySelectorAll('[data-theme-choice]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();choose(b.dataset.themeChoice)}));
     document.querySelectorAll('[data-palette-choice]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();choosePalette(b.dataset.paletteChoice)}));
-    installAISettings();
-    css('settings-icon-fix.css?v=1.0.0-ui-fix1','settingsicon','brand2');
-    script('capture-ui.js?v=1.0.0-compact1');
-    script('brain-ui.js?v=1.0.0-compact1');
-    script('ask-synap.js?v=1.0.0-ask3');
-    script('product-ui.js?v=1.0.0-day-audio1');
-    script('runtime-ui.js?v=1.0.0-ui-fix1');
-    script('dashboard-ui.js?v=1.0.0-compact1');
-    script('productivity-tools.js?v=1.0.0-day-audio1');
-    script('desktop-capture.js?v=1.0.0-desktop3');
-    script('interaction-surfaces.js?v=1.0.0-compact1');
-    script('memory-ready-events.js?v=1.0.0-memory-events1');
-    script('experience-recovery.js?v=1.0.0-source-recovery2');
     apply();
   }
 
-  // Core brand/brain styles are already declared in index.html. Do not inject
-  // second copies with different cache-busters: stylesheet races were making
-  // the same view render differently between launches.
-  css('compact.css?v=1.0.0-compact1','compact','brand2');
   window.addEventListener('storage',e=>{if(e.key===key)preference=valid(e.newValue);else if(e.key===paletteKey)palette=validPalette(e.newValue);else if(e.key===null){preference='system';palette='olive'}else return;apply()});
   window.SynapAppearance=Object.freeze({logoSource,choosePalette});
   window.addEventListener('focus',refreshAuto);window.addEventListener('pageshow',refreshAuto);

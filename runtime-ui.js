@@ -2,8 +2,6 @@
 (function(){
   'use strict';
   const $=id=>document.getElementById(id);
-  const BRAND_PATTERN=/\bSynap\b/g;
-  const BRAND_ATTRS=['aria-label','title','placeholder','alt'];
   const blobUrls=new Map();
 
   function installBlobRegistry(){
@@ -19,40 +17,6 @@
     if(revoke){
       URL.revokeObjectURL=function(url){blobUrls.delete(String(url||''));return revoke(url)};
     }
-  }
-
-  function normalizeBrandValue(value){
-    return typeof value==='string'&&value.includes('Synap')?value.replace(BRAND_PATTERN,'synap'):value;
-  }
-
-  function normalizeBrandNode(node){
-    if(!node)return;
-    if(node.nodeType===3){
-      const value=normalizeBrandValue(node.nodeValue);
-      if(value!==node.nodeValue)node.nodeValue=value;
-      return;
-    }
-    if(node.nodeType===1){
-      for(const attr of BRAND_ATTRS){
-        const value=node.getAttribute?.(attr);
-        if(value&&value.includes('Synap'))node.setAttribute(attr,normalizeBrandValue(value));
-      }
-    }
-    const children=node.childNodes;
-    if(children)for(const child of [...children])normalizeBrandNode(child);
-  }
-
-  function bindBrandCase(){
-    const root=document.documentElement||document.body;
-    if(!root)return;
-    normalizeBrandNode(root);
-    if(typeof MutationObserver==='undefined')return;
-    new MutationObserver(records=>{
-      for(const record of records){
-        if(record.type==='characterData'||record.type==='attributes')normalizeBrandNode(record.target);
-        else for(const node of record.addedNodes||[])normalizeBrandNode(node);
-      }
-    }).observe(root,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:BRAND_ATTRS});
   }
 
   function bindSettingsBrand(){
@@ -330,7 +294,6 @@
   }
 
   installBlobRegistry();
-  bindBrandCase();
   function init(){bindSettingsBrand();bindFirmwareAffordance();if(!globalThis.SynapRecordingBridge)bindTouchRecordingBridge();bindRecordingControls();bindTapResponsiveness();if(!globalThis.SynapDashboardUI)bindBrainTabs();bindReducedMotion()}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();

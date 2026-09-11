@@ -34,11 +34,10 @@ test('speaker matching is enrichment-only and conservative',()=>{
 
 test('installed PWA caches and loads the voice profile module',()=>{
   const sw=fs.readFileSync(path.join(root,'sw.js'),'utf8');
-  const bridge=fs.readFileSync(path.join(root,'battery-popover-fix.js'),'utf8');
+  const shell=fs.readFileSync(path.join(root,'index.html'),'utf8');
   assert.match(sw,/\.\/voice-profile\.js/);
-  assert.match(bridge,/voice-profile\.js\?v=1\.0\.0-voice-profile1/);
-  assert.match(bridge,/data-synap-voice-profile/);
-  assert.match(bridge,/memory-tools\.js\?v=1\.0\.0-memory-tools1/);
+  assert.match(shell,/voice-profile\.js\?v=/);
+  assert.match(shell,/memory-tools\.js\?v=/);
 });
 
 test('speaker service computes embeddings in memory without audio persistence APIs',()=>{

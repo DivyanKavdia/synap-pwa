@@ -106,6 +106,7 @@
       : String(Date.now()) + ':' + Math.random().toString(16).slice(2);
     const LEASE_MS = 15000;
     const HEARTBEAT_MS = 4000;
+    const heldKeys = new Set();
 
     function keyFor(name) { return PREFIX + String(name || 'lock'); }
     function readLease(key) {
@@ -125,11 +126,14 @@
       }
     }
     function acquire(key) {
+      if (heldKeys.has(key)) return false;
       const lease = readLease(key);
       if (lease && lease.owner !== OWNER && Number(lease.expiresAt || 0) > Date.now()) return false;
       if (!writeLease(key)) return false;
       const confirmed = readLease(key);
-      return !confirmed || confirmed.owner === OWNER;
+      if (confirmed && confirmed.owner !== OWNER) return false;
+      heldKeys.add(key);
+      return true;
     }
     function refresh(key) {
       const lease = readLease(key);
@@ -137,6 +141,7 @@
       return writeLease(key);
     }
     function release(key) {
+      heldKeys.delete(key);
       try {
         const lease = readLease(key);
         if (!lease || lease.owner === OWNER) root.localStorage.removeItem(key);

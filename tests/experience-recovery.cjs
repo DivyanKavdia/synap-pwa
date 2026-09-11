@@ -4,7 +4,7 @@ const fs = require('node:fs');
 
 const read = path => fs.readFileSync(path, 'utf8');
 const runtime = read('experience-recovery.js');
-const theme = read('theme.js');
+const shell = read('index.html');
 const sw = read('sw.js');
 const app = read('backend/src/http/app.ts');
 const source = read('backend/src/http/routes/source.ts');
@@ -48,7 +48,7 @@ assert(app.indexOf("app.use('/v1', askV3Routes())") < app.indexOf("app.use('/v1'
 
 // The recovery runtime must ship in both online and installed-PWA paths. The
 // source-recovery2 cache-buster contains the stale-media-url fallback from PR #43.
-assert.match(theme, /experience-recovery\.js\?v=1\.0\.0-source-recovery2/);
+assert.match(shell, /experience-recovery\.js\?v=1\.0\.0-source-recovery2/);
 assert.match(sw, /\.\/experience-recovery\.js/);
 
 console.log('PASS: source recovery keeps playback, media-error fallback, full transcript hydration and Ask on one durable evidence path.');

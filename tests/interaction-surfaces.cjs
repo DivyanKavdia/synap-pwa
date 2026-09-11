@@ -1,10 +1,9 @@
 'use strict';
 const fs=require('node:fs'),assert=require('node:assert/strict');
 const src=fs.readFileSync('interaction-surfaces.js','utf8');
-const theme=fs.readFileSync('theme.js','utf8');
+const shell=fs.readFileSync('index.html','utf8');
 const sw=fs.readFileSync('sw.js','utf8');
-assert.match(theme,/raw\.split\('\?'\)\[0\]/,'dynamic bootstrap must compare script paths without cache-busting query strings');
-assert.match(theme,/interaction-surfaces\.js\?v=/,'interaction repair must load in production');
+assert.match(shell,/interaction-surfaces\.js\?v=/,'interaction repair must load in production');
 assert.match(sw,/\.\/interaction-surfaces\.js/,'interaction repair must be available offline');
 assert.match(src,/dedupeId\('followupInbox'\)|\['followupInbox','peopleMemory','ask'/,'duplicate second-brain sections must be removed');
 assert.match(src,/\.person-card/,'People cards must have an explicit interaction path');

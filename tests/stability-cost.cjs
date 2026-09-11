@@ -96,11 +96,11 @@ function costTests() {
 }
 
 function bootstrapTests() {
-  const history = fs.readFileSync(path.join(root, 'cloud-history.js'), 'utf8');
+  const history = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   for (const file of ['capture-stability.js', 'recording-bridge.js', 'memory-tools.js', 'cost-ui.js']) {
-    assert(history.includes(file), `cloud history bootstrap must load ${file}`);
+    assert(history.includes(file), `production shell must load ${file}`);
   }
-  assert(!history.includes('product-ui.js'), 'the removed Advanced & recovery product wrapper must not be reintroduced');
+  assert(!fs.readFileSync(path.join(root, 'product-ui.js'), 'utf8').includes('Advanced & recovery'), 'the removed recovery wrapper must not be reintroduced');
 
   const capture = fs.readFileSync(path.join(root, 'capture-stability.js'), 'utf8');
   assert(capture.includes('#advancedSettings,.product-advanced'));

@@ -1,12 +1,5 @@
-/* Capture stability guards for Synap PWA.
- *
- * Product invariant: one user recording is one local recording. Transport
- * recovery must never synthesize an extra Start click or a "Part N" recording.
- *
- * This module only normalizes the firmware's 16-bit frame counter for durable
- * browser storage and hides low-level recovery controls. The core recorder owns
- * all start/stop/reconnect decisions.
- */
+/* Normalize transport counters for one durable recording and hide internal
+   recovery controls. app.js owns the capture and connection lifecycle. */
 (function (root) {
   'use strict';
 
@@ -66,10 +59,7 @@
     return Math.max(0, existing.lastLogical - backward);
   }
 
-  /* Compatibility hook for a future same-recording transport resume. Calling
-     this before the first frame of a new firmware stream makes that frame follow
-     the existing recording instead of reusing sequence zero. gapFrames may be
-     used to preserve a real-time silence gap. It does not create another file. */
+  /* Continue the same journal after a firmware sequence restart on reconnect. */
   function beginTransportEpoch(recordingId, gapFrames = 0) {
     const state = sequenceStates.get(String(recordingId || ''));
     if (!state) return false;
