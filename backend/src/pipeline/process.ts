@@ -24,6 +24,7 @@ import { extractMemory } from '../gemini/memory.js';
 import { embedContent } from '../gemini/client.js';
 import { formatMs, toSpeakerLines, transcribeSegment } from '../gemini/transcribe.js';
 import { tagSelfSpeaker } from '../speaker/enrich.js';
+import { applySpeakerNames, readSpeakerNames } from '../speaker/names.js';
 import * as db from '../store/firestore.js';
 import { readSealedSegment } from '../store/gcs.js';
 import type {
@@ -306,8 +307,10 @@ async function understand(
 
   const durationMs = recording.durationMs || segments.length * SEGMENT_MS;
 
+  const confirmedSpeakers = readSpeakerNames(uid, recording, dek);
   const memory = await extractMemory({
-    transcript,
+    transcript: applySpeakerNames(transcript, confirmedSpeakers),
+    confirmedSpeakers,
     durationMs,
     highlightOffsetsMs: highlights.map((highlight) => highlight.offsetMs),
     knownPeople,

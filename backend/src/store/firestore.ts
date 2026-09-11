@@ -113,6 +113,18 @@ export async function listRecordingsByDay(uid: string, day: string): Promise<Rec
   return snapshot.docs.map((doc) => doc.data() as RecordingDoc);
 }
 
+export async function saveSpeakerMemory(uid: string, recordingId: string, expectedUpdatedAt: string, fields: Partial<RecordingDoc>): Promise<string | null> {
+  const ref = paths.recording(uid, recordingId);
+  return firestore().runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    const current = snapshot.data() as RecordingDoc | undefined;
+    if (!current || current.state !== 'ready' || current.updatedAt !== expectedUpdatedAt) return null;
+    const revision = new Date().toISOString();
+    tx.update(ref, { ...fields, updatedAt: revision });
+    return revision;
+  });
+}
+
 /**
  * Most recent recordings across every day.
  *

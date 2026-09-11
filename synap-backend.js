@@ -347,6 +347,8 @@
       name: memory.title || undefined,
       summary: lines.join('\n').trim(),
       meeting: memory,
+      ...(memory.speaker_names ? { speakerNames: memory.speaker_names } : {}),
+      ...(typeof memory.raw_transcript === 'string' ? { rawTranscript: memory.raw_transcript } : {}),
       people: memory.people || [],
       conversations: memory.conversations || [],
       processingState: 'done', processingStage: 'ready', processingProgress: 1,

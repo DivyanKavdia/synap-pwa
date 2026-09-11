@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { openBytes, openJson } from '../../crypto/envelope.js';
 import { binding } from '../../pipeline/process.js';
 import { materializeTranscript } from '../../pipeline/source-materialize.js';
+import { speakerTranscriptFields } from '../../speaker/names.js';
 import * as db from '../../store/firestore.js';
 import { readSealedSegment } from '../../store/gcs.js';
 import type { StructuredMemory } from '../../store/types.js';
@@ -93,6 +94,7 @@ export function sourceRoutes(): Router {
         error_code: recording.errorCode,
         ...(memory ?? {}),
         transcript: transcript.text,
+        ...speakerTranscriptFields(req.uid, recording, req.dek, transcript.originalText),
         transcript_source: transcript.source,
         transcript_segments: transcript.transcriptSegments,
         segment_count: transcript.segmentCount,
