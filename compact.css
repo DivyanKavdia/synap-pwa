@@ -150,6 +150,16 @@ body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-syste
 .synap-refresh[data-state="recording"] .compact-recorder{border-color:var(--success-border)}
 .synap-refresh[data-state="recording"] .timer{color:var(--accent)}
 .gesture-guide{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:20px 0 0}
+.synap-refresh .compact-recorder{position:relative}
+.capture-help>summary{position:absolute;top:4px;right:4px;display:grid;place-items:center;width:44px;height:44px;min-height:44px;padding:0;list-style:none;cursor:pointer;color:var(--accent);border-radius:50%}
+.capture-help>summary::-webkit-details-marker{display:none}
+.capture-help>summary>span{display:grid;place-items:center;width:20px;height:20px;border:1.5px solid currentColor;border-radius:50%;font:600 13px/1 Georgia,serif}
+.capture-help>summary:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
+.capture-help[open]>summary{background:var(--accent-soft)}
+.capture-help-content{margin:30px 0 12px;padding:12px;border:1px solid var(--border);border-radius:12px;text-align:left;background:var(--surface)}
+.synap-refresh .capture-help-content .gesture-guide{padding:0;margin:0;gap:8px}
+.capture-help-content .capture-safety{margin-top:12px}
+.compact-recorder .recorder-status-copy h3{padding-inline:28px}
 .gesture-guide>div{display:flex;align-items:center;gap:10px}
 .gesture-guide>div>span:last-child{display:grid;gap:1px;font-size:11px;color:var(--muted)}
 .gesture-guide strong{font-size:12px;font-weight:650;color:var(--ink)}
