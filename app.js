@@ -523,6 +523,15 @@
     }
   }
 
+  let lastGattDisconnectRequest = null;
+  function disconnectGatt(reason, device = bluetoothDevice) {
+    if (!device?.gatt) return;
+    lastGattDisconnectRequest = { device, reason, at: Date.now() };
+    log("App requested GATT disconnect", { reason, state: appState,
+      visibility: document.visibilityState });
+    device.gatt.disconnect();
+  }
+
   const REMEMBERED_RECOVERY_INTERVAL_MS = 30000;
   let rememberedRecoveryTimer = null;
   let advertisementWatch = null;
@@ -782,7 +791,7 @@
       if (!preference.checked) {
         clearReconnectTimer(true);
         stopRememberedMonitoring();
-        if (connectInProgress && reloadRecoveryRunning) bluetoothDevice?.gatt?.disconnect();
+        if (connectInProgress && reloadRecoveryRunning) disconnectGatt("Automatic reconnect turned off");
         setReconnectCapability(recordingReconnectPending
           ? "Automatic reconnect is off. Tap Reconnect to continue the same recording, or Stop to save it."
           : "Automatic reconnect is off. An existing connection is not disconnected.");
@@ -796,7 +805,9 @@
       foregroundAt = performance.now();
       window.dispatchEvent(new CustomEvent('synap-recording-foreground'));
       recoverRememberedConnection("foreground", true);
-      if (isGattConnected() && !connectInProgress && !firmwareBusy && !finalizing) {
+      // Audio notifications are the liveness signal during capture. Foreground
+      // transitions must not add a status read to a working recording transport.
+      if (isGattConnected() && !connectInProgress && !firmwareBusy && !finalizing && !recordingConfirmed) {
         readControlStatus().then(ok=>{if(ok) log("Foreground pendant status resynchronised");});
       }
     });
@@ -917,15 +928,18 @@
 
       const epoch = connectionEpoch;
       const connectingDevice = bluetoothDevice;
+      lastGattDisconnectRequest = null;
       try {
         gattServer = await withTimeout(connectingDevice.gatt.connect(), 12000, "Connection");
       } catch (error) {
         // disconnect() also cancels an outstanding connect, even while connected is false.
-        connectingDevice.gatt.disconnect();
+        disconnectGatt("Connection attempt failed: " + friendlyError(error), connectingDevice);
         throw error;
       }
       function assertConnection() {
-        if (settings.recoveryAttempt && (!reconnectRequested() || manualDisconnect || reconnectPageHidden || document.visibilityState === "hidden")) {
+        // Visibility gates new attempts. Native Bluetooth UI can hide the page
+        // during a successful handshake; it must not cancel an existing one.
+        if (settings.recoveryAttempt && (!reconnectRequested() || manualDisconnect)) {
           throw new Error("Automatic reconnect was cancelled.");
         }
         if (epoch !== connectionEpoch || !isGattConnected()) {
@@ -1063,7 +1077,7 @@
       const message = friendlyError(error);
       log("Connection failed", message);
       needsDeviceSelection = Boolean(bluetoothDevice) || needsDeviceSelection;
-      if (isGattConnected()) bluetoothDevice.gatt.disconnect();
+      if (isGattConnected()) disconnectGatt("Connection setup failed: " + message);
       cleanupCharacteristics();
       setAppState("disconnected", recordingReconnectPending
         ? "Connection is still unavailable. The current recording remains preserved for reconnect."
@@ -1101,7 +1115,7 @@
     }
 
     if (isGattConnected()) {
-      bluetoothDevice.gatt.disconnect();
+      disconnectGatt("User disconnected pendant");
     } else {
       cleanupCharacteristics();
       setAppState("disconnected");
@@ -1110,10 +1124,17 @@
 
   async function handleGattDisconnected(event) {
     if (event && event.target !== bluetoothDevice) return;
+    const request = lastGattDisconnectRequest;
+    const requestedByApp = request?.device === bluetoothDevice && Date.now() - request.at < 15000;
+    lastGattDisconnectRequest = null;
     log("GATT disconnected", {
+      origin: requestedByApp ? "app" : "browser-or-peripheral",
+      reason: requestedByApp ? request.reason : "No app disconnect request",
       manual: manualDisconnect,
       state: appState,
-      recordingId: currentRecordingId
+      recordingId: currentRecordingId,
+      visibility: document.visibilityState,
+      lastAudioMs: lastAudioAt ? Math.round(performance.now() - lastAudioAt) : null
     });
 
     const disconnectedSessionId = recordingSessionId;
@@ -1223,24 +1244,40 @@
 
   function queueGattOperation(action, label = "Bluetooth operation") {
     const epoch = connectionEpoch;
+    const device = bluetoothDevice;
+    let expired = false;
+    let started = false;
     const operation = gattQueue.then(async function () {
-      if (epoch !== connectionEpoch || !isGattConnected()) {
+      if (expired) return; // A timed-out queued command must never run later.
+      if (epoch !== connectionEpoch || device !== bluetoothDevice || !isGattConnected()) {
         throw new Error("Bluetooth connection changed.");
       }
-      try {
-        return await withTimeout(action(), COMMAND_TIMEOUT_MS, label);
-      } catch (error) {
-        log("GATT operation failed", { operation: label, name: error.name, message: error.message,
-          connected: isGattConnected(), session: recordingSessionId });
-        if (error.name === "TimeoutError" && epoch === connectionEpoch &&
-            isGattConnected()) {
-          bluetoothDevice.gatt.disconnect();
-        }
-        throw error;
+      started = true;
+      const result = await action();
+      if (epoch !== connectionEpoch || device !== bluetoothDevice || !isGattConnected()) {
+        throw new Error("Bluetooth connection changed.");
       }
+      return result;
     });
+    // The native promise owns the queue even after its caller times out. A
+    // Promise.race timeout does not cancel an ATT request in the browser.
     gattQueue = operation.catch(function () {});
-    return operation;
+    return withTimeout(operation, COMMAND_TIMEOUT_MS, label).catch(function (error) {
+      expired = true;
+      log("GATT operation failed", { operation: label, name: error.name, message: error.message,
+        connected: isGattConnected(), queued: !started, session: recordingSessionId });
+      if (error.name === "TimeoutError" && epoch === connectionEpoch &&
+          device === bluetoothDevice && isGattConnected()) {
+        const captureAlive = recordingConfirmed && appState === "recording" &&
+          (document.visibilityState === "hidden" || performance.now() - lastAudioAt < AUDIO_STALL_TIMEOUT_MS);
+        if (captureAlive) {
+          log("GATT reply delayed; preserving recording transport", { operation: label });
+        } else if (started) {
+          disconnectGatt("GATT timeout: " + label, device);
+        }
+      }
+      throw error;
+    });
   }
 
   async function writeCommand(command, beforeWrite) {
@@ -1530,7 +1567,7 @@
       log("Stop failed; disconnecting safely", friendlyError(error));
     }
     // Never display Ready while the pendant might still be streaming.
-    if (isGattConnected()) bluetoothDevice.gatt.disconnect();
+    if (isGattConnected()) disconnectGatt("Recording stop was not acknowledged");
     await finalizeRecording("stop-unconfirmed", sessionId);
   }
 
@@ -3068,7 +3105,7 @@
         status.textContent='Restarting pendant…';cancel.disabled=true;
         const deadline=Date.now()+8000;
         while(isGattConnected()&&Date.now()<deadline)await delay(100);
-        if(isGattConnected())bluetoothDevice.gatt.disconnect();
+        if(isGattConnected())disconnectGatt("Firmware update completed; reconnect for verification");
         await delay(1500);
         let verified=false;
         for(let attempt=0;attempt<4;attempt++) {
@@ -3310,7 +3347,7 @@
       }
       manualDisconnect = true;
       clearReconnectTimer(true);
-      if (isGattConnected()) bluetoothDevice.gatt.disconnect();
+      if (isGattConnected()) disconnectGatt("User selected another pendant");
       cleanupCharacteristics();
       attachBluetoothDevice(null);
       ui.settingsDialog.close();

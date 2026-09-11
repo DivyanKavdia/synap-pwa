@@ -17,31 +17,39 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
    if(!localStorage.getItem('dk-pendant-auto-reconnect'))localStorage.setItem('dk-pendant-auto-reconnect','off');
    localStorage.setItem('dk-pendant-settings',JSON.stringify({autoProcess:false,wakeLock:false}));
    let state=1,sequence=0,audioTimer=null,inFlight=0,maxInFlight=0,present=true,watching=false;
+   let visibility='visible',hideOnConnect=false,appDisconnects=0,statusReads=0,holdRead=false,releaseRead=null,readError=null;
+   Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>visibility});
+   function setVisibility(value){visibility=value;document.dispatchEvent(new Event('visibilitychange'))}
    const count=key=>Number(sessionStorage.getItem(key)||0);
    const increment=key=>sessionStorage.setItem(key,String(count(key)+1));
    const uuid=n=>'4fa123'+n+'-0000-1000-8000-00805f9b34fb';
    const status=()=>{const v=new DataView(new ArrayBuffer(16));v.setUint8(0,0x5a);v.setUint8(1,2);v.setUint8(2,state);v.setUint16(4,512,true);v.setUint16(6,509,true);v.setUint8(8,4);v.setUint8(9,8);v.setUint16(10,16000,true);v.setUint16(12,800,true);v.setUint16(14,400,true);return v};
-   async function operation(fn){inFlight++;maxInFlight=Math.max(maxInFlight,inFlight);if(inFlight>1)throw Error('Overlapping GATT requests');try{await new Promise(r=>setTimeout(r,5));return fn()}finally{inFlight--}}
+   async function operation(fn){inFlight++;maxInFlight=Math.max(maxInFlight,inFlight);if(inFlight>1)throw Error('Overlapping GATT requests');try{await new Promise(r=>setTimeout(r,5));return await fn()}finally{inFlight--}}
    class Characteristic extends EventTarget{
      constructor(id){super();this.id=id;this.properties={write:true,read:true,notify:true};this.value=null}
      startNotifications(){return operation(()=>this)}
-     readValue(){return operation(()=>this.id===uuid('47')?status():this.id===uuid('4c')?new DataView(new TextEncoder().encode('SYNAP-ABCDEF123456').buffer):new DataView(new Uint8Array([0xe2,1,1,0,0x82,4]).buffer))}
+     readValue(){return operation(async()=>{if(this.id===uuid('47')){statusReads++;if(holdRead){holdRead=false;await new Promise(resolve=>{releaseRead=resolve})}return status()}return this.id===uuid('4c')?new DataView(new TextEncoder().encode('SYNAP-ABCDEF123456').buffer):new DataView(new Uint8Array([0xe2,1,1,0,0x82,4]).buffer)})}
      writeValueWithResponse(value){return operation(()=>{if(value[0]===1){increment('qa-starts');state=2;sequence=0;clearInterval(audioTimer);audioTimer=setInterval(frame,50)}if(value[0]===0){state=1;clearInterval(audioTimer)}this.value=status();this.dispatchEvent(new Event('characteristicvaluechanged'))})}
    }
    const audio=new Characteristic(uuid('46')),control=new Characteristic(uuid('47'));
    const chars=new Map([[uuid('46'),audio],[uuid('47'),control],[uuid('4c'),new Characteristic(uuid('4c'))],[uuid('4e'),new Characteristic(uuid('4e'))]]);
    const service={getCharacteristic:id=>operation(()=>{if(!chars.has(id))throw new DOMException('No optional characteristic','NotFoundError');return chars.get(id)})};
    const device=new EventTarget();device.id='fixture-device';device.name='synap';
-   device.gatt={connected:false,connect(){increment('qa-connects');return operation(()=>{if(!present)throw new DOMException('Pendant is asleep','NetworkError');this.connected=true;state=1;return this})},getPrimaryService(){return operation(()=>service)},disconnect(){const wasConnected=this.connected;this.connected=false;clearInterval(audioTimer);if(wasConnected)device.dispatchEvent(new Event('gattserverdisconnected'))}};
+   function loseLink(){const wasConnected=device.gatt.connected;device.gatt.connected=false;clearInterval(audioTimer);if(wasConnected)device.dispatchEvent(new Event('gattserverdisconnected'))}
+   device.gatt={connected:false,connect(){increment('qa-connects');return operation(()=>{if(!present)throw new DOMException('Pendant is asleep','NetworkError');this.connected=true;state=1;if(hideOnConnect){hideOnConnect=false;setVisibility('hidden')}return this})},getPrimaryService(){return operation(()=>service)},disconnect(){appDisconnects++;loseLink()}};
    device.watchAdvertisements=async({signal})=>{watching=true;signal.addEventListener('abort',()=>{watching=false},{once:true})};
    function frame(){for(let chunk=0;chunk<4;chunk++){const v=new DataView(new ArrayBuffer(408));v.setUint8(0,0xa5);v.setUint8(1,2);v.setUint16(2,sequence,true);v.setUint8(4,chunk);v.setUint8(5,4);v.setUint16(6,400,true);audio.value=v;audio.dispatchEvent(new Event('characteristicvaluechanged'))}sequence=(sequence+1)&65535}
    const bluetooth=new EventTarget();bluetooth.requestDevice=async()=>{increment('qa-pickers');sessionStorage.setItem('qa-permitted','1');return device};
    if(!location.search.includes('noRestore'))bluetooth.getDevices=async()=>sessionStorage.getItem('qa-permitted')?[device]:[];
    Object.defineProperty(navigator,'bluetooth',{configurable:true,value:bluetooth});
-   window.bleFixture={disconnect:()=>device.gatt.disconnect(),get maximum(){return maxInFlight},get watching(){return watching},
+   window.bleFixture={disconnect:loseLink,get maximum(){return maxInFlight},get watching(){return watching},
+     get appDisconnects(){return appDisconnects},get statusReads(){return statusReads},get readError(){return readError},get readPending(){return Boolean(releaseRead)},
+     hideOnNextConnect(){hideOnConnect=true},show:()=>setVisibility('visible'),hide:()=>setVisibility('hidden'),
+     delayStatusRead(){holdRead=true;readError=null;SynapDevices.connection.queue(()=>control.readValue(),'Delayed diagnostic read').catch(error=>{readError=error.name})},
+     finishRead(){releaseRead?.();releaseRead=null},
      get connects(){return count('qa-connects')},get pickers(){return count('qa-pickers')},get starts(){return count('qa-starts')},
      disableAdvertisements(){delete device.watchAdvertisements},
-     sleep(){const events=chars.get(uuid('4e'));events.value=new DataView(new Uint8Array([0xe2,1,3,1,0x82,4]).buffer);events.dispatchEvent(new Event('characteristicvaluechanged'));present=false;device.gatt.disconnect()},
+     sleep(){const events=chars.get(uuid('4e'));events.value=new DataView(new Uint8Array([0xe2,1,3,1,0x82,4]).buffer);events.dispatchEvent(new Event('characteristicvaluechanged'));present=false;loseLink()},
      wake(){present=true;if(watching){const event=new Event('advertisementreceived');event.device=device;device.dispatchEvent(event)}}
    };
  });
@@ -53,14 +61,28 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  await page.locator('#startButton').click();await page.waitForFunction(()=>document.body.dataset.state==='recording');
  const records=()=>page.evaluate(()=>new Promise((resolve,reject)=>{const r=indexedDB.open('dk-pendant-recordings');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,read=db.transaction('recordings').objectStore('recordings').getAll();read.onsuccess=()=>{db.close();resolve(read.result.map(x=>({id:x.id,status:x.status,sizeBytes:x.sizeBytes,durationMs:x.durationMs})))}}}));
  await page.waitForTimeout(800);const first=await records();assert.equal(first.length,1);
- await page.evaluate(()=>window.bleFixture.disconnect());
+ await page.evaluate(()=>{bleFixture.hideOnNextConnect();bleFixture.disconnect()});
  await page.waitForFunction(()=>document.body.dataset.recordingInterrupted==='true');
  await page.waitForFunction(()=>document.body.dataset.state==='recording'&&document.body.dataset.recordingInterrupted==='false',{},{timeout:15000});
+ assert.equal(await page.evaluate(()=>bleFixture.appDisconnects),0,'native Bluetooth UI must not cancel recording reconnect');
+ const readsBeforeForeground=await page.evaluate(()=>bleFixture.statusReads);
+ await page.evaluate(()=>bleFixture.show());await page.waitForTimeout(100);
+ assert.equal(await page.evaluate(()=>bleFixture.statusReads),readsBeforeForeground,'foreground does not poll a live capture');
+ await page.evaluate(()=>bleFixture.delayStatusRead());await page.waitForFunction(()=>bleFixture.readPending);
+ await page.waitForFunction(()=>bleFixture.readError==='TimeoutError');
+ assert.equal(await page.evaluate(()=>bleFixture.appDisconnects),0,'a delayed diagnostic read must not terminate arriving audio');
+ assert.equal(await page.evaluate(()=>document.body.dataset.state),'recording');
+ await page.evaluate(()=>bleFixture.finishRead());await page.waitForTimeout(100);
+ await page.locator('.brain-tabs a[href="#today"]').click();
+ await page.locator('[data-day-step="-1"]').click();
+ await page.locator('.brain-tabs a[href="#library"]').click();
+ await page.locator('.brain-tabs a[href="#capture"]').click();
+ assert.equal(await page.evaluate(()=>bleFixture.appDisconnects),0,'day and section browsing preserves capture');
  await page.waitForTimeout(800);const resumed=await records();assert.equal(resumed.length,1);assert.equal(resumed[0].id,first[0].id);
  await page.locator('#stopButton').click();await page.waitForFunction(()=>document.body.dataset.state==='idle');
  const saved=await records();assert.equal(saved.length,1);assert.equal(saved[0].id,first[0].id);assert(saved[0].durationMs>=1200);
  assert.equal(await page.evaluate(()=>window.bleFixture.maximum),1);assert.deepEqual(errors,[]);
- console.log('PASS: real PWA graph connects, records, reconnects into one journal, saves playable PCM, and never overlaps GATT operations',saved[0]);
+ console.log('PASS: recording survives native UI visibility changes, a slow GATT reply, day/section navigation and reconnect; one journal, playable PCM, no overlapping GATT requests',saved[0]);
 
  const starts=await page.evaluate(()=>bleFixture.starts);
  const sleepPendant=async()=>{await page.waitForFunction(()=>document.body.dataset.eventChannel==='event');await page.evaluate(()=>bleFixture.sleep())};
@@ -114,6 +136,17 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  assert.equal(await page.evaluate(()=>bleFixture.pickers),2,'manual connection remains usable on limited browsers');
  assert.deepEqual(errors,[]);
  console.log('PASS: browsers without getDevices show an actionable hint and retain manual connection');
+
+ await page.evaluate(()=>localStorage.setItem('dk-pendant-auto-reconnect','off'));
+ await page.locator('#startButton').click();await page.waitForFunction(()=>document.body.dataset.state==='recording');
+ await page.waitForTimeout(400);await page.evaluate(()=>bleFixture.delayStatusRead());
+ await page.waitForFunction(()=>bleFixture.readError==='TimeoutError');
+ await page.locator('#stopButton').click();await page.waitForFunction(()=>document.body.dataset.state==='disconnected');
+ await page.waitForFunction(()=>document.querySelector('#diagnosticsLog').textContent.includes('Recording stop was not acknowledged'));
+ await page.evaluate(()=>bleFixture.finishRead());
+ const stopped=await records();assert.equal(stopped.length,2);assert(stopped.every(r=>r.status==='saved'&&r.durationMs>0));
+ assert.equal(await page.evaluate(()=>bleFixture.maximum),1);assert.deepEqual(errors,[]);
+ console.log('PASS: Stop remains bounded when a native read never replies; the app disconnects deliberately and saves received audio');
  await context.close();
  }finally{await browser.close();server.close()}
 })().catch(error=>{console.error(error);server.close();process.exitCode=1});

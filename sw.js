@@ -2,10 +2,9 @@
 const APP_VERSION='1.0.0';
 /* app.js owns the client compatibility revision used for update signalling. */
 const CLIENT_REVISION='1.0.0-audio2';
-/* Changing this marker refreshes the installed shell for small UI updates
-   without changing the audio compatibility or cache generation. */
-const UI_RECOVERY_REVISION='1.0.0-wake1';
-const CACHE_REVISION='1.0.0-shell46-wake-reconnect';
+/* Refresh the installed shell without changing audio protocol compatibility. */
+const UI_RECOVERY_REVISION='1.0.0-ble-stable1';
+const CACHE_REVISION='1.0.0-shell47-ble-stability';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings-icon-fix.css',
