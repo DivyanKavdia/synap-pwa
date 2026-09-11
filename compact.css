@@ -20,6 +20,13 @@
  --shadow:#00000022;--shadow-strong:#00000055;--backdrop:#020904bb;
  --hero:#214b3b;--hero-ink:#edf8f1;--hero-muted:#bfd5c6;
 }
+:root{--hero-end:#23533f;}
+:root[data-palette="blue"]{--bg:#f3f6fb;--surface:#ffffff;--surface-2:#eaf0f8;--chrome:#f3f6fbf5;--ink:#1d3554;--muted:#53657e;--border:#dbe3ef;--control-border:#6e809b;--accent:#285e9b;--action:#285e9b;--action-hover:#1f497a;--on-action:#ffffff;--accent-soft:#e5effc;--hero:#1d3554;--hero-end:#2a4f79;--hero-ink:#f0f6ff;--hero-muted:#c1d2e9;--brand-indigo:#83a9d5;--brand-cyan:#bfd8f6;--switch-off:#6e809b;--console:#172b45;--console-text:#edf5ff;--wave-grid:#53657e22;--glow:#285e9b22;}
+:root[data-palette="blue"][data-theme="dark"]{--bg:#111a29;--surface:#1a293c;--surface-2:#23374e;--chrome:#111a29f5;--ink:#eff5ff;--muted:#b7c7de;--border:#354a65;--control-border:#8da4c4;--accent:#a4c9ff;--action:#a4c9ff;--action-hover:#c4ddff;--on-action:#162b46;--accent-soft:#203f63;--hero:#203d60;--hero-end:#2a4f79;--hero-ink:#f0f6ff;--hero-muted:#c1d2e9;--switch-off:#8da4c4;--console:#101d30;--wave-grid:#b7c7de22;--glow:#a4c9ff22;}
+:root[data-palette="pink"]{--bg:#fcf5f8;--surface:#ffffff;--surface-2:#f7eaf0;--chrome:#fcf5f8f5;--ink:#542c41;--muted:#785a6b;--border:#eddde5;--control-border:#aa728d;--accent:#993d69;--action:#993d69;--action-hover:#763052;--on-action:#ffffff;--accent-soft:#fae6ef;--hero:#542c41;--hero-end:#7a3b5b;--hero-ink:#fff2f8;--hero-muted:#edc5d8;--brand-indigo:#ce8dad;--brand-cyan:#f0c0d8;--switch-off:#aa728d;--console:#412234;--console-text:#fff0f7;--wave-grid:#785a6b22;--glow:#993d6922;}
+:root[data-palette="pink"][data-theme="dark"]{--bg:#24151e;--surface:#33212d;--surface-2:#472b3c;--chrome:#24151ef5;--ink:#fff0f7;--muted:#dcb8cc;--border:#624253;--control-border:#bd8da7;--accent:#f5adce;--action:#f5adce;--action-hover:#ffd0e5;--on-action:#461c30;--accent-soft:#5c3046;--hero:#593047;--hero-end:#703b55;--hero-ink:#fff2f8;--hero-muted:#ebc0d4;--switch-off:#bd8da7;--console:#24121c;--wave-grid:#dcb8cc22;--glow:#f5adce22;}
+:root[data-palette="lavender"]{--bg:#f7f5fc;--surface:#ffffff;--surface-2:#efeaf8;--chrome:#f7f5fcf5;--ink:#3d315b;--muted:#6b607e;--border:#e5dff1;--control-border:#8c7baa;--accent:#65489b;--action:#65489b;--action-hover:#4d347c;--on-action:#ffffff;--accent-soft:#efe7fc;--hero:#3c2c5b;--hero-end:#59417c;--hero-ink:#f7f1ff;--hero-muted:#d2c5e5;--brand-indigo:#aa93cc;--brand-cyan:#d3c5eb;--switch-off:#8c7baa;--console:#302345;--console-text:#f6f0ff;--wave-grid:#6b607e22;--glow:#65489b22;}
+:root[data-palette="lavender"][data-theme="dark"]{--bg:#1c1829;--surface:#292238;--surface-2:#372d4b;--chrome:#1c1829f5;--ink:#f5f0ff;--muted:#c6bbdc;--border:#4a3e61;--control-border:#a899c2;--accent:#c9b3f4;--action:#c9b3f4;--action-hover:#dfceff;--on-action:#302046;--accent-soft:#483664;--hero:#42305e;--hero-end:#59417c;--hero-ink:#f7f1ff;--hero-muted:#d2c5e5;--switch-off:#a899c2;--console:#1c1329;--wave-grid:#c6bbdc22;--glow:#c9b3f422;}
 html{scroll-padding-top:100px}
 body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:-.15px}
 .synap-refresh .app-shell{max-width:900px;margin:0 auto;padding:0 max(22px,env(safe-area-inset-right)) calc(120px + env(safe-area-inset-bottom)) max(22px,env(safe-area-inset-left));background:none;box-shadow:none;border-radius:0}
@@ -268,7 +275,7 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
 :root[data-theme="dark"] .synap-refresh .day-brief :is(.action-grid>section,.conversation-lane){background:var(--surface);color:var(--ink);border-color:var(--border)}
 :root[data-theme="dark"] .synap-refresh .day-brief .memory-pulse{background:transparent;color:var(--ink);border-color:var(--border)}
 /* Daily workspace: a brief, one focus panel, and direct paths into memory. */
-.synap-refresh .brief-intro{background:linear-gradient(125deg,var(--hero),#23533f)}
+.synap-refresh .brief-intro{background:linear-gradient(125deg,var(--hero),var(--hero-end))}
 .synap-refresh .brief-intro .glance-grid{margin:22px 0 0;padding:18px 0 0;background:transparent;border:0;border-top:1px solid #bfd5c633;border-radius:0;grid-template-columns:repeat(4,minmax(0,1fr));opacity:1}
 .synap-refresh .brief-intro .glance-grid strong{color:var(--hero-ink);font-size:22px!important;line-height:1.2}
 .synap-refresh .brief-intro .glance-grid span{color:var(--hero-muted);font-size:10px!important;margin-top:4px}
@@ -477,3 +484,110 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
 .synap-refresh .speech-controls button[aria-pressed="true"]{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
 .synap-refresh .speech-enhancement progress{width:100%;height:6px;accent-color:var(--accent);margin:8px 0}
 .synap-refresh :is(.brief-read-more,.brief-sources,.conversation-pagination button,.speech-enhancement [hidden])[hidden]{display:none!important}
+
+/* Dense reading surfaces: collapse details, preserve readable type and 44px controls. */
+.synap-refresh .app-shell{padding-bottom:calc(90px + env(safe-area-inset-bottom))}
+.synap-refresh .topbar{min-height:64px;gap:12px}
+.synap-refresh main{padding-top:14px}
+.synap-refresh .brain-heading{align-items:center}
+.synap-refresh .brain-heading h1{font-size:28px!important;letter-spacing:-1px}
+.synap-refresh .brain-heading>div>p:last-child{margin:3px 0 0;font-size:12px!important}
+.synap-refresh .brain-calendar{margin-top:0}
+.synap-refresh .day-navigation{margin-top:8px}
+.synap-refresh .calendar-week-navigation{margin-top:0}
+.synap-refresh .date-strip{margin:0 0 10px;padding:3px;border-radius:13px}
+.synap-refresh .date-chip{min-height:52px;gap:1px;padding:4px 2px!important}
+.synap-refresh .date-chip .date-activity{min-height:10px;line-height:10px}
+.synap-refresh .date-chip strong{font-size:15px!important}
+.synap-refresh .brief-intro{padding:14px 16px!important;border-radius:16px}
+.synap-refresh .brief-intro::after{display:none}
+.synap-refresh .brief-mark{width:26px;height:26px;flex-basis:26px;border-radius:8px;color:var(--hero-ink);background:color-mix(in srgb,var(--hero-ink) 10%,transparent);border-color:color-mix(in srgb,var(--hero-ink) 20%,transparent)}
+.synap-refresh .day-brief-head{gap:8px}
+.synap-refresh .day-brief-head h2{font-size:16px!important;letter-spacing:0}
+.synap-refresh .day-brief-text{margin:8px 0 0!important;font-size:14px!important;line-height:1.6!important;-webkit-line-clamp:2;max-width:90ch}
+.synap-refresh .brief-read-more{min-height:36px;padding:4px 0;margin:0}
+.synap-refresh .brief-intro .glance-grid{display:flex!important;flex-wrap:wrap;gap:4px 12px!important;margin:8px 0 0;padding:8px 0 0}
+.synap-refresh .brief-intro .glance-grid>div{display:flex;align-items:baseline;gap:4px;padding:0!important;border:0}
+.synap-refresh .brief-intro .glance-grid strong{font-size:12px!important;letter-spacing:0}
+.synap-refresh .brief-intro .glance-grid span{font-size:11px!important;margin:0}
+.synap-refresh .actionable-memory{gap:8px;margin:8px 0}
+.synap-refresh .day-brief .memory-pulse{margin:0;padding:0;border:0}
+.synap-refresh .memory-pulse>.pulse-actions{display:flex;flex-direction:row;width:auto;gap:6px}
+.synap-refresh .pulse-actions button{flex:initial;padding:7px 10px;min-height:40px}
+.synap-refresh .conversation-list{gap:6px}
+.synap-refresh .conversation-card{padding:10px 12px;gap:8px;grid-template-columns:52px minmax(0,1fr) 14px;min-height:58px}
+.synap-refresh .conversation-copy{gap:2px}
+.synap-refresh .conversation-digest{border-radius:11px}
+.synap-refresh .conversation-detail{padding:0 12px 12px;max-width:95ch}
+.synap-refresh .digest-summary{font-size:13px;line-height:1.7}
+.synap-refresh .digest-facts{margin-top:10px;padding-top:10px}
+.synap-refresh .conversation-pagination button{margin-top:4px}
+.synap-refresh .conversation-pagination:has(button[hidden]){display:none}
+.synap-refresh .section-card,.synap-refresh #capture,.synap-refresh #synapWeeklyReview,.synap-refresh #dailyFocus{margin-top:8px!important;padding:0!important;border-radius:13px!important}
+.synap-refresh .workspace-tile{border:1px solid var(--border)!important;background:var(--surface)!important;border-radius:13px!important;overflow:clip}
+.synap-refresh .workspace-tile>.tile-heading{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;align-items:center;gap:8px;min-height:54px;margin:0!important;padding:5px 12px!important;cursor:pointer}
+.synap-refresh .workspace-tile>.tile-heading>div:first-child{flex:1;min-width:0}
+.synap-refresh #peopleMemory .tile-heading h2{font-size:15px!important;letter-spacing:-.2px}
+body.synap-refresh :is(#capture,#insights,#followupInbox,#peopleMemory,#ask,#library,#synapWeeklyReview,#dailyFocus).workspace-tile{padding:0!important;min-height:0!important}
+.synap-refresh #synapWeeklyReview:not(.is-expanded) #synapWeekRange{display:none}
+.synap-refresh footer{display:none!important}
+.synap-refresh .tile-heading>:first-child{min-width:0;margin:0}
+.synap-refresh .tile-heading :is(h2,h3),.synap-refresh .conversation-lane .tile-heading>span,.synap-refresh .synap-weekly-head>strong{font-size:15px!important;line-height:1.3;letter-spacing:-.2px;font-weight:650!important}
+.synap-refresh .tile-toggle{display:grid;place-items:center;width:44px;min-width:44px;height:44px;margin-left:auto;padding:10px;border:0;border-radius:9px;background:transparent;color:var(--muted);cursor:pointer}
+.synap-refresh .tile-toggle svg{width:16px;height:16px}
+.synap-refresh .tile-toggle[aria-expanded="true"] svg{transform:rotate(90deg)}
+.synap-refresh .tile-toggle:hover{background:var(--surface-2)}
+.synap-refresh .workspace-body{padding:0 12px 12px;min-width:0}
+.synap-refresh .workspace-body[hidden]{display:none!important}
+.synap-refresh .workspace-tile:not(.is-expanded) .tile-heading>:is(.people-browse-toggle,.library-manage,#synapRefreshWeek,#clearRecordingsButton){display:none!important}
+.synap-refresh .workspace-tile .section-heading .section-copy,.synap-refresh .ask-head .section-copy,.synap-refresh .ask-head .section-eyebrow,.synap-refresh .ask-head .ask-orb{display:none!important}
+.synap-refresh .workspace-body .section-heading{margin-bottom:8px}
+.synap-refresh .workspace-body :is(.empty-state,.brain-empty){margin:0;padding:10px 0;font-size:13px!important}
+.synap-refresh .workspace-body .empty-state-icon{display:none}
+.synap-refresh .empty-state h3{font-size:14px!important;margin:0}
+.synap-refresh .workspace-body .empty-state p{margin:4px 0;font-size:12px!important}
+.synap-refresh .day-brief #dayConversations{padding:0;border-radius:13px}
+.synap-refresh .day-brief .daily-focus>.workspace-body{padding-top:0}
+.synap-refresh .focus-tabs{padding:3px;gap:3px}
+.synap-refresh .focus-tabs~section{padding-top:6px;min-height:0}
+.synap-refresh .recording-row{min-height:60px!important;padding:10px!important}
+.synap-refresh .recording-row-preview{-webkit-line-clamp:1;margin-top:3px;font-size:12px;line-height:1.4}
+.synap-refresh .recording-row-icon{width:30px;height:30px;border-radius:9px}
+.synap-refresh .recordings-list,.synap-refresh .insights-list{gap:6px}
+.synap-refresh .insight-card{padding:12px!important}
+.synap-refresh .insight-card>.insight-top{list-style:none;cursor:pointer;min-height:36px;gap:8px;margin:0}
+.synap-refresh .insight-card>.insight-top::-webkit-details-marker{display:none}
+.synap-refresh .insight-card>.insight-top::after{content:'+';font-size:20px;color:var(--muted);margin-left:auto}
+.synap-refresh .insight-card[open]>.insight-top::after{content:'−'}
+.synap-refresh .insight-card[open]>.insight-top{margin-bottom:10px}
+.synap-refresh .insight-card .insight-top h3{font-size:14px!important;line-height:1.4}
+.synap-refresh .library-search{margin-bottom:8px;padding-top:2px;padding-bottom:2px}
+.synap-refresh .library-toolbar{margin-bottom:8px}
+.synap-refresh .compact-recorder{margin-top:8px!important;padding-top:8px!important}
+.synap-refresh .gesture-guide{margin-top:10px;padding-top:10px}
+.synap-refresh .capture-safety{margin:8px 0;font-size:11px}
+.synap-refresh .palette-heading{font-size:12px;margin:14px 0 8px;color:var(--muted);font-weight:600}
+.synap-refresh .synap-account button{background:var(--action)!important;color:var(--on-action)!important}
+.synap-refresh .palette-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.synap-refresh .palette-options button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-width:0;min-height:72px;padding:9px 3px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;font-size:11px;cursor:pointer}
+.synap-refresh .palette-options button[aria-pressed="true"]{border:2px solid var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:700}
+.synap-refresh .palette-swatch{display:block;width:28px;height:18px;border-radius:6px;background:linear-gradient(90deg,#21654c 50%,#e2f2e8 50%);border:1px solid #00000018}
+.synap-refresh [data-palette-choice="blue"] .palette-swatch{background:linear-gradient(90deg,#285e9b 50%,#e5effc 50%)}
+.synap-refresh [data-palette-choice="pink"] .palette-swatch{background:linear-gradient(90deg,#993d69 50%,#fae6ef 50%)}
+.synap-refresh [data-palette-choice="lavender"] .palette-swatch{background:linear-gradient(90deg,#65489b 50%,#efe7fc 50%)}
+@media(min-width:1100px){
+ .synap-refresh .app-shell{width:calc(100% - 236px);max-width:1200px;margin-right:24px}
+ .synap-refresh main{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+ .synap-refresh #today{grid-column:1/-1}
+ body.synap-refresh main>:is(#capture,#insights,#ask,#library,#followupInbox,#peopleMemory).workspace-tile{grid-column:auto;margin:0!important}
+ body.synap-refresh main>:is(#capture,#insights,#ask,#library,#followupInbox,#peopleMemory).workspace-tile.is-expanded{grid-column:1/-1}
+ body.synap-refresh main>#today{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:24px;row-gap:8px;align-items:center}
+ .synap-refresh #today>.day-brief{grid-column:1/-1}
+ .synap-refresh #today>.day-navigation{margin:0}
+ .synap-refresh .conversation-list{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}
+ .synap-refresh .conversation-digest[open]{grid-column:1/-1}
+ .synap-refresh .brain-tabs{top:88px;width:166px}
+ .synap-refresh .brain-tabs::before{display:none}
+ .synap-refresh .brain-tabs a{min-height:46px;padding:10px 14px}
+ .synap-refresh .date-strip{max-width:none;margin:0}
+}

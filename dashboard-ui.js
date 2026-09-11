@@ -61,6 +61,7 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
   function setView(view,scroll=true){
     const next=normalizeView(view);
     syncNav(next);
+    root.SynapCompactLayout?.reveal(sectionFor(next));
     if(!scroll)return true;
     navLockUntil=Date.now()+900;
     const target=sectionFor(next);
@@ -144,6 +145,7 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
         const target=document.getElementById(link.dataset.workspaceTarget);
         if(!target)return;
         event.preventDefault();
+        root.SynapCompactLayout?.reveal(target);
         syncNav(target.id==='synapWeeklyReview'?'today':'memories');
         navLockUntil=Date.now()+900;
         if(!target.hasAttribute('tabindex'))target.setAttribute('tabindex','-1');

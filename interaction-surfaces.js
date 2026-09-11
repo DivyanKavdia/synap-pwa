@@ -98,7 +98,7 @@ function bind(){
     const person=event.target.closest?.('.person-card');if(person){event.preventDefault();event.stopImmediatePropagation();openAsk(person.dataset.person||'');return}
     const tab=event.target.closest?.('.followup-tabs button[data-follow]');if(tab){event.preventDefault();event.stopImmediatePropagation();$$('.followup-tabs button').forEach(x=>x.classList.toggle('active',x===tab));renderFollowups(tab.dataset.follow);return}
     const insight=event.target.closest?.('.insight-open');if(insight){const id=recordingForInsight(insight.closest('.insight-card'));if(id){event.preventDefault();event.stopImmediatePropagation();openSource(id,0)}return}
-    const top=event.target.closest?.('.insight-card .insight-top');if(top&&!event.target.closest?.('.synap-merge-check')){const id=recordingForInsight(top.closest('.insight-card'));if(id){event.preventDefault();openSource(id,0)}}
+    const top=event.target.closest?.('.insight-card .insight-top');if(top&&top.tagName!=='SUMMARY'&&!event.target.closest?.('.synap-merge-check')){const id=recordingForInsight(top.closest('.insight-card'));if(id){event.preventDefault();openSource(id,0)}}
   },true);
   $('#datePicker')?.addEventListener('change',()=>setTimeout(()=>refresh(false),20));
   ['synap-memory-ready','synap-cloud-history-updated','synap-transcript-updated','synap-processing-complete'].forEach(n=>root.addEventListener(n,()=>{canonicalAt=0;setTimeout(()=>refresh(true),50)}));
