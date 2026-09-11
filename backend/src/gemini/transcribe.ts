@@ -30,6 +30,7 @@ export interface TranscriptionResult {
   words: TranscriptWord[];
   speakers: string[];
   model: string;
+  review: { attempted: boolean; annotationsComplete: boolean };
 }
 
 export interface TranscribeOptions {
@@ -68,23 +69,37 @@ export async function transcribeSegment(
   const transcriptionConfig: Record<string, unknown> = { mode };
   if (language && language !== 'auto') transcriptionConfig.language_codes = [language];
 
-  const response = await createInteraction(
+  const run = (requestSignal=signal) => createInteraction(
     {
       model: config.gemini.transcribeModel,
       input,
       generation_config: { transcription_config: transcriptionConfig },
       usage_label: 'transcription',
     },
-    signal,
+    requestSignal,
   );
 
-  const rawText = interactionText(response).trim();
-  const words: TranscriptWord[] = interactionWords(response).map((word) => ({
+  const response=await run();
+  let rawText=interactionText(response).trim();
+  const convert = (value: typeof response):TranscriptWord[] => interactionWords(value).map((word) => ({
     text: word.text,
     speaker: word.speaker ?? null,
     start_ms: baseOffsetMs + offsetToMs(word.start_offset),
     end_ms: baseOffsetMs + offsetToMs(word.end_offset),
   }));
+  let words=convert(response),attempted=false;
+  if(diarize && wordTimestamps && (rawText || words.length) && !annotationsComplete(rawText,words)) {
+    attempted=true;
+    try {
+      const budget=AbortSignal.timeout(15000);
+      const retry=await run(signal ? AbortSignal.any([signal,budget]) : budget),candidate=interactionText(retry).trim(),candidateWords=convert(retry);
+      // A second pass may repair annotations, but must not silently rewrite
+      // already-recognized words. Disagreement keeps the first complete text.
+      if((!rawText || reviewText(rawText)===reviewText(candidate)) && annotationsComplete(candidate,candidateWords)) {
+        rawText=rawText||candidate;words=candidateWords;
+      }
+    } catch(error) { if(signal?.aborted)throw error; }
+  }
 
   const speakers = [...new Set(words.map((word) => word.speaker).filter(Boolean))] as string[];
 
@@ -108,17 +123,30 @@ export async function transcribeSegment(
     // at eight, so a longer list means the labels are not to be trusted.
     speakers: speakers.slice(0, MAX_SPEAKERS_NOTE),
     model: config.gemini.transcribeModel,
+    review:{attempted,annotationsComplete:annotationsComplete(rawText,words)},
   };
+}
+
+// Keep punctuation and symbols here: -5, 5, $5, and 5% are different evidence.
+const reviewText=(text:string)=>text.normalize('NFKC').toLocaleLowerCase('und').replace(/\s+/gu,' ').trim();
+
+export function annotationsComplete(text:string,words:TranscriptWord[]):boolean {
+  if(!text.trim())return words.length===0;
+  return words.length>0 && comparableText(text)===comparableText(words.map(word=>word.text).join(' ')) &&
+    words.every(word=>Number.isFinite(word.start_ms)&&Number.isFinite(word.end_ms)&&word.end_ms>word.start_ms&&Boolean(word.speaker));
 }
 
 function comparableText(value: string): string {
   // Segment-level S? prefixes are provenance, not transcript words. Remove only
   // that exact synthetic form before comparing annotations with the flat text.
-  return value
+  const plain=value
     .replace(/^\s*\[\d{2}:\d{2}(?::\d{2})?\]\s+S\?:\s*/gm, '')
     .normalize('NFKC')
-    .toLocaleLowerCase('und')
-    .replace(/[\s\p{P}\p{S}]+/gu, '');
+    .toLocaleLowerCase('und');
+  // Ignore sentence punctuation, but not a lost sign, currency, percentage,
+  // decimal, fraction, date separator, or time separator in the annotations.
+  const evidence=plain.match(/[\p{S}%\-]|\p{N}*(?:[.,:/]\p{N}+)+/gu)||[];
+  return JSON.stringify([plain.replace(/[\s\p{P}\p{S}]+/gu,''),evidence]);
 }
 
 /**
@@ -138,6 +166,7 @@ export function toSpeakerLines(words: TranscriptWord[], fallback: string): strin
   if (words.length === 0) return flat;
 
   const annotated = words.map((word) => String(word.text || '')).join(' ').trim();
+  if(words.some(word=>!Number.isFinite(word.start_ms)||!Number.isFinite(word.end_ms)||word.end_ms<=word.start_ms))return flat||annotated;
   if (flat && comparableText(annotated) !== comparableText(flat)) return flat;
 
   const lines: string[] = [];

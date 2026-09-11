@@ -660,6 +660,13 @@ body.synap-refresh :is(#capture,#insights,#myActions,#library,#synapWeeklyReview
 .synap-refresh .speaker-name-fields input{box-sizing:border-box;width:100%;min-height:44px;padding:10px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--ink);font-size:16px}
 .synap-refresh .speaker-name-actions{display:flex;flex-wrap:wrap;gap:8px}
 .synap-refresh .speaker-name-actions button{min-height:44px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--accent);font-size:12px}
+.synap-refresh .speaker-name-field{display:grid;gap:6px}
+.synap-refresh .remember-speaker,.synap-refresh .known-speaker-row button{min-height:44px;justify-self:start;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--accent);font-size:12px;cursor:pointer}
+.synap-refresh .known-speakers>summary{min-height:44px;align-content:center;font-size:13px;cursor:pointer}
+.synap-refresh .known-speaker-list{font-size:12px}
+.synap-refresh .known-speaker-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:6px 0}
+.synap-refresh .known-speaker-row span{min-width:0;overflow-wrap:anywhere}
+.synap-refresh .known-speaker-row button{flex-shrink:0}
 .synap-refresh #askAnswer .answer-sources{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;overflow:visible;margin-top:14px}
 .synap-refresh #askAnswer .answer-sources>span{justify-self:start;font-size:11px;letter-spacing:.04em}
 .synap-refresh #askAnswer .answer-sources button{display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:start;gap:5px 10px;width:100%;min-width:0;min-height:44px;padding:12px;border-radius:12px;white-space:normal;overflow-wrap:anywhere;color:var(--ink)}

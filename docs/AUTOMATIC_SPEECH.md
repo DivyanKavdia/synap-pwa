@@ -42,9 +42,17 @@ not deployed/configured, the distinct-label fallback still works. Existing voice
 enrollment remains available for the wearer. Saved manual speaker names retain
 their exact labels during later summary rebuilds.
 
+For opt-in named identification across recordings, see
+[Remembered speakers](SPEAKER_IDENTIFICATION.md). That separate account-scoped
+matcher requires explicit permission and stronger identity thresholds; anonymous
+continuity alone is not a name match.
+
 Transcript completeness is checked per window. A partial annotation response
 keeps that window's full text without stripping speaker labels from every other
 window. The complete source transcript remains authoritative.
+A bounded second pass now attempts to repair incomplete annotations without
+rewriting the first recognized text; see the remembered-speaker document for
+its acceptance rules, latency budget, and limitations.
 
 ## Verification
 

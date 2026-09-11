@@ -37,7 +37,9 @@ export function applySpeakerNames(transcript: string, names: SpeakerNames): stri
 export function readSpeakerNames(uid: string, recording: RecordingDoc, dek: Buffer): SpeakerNames {
   return recording.sealedSpeakerNames
     ? openJson<SpeakerNames>(dek, recording.sealedSpeakerNames, { uid, scope: `recording/${recording.recordingId}`, field: 'speaker-names' })
-    : {};
+    : recording.sealedIdentifiedSpeakers
+      ? openJson<SpeakerNames>(dek,recording.sealedIdentifiedSpeakers,{uid,scope:`recording/${recording.recordingId}`,field:'identified-speakers'})
+      : {};
 }
 
 export function speakerTranscriptFields(uid: string, recording: RecordingDoc, dek: Buffer, transcript?: string) {

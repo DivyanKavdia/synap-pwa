@@ -10,6 +10,7 @@ import { recordingRoutes } from './routes/recordings.js';
 import { retryRoutes } from './routes/retry.js';
 import { sourceRoutes } from './routes/source.js';
 import { speakerNameRoutes } from './routes/speaker-names.js';
+import { knownSpeakerRoutes } from './routes/known-speakers.js';
 import { taskRoutes } from './routes/tasks.js';
 import { voiceProfileRoutes } from './routes/voice-profile.js';
 
@@ -110,6 +111,7 @@ export function createApp(): Express {
   // idempotent.
   app.use('/v1', retryRoutes());
   app.use('/v1', speakerNameRoutes());
+  app.use('/v1', knownSpeakerRoutes());
   app.use('/v1', recordingRoutes());
   app.use('/v1', brainRoutes());
   app.use('/v1', memoryToolRoutes());

@@ -35,6 +35,9 @@ Evidence rules, in order of priority:
 8. Segment the timeline into distinct real-world conversations only where there is evidence of a true boundary: a sustained gap, a participant change, an explicit opening or closing, or a hard context switch. Adjacent blocks about the same subject stay in one conversation. A false merge is much better than inventing a meeting.
 9. Windows marked HIGHLIGHT were flagged by the wearer in the moment. Weight them as important, but they are still bound by the evidence rules above.
 10. Language may be English, Hindi or mixed Hinglish. Write summaries in the dominant language of the conversation, preserving names and technical terms as spoken.
+11. A supplied saved-voice match may identify a speaking label; it is an acoustic estimate, not a statement spoken aloud. Explicit user-confirmed labels take precedence. YOU denotes the enrolled wearer. Never turn an anonymous label into a real name using topic, role, or a name mentioned nearby.
+12. Unclear, inaudible or conflicting words are uncertainty, not permission to fill gaps. Preserve negation, conditional statements, numbers, currencies and corrections. Never convert a suggested date into an agreed deadline. Keep important unresolved questions in the summary without inventing an owner.
+13. Write a useful recap: the subject, what was established, why it matters when stated, decisions, and actual next steps. Include concrete details supported by the transcript; avoid vague "they discussed several things" text. Do not copy background songs or isolated unrelated remarks into business commitments.
 
 Return only the requested schema.`;
 
@@ -58,6 +61,8 @@ export interface MemoryContext {
   /** Names the user has already confirmed, supplied as disambiguation context. */
   knownPeople: string[];
   confirmedSpeakers?: Record<string, string>;
+  identifiedSpeakers?: Record<string,string>;
+  transcriptWarnings?: string[];
   language: string;
 }
 
@@ -80,6 +85,8 @@ export async function extractMemory(
     `Detected language: ${context.language}.`,
     known,
     `User-confirmed speaker names for this recording only: ${JSON.stringify(context.confirmedSpeakers || {})}`,
+    `Acoustic matches to consented saved voices (estimates): ${JSON.stringify(context.identifiedSpeakers || {})}`,
+    `Transcription limitations: ${JSON.stringify(context.transcriptWarnings || [])}`,
     highlights ? `Wearer highlights:\n${highlights}` : 'No wearer highlights.',
     '',
     'Transcript:',
