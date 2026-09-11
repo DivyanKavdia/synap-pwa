@@ -25,6 +25,9 @@ async function run(){
     assert.equal(await page.locator('main > #ask,main > #peopleMemory,main > #followupInbox,#today #dailyFocus,.brain-tabs a[href="#ask"]').count(),0);
     assert.equal(await page.locator('#myActionsTitle').innerText(),'My actions');
     await page.locator('.brain-tabs a[href="#myActions"]').click();
+    const initial=await page.locator('#myActions').boundingBox();
+    assert.equal(await page.locator('#myActionsContent > [data-actions-panel]').count(),4,'all four panels belong to one content area');
+    assert.equal(await page.locator('#myActionsContent .section-card').count(),0,'panels are not separate cards');
     await page.locator('#askInput').fill('Keep this draft while I check my actions');
     await page.evaluate(()=>{window.qaActionNodes=[...document.querySelectorAll('#myActions [data-actions-panel],#askForm,#askInput')];window.qaHeader=document.querySelector('.topbar')});
     for(let i=0;i<4;i++){
@@ -34,6 +37,10 @@ async function run(){
       const id=await tabs.nth(i).getAttribute('aria-controls');
       assert(await page.locator('#'+id).isVisible());
       assert.equal(await page.locator('#myActions [data-actions-panel]:visible').count(),1);
+      const card=await page.locator('#myActions').boundingBox();
+      for(const key of ['x','y','width','height'])assert(Math.abs(card[key]-initial[key])<1,'switching stays in the same card: '+key);
+      const content=await page.locator('#myActionsContent').boundingBox(),strip=await page.locator('.actions-tabs').boundingBox();
+      assert(Math.abs(strip.y+strip.height-content.y)<1,'tabs are attached to their content area');
       assert.equal(await page.locator('.brain-tabs [aria-current="page"]').getAttribute('href'),'#myActions');
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
       const bounds=await tabs.nth(i).boundingBox();assert(bounds.height>=44&&bounds.x>=0&&bounds.x+bounds.width<=width,'touch target fits viewport');
@@ -41,6 +48,14 @@ async function run(){
     }
     await page.keyboard.press('Home');assert.equal(await page.locator('#actionsTab-ask').getAttribute('aria-selected'),'true');
     assert.equal(await page.locator('#askInput').inputValue(),'Keep this draft while I check my actions');
+    await page.evaluate(()=>{const answer=document.getElementById('askAnswer');const text=document.createElement('p');text.textContent='A long answer should scroll inside My actions. '.repeat(100);answer.appendChild(text);document.getElementById('myActionsContent').scrollTop=180});
+    const readingPosition=await page.locator('#myActionsContent').evaluate(node=>node.scrollTop);
+    assert(readingPosition>0,'long answers remain scrollable inside the shared area');
+    await page.locator('#actionsTab-peopleMemory').click();
+    assert.equal(await page.locator('#myActionsContent').evaluate(node=>node.scrollTop),0,'each tab starts at its own reading position');
+    await page.locator('#actionsTab-ask').click();
+    assert.equal(await page.locator('#myActionsContent').evaluate(node=>node.scrollTop),readingPosition,'returning to a tab preserves its reading position');
+    await page.evaluate(()=>{document.querySelector('#askAnswer p:last-child').remove();document.getElementById('myActionsContent').scrollTop=0});
     await page.keyboard.press('ArrowLeft');assert.equal(await page.evaluate(()=>document.activeElement.id),'actionsTab-peopleMemory');
     await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowRight');
     assert.equal(await page.evaluate(()=>document.activeElement.id),'actionsTab-dailyFocus');
@@ -60,7 +75,7 @@ async function run(){
     assert(await page.evaluate(()=>qaActionNodes.every(node=>node.isConnected&&document.getElementById(node.id)===node)&&qaHeader===document.querySelector('.topbar')),'same controls and header after all transitions');
     await page.locator('#settingsButton').click();assert(await page.locator('#headerCaptureToggle').isVisible());
     await page.locator('.brain-tabs a[href="#myActions"]').click();assert(!(await page.locator('#settingsDialog').evaluate(node=>node.open)));assert(await page.locator('#dailyFocus').isVisible(),'Actions navigation preserves the selected panel');
-    assert.deepEqual(errors,[]);console.log(`PASS actions/${mode}/${width}: four panels, draft/filter retention, day changes, nested keyboard tabs, deep links and persistent header`);
+    assert.deepEqual(errors,[]);console.log(`PASS actions/${mode}/${width}: one stable card, attached tabs, shared scrolling, draft/filter retention, day changes, keyboard tabs, deep links and persistent header`);
     await context.close();
   }}finally{await browser.close();server.close()}
 }

@@ -70,7 +70,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell49-actions'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell50-actions-frame'/);
 });
 
 test('the settings form offers the encrypted cloud provider and a sign-in control', () => {
