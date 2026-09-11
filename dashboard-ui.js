@@ -4,7 +4,8 @@
   if(root.SynapDashboardUI&&root.SynapDashboardUI.__stableShell)return;
 
   const STYLE_ID='synapDashboardStyle';
-  const VIEW_IDS={today:'#today',capture:'#capture',memories:'#insights',ask:'#ask',library:'#library'};
+  const VIEW_IDS={today:'#today',capture:'#capture',memories:'#insights',actions:'#myActions',library:'#library'};
+  const ACTION_VIEWS={ask:'ask',dailyFocus:'dailyFocus',followupInbox:'followupInbox',peopleMemory:'peopleMemory'};
   const $=s=>document.querySelector(s);
   const $$=s=>[...document.querySelectorAll(s)];
   let observer=null;
@@ -12,8 +13,8 @@
   let navLockUntil=0;
   let activeView='today';
 
-  function normalizeView(view){return VIEW_IDS[view]?view:'today'}
-  function viewForHref(href){return href==='#capture'?'capture':href==='#insights'?'memories':href==='#ask'?'ask':href==='#library'?'library':'today'}
+  function normalizeView(view){return ACTION_VIEWS[view]?'actions':VIEW_IDS[view]?view:'today'}
+  function viewForHref(href){const panel=href?.slice(1);return ACTION_VIEWS[panel]?panel:href==='#capture'?'capture':href==='#insights'?'memories':href==='#myActions'?'actions':href==='#library'?'library':'today'}
   function sectionFor(view){return document.querySelector(VIEW_IDS[normalizeView(view)])}
 
   function injectStyle(){
@@ -24,16 +25,14 @@ html,body{max-width:100%;overflow-x:clip}
 main{display:block!important}
 body[data-synap-view] #today,
 body[data-synap-view] #insights,
-body[data-synap-view] #followupInbox,
-body[data-synap-view] #peopleMemory,
-body[data-synap-view] #ask,
+body[data-synap-view] #myActions,
 body[data-synap-view] #capture,
 body[data-synap-view] #library{display:block!important;visibility:visible!important;opacity:1!important}
-#today,#insights,#followupInbox,#peopleMemory,#ask,#capture,#library{scroll-margin-top:84px;content-visibility:visible!important}
+#today,#insights,#myActions,#capture,#library{scroll-margin-top:84px;content-visibility:visible!important}
 .app-shell,main,.brain-home,.day-brief,.actionable-memory,.action-grid,.conversation-lane,.section-card{min-width:0;max-width:100%}
 .section-card{transition:border-color .18s ease,box-shadow .18s ease}
 .brain-tabs{isolation:isolate}
-.brain-tabs:has(a[href="#capture"]):has(a[href="#ask"]){grid-template-columns:repeat(5,minmax(0,1fr))!important}
+.brain-tabs:has(a[href="#capture"]):has(a[href="#myActions"]){grid-template-columns:repeat(5,minmax(0,1fr))!important}
 .brain-tabs a{touch-action:manipulation}
 .brain-tabs a.active{font-weight:800}
 `;
@@ -52,7 +51,7 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
     activeView=normalizeView(view);
     document.body.dataset.synapView=activeView;
     $$('.brain-tabs a[href^="#"]').forEach(a=>{
-      const active=viewForHref(a.getAttribute('href'))===activeView;
+      const active=normalizeView(viewForHref(a.getAttribute('href')))===activeView;
       a.classList.toggle('active',active);
       if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');
     });
@@ -60,6 +59,7 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
 
   function setView(view,scroll=true){
     const next=normalizeView(view);
+    if(ACTION_VIEWS[view])root.SynapMyActions?.select(ACTION_VIEWS[view]);
     syncNav(next);
     root.SynapCompactLayout?.reveal(sectionFor(next));
     if(!scroll)return true;
@@ -193,7 +193,7 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
       mutation.observe(main,{childList:true});
     }
     ['synap-cloud-history-updated','synap-memory-ready','synap-processing-state','synap-transcript-updated'].forEach(name=>addEventListener(name,()=>requestAnimationFrame(updateFromViewport)));
-    if(location.hash&&VIEW_IDS[viewForHref(location.hash)])setTimeout(()=>setView(viewForHref(location.hash),true),0);
+    if(location.hash)setTimeout(()=>setView(viewForHref(location.hash),true),0);
   }
 
   root.SynapDashboardUI=Object.freeze({__stableShell:true,setView,syncNav,observeSections});

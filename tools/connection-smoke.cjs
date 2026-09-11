@@ -76,6 +76,9 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  await page.locator('.brain-tabs a[href="#today"]').click();
  await page.locator('[data-day-step="-1"]').click();
  await page.locator('.brain-tabs a[href="#library"]').click();
+ await page.locator('.brain-tabs a[href="#myActions"]').click();
+ for(const id of ['dailyFocus','followupInbox','peopleMemory','ask'])await page.locator('#actionsTab-'+id).click();
+ assert.equal(await page.locator('#headerCaptureToggle').getAttribute('aria-label'),'Stop listening');
  await page.locator('.brain-tabs a[href="#capture"]').click();
  assert.equal(await page.evaluate(()=>bleFixture.appDisconnects),0,'day and section browsing preserves capture');
  await page.waitForTimeout(800);const resumed=await records();assert.equal(resumed.length,1);assert.equal(resumed[0].id,first[0].id);

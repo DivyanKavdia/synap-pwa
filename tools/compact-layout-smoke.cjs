@@ -30,9 +30,9 @@ try{for(const width of[390,1440]){
  const height=await page.evaluate(()=>document.documentElement.scrollHeight);measurements.push({width,height});
  await page.screenshot({path:path.join(out,'overview-'+width+'.png'),fullPage:true});
  if(!baseline){
-   for(const id of['capture','insights','ask','library','peopleMemory','followupInbox','synapWeeklyReview','dailyFocus'])assert.equal(await page.locator('#'+id+' .tile-toggle').getAttribute('aria-expanded'),'false',id+' starts compact');
+   for(const id of['capture','insights','library','synapWeeklyReview'])assert.equal(await page.locator('#'+id+' .tile-toggle').getAttribute('aria-expanded'),'false',id+' starts compact');
    assert.equal(await page.locator('.conversation-digest[open]').count(),0);
-   const focusToggle=page.locator('#dailyFocus .tile-toggle');await focusToggle.focus();await page.keyboard.press('Space');assert(await page.locator('#dailyFocusBody').isVisible());await page.keyboard.press('Space');assert(!(await page.locator('#dailyFocusBody').isVisible()));
+   const actionsToggle=page.locator('#myActions > .tile-heading .tile-toggle');await actionsToggle.focus();await page.keyboard.press('Space');assert(!(await page.locator('#myActionsBody').isVisible()));await page.keyboard.press('Space');assert(await page.locator('#myActionsBody').isVisible());
    await page.locator('.conversation-card').first().click();assert(await page.locator('.conversation-source').first().isVisible());await page.locator('.conversation-source').first().click();
    await page.waitForFunction(()=>document.getElementById('recording-compact-0')?.open);
    assert(await page.locator('#libraryBody').isVisible(),'source navigation expands Library');

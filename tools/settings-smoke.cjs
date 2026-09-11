@@ -23,7 +23,7 @@ async function run(){
       const page=await context.newPage(),errors=[];page.setDefaultTimeout(10000);page.on('pageerror',error=>errors.push(error.message));
       await page.goto(origin);await page.waitForFunction(()=>window.SynapSettingsPanel&&document.querySelector('#headerCaptureToggle'));
       assert.equal(await page.locator('#openAsk,#synapSearchMemories,#setupConnect,.settings-brand-logo').count(),0);
-      assert.equal(await page.locator('.brain-tabs a[href="#ask"]').count(),1);
+      assert.equal(await page.locator('.brain-tabs a[href="#myActions"]').count(),1);
       assert.equal(await page.locator('#askForm,#librarySearch').count(),2);
       await page.locator('.brain-tabs a[href="#library"]').click();
       const before=await page.evaluate(()=>{window.originalHeader=document.querySelector('.topbar');return {scroll:scrollY,header:originalHeader.getBoundingClientRect().toJSON()}});
@@ -35,7 +35,7 @@ async function run(){
       assert(await page.locator('#settingsDialog').evaluate(node=>!node.matches(':modal')),'settings does not make the header inert');
       const after=await page.locator('.topbar').boundingBox();
       for(const key of ['x','y','width','height'])assert(Math.abs(after[key]-before.header[key])<1,'header position: '+key);
-      for(const selector of ['#headerPendantStatus','#headerCaptureToggle','#headerBatteryStatus','#settingsButton','.brain-tabs a[href="#ask"]'])await hit(page,selector);
+      for(const selector of ['#headerPendantStatus','#headerCaptureToggle','#headerBatteryStatus','#settingsButton','.brain-tabs a[href="#myActions"]'])await hit(page,selector);
       await page.locator('#headerBatteryStatus').click();
       assert(await page.locator('#synapBatteryPopover').isVisible(),'battery details still open above settings');
       await page.locator('#headerBatteryStatus').click();
@@ -54,7 +54,7 @@ async function run(){
       await page.locator('#settingsButton').click();await page.keyboard.press('Escape');
       assert(!(await page.locator('#settingsDialog').evaluate(node=>node.open)));
       assert.equal(await page.evaluate(()=>document.activeElement.id),'settingsButton');
-      await page.locator('#settingsButton').click();await page.locator('.brain-tabs a[href="#ask"]').click();
+      await page.locator('#settingsButton').click();await page.locator('.brain-tabs a[href="#myActions"]').click();
       assert(!(await page.locator('#settingsDialog').evaluate(node=>node.open)));
       assert(await page.locator('#askInput').isVisible());
       assert(!(await page.locator('main').evaluate(node=>node.inert)));

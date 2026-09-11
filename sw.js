@@ -3,14 +3,14 @@ const APP_VERSION='1.0.0';
 /* app.js owns the client compatibility revision used for update signalling. */
 const CLIENT_REVISION='1.0.0-audio2';
 /* Refresh the installed shell without changing audio protocol compatibility. */
-const UI_RECOVERY_REVISION='1.0.0-settings1';
-const CACHE_REVISION='1.0.0-shell48-settings';
+const UI_RECOVERY_REVISION='1.0.0-actions1';
+const CACHE_REVISION='1.0.0-shell49-actions';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings-icon-fix.css',
   './touch-event-bridge.js','./battery-v2-ui.js','./event-channel.js','./audio-codec-v3.js','./battery-popover-fix.js','./memory-ui-fix.js','./memory-tools.js','./voice-profile.js','./device-identity.js','./runtime-compat.js','./audio-store.js','./capture-stability.js','./ota.js','./releases.js',
   './app.js','./settings-panel.js','./enhancements.js','./capture-ui.js','./brain-ui.js','./ask-synap.js','./product-ui.js','./runtime-ui.js','./dashboard-ui.js','./provenance-links.js','./productivity-tools.js','./desktop-capture.js','./interaction-surfaces.js','./memory-ready-events.js','./experience-recovery.js',
-  './compact-layout.js','./audio-enhancement.js','./audio-enhancement-ui.js','./audio-enhancement-worker.js','./vendor/audio-enhancement/rnnoise-sync.js',
+  './my-actions.js','./compact-layout.js','./audio-enhancement.js','./audio-enhancement-ui.js','./audio-enhancement-worker.js','./vendor/audio-enhancement/rnnoise-sync.js',
   './synap-logo-blue-light.png','./synap-logo-blue-dark.png','./synap-logo-pink-light.png','./synap-logo-pink-dark.png','./synap-logo-lavender-light.png','./synap-logo-lavender-dark.png',
   './ai-providers.js','./sleep-state-guard.js','./recording-bridge.js','./transcript-repair.js','./manifest.webmanifest','./synap-logo-light.png','./synap-logo-dark.png','./icon.svg','./icon-192.png','./icon-512.png',
   './google-auth.js','./synap-backend.js','./processing-recovery.js','./processing-pipeline-ui.js','./cost-ui.js','./synap-account-ui.js','./people-confirm-ui.js','./cloud-history.js'
