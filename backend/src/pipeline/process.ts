@@ -24,6 +24,9 @@ import { extractMemory } from '../gemini/memory.js';
 import { embedContent } from '../gemini/client.js';
 import { formatMs, toSpeakerLines, transcribeSegment } from '../gemini/transcribe.js';
 import { tagSelfSpeaker } from '../speaker/enrich.js';
+import { RecordingSpeakers, labelWords } from '../speaker/diarization.js';
+import { extractSpeakerSample } from '../speaker/audio.js';
+import { embedSpeakerAudio, speakerServiceConfigured } from '../speaker/client.js';
 import { applySpeakerNames, readSpeakerNames } from '../speaker/names.js';
 import * as db from '../store/firestore.js';
 import { readSealedSegment } from '../store/gcs.js';
@@ -40,6 +43,7 @@ import type {
 import { localDay, mergeAliasKeys, nameKey, newId, normalizeName, topicKey } from '../util/ids.js';
 import { log } from '../util/log.js';
 import { rebuildDay } from './brief.js';
+import { chooseTranscript } from './source-materialize.js';
 
 /** Concurrent Gemini transcription calls per recording. */
 const TRANSCRIBE_CONCURRENCY = 4;
@@ -212,7 +216,7 @@ async function transcribeOne(
   await db.putSegment(uid, recordingId, {
     ...segment,
     state: 'transcribed',
-    language: result.speakers.length ? recording.language : recording.language,
+    language: recording.language,
     transcribedAt: new Date().toISOString(),
     sealedTranscript: sealText(
       dek,
@@ -237,17 +241,27 @@ async function enrichSegmentWords(
   dek: Buffer,
   segment: SegmentDoc,
   segmentWords: TranscriptWord[],
+  diarizer: RecordingSpeakers,
+  preserveNames: boolean,
 ): Promise<TranscriptWord[]> {
-  if (!segment.storagePath || segmentWords.length === 0) return segmentWords;
+  if (segmentWords.length === 0) return segmentWords;
+  if (preserveNames) {
+    // A user's saved name is bound to these exact labels; never renumber them
+    // during a later summary refresh or a temporary speaker-service outage.
+    return segment.sealedSpeakerMap
+      ? labelWords(segmentWords, openJson<Record<string,string>>(dek, segment.sealedSpeakerMap, binding(uid, `recording/${recordingId}/segment/${segment.index}`, 'speaker-map')))
+      : segmentWords;
+  }
+  let audio: Buffer | null = null;
+  let enriched = segmentWords;
   try {
-    const sealed = await readSealedSegment(segment.storagePath);
-    if (!sealed) return segmentWords;
-    const audio = openBytes(
+    const sealed = segment.storagePath ? await readSealedSegment(segment.storagePath) : null;
+    if (sealed) audio = openBytes(
       dek,
       sealed,
       binding(uid, `recording/${recordingId}/segment/${segment.index}`, 'audio'),
     );
-    return (await tagSelfSpeaker(uid, dek, audio, segmentWords, segment.startMs)).words;
+    if(audio) enriched = (await tagSelfSpeaker(uid, dek, audio, segmentWords, segment.startMs)).words;
   } catch (cause) {
     // Identity is metadata enrichment, never a prerequisite for a transcript.
     log.warn('Could not enrich one segment with voice profile', {
@@ -256,8 +270,15 @@ async function enrichSegmentWords(
       index: segment.index,
       error: (cause as Error).message,
     });
-    return segmentWords;
   }
+  const mapping = await diarizer.mapWindow(segment.index, enriched, audio && speakerServiceConfigured() ? async speaker => {
+    const sample = extractSpeakerSample(audio!, enriched, speaker, segment.startMs, config.speaker.minSampleMs, config.speaker.maxSampleMs);
+    return sample ? embedSpeakerAudio(sample.wav) : null;
+  } : undefined);
+  // Include an enrolled-self match so later user naming stays stable as well.
+  for(let i=0;i<segmentWords.length;i++) if(segmentWords[i]!.speaker && enriched[i]!.speaker==='YOU') mapping[segmentWords[i]!.speaker!]='YOU';
+  await db.putSegment(uid, recordingId, {...segment, sealedSpeakerMap:sealJson(dek,mapping,binding(uid,`recording/${recordingId}/segment/${segment.index}`,'speaker-map'))});
+  return labelWords(enriched,mapping);
 }
 
 async function understand(
@@ -267,26 +288,33 @@ async function understand(
   recording: RecordingDoc,
   segments: SegmentDoc[],
 ): Promise<StructuredMemory> {
-  const words: TranscriptWord[] = [];
   const flat: string[] = [];
+  const diarizer = new RecordingSpeakers();
 
-  for (const segment of segments) {
+  for (const segment of segments.slice().sort((a,b)=>a.index-b.index)) {
     const scope = `recording/${recordingId}/segment/${segment.index}`;
+    let grounded = '';
     if (segment.sealedTranscript) {
       const text = openText(dek, segment.sealedTranscript, binding(uid, scope, 'transcript'));
-      const grounded = groundSegmentTranscript(text, segment.startMs);
-      if (grounded) flat.push(grounded);
+      grounded = groundSegmentTranscript(text, segment.startMs);
     }
     if (segment.sealedWords) {
       const segmentWords = openJson<TranscriptWord[]>(dek, segment.sealedWords, binding(uid, scope, 'words'));
-      words.push(...await enrichSegmentWords(uid, recordingId, dek, segment, segmentWords));
+      const words = await enrichSegmentWords(uid, recordingId, dek, segment, segmentWords, diarizer, Boolean(recording.sealedSpeakerNames));
+      // Validate completeness per window: one partial annotation set must not
+      // erase valid speaker labels in every other window of the recording.
+      grounded = toSpeakerLines(words, grounded);
     }
+    if(grounded)flat.push(grounded);
   }
 
   if (flat.length === 0) throw new Error('No transcript was produced for this recording');
 
-  words.sort((a, b) => a.start_ms - b.start_ms);
-  const transcript = toSpeakerLines(words, flat.join('\n'));
+  let transcript = flat.join('\n');
+  if(recording.sealedSpeakerNames && recording.sealedTranscript) {
+    const original=openText(dek,recording.sealedTranscript,binding(uid,`recording/${recordingId}`,'transcript'));
+    transcript=chooseTranscript(original,flat).text;
+  }
 
   const highlights = await db.listHighlights(uid, recordingId);
   const people = await db.listPeople(uid, 100);

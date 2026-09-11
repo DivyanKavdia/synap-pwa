@@ -8,11 +8,11 @@ No additional summarization service or inference request is introduced. Content 
 
 ## Local speech copy
 
-Open a saved recording in Library and choose **Enhance speech**. A dedicated Worker runs the bundled RNNoise model on this device. Compare **Original** and **Enhanced**, then **Export enhanced copy** to keep the result. The copy exists for the current page session; it does not overwrite the stored source or automatically rebuild its transcript/memory. Cancellation and live capture/firmware-update states stop enhancement. Unsupported browsers omit the controls; unsupported formats return a clear error.
+Open a saved recording in Library and choose **Preview clearer audio**. A dedicated Worker runs the bundled RNNoise model with a speech-preservation guard. Compare **Original** and **Enhanced**, then **Export enhanced copy** to keep the result. The preview exists for the current page session; it does not overwrite the stored source or rebuild its transcript/memory. New cloud processing windows use this treatment automatically before upload. See [automatic speech preparation](AUTOMATIC_SPEECH.md) for guards, fallbacks, and speaker continuity.
 
 The limit is 20 minutes of mono PCM16 WAV at 16 or 48 kHz. Output is 16 kHz mono WAV, with model delay compensated to retain source timing. Model, Worker and UI are cached for offline use. See [model provenance and limits](../vendor/audio-enhancement/README.md) for pinned source, licenses, memory budget, resampling and measured tests. Real pendant listening and transcription comparisons remain necessary; synthetic suppression results do not establish improved recognition accuracy. Clipping, packet loss and overlapping voices cannot be reconstructed.
 
-Firmware review is in the companion synap-firmware change: a small 70 Hz high-pass reduces DC/rumble before ADPCM. Stronger denoising stays optional in the browser. Double tap remains recording on/off; triple tap remains sleep/wake.
+Firmware review is in the companion synap-firmware change: a small 70 Hz high-pass reduces DC/rumble before ADPCM. Double tap remains recording on/off; triple tap remains sleep/wake.
 
 ## Removed code
 

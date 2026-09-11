@@ -29,7 +29,8 @@ Keep both notices with the distributed app.
 `window.SynapAudioEnhancement.enhance(blob, {signal, onProgress})` returns a new
 16-bit mono 16 kHz WAV Blob. It never writes IndexedDB, uploads audio, invokes a
 transcription provider, or mutates the source Blob. UI playback and export can
-use this optional copy; transcripts and source recordings stay intact.
+use this copy. `prepareForUpload` applies the same guarded treatment to new cloud
+windows automatically; source recordings stay intact on the device.
 
 - Input: a saved mono PCM16 little-endian RIFF/WAV at 16 or 48 kHz, up to 20 minutes.
   Compressed, float, stereo and other sample rates receive an explicit error.
@@ -52,14 +53,16 @@ use this optional copy; transcripts and source recordings stay intact.
   `loading`, `processing` or `complete`; progress is a fraction from 0 to 1.
   `supported()`, `busy()` and `limits` let the UI offer compatible controls.
 - App installation caches the same-origin script, Worker and model for offline
-  operation. Run only on explicit user request after recording/capture has stopped.
+  operation. Manual previews wait until capture stops; bounded automatic window
+  preparation runs in its Worker during rolling capture.
 
 RNNoise estimates speech-preserving spectral gains; it does not generate words.
 Noise reduction may soften quiet speech, distant speakers, music or other useful
 sounds. It cannot fix microphone clipping, packet loss, or overlapping speakers.
 Keep Original/Enhanced comparison available. Noise suppression is not evidence of
-better transcription accuracy; real pendant speech and listening tests are still
-needed before changing any automatic processing defaults.
+better transcription accuracy. The output now includes a bounded correction to
+the original, retaining at least 70% of each 16 kHz sample's amplitude rather than
+trusting full suppression. See [automatic processing limits and verification](../../docs/AUTOMATIC_SPEECH.md).
 
 ## Verification
 

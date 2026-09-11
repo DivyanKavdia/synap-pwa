@@ -66,7 +66,7 @@ async function enhance(blob) {
     if (!state || !pointer) throw new Error('There is not enough memory to enhance this recording.');
     const ratio=48000/wav.rate, input48=wav.count*ratio;
     const totalFrames=Math.ceil((input48+MODEL_DELAY+DOWN_RADIUS)/FRAME);
-    const ring=new Float32Array(RING_SIZE);
+    const ring=new Float32Array(RING_SIZE), originalRing=new Float32Array(RING_SIZE);
     let pcm=null, readStart=0, cachedBlock=-1, output=new Uint8Array(OUTPUT_RATE*2), outputView=new DataView(output.buffer);
     let written=0, chunkWritten=0;
     for (let frameIndex=0;frameIndex<totalFrames;frameIndex++) {
@@ -93,6 +93,8 @@ async function enhance(blob) {
           }
         }
         heap[heapOffset+j]=value;
+        originalRing[absolute%RING_SIZE]=ratio===3 && absolute<input48 && absolute%3===0
+          ? pcm.getInt16((absolute/3-readStart)*2,true) : value;
       }
       model._rnnoise_process_frame(state,pointer,pointer);
       // RNNoise 0.2 has a delayed spectrum plus overlap/add: 2 x 480 samples.
@@ -111,6 +113,19 @@ async function enhance(blob) {
           const at=center+k;
           if (at>=0 && at<input48) value+=ring[at%RING_SIZE]*downKernel[k+DOWN_RADIUS];
         }
+        let dry=originalRing[center%RING_SIZE];
+        if (wav.rate===48000) {
+          dry=0;
+          for(let k=-DOWN_RADIUS;k<=DOWN_RADIUS;k++) {
+            const at=center+k;
+            if(at>=0 && at<input48) dry+=originalRing[at%RING_SIZE]*downKernel[k+DOWN_RADIUS];
+          }
+        }
+        // A denoiser can mistake distant voices or consonants for noise. Bound
+        // its correction to 30% of each original sample, keeping the waveform's
+        // sign and at least 70% amplitude even if the model outputs silence.
+        const limit=Math.abs(dry)*.30;
+        value=dry+Math.max(-limit,Math.min(limit,.4*(value-dry)));
         outputView.setInt16(chunkWritten*2,Math.max(-32768,Math.min(32767,Math.round(value))),true);
         written++; chunkWritten++;
         if (chunkWritten===OUTPUT_RATE) {

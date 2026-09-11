@@ -1,11 +1,12 @@
-/* Optional local noise reduction. Originals and transcription inputs are never mutated. */
+/* Speech-preserving local copies; the capture journal is never mutated. */
 (function (root) {
   'use strict';
   const source = root.document?.currentScript?.src || root.location?.href;
-  const workerURL = source ? new URL('audio-enhancement-worker.js?v=1', source).href : '';
+  const workerURL = source ? new URL('audio-enhancement-worker.js?v=2', source).href : '';
   const limits = Object.freeze({ maxDurationSeconds:1200, maxBytes:115200044,
     inputSampleRates:Object.freeze([16000,48000]), outputSampleRate:16000 });
   let active = false;
+  function announce(){if(root.Event && root.dispatchEvent)root.dispatchEvent(new root.Event('synap-audio-enhancement-state'));}
   function supported() { return !!(root.Worker && root.WebAssembly && root.Blob); }
   function abortError() { return new DOMException('Speech enhancement cancelled.', 'AbortError'); }
   function header(sampleCount) {
@@ -17,29 +18,33 @@
     view.setUint16(34,16,true); text(36,'data'); view.setUint32(40,sampleCount*2,true);
     return buffer;
   }
-  function enhance(blob, {signal,onProgress} = {}) {
+  function enhance(blob, {signal,onProgress,timeoutMs=0} = {}) {
     if (signal?.aborted) return Promise.reject(abortError());
     if (!supported()) return Promise.reject(new Error('Local speech enhancement needs WebAssembly and Web Workers in this browser.'));
     if (active) return Promise.reject(new Error('Another recording is being enhanced. Wait or cancel it first.'));
     if (!(blob instanceof root.Blob) || blob.size<44) return Promise.reject(new Error('Choose a saved PCM WAV recording to enhance.'));
     if (blob.size>limits.maxBytes) return Promise.reject(new Error('Local enhancement supports recordings up to 20 minutes.'));
     active = true;
+    announce();
     return new Promise((resolve,reject) => {
-      let worker, settled = false, samples = 0;
+      let worker, timer, settled = false, samples = 0;
       const parts = [];
       const progress = value => { if (typeof onProgress === 'function') { try { onProgress(value); } catch (_) {} } };
       function finish(error, result) {
         if (settled) return;
         settled = true;
+        if(timer)root.clearTimeout(timer);
         signal?.removeEventListener('abort',cancel);
         if (worker) { worker.onmessage=worker.onerror=worker.onmessageerror=null; worker.terminate(); }
         parts.length=0; active=false;
+        announce();
         if (error) reject(error); else resolve(result);
       }
       function cancel() { finish(abortError()); }
       signal?.addEventListener('abort',cancel,{once:true});
       if (signal?.aborted) { cancel(); return; }
       try {
+        if(timeoutMs>0)timer=root.setTimeout(()=>finish(new Error('Local enhancement exceeded its processing budget.')),timeoutMs);
         worker = new root.Worker(workerURL,{type:'module',name:'synap-speech-enhancement'});
         worker.onerror = event => {
           event.preventDefault?.();
@@ -65,5 +70,13 @@
       } catch (error) { finish(error); }
     });
   }
-  root.SynapAudioEnhancement = Object.freeze({enhance,supported,busy:()=>active,limits});
+  async function prepareForUpload(blob,{signal}={}) {
+    if(signal?.aborted)throw abortError();
+    // Keep rolling uploads bounded on mobile. Unsupported/slow devices still
+    // transcribe automatically using their untouched original window.
+    if(!supported() || active || blob.size>1920044)return blob;
+    try { return await enhance(blob,{signal,timeoutMs:12000}); }
+    catch(error) { if(signal?.aborted)throw abortError(); return blob; }
+  }
+  root.SynapAudioEnhancement = Object.freeze({enhance,prepareForUpload,supported,busy:()=>active,limits});
 })(typeof window!=='undefined' ? window : globalThis);

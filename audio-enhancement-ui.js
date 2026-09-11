@@ -5,10 +5,11 @@
   let observer;
   function captureBusy(){return busyStates.has(document.body.dataset.state)}
   function refresh(){for(const view of views)view.refresh()}
+  root.addEventListener('synap-audio-enhancement-state',refresh);
   function attach(container,audio,getOriginal,name){
     const api=root.SynapAudioEnhancement;if(!api?.supported())return;
     const box=document.createElement('section');box.className='speech-enhancement';
-    box.innerHTML='<h4>Clearer speech</h4><p>Reduce background noise on this device. Up to 20 minutes. Compare with the original and export to keep the copy.</p><div class="speech-controls"><button type="button" data-speech="enhance">Enhance speech</button><button type="button" data-speech="cancel" hidden>Cancel</button><button type="button" data-speech="original" aria-pressed="true" hidden>Original</button><button type="button" data-speech="enhanced" aria-pressed="false" hidden>Enhanced</button><button type="button" data-speech="export" hidden>Export enhanced copy</button></div><progress max="1" value="0" aria-label="Speech enhancement progress" hidden></progress><p class="speech-status" role="status" hidden></p>';
+    box.innerHTML='<h4>Audio preview</h4><p>New cloud uploads get gentle noise reduction automatically. Preview the same treatment here; the original stays available.</p><div class="speech-controls"><button type="button" data-speech="enhance">Preview clearer audio</button><button type="button" data-speech="cancel" hidden>Cancel</button><button type="button" data-speech="original" aria-pressed="true" hidden>Original</button><button type="button" data-speech="enhanced" aria-pressed="false" hidden>Enhanced</button><button type="button" data-speech="export" hidden>Export enhanced copy</button></div><progress max="1" value="0" aria-label="Speech enhancement progress" hidden></progress><p class="speech-status" role="status" hidden></p>';
     container.appendChild(box);
     const button=key=>box.querySelector('[data-speech="'+key+'"]'),status=box.querySelector('.speech-status'),progress=box.querySelector('progress');
     let controller=null,enhancedURL='',originalURL='',disposed=false;
