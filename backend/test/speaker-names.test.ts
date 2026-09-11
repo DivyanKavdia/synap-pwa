@@ -28,6 +28,14 @@ test('saved names are encrypted and bound to the owner and recording', () => {
   assert.throws(() => readSpeakerNames('another-user', recording, dek));
   assert.throws(() => readSpeakerNames('u', { ...recording, recordingId: 'other' }, dek));
 });
+test('blank window labels do not prevent naming a speaker in a long recording', () => {
+  const labels=Array.from({length:40},(_,i)=>`S${i+1}.1`);
+  const source=labels.map(label=>`[00:00] ${label}: Speech`).join('\n');
+  const draft=Object.fromEntries(labels.map(label=>[label,'']));
+  draft['S1.1']='Divyan';
+  assert.deepEqual({...validateSpeakerNames(draft,source)},{'S1.1':'Divyan'});
+  assert.throws(()=>validateSpeakerNames(Object.fromEntries(labels.map(label=>[label,'Named speaker'])),source),/up to 32/);
+});
 test('summary extraction receives confirmed speaker names and attributed transcript as data', async () => {
   const original = globalThis.fetch;
   let sent: Record<string, unknown> | undefined;

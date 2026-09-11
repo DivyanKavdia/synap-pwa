@@ -18,7 +18,6 @@ export function validateSpeakerNames(value: unknown, transcript: string): Speake
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Speaker names must be a label-to-name map.');
   const labels = new Set(transcriptSpeakers(transcript).map(({ label }) => label));
   const entries = Object.entries(value);
-  if (entries.length > 32) throw new Error('Name up to 32 speakers per recording.');
   const names: SpeakerNames = Object.create(null);
   for (const [label, input] of entries) {
     if (!labels.has(label)) throw new Error('A speaker label has changed. Reload the names and try again.');
@@ -26,6 +25,7 @@ export function validateSpeakerNames(value: unknown, transcript: string): Speake
     const name = input.trim();
     if (name && name !== label) names[label] = name;
   }
+  if (Object.keys(names).length > 32) throw new Error('Name up to 32 speakers per recording.');
   return names;
 }
 
