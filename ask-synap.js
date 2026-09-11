@@ -173,6 +173,7 @@
     const input = $('#askInput');
     if (input && query != null) input.value = String(query);
     if (cloudReady() && query) askCloud(query);
+    else if (query) $('#askForm')?.requestSubmit();
     else if (input) setTimeout(() => input.focus(), 0);
   }
 

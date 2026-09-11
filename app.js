@@ -2267,7 +2267,7 @@
   }
 
   function renderInsights(recordings) {
-    const existing = new Map(Array.from(ui.insightsList.children).map(card => [card.dataset.recordingId, card]));
+    const existing = new Map(Array.from(ui.insightsList.children).filter(card => card.dataset.recordingId).map(card => [card.dataset.recordingId, card]));
     const processed = recordings.filter(function (recording) {
       return Boolean((recording.summary && recording.summary.trim()) ||
         (recording.transcript && recording.transcript.trim()));
@@ -2277,7 +2277,7 @@
     const retained = new Set();
     processed.forEach(function (recording, index) {
       const id = String(recording.id), previous = existing.get(id);
-      const signature = JSON.stringify([recording.name, recording.createdAt, recording.summary, recording.transcript, recording.meeting, recording.conversations]);
+      const signature = JSON.stringify([recording.name, recording.createdAt, recording.summary, recording.transcript, recording.notes, recording.meeting, recording.conversations]);
       let card = previous;
       if (!card || card.synapMemorySignature !== signature) {
         card = createInsightCard(recording);
@@ -2289,6 +2289,7 @@
       if (ui.insightsList.children[index] !== card) ui.insightsList.insertBefore(card, ui.insightsList.children[index] || null);
     });
     for (const [id, card] of existing) if (!retained.has(id)) card.remove();
+    globalThis.dispatchEvent(new CustomEvent('synap-insights-rendered'));
   }
 
   async function renderRecordings() {
