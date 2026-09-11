@@ -17,6 +17,10 @@ and `#ask` links still select Ask. The other panel IDs work as deep links too.
 Arrow keys, Home and End operate independently in the outer tabs and the
 nested Next steps tabs. Settings continues to use the same live header.
 
+The sleep guard subscribes before DOMContentLoaded, since restoring an already
+permitted pendant can finish while UI scripts are still loading. A successful
+early connection clears the persisted sleep flag without waiting for the UI.
+
 `tools/actions-smoke.cjs` checks the real app at 320, 390 and 1440 pixels in
 light and dark mode: draft and filter retention, original node identity, date
 changes, keyboard navigation, deep links, disclosure and Settings navigation.
