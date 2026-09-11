@@ -17,7 +17,7 @@
 
 import { config, loadSecrets } from '../config.js';
 import { log } from '../util/log.js';
-import { sleep } from '../util/retry.js';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 export interface InteractionTextPart {
   type: 'text';
@@ -83,11 +83,13 @@ const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS = 4;
 
 async function call<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  signal?.throwIfAborted();
   const { geminiApiKey } = await loadSecrets();
   const url = `${config.gemini.endpoint}${path}`;
 
   let lastError: GeminiError | null = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    signal?.throwIfAborted();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.gemini.requestTimeoutMs);
     const onAbort = () => controller.abort();
@@ -115,11 +117,10 @@ async function call<T>(path: string, body: unknown, signal?: AbortSignal): Promi
       if (!error.retryable || attempt === MAX_ATTEMPTS) throw error;
       lastError = error;
     } catch (cause) {
+      signal?.throwIfAborted();
       if (cause instanceof GeminiError) {
         if (!cause.retryable || attempt === MAX_ATTEMPTS) throw cause;
         lastError = cause;
-      } else if ((cause as Error).name === 'AbortError' && signal?.aborted) {
-        throw cause;
       } else {
         // Network-level failure: worth retrying, the request never landed.
         const error = new GeminiError(`Gemini request failed: ${(cause as Error).message}`, 0, true);
@@ -134,7 +135,7 @@ async function call<T>(path: string, body: unknown, signal?: AbortSignal): Promi
     // Full jitter backoff; a thundering herd of retried segments is the
     // failure mode that turns a blip into an outage.
     const ceiling = Math.min(30_000, 1_000 * 2 ** (attempt - 1));
-    await sleep(Math.random() * ceiling);
+    await sleep(Math.random() * ceiling, undefined, {signal});
   }
 
   throw lastError ?? new GeminiError('Gemini request failed', 0, false);

@@ -70,12 +70,15 @@ export interface RecordingDoc {
   sealedTranscript: Sealed | null;
   /** User-confirmed names for this recording's original speaker labels. */
   sealedSpeakerNames?: Sealed | null;
+  /** Automatic matches are separate from source labels and explicit user overrides. */
+  sealedIdentifiedSpeakers?: Sealed | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface SegmentDoc {
   sealedSpeakerMap?: Sealed | null;
+  transcriptionReview?: { attempted: boolean; annotationsComplete: boolean };
   index: number;
   startMs: number;
   endMs: number;

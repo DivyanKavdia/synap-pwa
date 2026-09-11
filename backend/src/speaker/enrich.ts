@@ -29,6 +29,7 @@ export async function tagSelfSpeaker(
   audio: Buffer,
   words: TranscriptWord[],
   segmentStartMs: number,
+  embed: typeof embedSpeakerAudio = embedSpeakerAudio,
 ): Promise<SelfSpeakerResult> {
   if (!speakerServiceConfigured() || words.length === 0) {
     return { words, matchedSpeaker: null, score: null };
@@ -53,7 +54,7 @@ export async function tagSelfSpeaker(
         config.speaker.maxSampleMs,
       );
       if (!sample) return null;
-      const embedded = await embedSpeakerAudio(sample.wav);
+      const embedded = await embed(sample.wav);
       if (embedded.model !== profile.model || embedded.embedding.length !== profile.embedding.length) return null;
       return {
         speaker,

@@ -12,12 +12,20 @@ async function run(){
   await context.route('**/*',r=>new URL(r.request().url()).origin===origin?r.continue():r.abort());
   await context.addInitScript(mode=>{
    localStorage.setItem('synap-appearance',mode);
-   window.qaSpeakers={failure:false,posts:0,raw:'[00:01] S1: I will send S2 the drawings.\n[00:04] S2: Thank you.'};
+   window.qaSpeakers={failure:false,posts:0,remembers:0,raw:'[00:01] S1: I will send S2 the drawings.\n[00:04] S2: Thank you.'};
    document.addEventListener('DOMContentLoaded',()=>{
     window.SynapAuth={...window.SynapAuth,isSignedIn:()=>true,authedFetch:async(url,options={})=>{
-     if(!url.endsWith('/speaker-fixture/speakers'))return new Response(JSON.stringify({error:{message:'No fixture for this request'}}),{status:404});
      const qa=qaSpeakers,saved=JSON.parse(sessionStorage.getItem('qa-speakers')||'{"names":{},"revision":"v1"}');
-     if(options.method!=='POST')return new Response(JSON.stringify({revision:saved.revision,speaker_names:saved.names,speakers:[{label:'S1',excerpt:'I will send S2 the drawings.'},{label:'S2',excerpt:'Thank you.'}]}));
+     if(url.endsWith('/known-speakers'))return new Response(JSON.stringify({available:true,speakers:JSON.parse(sessionStorage.getItem('qa-known-speakers')||'[]')}));
+     if(url.endsWith('/known-speakers/'+'a'.repeat(40))&&options.method==='DELETE'){sessionStorage.setItem('qa-known-speakers','[]');return new Response(JSON.stringify({removed:true}));}
+     if(url.endsWith('/speaker-fixture/remember-speaker')&&options.method==='POST'){
+      qa.remembers++;qa.lastRemember=JSON.parse(options.body);
+      if(qa.lastRemember.consent!==true||qa.lastRemember.revision!==saved.revision)return new Response(JSON.stringify({error:{message:'Consent or revision missing'}}),{status:400});
+      const speaker={id:'a'.repeat(40),name:saved.names[qa.lastRemember.label],sample_duration_ms:6000};
+      sessionStorage.setItem('qa-known-speakers',JSON.stringify([speaker]));return new Response(JSON.stringify({speaker}));
+     }
+     if(!url.endsWith('/speaker-fixture/speakers'))return new Response(JSON.stringify({error:{message:'No fixture for this request'}}),{status:404});
+     if(options.method!=='POST')return new Response(JSON.stringify({revision:saved.revision,speaker_names:saved.names,names_confirmed:saved.revision!=='v1',speakers:[{label:'S1',excerpt:'I will send S2 the drawings.'},{label:'S2',excerpt:'Thank you.'}]}));
      qa.posts++;qa.lastBody=JSON.parse(options.body);
      if(qa.failure)return new Response(JSON.stringify({error:{message:'Temporary summary failure'}}),{status:503});
      if(qa.lastBody.revision!==saved.revision)return new Response(JSON.stringify({error:{message:'Recording changed'}}),{status:409});
@@ -25,7 +33,7 @@ async function run(){
      const transcript=qa.raw.replace(/S1:/g,(names.S1||'S1')+':').replace(/S2:/g,(names.S2||'S2')+':');
      const summary=(names.S1||'S1')+' will send the drawings to '+(names.S2||'S2')+'.',revision=saved.revision+'x';
      sessionStorage.setItem('qa-speakers',JSON.stringify({names,revision}));
-     return new Response(JSON.stringify({schema_version:1,title:'Drawing review',executive_summary:summary,key_points:[],people:[],topics:['Drawings'],conversations:[{title:'Drawing review',summary,start_ms:0,end_ms:6000,participants:Object.values(names),mentioned_people:[],people:[],decisions:[],action_items:[],follow_ups:[],topics:[]}],transcript,raw_transcript:qa.raw,speaker_names:names,revision,day_updated:true,duration_ms:6000}));
+     return new Response(JSON.stringify({schema_version:1,title:'Drawing review',executive_summary:summary,key_points:[],people:[],topics:['Drawings'],conversations:[{title:'Drawing review',summary,start_ms:0,end_ms:6000,participants:Object.values(names),mentioned_people:[],people:[],decisions:[],action_items:[],follow_ups:[],topics:[]}],transcript,raw_transcript:qa.raw,speaker_names:names,names_confirmed:true,revision,day_updated:true,duration_ms:6000}));
     }};
    });
   },mode);
@@ -39,6 +47,8 @@ async function run(){
   async function open(){await page.locator('.brain-tabs a[href="#library"]').click();const card=page.locator('#recording-speaker-fixture');await card.locator(':scope > summary').click();await card.locator('.recording-transcript').evaluate(node=>node.closest('details').open=true);await card.locator('.speaker-names > summary').click();await page.getByLabel('Name for S1',{exact:true}).waitFor();return card}
   const card=await open(),save=card.locator('.speaker-name-actions [type="submit"]');
   await page.getByLabel('Name for S1',{exact:true}).fill('Divyan');await page.getByLabel('Name for S2',{exact:true}).fill('Riya');
+  await page.getByRole('button',{name:'Remember voice for S1',exact:true}).click();
+  assert.match(await card.locator('.speaker-names-status').textContent(),/Save and confirm/);assert.equal(await page.evaluate(()=>qaSpeakers.remembers),0,'naming a draft cannot enroll a voice');
   await page.evaluate(()=>qaSpeakers.failure=true);await save.click();await page.waitForFunction(()=>document.querySelector('.speaker-names-status').textContent.includes('Temporary summary failure'));
   assert.equal(await card.locator('.recording-transcript').inputValue(),await page.evaluate(()=>qaSpeakers.raw));
   assert.equal(await page.getByLabel('Name for S1',{exact:true}).inputValue(),'Divyan','failed saves retain the draft');
@@ -46,14 +56,25 @@ async function run(){
   assert.match(await card.locator('.recording-transcript').inputValue(),/\[00:01\] Divyan: I will send S2 the drawings/);
   await page.waitForFunction(()=>document.querySelector('#recording-speaker-fixture .recording-summary').textContent.includes('Divyan will send the drawings to Riya'));
   await page.waitForFunction(()=>document.getElementById('dayBriefText').textContent.includes('Divyan'));
+  assert.equal(await page.evaluate(()=>qaSpeakers.remembers),0,'saving names alone never enrolls a voice');
+  page.once('dialog',dialog=>dialog.dismiss());await page.getByRole('button',{name:'Remember voice for S1',exact:true}).click();
+  assert.equal(await page.evaluate(()=>qaSpeakers.remembers),0,'declining permission never stores a voice');
+  page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'Remember voice for S1',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.speaker-names-status').textContent.includes('Voice remembered.'));
+  assert.equal(await page.evaluate(()=>qaSpeakers.remembers),1);assert.equal(await page.evaluate(()=>qaSpeakers.lastRemember.consent),true);
+  await card.locator('.known-speakers > summary').click();await page.getByRole('button',{name:'Remove saved voice for Divyan',exact:true}).waitFor();
   await page.locator('.speaker-names').screenshot({path:path.join(out,`speakers-${mode}-${width}.png`)});
   await page.reload();const reloaded=await open();assert.equal(await page.getByLabel('Name for S1',{exact:true}).inputValue(),'Divyan');
+  await reloaded.locator('.known-speakers > summary').click();const remove=page.getByRole('button',{name:'Remove saved voice for Divyan',exact:true});await remove.waitFor();
+  page.once('dialog',dialog=>dialog.dismiss());await remove.click();assert.equal(await remove.count(),1);
+  page.once('dialog',dialog=>dialog.accept());await remove.click();await page.waitForFunction(()=>document.querySelector('.known-speaker-list').textContent==='No remembered voices yet.');
+  assert.equal(await page.getByLabel('Name for S1',{exact:true}).inputValue(),'Divyan','forgetting a voice does not alter earlier confirmed names');
   await page.evaluate(()=>document.body.dataset.state='recording');const count=await page.evaluate(()=>qaSpeakers.posts);await reloaded.locator('.speaker-name-actions [type="submit"]').click();assert.equal(await page.evaluate(()=>qaSpeakers.posts),count,'editing must not launch a summary rebuild during capture');await page.evaluate(()=>document.body.dataset.state='disconnected');
   await page.getByLabel('Name for S1',{exact:true}).fill('');await page.getByLabel('Name for S2',{exact:true}).fill('');await reloaded.locator('.speaker-name-actions [type="submit"]').click();await page.waitForFunction(()=>document.querySelector('.speaker-names-status').textContent==='Names and summaries updated.');
   assert.equal(await reloaded.locator('.recording-transcript').inputValue(),await page.evaluate(()=>qaSpeakers.raw),'clearing names restores the original labels');
   const stored=await page.evaluate(async()=>{const db=await new Promise(resolve=>{const r=indexedDB.open('dk-pendant-recordings');r.onsuccess=()=>resolve(r.result)});const value=await new Promise(resolve=>{const r=db.transaction('recordings').objectStore('recordings').get('speaker-fixture');r.onsuccess=()=>resolve(r.result)});db.close();return{raw:value.rawTranscript,notes:value.notes,blobSize:value.blob.size}});
   assert.equal(stored.raw,await page.evaluate(()=>qaSpeakers.raw));assert.equal(stored.notes,'Keep my notes');assert.equal(stored.blobSize,14);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.deepEqual(errors,[]);
-  console.log(`PASS speakers/${mode}/${width}: tag, retry, summary/day refresh, reload, clear names and original evidence retained`);await context.close();
+  console.log(`PASS speakers/${mode}/${width}: tag, retry, summary/day refresh, consent, remember, forget, reload, clear names and original evidence retained`);await context.close();
  }}finally{await browser.close();server.close()}
 }
 run().catch(error=>{console.error(error);server.close();process.exitCode=1});

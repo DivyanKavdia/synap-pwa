@@ -26,7 +26,8 @@ import { formatMs, toSpeakerLines, transcribeSegment } from '../gemini/transcrib
 import { tagSelfSpeaker } from '../speaker/enrich.js';
 import { RecordingSpeakers, labelWords } from '../speaker/diarization.js';
 import { extractSpeakerSample } from '../speaker/audio.js';
-import { embedSpeakerAudio, speakerServiceConfigured } from '../speaker/client.js';
+import { embedSpeakerAudio, speakerServiceConfigured, type SpeakerEmbeddingResult } from '../speaker/client.js';
+import { readKnownSpeakers, identifyKnownSpeakers, mergeSpeakerIdentifications, type KnownSpeaker } from '../speaker/known.js';
 import { applySpeakerNames, readSpeakerNames } from '../speaker/names.js';
 import * as db from '../store/firestore.js';
 import { readSealedSegment } from '../store/gcs.js';
@@ -40,7 +41,7 @@ import type {
   TranscriptWord,
   UserProfile,
 } from '../store/types.js';
-import { localDay, mergeAliasKeys, nameKey, newId, normalizeName, topicKey } from '../util/ids.js';
+import { localDay, mergeAliasKeys, nameKey, newId, normalizeName, topicKey, sha256 } from '../util/ids.js';
 import { log } from '../util/log.js';
 import { rebuildDay } from './brief.js';
 import { chooseTranscript } from './source-materialize.js';
@@ -218,6 +219,7 @@ async function transcribeOne(
     state: 'transcribed',
     language: recording.language,
     transcribedAt: new Date().toISOString(),
+    transcriptionReview:result.review,
     sealedTranscript: sealText(
       dek,
       result.text,
@@ -243,6 +245,9 @@ async function enrichSegmentWords(
   segmentWords: TranscriptWord[],
   diarizer: RecordingSpeakers,
   preserveNames: boolean,
+  knownVoices: KnownSpeaker[],
+  identified: Record<string,string>,
+  conflicts: Set<string>,
 ): Promise<TranscriptWord[]> {
   if (segmentWords.length === 0) return segmentWords;
   if (preserveNames) {
@@ -254,6 +259,11 @@ async function enrichSegmentWords(
   }
   let audio: Buffer | null = null;
   let enriched = segmentWords;
+  const cached=new Map<string,Promise<SpeakerEmbeddingResult>>();
+  const embed=(wav:Buffer)=>{
+    const key=sha256(wav);let value=cached.get(key);
+    if(!value){value=embedSpeakerAudio(wav);cached.set(key,value)}return value;
+  };
   try {
     const sealed = segment.storagePath ? await readSealedSegment(segment.storagePath) : null;
     if (sealed) audio = openBytes(
@@ -261,7 +271,7 @@ async function enrichSegmentWords(
       sealed,
       binding(uid, `recording/${recordingId}/segment/${segment.index}`, 'audio'),
     );
-    if(audio) enriched = (await tagSelfSpeaker(uid, dek, audio, segmentWords, segment.startMs)).words;
+    if(audio) enriched = (await tagSelfSpeaker(uid, dek, audio, segmentWords, segment.startMs, embed)).words;
   } catch (cause) {
     // Identity is metadata enrichment, never a prerequisite for a transcript.
     log.warn('Could not enrich one segment with voice profile', {
@@ -271,10 +281,21 @@ async function enrichSegmentWords(
       error: (cause as Error).message,
     });
   }
+  const voices=new Map<string,SpeakerEmbeddingResult>();
   const mapping = await diarizer.mapWindow(segment.index, enriched, audio && speakerServiceConfigured() ? async speaker => {
     const sample = extractSpeakerSample(audio!, enriched, speaker, segment.startMs, config.speaker.minSampleMs, config.speaker.maxSampleMs);
-    return sample ? embedSpeakerAudio(sample.wav) : null;
+    if(!sample)return null;
+    const voice=await embed(sample.wav);voices.set(speaker,voice);return voice;
   } : undefined);
+  // Include the wearer as a competing voice: a saved wearer profile must not
+  // accidentally name a different speaker just because YOU was filtered out.
+  if(audio && knownVoices.length && enriched.some(word=>word.speaker==='YOU')) {
+    try{
+      const sample=extractSpeakerSample(audio,enriched,'YOU',segment.startMs,config.speaker.minSampleMs,config.speaker.maxSampleMs);
+      if(sample){voices.set('YOU',await embed(sample.wav));mapping.YOU='YOU'}
+    }catch{ /* Existing self labeling remains available without a saved-name match. */ }
+  }
+  mergeSpeakerIdentifications(mapping,voices.keys(),identifyKnownSpeakers(voices,knownVoices),identified,conflicts);
   // Include an enrolled-self match so later user naming stays stable as well.
   for(let i=0;i<segmentWords.length;i++) if(segmentWords[i]!.speaker && enriched[i]!.speaker==='YOU') mapping[segmentWords[i]!.speaker!]='YOU';
   await db.putSegment(uid, recordingId, {...segment, sealedSpeakerMap:sealJson(dek,mapping,binding(uid,`recording/${recordingId}/segment/${segment.index}`,'speaker-map'))});
@@ -290,6 +311,9 @@ async function understand(
 ): Promise<StructuredMemory> {
   const flat: string[] = [];
   const diarizer = new RecordingSpeakers();
+  let knownVoices:KnownSpeaker[]=[];
+  try{knownVoices=await readKnownSpeakers(uid,dek)}catch{log.warn('Saved voice lookup unavailable; continuing with anonymous speakers',{uid,recordingId})}
+  const identified:Record<string,string>=Object.create(null),conflicts=new Set<string>();
 
   for (const segment of segments.slice().sort((a,b)=>a.index-b.index)) {
     const scope = `recording/${recordingId}/segment/${segment.index}`;
@@ -300,7 +324,7 @@ async function understand(
     }
     if (segment.sealedWords) {
       const segmentWords = openJson<TranscriptWord[]>(dek, segment.sealedWords, binding(uid, scope, 'words'));
-      const words = await enrichSegmentWords(uid, recordingId, dek, segment, segmentWords, diarizer, Boolean(recording.sealedSpeakerNames));
+      const words = await enrichSegmentWords(uid, recordingId, dek, segment, segmentWords, diarizer, Boolean(recording.sealedSpeakerNames),knownVoices,identified,conflicts);
       // Validate completeness per window: one partial annotation set must not
       // erase valid speaker labels in every other window of the recording.
       grounded = toSpeakerLines(words, grounded);
@@ -335,10 +359,13 @@ async function understand(
 
   const durationMs = recording.durationMs || segments.length * SEGMENT_MS;
 
-  const confirmedSpeakers = readSpeakerNames(uid, recording, dek);
+  const confirmedSpeakers = recording.sealedSpeakerNames ? readSpeakerNames(uid, recording, dek) : {};
+  const speakerNames = recording.sealedSpeakerNames ? confirmedSpeakers : identified;
   const memory = await extractMemory({
-    transcript: applySpeakerNames(transcript, confirmedSpeakers),
+    transcript: applySpeakerNames(transcript, speakerNames),
     confirmedSpeakers,
+    identifiedSpeakers:recording.sealedSpeakerNames ? {} : identified,
+    transcriptWarnings:segments.filter(segment=>segment.transcriptionReview?.annotationsComplete===false).map(segment=>`The window at ${formatMs(segment.startMs)} has incomplete speaker/timing annotations. Do not infer an owner from its neighbouring speaker.`),
     durationMs,
     highlightOffsetsMs: highlights.map((highlight) => highlight.offsetMs),
     knownPeople,
@@ -348,6 +375,7 @@ async function understand(
   await db.patchRecording(uid, recordingId, {
     sealedMemory: sealJson(dek, memory, binding(uid, `recording/${recordingId}`, 'memory')),
     sealedTranscript: sealText(dek, transcript, binding(uid, `recording/${recordingId}`, 'transcript')),
+    ...(!recording.sealedSpeakerNames ? {sealedIdentifiedSpeakers:sealJson(dek,identified,binding(uid,`recording/${recordingId}`,'identified-speakers'))} : {}),
   });
 
   return memory;

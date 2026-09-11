@@ -25,16 +25,16 @@ interface Result {
   code: string;
 }
 
-async function post(path: string, headers: Record<string, string>, body: string): Promise<Result> {
+async function post(path: string, headers: Record<string, string>, body: string, method='POST'): Promise<Result> {
   const server = http.createServer(createApp());
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
 
   try {
     const response = await fetch(`http://127.0.0.1:${port}${path}`, {
-      method: 'POST',
+      method,
       headers: { 'Content-Type': 'application/json', ...headers },
-      body,
+      body:method==='GET'?undefined:body,
     });
     const text = await response.text();
     let code = '';
@@ -104,4 +104,11 @@ test('user endpoints still require a user session', async () => {
   const result = await post('/v1/recordings', {}, JSON.stringify({}));
   assert.equal(result.status, 401);
   assert.equal(result.code, 'missing_token');
+});
+
+test('remembering, listing and forgetting voices all require a user session',async()=>{
+  for(const [path,method] of [['/v1/known-speakers','GET'],['/v1/known-speakers/'+'a'.repeat(40),'DELETE'],['/v1/recordings/r/remember-speaker','POST']]){
+    const result=await post(path!,{},JSON.stringify({consent:true}),method);
+    assert.equal(result.status,401);assert.equal(result.code,'missing_token');
+  }
 });
