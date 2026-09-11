@@ -32,7 +32,7 @@ test('PWA receives explicit app-owned GATT service for dedicated EVENT telemetry
   const identity=fs.readFileSync(path.join(root,'device-identity.js'),'utf8');
   const memoryFix=fs.readFileSync(path.join(root,'memory-ui-fix.js'),'utf8');
   const compat=fs.readFileSync(path.join(root,'runtime-compat.js'),'utf8');
-  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell53-speaker-id'/);
+  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell54-battery-percent'/);
   assert.match(sw,/\.\/runtime-compat\.js/);
   assert.match(sw,/\.\/processing-recovery\.js/);
   assert.match(sw,/\.\/ask-synap\.js/);
@@ -89,16 +89,16 @@ test('memory events remain stream-relative and reboot-safe',()=>{
   assert.doesNotMatch(touch,/h\.source==='pendant'&&h\.counter===detail\.counter/);
 });
 
-test('battery v2 exposes voltage and raw ADC even when percentage is unavailable',()=>{
+test('battery v2 retains electrical diagnostics while displaying percentage',()=>{
   const battery=fs.readFileSync(path.join(root,'battery-v2-ui.js'),'utf8');
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
-  assert.match(html,/battery-v2-ui\.js\?v=1\.0\.0-battery2/);
+  assert.match(html,/battery-v2-ui\.js\?v=1\.0\.0-battery3/);
   assert.match(battery,/VERSION=2/);
   assert.match(battery,/v\.byteLength!==12/);
   assert.match(battery,/adcMillivolts:v\.getUint16\(8,true\)/);
   assert.match(battery,/adcRaw:v\.getUint16\(10,true\)/);
-  assert.match(battery,/Voltage detected/);
-  assert.match(battery,/Percentage is shown only when the firmware validates the LiPo range/);
+  assert.match(battery,/Percentage unavailable/);
+  assert.match(battery,/Estimated battery charge/);
   assert.match(battery,/Pendant disconnected/);
   assert.match(battery,/value\.textContent=''/);
   assert.match(battery,/attributeFilter:\['data-device-state','data-state'\]/);

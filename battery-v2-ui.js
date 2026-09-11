@@ -27,7 +27,6 @@ function parse(event){
   }catch(error){console.warn('[synap battery v2] parse failed',error);return null}
 }
 
-function voltageText(mv){return Number.isFinite(mv)&&mv>0?(mv/1000).toFixed(2)+'V':'—'}
 function isDisconnected(){
   const body=document.body;
   if(!body)return true;
@@ -65,23 +64,22 @@ function render(detail){
     root.dispatchEvent(new CustomEvent('synap-battery-status',{detail}));
     return;
   }
-  const trustedVoltage=detail.millivolts>=2500&&detail.millivolts<=5000;
-  const voltage=trustedVoltage?voltageText(detail.millivolts):detail.adcMillivolts?voltageText(detail.adcMillivolts):'—';
+  previousBattery.ensureBatteryUi?.();
+  const percent=Math.max(0,Math.min(100,Number(detail.percent)||0));
   const button=document.getElementById('headerBatteryStatus');
   if(button){
     const value=button.querySelector('.synap-battery-value');
     const fill=button.querySelector('.synap-battery-fill');
     if(detail.available){
-      const percent=Math.max(0,Math.min(100,Number(detail.percent)||0));
       button.dataset.state=detail.critical?'critical':detail.low?'low':'good';
       if(value)value.textContent=percent+'%';
       if(fill)fill.style.width=Math.max(1,Math.round(percent*.17))+'px';
       button.setAttribute('aria-label','Pendant battery '+percent+' percent');
     }else{
       button.dataset.state='unknown';
-      if(value)value.textContent=voltage;
+      if(value)value.textContent='—';
       if(fill)fill.style.width='0px';
-      button.setAttribute('aria-label','Pendant battery voltage '+voltage+', percentage not calibrated');
+      button.setAttribute('aria-label','Pendant battery percentage unavailable');
     }
   }
   const pop=document.getElementById('synapBatteryPopover');
@@ -91,15 +89,15 @@ function render(detail){
     const meter=pop.querySelector('.synap-battery-meter>span');
     const help=pop.querySelector('.synap-battery-help');
     if(detail.available){
-      if(big)big.textContent=detail.percent+'%';
+      if(big)big.textContent=percent+'%';
       if(state)state.textContent=detail.critical?'Critical':detail.low?'Low':'Healthy';
-      if(meter)meter.style.width=Math.max(0,Math.min(100,detail.percent))+'%';
+      if(meter)meter.style.width=percent+'%';
     }else{
-      if(big)big.textContent=voltage;
-      if(state)state.textContent=detail.millivolts?'Voltage detected':'ADC detected';
+      if(big)big.textContent='—';
+      if(state)state.textContent='Percentage unavailable';
       if(meter)meter.style.width='0%';
     }
-    if(help)help.textContent='Cell '+voltageText(detail.millivolts)+' · ADC '+voltageText(detail.adcMillivolts)+' · raw '+detail.adcRaw+'. Percentage is shown only when the firmware validates the LiPo range.';
+    if(help)help.textContent=detail.available?'Estimated battery charge.':'Waiting for a valid battery reading.';
   }
   if(document.body){
     document.body.dataset.batteryPercent=detail.available?String(detail.percent):'';

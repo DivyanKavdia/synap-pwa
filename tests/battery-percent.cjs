@@ -1,0 +1,29 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const element=()=>({textContent:'',style:{},dataset:{},setAttribute(key,value){this[key]=value}});
+const parts={};
+for(const selector of ['.synap-battery-value','.synap-battery-fill','.synap-battery-big','.synap-battery-state','.synap-battery-meter>span','.synap-battery-help'])parts[selector]=element();
+const button=element(),pop=element();
+button.querySelector=pop.querySelector=selector=>parts[selector];
+const body={dataset:{state:'idle',deviceState:'1'}};
+const context={document:{body,readyState:'complete',getElementById:id=>id==='headerBatteryStatus'?button:pop},MutationObserver:class{observe(){}},CustomEvent:class{constructor(type,init){this.type=type;this.detail=init.detail}},dispatchEvent(){},console:{info(){},warn(){}},SynapBatteryBridge:{ensureBatteryUi(){}}};
+vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../battery-v2-ui.js'),'utf8'),context);
+function send(percent,flags){
+ const value=new DataView(new ArrayBuffer(12));
+ value.setUint8(0,0xB7);value.setUint8(1,2);value.setUint8(2,percent);value.setUint8(3,flags);
+ value.setUint16(4,4150,true);value.setUint16(8,2750,true);value.setUint16(10,4095,true);
+ assert.equal(context.SynapBatteryBridge.inspect({target:{value}}),true);
+ const visible=Object.values(parts).map(e=>e.textContent).join(' ')+' '+button['aria-label'];
+ assert.doesNotMatch(visible,/4\.15|2\.75|4095|voltage|ADC|raw/i);
+}
+send(100,1);
+assert.equal(parts['.synap-battery-value'].textContent,'100%');
+assert.equal(parts['.synap-battery-big'].textContent,'100%');
+assert.equal(parts['.synap-battery-meter>span'].style.width,'100%');
+assert.equal(context.SynapBatteryV2.status.adcMillivolts,2750,'diagnostics retain ADC data');
+send(14,3);assert.equal(button.dataset.state,'low');assert.equal(parts['.synap-battery-big'].textContent,'14%');
+send(0,0);assert.equal(parts['.synap-battery-value'].textContent,'—');assert.equal(parts['.synap-battery-big'].textContent,'—');
+assert.equal(parts['.synap-battery-state'].textContent,'Percentage unavailable');
+body.dataset.deviceState='0';send(100,1);
+assert.equal(button.dataset.state,'disconnected');assert.equal(parts['.synap-battery-big'].textContent,'—');
+console.log('PASS battery percentage display, unavailable/disconnected states and retained diagnostics');
