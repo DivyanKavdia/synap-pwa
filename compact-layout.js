@@ -49,6 +49,7 @@
     for(const tile of tiles.values())if(tile.section===target||tile.section.contains(target))setExpanded(tile,true);
   }
   function captureState(){
+    if(document.body.dataset.state==='connecting'&&document.body.dataset.autoReconnecting==='true')return;
     if(['starting','recording','stopping','saving','updating','connecting'].includes(document.body.dataset.state))reveal('capture');
   }
   function init(){

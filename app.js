@@ -505,6 +505,7 @@
   }
 
   function attachBluetoothDevice(device) {
+    stopAdvertisementWatch();
     if (bluetoothDevice) {
       bluetoothDevice.removeEventListener(
         "gattserverdisconnected",
@@ -522,20 +523,94 @@
     }
   }
 
+  const REMEMBERED_RECOVERY_INTERVAL_MS = 30000;
+  let rememberedRecoveryTimer = null;
+  let advertisementWatch = null;
+  let reconnectNotBefore = 0;
+  let lastAdvertisementRecoveryAt = 0;
+  let reconnectMonitoringReady = false;
+  let reconnectPageHidden = false;
+  const advertisementUnavailable = new WeakSet();
+
+  function reconnectRequested() {
+    const guard = globalThis.SynapSleepStateGuard;
+    if (guard?.locked || document.body?.dataset.intentionalSleep === "1") return guard?.reconnectOnWake === true;
+    return autoReconnectEnabled();
+  }
+
+  function stopAdvertisementWatch() {
+    const watch = advertisementWatch;
+    advertisementWatch = null;
+    if (!watch) return;
+    watch.device.removeEventListener("advertisementreceived", watch.receive);
+    watch.controller.abort();
+  }
+
+  function stopRememberedMonitoring() {
+    if (rememberedRecoveryTimer !== null) clearTimeout(rememberedRecoveryTimer);
+    rememberedRecoveryTimer = null;
+    stopAdvertisementWatch();
+  }
+
+  function monitorAllowed() {
+    return reconnectMonitoringReady && !reconnectPageHidden && reconnectRequested() && !manualDisconnect &&
+      document.visibilityState !== "hidden" && window.isSecureContext && Boolean(navigator.bluetooth) && !isGattConnected();
+  }
+
+  function watchRememberedAdvertisements() {
+    const device = bluetoothDevice;
+    if (!monitorAllowed() || !device || connectInProgress || firmwareBusy || Date.now() < reconnectNotBefore ||
+        typeof device.watchAdvertisements !== "function" || advertisementUnavailable.has(device)) return;
+    if (advertisementWatch?.device === device) return;
+    stopAdvertisementWatch();
+    const controller = new AbortController();
+    const watch = { device, controller, receive(event) {
+      if (advertisementWatch !== watch || bluetoothDevice !== device || event.device !== device || !monitorAllowed() ||
+          connectInProgress || Date.now() < reconnectNotBefore || Date.now() - lastAdvertisementRecoveryAt < 3000) return;
+      lastAdvertisementRecoveryAt = Date.now();
+      recoverRememberedConnection("pendant-advertising", true);
+    } };
+    advertisementWatch = watch;
+    device.addEventListener("advertisementreceived", watch.receive);
+    try {
+      Promise.resolve(device.watchAdvertisements({ signal: controller.signal })).catch(unavailable);
+    } catch (error) { unavailable(error); }
+    function unavailable(error) {
+      if (advertisementWatch !== watch) return;
+      stopAdvertisementWatch();
+      advertisementUnavailable.add(device);
+      log("Advertisement watching unavailable; using periodic recovery", friendlyError(error));
+    }
+  }
+
+  function syncRememberedMonitoring() {
+    if (!monitorAllowed() || (!bluetoothDevice && typeof navigator.bluetooth.getDevices !== "function")) {
+      stopRememberedMonitoring(); return;
+    }
+    watchRememberedAdvertisements();
+    if (rememberedRecoveryTimer !== null) return;
+    rememberedRecoveryTimer = window.setTimeout(async function () {
+      rememberedRecoveryTimer = null;
+      if (!monitorAllowed()) { stopRememberedMonitoring(); return; }
+      try { await recoverRememberedConnection("waiting-for-pendant", false); }
+      finally { syncRememberedMonitoring(); }
+    }, reconnectNotBefore > Date.now() ? reconnectNotBefore - Date.now() : REMEMBERED_RECOVERY_INTERVAL_MS);
+  }
+
   async function restoreKnownPendant() {
     if (
       !navigator.bluetooth ||
       typeof navigator.bluetooth.getDevices !== "function"
     ) {
       log("Reload reconnect unavailable: browser cannot list permitted devices. Tap Connect pendant.");
-      setReconnectCapability("This browser cannot restore permitted Bluetooth devices after reload. Tap Connect pendant to select it again.");
+      setReconnectCapability("Browser cannot restore Bluetooth permission after reload.", "This browser needs a tap on Connect after each reload.");
       return false;
     }
 
     try {
       const restoreEpoch = connectionEpoch;
       const previousDevice = bluetoothDevice;
-      const devices = await navigator.bluetooth.getDevices();
+      const devices = await withTimeout(navigator.bluetooth.getDevices(), 5000, "Restore Bluetooth permission");
       // A user may select another pendant while permission enumeration is pending.
       if (connectInProgress || manualDisconnect || restoreEpoch !== connectionEpoch || previousDevice !== bluetoothDevice) return false;
       let rememberedId = null;
@@ -550,7 +625,7 @@
 
       if (!pendant) {
         log("No unambiguous previously permitted pendant. Tap Connect pendant to select one.");
-        setReconnectCapability("No remembered pendant permission is available on this browser and site. Connect once using the device picker.");
+        setReconnectCapability("No unambiguous remembered pendant permission.", "Tap Connect once to select your pendant.");
         return false;
       }
 
@@ -563,13 +638,15 @@
       return true;
     } catch (error) {
       log("Known-device restore unavailable", friendlyError(error));
-      setReconnectCapability("Could not restore pendant permission: " + friendlyError(error) + ". Use Connect pendant.");
+      setReconnectCapability("Could not restore pendant permission: " + friendlyError(error), "Could not restore your pendant. Tap Connect to select it.");
       return false;
     }
   }
 
-  function setReconnectCapability(message) {
+  function setReconnectCapability(message, hint = "") {
     log("Reconnect", message);
+    const note = document.getElementById("reconnectStatus");
+    if (note) { note.textContent = hint; note.hidden = !hint || isGattConnected(); }
   }
 
   function autoReconnectEnabled() {
@@ -664,8 +741,10 @@
 
   async function recoverRememberedConnection(reason, force) {
     if (firmwareBusy) return;
+    if (reason === "waiting-for-pendant" && reconnectTimer) return;
     const activeJournalBlocksRecovery = Boolean(currentRecordingId) && !recordingReconnectPending;
-    if (!autoReconnectEnabled() || manualDisconnect || connectInProgress || reloadRecoveryRunning ||
+    if (!reconnectRequested() || manualDisconnect || connectInProgress || reloadRecoveryRunning ||
+        reconnectPageHidden || Date.now() < reconnectNotBefore ||
         finalizing || activeJournalBlocksRecovery || isGattConnected() || document.visibilityState === "hidden") return;
     if (!window.isSecureContext || !navigator.bluetooth) {
       setReconnectCapability("Web Bluetooth is unavailable here. Installing the PWA does not add Bluetooth support to an unsupported browser.");
@@ -677,44 +756,69 @@
       // Never open the chooser without a user gesture, and never select by an ambiguous name.
       if (!bluetoothDevice && !await restoreKnownPendant()) return;
       const journalStillBlocksRecovery = Boolean(currentRecordingId) && !recordingReconnectPending;
-      if (!autoReconnectEnabled() || manualDisconnect || connectInProgress || isGattConnected() ||
+      if (!reconnectRequested() || manualDisconnect || connectInProgress || isGattConnected() ||
+          reconnectPageHidden || Date.now() < reconnectNotBefore ||
           finalizing || journalStillBlocksRecovery || document.visibilityState === "hidden") return;
-      clearReconnectTimer(!recordingReconnectPending);
+      clearReconnectTimer(false);
       log("Remembered-device recovery", {reason, recordingResume: recordingReconnectPending});
-      await connectPendant({ silent: true, autoReconnect: true });
-    } finally { reloadRecoveryRunning = false; }
+      setReconnectCapability("Trying remembered pendant", globalThis.SynapSleepStateGuard?.locked
+        ? "Waiting for your pendant to wake." : "Looking for your saved pendant…");
+      await connectPendant({ silent: true, autoReconnect: true, recoveryAttempt: true });
+    } finally { reloadRecoveryRunning = false; syncRememberedMonitoring(); }
   }
 
   function bindReconnectRecovery() {
     const preference = document.getElementById("autoReconnectInput");
-    preference.checked = autoReconnectEnabled();
+    preference.checked = reconnectRequested();
+    reconnectMonitoringReady = true;
     if (!preference.checked) setReconnectCapability("Automatic reconnect is off. Tap Connect pendant to connect manually.");
     preference.addEventListener("change", function () {
-      try { localStorage.setItem("dk-pendant-auto-reconnect", preference.checked ? "on" : "off"); }
-      catch (_) { preference.checked = autoReconnectEnabled();toast("This browser could not save the reconnect preference.", "error"); }
+      try {
+        const guard = globalThis.SynapSleepStateGuard;
+        if (guard?.setReconnectPreference) guard.setReconnectPreference(preference.checked);
+        else localStorage.setItem("dk-pendant-auto-reconnect", preference.checked ? "on" : "off");
+      }
+      catch (_) { preference.checked = reconnectRequested();toast("This browser could not save the reconnect preference.", "error"); }
       if (!preference.checked) {
         clearReconnectTimer(true);
+        stopRememberedMonitoring();
+        if (connectInProgress && reloadRecoveryRunning) bluetoothDevice?.gatt?.disconnect();
         setReconnectCapability(recordingReconnectPending
           ? "Automatic reconnect is off. Tap Reconnect to continue the same recording, or Stop to save it."
           : "Automatic reconnect is off. An existing connection is not disconnected.");
       }
-      else { manualDisconnect = false;recoverRememberedConnection("preference-enabled", true); }
+      else { manualDisconnect = false;recoverRememberedConnection("preference-enabled", true); syncRememberedMonitoring(); }
     });
     document.addEventListener("visibilitychange", function () {
-      if (document.visibilityState !== "visible") return;
+      if (document.visibilityState !== "visible") { clearReconnectTimer(false); stopRememberedMonitoring(); return; }
+      reconnectPageHidden = false;
+      syncRememberedMonitoring();
       foregroundAt = performance.now();
       window.dispatchEvent(new CustomEvent('synap-recording-foreground'));
-      recoverRememberedConnection("foreground", false);
+      recoverRememberedConnection("foreground", true);
       if (isGattConnected() && !connectInProgress && !firmwareBusy && !finalizing) {
         readControlStatus().then(ok=>{if(ok) log("Foreground pendant status resynchronised");});
       }
     });
     window.addEventListener("pageshow", function (event) {
-      if (event.persisted) recoverRememberedConnection("page-restored", false);
+      reconnectPageHidden = false; syncRememberedMonitoring();
+      if (event.persisted) recoverRememberedConnection("page-restored", true);
     });
     navigator.bluetooth?.addEventListener?.("availabilitychanged", function (event) {
-      if (event.value) recoverRememberedConnection("bluetooth-available", false);
+      if (event.value) { advertisementUnavailable.delete(bluetoothDevice); recoverRememberedConnection("bluetooth-available", true); syncRememberedMonitoring(); }
     });
+    window.addEventListener("pagehide", function () {
+      reconnectPageHidden = true; clearReconnectTimer(false); stopRememberedMonitoring();
+    });
+    window.addEventListener("synap-intentional-sleep", function (event) {
+      if (event.detail?.active) {
+        reconnectNotBefore = Date.now() + 5000;
+        clearReconnectTimer(true); stopRememberedMonitoring();
+        setReconnectCapability("Pendant is entering sleep", "Waiting for your pendant to wake.");
+      }
+      syncRememberedMonitoring();
+    });
+    syncRememberedMonitoring();
   }
 
   function clearReconnectTimer(resetAttempts) {
@@ -750,7 +854,7 @@
       reconnectTimer = null;
       if (document.visibilityState === "hidden" || manualDisconnect || !autoReconnectEnabled() || firmwareBusy || isGattConnected()) return;
       reconnectAttempts = attempt;
-      connectPendant({ silent: true, autoReconnect: true });
+      connectPendant({ silent: true, autoReconnect: true, recoveryAttempt: true });
     }, wait);
   }
 
@@ -778,6 +882,8 @@
 
     clearReconnectTimer(!autoReconnect && !resumingRecording);
     connectInProgress = true;
+    stopRememberedMonitoring();
+    if (globalThis.document?.body) document.body.dataset.autoReconnecting = String(Boolean(settings.recoveryAttempt));
     manualDisconnect = false;
     setAppState("connecting");
 
@@ -819,6 +925,9 @@
         throw error;
       }
       function assertConnection() {
+        if (settings.recoveryAttempt && (!reconnectRequested() || manualDisconnect || reconnectPageHidden || document.visibilityState === "hidden")) {
+          throw new Error("Automatic reconnect was cancelled.");
+        }
         if (epoch !== connectionEpoch || !isGattConnected()) {
           throw new Error("Connection changed during discovery.");
         }
@@ -969,6 +1078,9 @@
       }
     } finally {
       connectInProgress = false;
+      if (globalThis.document?.body) delete document.body.dataset.autoReconnecting;
+      if (isGattConnected()) setReconnectCapability("Pendant connection ready");
+      syncRememberedMonitoring();
       if (isGattConnected()) checkFirmwareRelease?.();
     }
   }
@@ -977,6 +1089,7 @@
     if (firmwareBusy) return;
     manualDisconnect = true;
     clearReconnectTimer(true);
+    stopRememberedMonitoring();
 
     if (
       appState === "recording" ||
@@ -1017,6 +1130,7 @@
     }
 
     cleanupCharacteristics();
+    syncRememberedMonitoring();
 
     // The connection attempt owns its failure UI and retry scheduling when no
     // recording journal is at risk.

@@ -30,3 +30,17 @@ test('intentional sleep keeps reconnect disabled until a new GATT service is rea
   assert.equal(saved.get('dk-pendant-auto-reconnect'),'on');
   assert.equal(checkbox.checked,true);
 });
+
+test('changing the reconnect preference during sleep survives the next wake',()=>{
+  const saved=new Map([['synap-intentional-sleep-v1','1'],['synap-reconnect-before-sleep-v1','on'],['dk-pendant-auto-reconnect','off']]);
+  const checkbox={checked:true},ctx={document:{readyState:'complete',body:{dataset:{}},getElementById:()=>checkbox},
+    localStorage:{getItem:k=>saved.get(k)??null,setItem:(k,v)=>saved.set(k,v),removeItem:k=>saved.delete(k)},addEventListener(){}};
+  vm.createContext(ctx);vm.runInContext(source,ctx);
+  const guard=ctx.SynapSleepStateGuard;
+  assert.equal(guard.reconnectOnWake,true);
+  guard.setReconnectPreference(false);
+  assert.equal(guard.reconnectOnWake,false);
+  guard.clearSleepLock();
+  assert.equal(saved.get('dk-pendant-auto-reconnect'),'off');
+  assert.equal(checkbox.checked,false);
+});
