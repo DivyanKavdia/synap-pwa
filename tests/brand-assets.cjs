@@ -41,8 +41,8 @@ test('launcher assets include correctly sized PNGs and opaque maskable backgroun
 
 test('favicon, Home, Settings and offline cache use the new identity consistently',()=>{
   const html=read('index.html'),capture=read('capture-ui.js'),runtime=read('runtime-ui.js'),sw=read('sw.js');
-  assert.equal((html.match(/src="synap-logo-light\.png\?v=1\.0\.0-ui-fix1"/g)||[]).length,2);
-  for(const source of [capture,runtime,read('theme.js')]){
+  assert.equal((html.match(/src="synap-logo-light\.png\?v=1\.0\.0-ui-fix1"/g)||[]).length,1);
+  for(const source of [capture,read('theme.js')]){
     assert(source.includes('synap-logo-'));
     assert(source.includes('.png?v=1.0.0-ui-fix1'));
     assert(!source.includes('synap-logo.svg'),'live branding does not rely on embedded SVG media queries');
@@ -50,7 +50,7 @@ test('favicon, Home, Settings and offline cache use the new identity consistentl
   assert.match(html,/<link rel="icon" href="icon\.svg\?v=1\.0\.0-brand2" type="image\/svg\+xml">/);
   assert.match(html,/apple-touch-icon" href="icon-192\.png\?v=1\.0\.0-brand2/);
   for(const asset of ['synap-logo-light.png','synap-logo-dark.png','icon.svg','icon-192.png','icon-512.png'])assert(sw.includes(`'./${asset}'`));
-  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell47-ble-stability'/);
+  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell48-settings'/);
   assert.match(read('settings-icon-fix.css'),/filter:none!important/);
 });
 

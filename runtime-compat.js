@@ -182,11 +182,13 @@
     const dialog = root.document && root.document.getElementById('settingsDialog');
     if (!dialog) return;
 
-    if (settingsButton) settingsButton.addEventListener('click', function () {
+    if (settingsButton) settingsButton.addEventListener('click', function (event) {
       root.setTimeout(function () {
+        if (event.defaultPrevented) return;
+        if (root.SynapSettingsPanel) { root.SynapSettingsPanel.toggle(); return; }
         if (dialog.open) return;
         try {
-          if (typeof dialog.showModal === 'function') dialog.showModal();
+          if (typeof dialog.show === 'function') dialog.show();
           else dialog.setAttribute('open', '');
         } catch (_) {}
       }, 0);

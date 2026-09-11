@@ -27,7 +27,7 @@
 :root[data-palette="pink"][data-theme="dark"]{--bg:#24151e;--surface:#33212d;--surface-2:#472b3c;--chrome:#24151ef5;--ink:#fff0f7;--muted:#dcb8cc;--border:#624253;--control-border:#bd8da7;--accent:#f5adce;--action:#f5adce;--action-hover:#ffd0e5;--on-action:#461c30;--accent-soft:#5c3046;--hero:#593047;--hero-end:#703b55;--hero-ink:#fff2f8;--hero-muted:#ebc0d4;--switch-off:#bd8da7;--console:#24121c;--wave-grid:#dcb8cc22;--glow:#f5adce22;}
 :root[data-palette="lavender"]{--bg:#f7f5fc;--surface:#ffffff;--surface-2:#efeaf8;--chrome:#f7f5fcf5;--ink:#3d315b;--muted:#6b607e;--border:#e5dff1;--control-border:#8c7baa;--accent:#65489b;--action:#65489b;--action-hover:#4d347c;--on-action:#ffffff;--accent-soft:#efe7fc;--hero:#3c2c5b;--hero-end:#59417c;--hero-ink:#f7f1ff;--hero-muted:#d2c5e5;--brand-indigo:#aa93cc;--brand-cyan:#d3c5eb;--switch-off:#8c7baa;--console:#302345;--console-text:#f6f0ff;--wave-grid:#6b607e22;--glow:#65489b22;}
 :root[data-palette="lavender"][data-theme="dark"]{--bg:#1c1829;--surface:#292238;--surface-2:#372d4b;--chrome:#1c1829f5;--ink:#f5f0ff;--muted:#c6bbdc;--border:#4a3e61;--control-border:#a899c2;--accent:#c9b3f4;--action:#c9b3f4;--action-hover:#dfceff;--on-action:#302046;--accent-soft:#483664;--hero:#42305e;--hero-end:#59417c;--hero-ink:#f7f1ff;--hero-muted:#d2c5e5;--switch-off:#a899c2;--console:#1c1329;--wave-grid:#c6bbdc22;--glow:#c9b3f422;}
-html{scroll-padding-top:100px}
+html{scroll-padding-top:100px;scrollbar-gutter:stable}
 body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:-.15px}
 .synap-refresh .app-shell{max-width:900px;margin:0 auto;padding:0 max(22px,env(safe-area-inset-right)) calc(120px + env(safe-area-inset-bottom)) max(22px,env(safe-area-inset-left));background:none;box-shadow:none;border-radius:0}
 .synap-refresh .topbar{min-height:88px;gap:20px;background:var(--chrome);border-bottom:1px solid var(--border)}
@@ -257,7 +257,7 @@ body.synap-refresh .pendant-settings-top .settings-brand-logo{width:96px!importa
 .synap-refresh .pendant-actions button{flex:1}
 .synap-refresh .firmware-inline{display:grid!important;grid-column:1/-1;grid-row:3;gap:8px}
 .synap-refresh .firmware-actions{display:flex!important;flex-wrap:wrap;gap:8px}
-.synap-refresh #setupConnect,.synap-refresh #chooseDeviceButton{min-height:44px!important;font-size:12px!important;border-radius:10px!important;padding:8px 12px!important}
+.synap-refresh #chooseDeviceButton{min-height:44px!important;font-size:12px!important;border-radius:10px!important;padding:8px 12px!important}
 .synap-refresh #otaStatus{display:block!important;grid-column:1/-1;grid-row:2;margin:0!important;font-size:12px!important}
 .synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel){grid-column:1/-1;grid-row:3;width:100%!important;min-height:44px!important;height:auto!important;padding:10px 14px!important;border:1px solid var(--border)!important;border-radius:11px!important;background:var(--surface-2)!important;color:var(--ink)!important;font-size:13px!important}
 .synap-refresh #otaReleaseCheck::before{content:none}
@@ -626,4 +626,30 @@ body.synap-refresh :is(#capture,#insights,#followupInbox,#peopleMemory,#ask,#lib
  .synap-refresh .brain-tabs::before{display:none}
  .synap-refresh .brain-tabs a{min-height:46px;padding:10px 14px}
  .synap-refresh .date-strip{max-width:none;margin:0}
+}
+/* Settings scrolls independently beneath the original live capture header. */
+.settings-backdrop{position:fixed;inset:var(--settings-top,64px) 0 0;z-index:40;background:var(--bg)}
+.settings-backdrop[hidden]{display:none}
+.synap-refresh.settings-open .topbar,.synap-refresh.settings-open .brain-tabs{z-index:60}
+.synap-refresh.settings-open .topbar{position:fixed!important;top:var(--settings-header-top,0px);left:var(--settings-header-left);width:var(--settings-header-width)}
+.synap-refresh.settings-open #settingsButton{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+.synap-refresh #settingsDialog.settings-panel{
+ position:fixed;inset:var(--settings-top,64px) var(--settings-right,16px) var(--settings-bottom,88px) var(--settings-left,16px);
+ z-index:45;width:auto!important;max-width:none!important;height:auto!important;max-height:none!important;
+ margin:0!important;padding:0!important;border:0!important;border-radius:0!important;transform:none;
+ background:var(--bg)!important;box-shadow:none;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;
+}
+.synap-refresh .settings-panel .settings-form{min-height:0;max-width:720px;margin:0 auto;padding:0 0 24px!important}
+.synap-refresh .settings-panel .modal-header{
+ position:sticky;top:0!important;z-index:2;min-height:54px;margin:0 0 16px!important;padding:8px 0!important;
+ background:var(--bg);border-bottom:1px solid var(--border)!important;
+}
+.synap-refresh .settings-panel .modal-header h2{font-size:18px!important}
+.synap-refresh .settings-panel .pendant-actions{justify-content:flex-end}
+.synap-refresh .settings-panel #chooseDeviceButton{display:inline-flex!important;flex:0 1 auto}
+.synap-refresh .settings-device-label{font-size:14px!important;font-weight:650;margin:0 0 4px}
+:root[data-theme] .synap-refresh .brain-tabs{background:var(--chrome)}
+@media(min-width:992px){
+ .synap-refresh .settings-panel .settings-form{padding:0 20px 32px!important}
+ :root[data-theme] .synap-refresh .brain-tabs{background:transparent}
 }

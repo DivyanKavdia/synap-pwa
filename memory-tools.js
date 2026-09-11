@@ -81,15 +81,7 @@
     const merge = document.createElement('button'); merge.type = 'button'; merge.id = 'synapMergeMemories';
     merge.className = 'synap-merge-button'; merge.textContent = 'Merge'; merge.setAttribute('aria-label', 'Merge memories');
     merge.addEventListener('click', enterSelection);
-    const search = document.createElement('button'); search.type = 'button'; search.id = 'synapSearchMemories';
-    search.className = 'icon-button'; search.setAttribute('aria-label', 'Search memories');
-    search.innerHTML = '<svg aria-hidden="true"><use href="#i-search"/></svg>';
-    search.addEventListener('click', () => {
-      root.SynapDashboardUI?.setView('library');
-      document.querySelector('[data-library-scope="all"]')?.click();
-      $('#librarySearch')?.focus({ preventScroll: true });
-    });
-    actions.append(search, merge); heading.appendChild(actions);
+    actions.appendChild(merge); heading.appendChild(actions);
     const tools = document.createElement('div'); tools.className = 'synap-merge-tools';
     tools.innerHTML = '<p id="synapMergeError" class="synap-merge-error" role="alert" hidden></p>' +
       '<div class="synap-merge-toolbar" hidden><span id="synapMergeStatus" role="status"></span>' +

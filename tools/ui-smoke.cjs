@@ -26,7 +26,7 @@ const server = http.createServer((req, res) => {
 });
 
 async function assertWordmarks(page, mode) {
-  for (const selector of ['.brand-logo','.settings-brand-logo']) {
+  for (const selector of ['.brand-logo']) {
     const logo=page.locator(selector);
     assert.match(await logo.getAttribute('src'),new RegExp('synap-logo-'+mode+'\\.png\\?v=1\\.0\\.0-ui-fix1$'));
     const pixels=await logo.evaluate(async img=>{
@@ -211,8 +211,8 @@ async function run() {
       }
       await page.locator('#settingsButton').click();
       assert(await page.locator('#settingsDialog').isVisible());
-      assert.equal(await page.locator('.settings-brand-logo').getAttribute('src'),await page.locator('.brand-logo').getAttribute('src'));
-      assert.equal(await page.locator('.settings-brand-logo').evaluate(node=>getComputedStyle(node).filter),'none');
+      assert.equal(await page.locator('.settings-brand-logo').count(),0,'the persistent header is the only wordmark');
+      assert(await page.locator('#headerPendantStatus').isVisible());
       assert(await page.locator('#otaStatus').isVisible());
       assert(!(await page.locator('#otaLatest').isVisible()),'no phantom firmware update');
       assert(!(await page.locator('#otaCancel').isVisible()),'no phantom OTA cancel');
@@ -269,7 +269,8 @@ async function run() {
         await assertWeeklyReview(page,mode,width);
         await assertDayReading(page,mode,width);
         await page.locator('.brain-tabs a[href="#insights"]').click();
-        await page.locator('#synapSearchMemories').click();
+        await page.locator('.brain-tabs a[href="#library"]').click();
+        await page.locator('[data-library-scope="all"]').click();
         await page.locator('#librarySearch').fill('prototype');
         await page.waitForFunction(()=>document.querySelector('#librarySearchStatus').textContent==='1 matching recording');
         await page.locator('#clearLibrarySearch').click();

@@ -19,24 +19,6 @@
     }
   }
 
-  function bindSettingsBrand(){
-    function apply(){
-      const homeLogo=document.querySelector('.topbar .brand-logo');
-      const settingsLogo=document.querySelector('.pendant-settings-top .settings-brand-logo');
-      if(!settingsLogo)return;
-      const source=homeLogo?.getAttribute('src')||'synap-logo-'+(document.documentElement.dataset.theme==='dark'?'dark':'light')+'.png?v=1.0.0-ui-fix1';
-      if(settingsLogo.getAttribute('src')!==source)settingsLogo.setAttribute('src',source);
-      settingsLogo.alt='synap';
-      settingsLogo.removeAttribute('width');
-      settingsLogo.removeAttribute('height');
-      settingsLogo.dataset.brandSource='home-wordmark';
-    }
-    apply();
-    const dialog=$('settingsDialog');
-    if(dialog)new MutationObserver(apply).observe(dialog,{childList:true,subtree:true,attributes:true,attributeFilter:['src']});
-    $('settingsButton')?.addEventListener('click',()=>requestAnimationFrame(apply));
-  }
-
   function bindFirmwareAffordance(){
     const check=$('otaReleaseCheck'),latest=$('otaLatest'),status=$('otaStatus'),progress=$('otaProgress');
     if(!check||!latest||!status)return;
@@ -294,6 +276,6 @@
   }
 
   installBlobRegistry();
-  function init(){bindSettingsBrand();bindFirmwareAffordance();if(!globalThis.SynapRecordingBridge)bindTouchRecordingBridge();bindRecordingControls();bindTapResponsiveness();if(!globalThis.SynapDashboardUI)bindBrainTabs();bindReducedMotion()}
+  function init(){bindFirmwareAffordance();if(!globalThis.SynapRecordingBridge)bindTouchRecordingBridge();bindRecordingControls();bindTapResponsiveness();if(!globalThis.SynapDashboardUI)bindBrainTabs();bindReducedMotion()}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();

@@ -188,7 +188,8 @@ async function run() {
       assert.equal(await source.getByRole('tab', { name: 'Notes', exact: true }).getAttribute('aria-selected'), 'true');
       assert.equal(await source.locator('.synap-memory-view').count(), 1);
       assert.match(await source.locator('.synap-note-body').innerText(), /Original note 0/);
-      await page.locator('#synapSearchMemories').click();
+      await page.locator('.brain-tabs a[href="#library"]').click();
+      await page.locator('[data-library-scope="all"]').click();
       await page.locator('#librarySearch').fill('Original note 3');
       await page.waitForFunction(() => document.querySelector('#librarySearchStatus').textContent === '1 matching recording');
       await page.locator('#recording-journey-3 > summary').click();

@@ -30,6 +30,9 @@ jobs:
         env:
           SYNAP_WORKFLOW_OUTPUT: artifacts/workflows
       - run: node tools/connection-smoke.cjs
+      - run: node tools/settings-smoke.cjs
+        env:
+          SYNAP_SETTINGS_OUTPUT: artifacts/workflows/settings
       - uses: actions/upload-artifact@v4
         if: always()
         with:
