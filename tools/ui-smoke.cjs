@@ -385,7 +385,8 @@ async function run() {
         await page.evaluate(()=>SynapCompactLayout.reveal('peopleMemory'));
         await page.locator('#peopleBrowseToggle').click();
         assert.equal(await page.locator('#peopleList .person-card').count(),14);
-        assert((await page.locator('#peopleList').boundingBox()).height<=327,'expanded list has bounded height');
+        assert((await page.locator('#myActionsContent').boundingBox()).height<=300,'expanded people stay inside the shared content area');
+        assert(await page.locator('#myActionsContent').evaluate(node=>node.scrollHeight>node.clientHeight),'all people remain reachable by scrolling the shared area');
         await page.locator('#peopleSearch input').fill('Person 14');
         assert.equal(await page.locator('#peopleList .person-card').count(),1);
         await page.locator('#peopleList .person-card').click();

@@ -5,6 +5,13 @@ primary Actions navigation link opens the card and keeps its selected tab.
 Ask is the initial tab. Next steps follows the date chosen in Today and shows
 that date above its existing To do, Decisions and Waiting filters.
 
+The tab strip is attached to one shared content area, without nested section
+cards or separate pill buttons. Its viewport scales from 220 to 300 pixels,
+keeping the card and tabs stationary when switching between short and long
+content. Long lists and answers scroll inside that area; each tab retains its
+reading position. People uses the shared scroll area instead of a second list
+scrollbar, and suggested Ask questions fit on one horizontal row.
+
 `my-actions.js` moves the original four surfaces after `brain-ui.js` creates
 them and before `compact-layout.js` registers the shared disclosure. Forms,
 lists, IDs and event handlers retain their identities; switching tabs only
