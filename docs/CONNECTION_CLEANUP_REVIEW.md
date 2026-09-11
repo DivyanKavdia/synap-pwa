@@ -6,7 +6,7 @@ This pass audits the PWA's startup graph, recording path, Bluetooth ownership, p
 
 - Event subscriptions, retained event reads, diagnostics and standby writes now use the same serialized GATT queue as recording commands and OTA. They previously bypassed it. Each service context is tied to its connection and is cleared on disconnect; late work from an old connection is rejected.
 - Event subscription attempts are deduplicated, bounded and cleaned up on disconnect. A missing EVENT characteristic does not trigger an EVENT retry loop; core control and audio characteristics remain available.
-- Recording reconnect retries continue at the capped delay while the existing five-minute recovery window remains open. Idle reconnect stays bounded. User disconnect, auto-reconnect preference and intentional sleep still stop automatic attempts.
+- Recording reconnect retries continue at the capped delay while the existing five-minute recovery window remains open. Discovery and queued START commands recheck the recording session so expired/saved recordings cannot be restarted by late queued work. Idle reconnect stays bounded. User disconnect, auto-reconnect preference and intentional sleep still stop automatic attempts.
 - Standby's busy flag previously caused its own eligibility check to fail. The corrected write is queued and checks that the device is still idle when the queued operation executes.
 - The recorder owns foreground recovery timing. The global `setInterval` interception is removed; the existing effective twelve-second foreground grace is explicit in app.js.
 
@@ -22,11 +22,11 @@ Serializing operations and discarding disconnected GATT attributes follow the [C
 - Duplicate-frame history is bounded to 512 frames. Previously it retained all 65,536 sequence numbers and would reject new frames after the firmware counter wrapped. The journal's existing sequence normalizer continues appending those frames to the same recording.
 - Stale comments, divider boilerplate and the no-op codec installer are removed. Protocol identifiers, historical data migrations and browser compatibility paths that are still used are retained.
 
-Changed runtime files are approximately 16.5 KB smaller in aggregate, including the connection fixes. Audio journal schema, PCM/ADPCM formats, source links, palettes, automatic appearance, OTA target checks and double/triple-tap meanings remain intact.
+Changed runtime files are approximately 16 KB smaller in aggregate, including the connection fixes. Audio journal schema, PCM/ADPCM formats, source links, palettes, automatic appearance, OTA target checks and double/triple-tap meanings remain intact.
 
 ## Verification
 
-- All 194 PWA tests pass, including new behavior checks for queued Bluetooth operations, stale connection rejection, cancelled standby, retry bounds, frame-counter wrap, hardware adoption and processing-lock exclusion.
+- All 195 PWA tests pass, including new behavior checks for queued Bluetooth operations, stale connection rejection, cancelled standby, retry bounds, recovery expiry, frame-counter wrap, hardware adoption and processing-lock exclusion.
 - Full browser regression passes at 320, 390, 768 and 1440 px in both light and dark modes. It covers day/week navigation, expanded reading, People, source links, playback/export and recording controls.
 - tools/connection-smoke.cjs loads the actual production page with a simulated pendant. It verifies connection, local recording, automatic reconnect into the same journal, saved PCM duration and a maximum of one concurrent GATT operation.
 - Service-worker cache generation and changed script URLs advance together. GitHub CI verifies the published commit before merge; Pages deployment is checked after merge.

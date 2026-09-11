@@ -103,3 +103,15 @@ test('long captures accept a wrapped firmware counter with bounded duplicate mem
   }
   assert.equal(c.sessionStats.completeFrames,65538);assert.equal(c.completedSequences.size,512);
 });
+test('a queued resume rechecks the recording before writing START',async()=>{
+  const jobs=[];let writes=0,expired=false;
+  const c={controlCharacteristic:{properties:{write:true},async writeValueWithResponse(){writes++}},isGattConnected:()=>true,PROTOCOL_VERSION:2,Uint8Array,log(){},
+    queueGattOperation(action){return new Promise((resolve,reject)=>jobs.push(()=>Promise.resolve().then(action).then(resolve,reject)))}
+  };
+  vm.createContext(c);vm.runInContext(slice('  async function writeCommand(', '  async function readControlStatus('),c);
+  const pending=c.writeCommand(1,()=>{if(expired)throw Error('recording expired')});
+  expired=true;await jobs.shift()();await assert.rejects(pending,/recording expired/);assert.equal(writes,0);
+  const valid=c.writeCommand(1,()=>{});await jobs.shift()();await valid;assert.equal(writes,1);
+  assert.match(app,/resumingSessionId !== null && \(finalizing \|\| !isCurrentSession\(resumingSessionId\)\)/);
+  assert.match(app,/writeCommand\(CMD_START, assertConnection\)/);
+});
