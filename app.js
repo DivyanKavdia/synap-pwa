@@ -760,6 +760,7 @@
     const autoReconnect = Boolean(settings.autoReconnect);
     const resumingRecording = recordingReconnectPending &&
       isCurrentSession(recordingSessionId) && Boolean(currentRecordingId || openingCapture);
+    const resumingSessionId = resumingRecording ? recordingSessionId : null;
 
     if (connectInProgress || finalizing) return;
     if (autoReconnect && !bluetoothDevice) {
@@ -820,6 +821,9 @@
       function assertConnection() {
         if (epoch !== connectionEpoch || !isGattConnected()) {
           throw new Error("Connection changed during discovery.");
+        }
+        if (resumingSessionId !== null && (finalizing || !isCurrentSession(resumingSessionId))) {
+          throw new Error("Interrupted recording was already saved.");
         }
       }
       assertConnection();
@@ -891,7 +895,7 @@
       if (resumingRecording && deviceStatus.state === DEVICE_STATE.CONNECTED_IDLE &&
           deviceStatus.error === 0) {
         log("Interrupted recording found pendant idle; restarting stream in same journal");
-        await writeCommand(CMD_START);
+        await writeCommand(CMD_START, assertConnection);
         await delay(140);
         await readControlStatus();
         assertConnection();
@@ -1125,13 +1129,14 @@
     return operation;
   }
 
-  async function writeCommand(command) {
+  async function writeCommand(command, beforeWrite) {
     const characteristic = controlCharacteristic;
     if (!characteristic || !isGattConnected()) {
       throw new Error("Pendant control characteristic is unavailable.");
     }
     const value = new Uint8Array([command, PROTOCOL_VERSION]);
     await queueGattOperation(async function () {
+      beforeWrite?.();
       const properties = characteristic.properties;
       if (properties.write && typeof characteristic.writeValueWithResponse === "function") {
         try { return await characteristic.writeValueWithResponse(value); }
