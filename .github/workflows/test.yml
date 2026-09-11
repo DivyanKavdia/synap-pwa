@@ -30,6 +30,9 @@ jobs:
         env:
           SYNAP_WORKFLOW_OUTPUT: artifacts/workflows
       - run: node tools/connection-smoke.cjs
+      - run: node tools/firmware-progress-smoke.cjs
+        env:
+          SYNAP_FIRMWARE_OUTPUT: artifacts/workflows/firmware
       - run: node tools/audio-enhancement-smoke.cjs
       - run: node tools/settings-smoke.cjs
         env:
