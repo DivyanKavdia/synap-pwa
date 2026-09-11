@@ -29,29 +29,30 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   assert.doesNotMatch(codec, /EventTarget|BluetoothRemoteGATTCharacteristic|patchService|patchCharacteristic/);
 
   assert.match(app, /AUDIO_STALL_TIMEOUT_MS = 12000/);
-  assert.match(app, /FOREGROUND_STALL_GRACE_MS = 3000/);
+  assert.match(app, /FOREGROUND_STALL_GRACE_MS = 12000/);
   assert.match(app, /document\.visibilityState === "visible"/);
   assert.match(app, /Foreground pendant status resynchronised/);
   assert.match(app, /function validHttpsEndpoint/);
 
-  assert.match(bridge, /Touch: double tap to start\/stop · triple tap to sleep\/wake/);
+  assert.match(html, /<strong>Double tap<\/strong>Record on \/ off/);
+  assert.match(html, /<strong>Triple tap<\/strong>Sleep \/ wake/);
   assert.doesNotMatch(bridge, /hold 2s to start|hold ~1s|deliberate tap to stop|hold to remember|hold 5s to sleep/);
   assert.match(sleepGuard, /synap-intentional-sleep-v1/);
   assert.match(sleepGuard, /forceReconnectOff\(\)/);
   assert.match(sleepGuard, /synap-gatt-service-ready/);
 
   assert.doesNotMatch(events, /script\.src=['"]audio-codec-v3/);
-  assert.match(sw, /1\.0\.0-shell43-compact-palettes/);
-  assert.match(sw, /1\.0\.0-capture-help1/);
+  assert.match(sw, /1\.0\.0-shell44-connection-cleanup/);
+  assert.match(sw, /1\.0\.0-cleanup1/);
   assert.match(sw, /\.\/dashboard-ui\.js/);
   assert.match(sw, /\.\/ask-synap\.js/);
   assert.match(sw, /\.\/sleep-state-guard\.js/);
   assert.match(sw, /\.\/runtime-compat\.js/);
   assert.match(sw, /\.\/processing-recovery\.js/);
-  assert.match(theme, /dashboard-ui\.js\?v=1\.0\.0-compact1/);
-  assert.match(theme, /ask-synap\.js\?v=1\.0\.0-ask3/);
-  assert.match(theme, /sleep-state-guard\.js\?v=1\.0\.0-power1/);
-  assert.match(theme, /recording-bridge\.js\?v=1\.0\.0-touch5/);
+  assert.match(html, /dashboard-ui\.js\?v=1\.0\.0-compact1/);
+  assert.match(html, /ask-synap\.js\?v=1\.0\.0-ask3/);
+  assert.match(html, /sleep-state-guard\.js\?v=/);
+  assert.match(html, /recording-bridge\.js\?v=/);
   assert.match(ask, /SynapAuth\.authedFetch\(ASK_ENDPOINT/);
   assert.match(ask, /const ASK_ENDPOINT = '\/v1\/ask'/);
 

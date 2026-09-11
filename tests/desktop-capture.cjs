@@ -1,8 +1,8 @@
 const fs=require('fs');const assert=require('assert');
 const src=fs.readFileSync('desktop-capture.js','utf8');
-const theme=fs.readFileSync('theme.js','utf8');
+const shell=fs.readFileSync('index.html','utf8');
 const sw=fs.readFileSync('sw.js','utf8');
-assert.match(theme,/desktop-capture\.js\?v=/,'desktop capture must load in production');
+assert.match(shell,/desktop-capture\.js\?v=/,'desktop capture must load in production');
 assert.match(sw,/\.\/desktop-capture\.js/,'desktop capture must be in offline shell');
 assert.match(src,/getDisplayMedia\(\{video:true,audio:true\}\)/,'desktop capture must request user-selected system or tab audio');
 assert.match(src,/getUserMedia\(\{audio:/,'desktop capture must mix the wearer microphone');

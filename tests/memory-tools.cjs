@@ -33,9 +33,9 @@ test('transcript is a first-class Summary or Transcript view and recognizes You 
 
 test('installed PWA caches the optional memory and sleep-state modules',()=>{
   const sw=fs.readFileSync(path.join(root,'sw.js'),'utf8');
-  const bridge=fs.readFileSync(path.join(root,'battery-popover-fix.js'),'utf8');
-  assert.match(sw,/shell43-compact-palettes/);
+  const shell=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  assert.match(sw,/shell44-connection-cleanup/);
   assert.match(sw,/\.\/memory-tools\.js/);
   assert.match(sw,/\.\/sleep-state-guard\.js/);
-  assert.match(bridge,/memory-tools\.js\?v=1\.0\.0-memory-tools1/);
+  assert.match(shell,/memory-tools\.js\?v=/);
 });

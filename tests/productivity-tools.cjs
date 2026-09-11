@@ -1,8 +1,8 @@
 const fs=require('fs');const assert=require('assert');
 const src=fs.readFileSync('productivity-tools.js','utf8');
-const theme=fs.readFileSync('theme.js','utf8');
+const shell=fs.readFileSync('index.html','utf8');
 const sw=fs.readFileSync('sw.js','utf8');
-assert.match(theme,/productivity-tools\.js\?v=/,'productivity tools must load in production');
+assert.match(shell,/productivity-tools\.js\?v=/,'productivity tools must load in production');
 assert.match(sw,/\.\/productivity-tools\.js/,'productivity tools must be in offline shell');
 assert.match(src,/function weekRange\(/,'weekly review must use a deterministic week range');
 assert.match(src,/due_date/,'calendar export must originate from extracted due_date evidence');

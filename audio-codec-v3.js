@@ -65,6 +65,5 @@
     try{const pcm=decodeFrame(encoded);stats.decodedFrames++;return legacyPackets(sequence,pcm)}catch(error){stats.invalidPackets++;console.warn('[synap audio] ADPCM frame decode failed',error);return []}
   }
   function reset(key){if(key===undefined)states.clear();else states.delete(keyFor(key))}
-  function install(){return true}
-  return {MAGIC,COMPRESSED_VERSION,LEGACY_VERSION,CODEC_IMA_ADPCM,SAMPLES_PER_FRAME,PCM_BYTES_PER_FRAME,ADPCM_BYTES_PER_FRAME,decodeFrame,encodeFrame,normalizePacket,reset,install,stats};
+  return {MAGIC,COMPRESSED_VERSION,LEGACY_VERSION,CODEC_IMA_ADPCM,SAMPLES_PER_FRAME,PCM_BYTES_PER_FRAME,ADPCM_BYTES_PER_FRAME,decodeFrame,encodeFrame,normalizePacket,reset,stats};
 });

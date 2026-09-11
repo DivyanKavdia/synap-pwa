@@ -372,45 +372,7 @@
     restoreDay(currentDay());
   }
 
-  function loadTranscriptRepair() {
-    if (root.SYNAP_STATIC_BOOTSTRAP) return;
-    if (!root.document || root.SynapTranscriptRepair ||
-        root.document.querySelector('script[data-synap-transcript-repair]')) return;
-    var script = root.document.createElement('script');
-    script.src = 'transcript-repair.js?v=1.0.0-transcript1';
-    script.async = false;
-    script.setAttribute('data-synap-transcript-repair', '1');
-    (root.document.body || root.document.head).appendChild(script);
-  }
-
-  function loadRuntimeModule(source, marker, ready) {
-    if (!root.document || (ready && ready())) return;
-    if (root.document.querySelector('script[' + marker + ']')) return;
-    var script = root.document.createElement('script');
-    script.src = source;
-    script.async = false;
-    script.setAttribute(marker, '1');
-    (root.document.body || root.document.head).appendChild(script);
-  }
-
-  function loadProductRuntime() {
-    if (root.SYNAP_STATIC_BOOTSTRAP) return;
-    loadRuntimeModule('capture-stability.js?v=1.0.0-stability2', 'data-synap-capture-stability', function () {
-      return Boolean(root.SynapCaptureStability);
-    });
-    loadRuntimeModule('recording-bridge.js?v=1.0.0-continuity1', 'data-synap-recording-bridge', function () {
-      return Boolean(root.SynapRecordingBridge);
-    });
-    loadRuntimeModule('memory-tools.js?v=1.0.0-transcript3', 'data-synap-memory-tools', function () {
-      return Boolean(root.SynapMemoryTools);
-    });
-    loadRuntimeModule('cost-ui.js?v=1.0.0-cost1', 'data-synap-cost-ui', function () {
-      return Boolean(root.SynapCostUI);
-    });
-  }
-
-  /* Retained as an explicit/manual compatibility surface, but no lifecycle hook
-     calls it automatically anymore. */
+  /* Refresh the selected day on explicit request. */
   function refreshVisible() {
     if (!signedIn() || busy()) return Promise.resolve({ restored: 0, updated: 0 });
     return restoreDay(currentDay());
@@ -461,13 +423,11 @@
   }
 
   function init() {
-    loadProductRuntime();
     bindEventDrivenRefresh();
     if (root.SynapAuth && typeof root.SynapAuth.onChange === 'function') {
       root.SynapAuth.onChange(onAuthChange);
     }
     if (signedIn()) restoreDay(currentDay());
-    loadTranscriptRepair();
   }
 
   if (root.document && root.document.readyState === 'loading') {
@@ -487,8 +447,6 @@
     busy: busy,
     meaningfullyChanged: meaningfullyChanged,
     refreshUiInPlace: refreshUiInPlace,
-    loadTranscriptRepair: loadTranscriptRepair,
-    loadProductRuntime: loadProductRuntime,
     refreshVisible: refreshVisible,
     currentDay: currentDay,
     bindEventDrivenRefresh: bindEventDrivenRefresh

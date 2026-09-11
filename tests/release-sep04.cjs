@@ -34,12 +34,8 @@ test('static shell never paints a capitalized synap brand before runtime normali
   assert.match(visibleShell,/Back to synap/);
 });
 
-test('all rendered brand references normalize Synap to synap, including dynamic UI',()=>{
-  assert.match(runtime,/const BRAND_PATTERN=\/\\bSynap\\b\/g/);
-  assert.match(runtime,/replace\(BRAND_PATTERN,'synap'\)/);
-  assert.match(runtime,/BRAND_ATTRS=\['aria-label','title','placeholder','alt'\]/);
-  assert.match(runtime,/MutationObserver/);
-  assert.match(runtime,/bindBrandCase\(\)/);
+test('runtime does not rewrite user transcripts and names for brand casing',()=>{
+  assert.doesNotMatch(runtime,/BRAND_PATTERN|normalizeBrandNode|bindBrandCase/);
 });
 
 test('rich synap UI feature modules remain present without exposing developer recovery controls',()=>{

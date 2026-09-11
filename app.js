@@ -1,12 +1,10 @@
 (function () {
   "use strict";
 
-  // -------------------------------------------------------------------------
   // Shared BLE Protocol v2
-  // -------------------------------------------------------------------------
 
-const APP_VERSION = "1.0.0";
-const APP_REVISION = "1.0.0-audio2";
+  const APP_VERSION = "1.0.0";
+  const APP_REVISION = "1.0.0-audio2";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -55,14 +53,13 @@ const APP_REVISION = "1.0.0-audio2";
   const COMMAND_TIMEOUT_MS = 3500;
   const MIN_STREAM_MTU = 32;
   const AUDIO_STALL_TIMEOUT_MS = 12000;
-  const FOREGROUND_STALL_GRACE_MS = 3000;
+  const FOREGROUND_STALL_GRACE_MS = 12000;
   const INCOMPLETE_FRAME_TIMEOUT_MS = 900;
+  const RECENT_FRAME_WINDOW = 512;
   const AUTO_RECONNECT_DELAYS_MS = [1200, 2600, 5200, 10000, 15000, 20000, 30000, 30000];
   const MAX_AUTO_RECONNECT_ATTEMPTS = AUTO_RECONNECT_DELAYS_MS.length;
 
-  // -------------------------------------------------------------------------
   // DOM
-  // -------------------------------------------------------------------------
 
   const ui = {
     connectionBadge: document.getElementById("connectionBadge"),
@@ -130,9 +127,7 @@ const APP_REVISION = "1.0.0-audio2";
     appVersion: document.getElementById("appVersion")
   };
 
-  // -------------------------------------------------------------------------
   // Runtime state
-  // -------------------------------------------------------------------------
 
   let appState = "disconnected";
   let bluetoothDevice = null;
@@ -204,6 +199,7 @@ const APP_REVISION = "1.0.0-audio2";
   let lastDb = -96;
   let waveformPhase = 0;
   let lastWaveDraw = 0;
+  let metricsTimer = null;
 
   let diagnosticLines = [];
   let installPrompt = null;
@@ -238,9 +234,7 @@ const APP_REVISION = "1.0.0-audio2";
     };
   }
 
-  // -------------------------------------------------------------------------
   // Logging and feedback
-  // -------------------------------------------------------------------------
 
   function log(message, detail) {
     const time = new Date().toISOString();
@@ -299,9 +293,7 @@ const APP_REVISION = "1.0.0-audio2";
     if (appState === "recording" || appState === "starting") stopRecording();
   }
 
-  // -------------------------------------------------------------------------
   // Application state and UI
-  // -------------------------------------------------------------------------
 
   function setAppState(nextState, message) {
     if (firmwareBusy) nextState = "updating";
@@ -439,6 +431,14 @@ const APP_REVISION = "1.0.0-audio2";
   }
 
   function updateMetrics() {
+    if (metricsTimer !== null) return;
+    metricsTimer = window.setTimeout(function () {
+      metricsTimer = null;
+      renderMetrics();
+    }, 200);
+  }
+
+  function renderMetrics() {
     ui.framesMetric.textContent =
       String(sessionStats.completeFrames);
     ui.framesDetail.textContent =
@@ -494,9 +494,7 @@ const APP_REVISION = "1.0.0-audio2";
     }
   }
 
-  // -------------------------------------------------------------------------
   // BLE connection
-  // -------------------------------------------------------------------------
 
   function isGattConnected() {
     return Boolean(
@@ -575,6 +573,7 @@ const APP_REVISION = "1.0.0-audio2";
   }
 
   function autoReconnectEnabled() {
+    if (document.body?.dataset.intentionalSleep === "1") return false;
     try { return localStorage.getItem("dk-pendant-auto-reconnect") !== "off"; }
     catch (_) { return true; }
   }
@@ -704,6 +703,7 @@ const APP_REVISION = "1.0.0-audio2";
     document.addEventListener("visibilitychange", function () {
       if (document.visibilityState !== "visible") return;
       foregroundAt = performance.now();
+      window.dispatchEvent(new CustomEvent('synap-recording-foreground'));
       recoverRememberedConnection("foreground", false);
       if (isGattConnected() && !connectInProgress && !firmwareBusy && !finalizing) {
         readControlStatus().then(ok=>{if(ok) log("Foreground pendant status resynchronised");});
@@ -731,14 +731,14 @@ const APP_REVISION = "1.0.0-audio2";
       manualDisconnect ||
       !autoReconnectEnabled() ||
       !bluetoothDevice ||
-      reconnectAttempts >= MAX_AUTO_RECONNECT_ATTEMPTS ||
+      (reconnectAttempts >= MAX_AUTO_RECONNECT_ATTEMPTS && !recordingReconnectPending) ||
       reconnectTimer
     ) {
       return;
     }
 
     const attempt = reconnectAttempts + 1;
-    const wait = AUTO_RECONNECT_DELAYS_MS[reconnectAttempts];
+    const wait = AUTO_RECONNECT_DELAYS_MS[Math.min(reconnectAttempts, MAX_AUTO_RECONNECT_ATTEMPTS - 1)];
 
     log("Automatic reconnect scheduled", {
       attempt: attempt,
@@ -748,7 +748,7 @@ const APP_REVISION = "1.0.0-audio2";
 
     reconnectTimer = window.setTimeout(function () {
       reconnectTimer = null;
-      if (document.visibilityState === "hidden" || manualDisconnect || !autoReconnectEnabled()) return;
+      if (document.visibilityState === "hidden" || manualDisconnect || !autoReconnectEnabled() || firmwareBusy || isGattConnected()) return;
       reconnectAttempts = attempt;
       connectPendant({ silent: true, autoReconnect: true });
     }, wait);
@@ -1046,6 +1046,7 @@ const APP_REVISION = "1.0.0-audio2";
   }
 
   function cleanupCharacteristics() {
+    globalThis.SynapDevices?.clearService?.();
     deviceAssociation = null;
     deviceIdentityMessage = "Not connected";
     firmwareUpdater?.reset();
@@ -1282,9 +1283,7 @@ const APP_REVISION = "1.0.0-audio2";
     return true;
   }
 
-  // -------------------------------------------------------------------------
   // Recording lifecycle
-  // -------------------------------------------------------------------------
 
   function clearFinalizeTimer() {
     if (finalizeTimeout !== null) {
@@ -1529,9 +1528,7 @@ const APP_REVISION = "1.0.0-audio2";
     }
   }
 
-  // -------------------------------------------------------------------------
   // Audio packet assembly
-  // -------------------------------------------------------------------------
 
   function handleAudioNotification(event) {
     const original = event?.target?.value;
@@ -1714,6 +1711,10 @@ const APP_REVISION = "1.0.0-audio2";
     // With the journal enabled, only the waveform/assembly window stays in RAM.
     if (!journal) completedPcmFrames.push(pcm);
     completedSequences.add(frame.sequence);
+    // Retain recent duplicates without rejecting the next uint16 counter cycle.
+    if (completedSequences.size > RECENT_FRAME_WINDOW) {
+      completedSequences.delete(completedSequences.keys().next().value);
+    }
     sessionStats.completeFrames += 1;
     sessionStats.pcmBytes += pcm.length;
 
@@ -1762,9 +1763,7 @@ const APP_REVISION = "1.0.0-audio2";
     }
   }
 
-  // -------------------------------------------------------------------------
   // WAV creation
-  // -------------------------------------------------------------------------
 
   function createWavBlob(pcmFrames, sampleRate) {
     const dataLength = pcmFrames.reduce(function (total, frame) {
@@ -1800,9 +1799,7 @@ const APP_REVISION = "1.0.0-audio2";
     }
   }
 
-  // -------------------------------------------------------------------------
   // Timer, wake lock and waveform
-  // -------------------------------------------------------------------------
 
   function startTimer() {
     stopTimer();
@@ -1821,7 +1818,8 @@ const APP_REVISION = "1.0.0-audio2";
     if (!recordingConfirmed || !recordingStartedAt) return;
 
     const elapsed = performance.now() - recordingStartedAt;
-    ui.timer.textContent = formatClock(elapsed);
+    const clock = formatClock(elapsed);
+    if (ui.timer.textContent !== clock) ui.timer.textContent = clock;
     const now = performance.now();
     if (appState === "recording" && document.visibilityState === "visible" &&
         now - foregroundAt > FOREGROUND_STALL_GRACE_MS &&
@@ -1900,6 +1898,10 @@ const APP_REVISION = "1.0.0-audio2";
     }
     lastWaveDraw = performance.now();
     const canvas = ui.waveformCanvas;
+    if (document.visibilityState === "hidden" || !canvas.getClientRects().length) {
+      window.requestAnimationFrame(drawWaveform);
+      return;
+    }
     const rect = canvas.getBoundingClientRect();
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     const width = Math.max(1, Math.round(rect.width * ratio));
@@ -1986,9 +1988,7 @@ const APP_REVISION = "1.0.0-audio2";
     return values;
   }
 
-  // -------------------------------------------------------------------------
   // IndexedDB recording storage
-  // -------------------------------------------------------------------------
 
   function openDatabase() {
     if (journal) return journal.open();
@@ -2104,9 +2104,7 @@ const APP_REVISION = "1.0.0-audio2";
     });
   }
 
-  // -------------------------------------------------------------------------
   // Recording library UI
-  // -------------------------------------------------------------------------
 
   function localDateKey(value) {
     const date = value instanceof Date ? value : new Date(value);
@@ -2708,9 +2706,7 @@ const APP_REVISION = "1.0.0-audio2";
     log("Recording downloaded", { id: recording.id });
   }
 
-  // -------------------------------------------------------------------------
   // Settings and PWA lifecycle
-  // -------------------------------------------------------------------------
 
   function loadSettings() {
     try {
@@ -3028,9 +3024,7 @@ const APP_REVISION = "1.0.0-audio2";
     });
   }
 
-  // -------------------------------------------------------------------------
   // Formatting
-  // -------------------------------------------------------------------------
 
   function defaultRecordingName(date) {
     return (
@@ -3092,9 +3086,7 @@ const APP_REVISION = "1.0.0-audio2";
     });
   }
 
-  // -------------------------------------------------------------------------
   // Event wiring
-  // -------------------------------------------------------------------------
 
   let coreControlsBound = false;
 
@@ -3334,9 +3326,7 @@ const APP_REVISION = "1.0.0-audio2";
     });
   }
 
-  // -------------------------------------------------------------------------
   // Start-up
-  // -------------------------------------------------------------------------
 
   // Presentation only: anchors remain usable even if Bluetooth is unavailable.
   function bindSectionNavigation() {

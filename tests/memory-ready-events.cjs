@@ -1,7 +1,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync(path.join(__dirname,'..','memory-ready-events.js'),'utf8');
-const theme=fs.readFileSync(path.join(__dirname,'..','theme.js'),'utf8');
+const shell=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const sw=fs.readFileSync(path.join(__dirname,'..','sw.js'),'utf8');
 
 const events=[];
@@ -22,7 +22,7 @@ const p=new context.DKFIFOProcessor();
   assert.equal(events.filter(e=>e.type==='synap-memory-ready').length,1,'same durable signature is not emitted twice');
   const pending={id:'r2',processingStage:'summarizing',processingState:'pending'};
   assert.equal(context.SynapMemoryReadyEvents.emit(pending),false,'pending memory never reports ready');
-  assert.match(theme,/memory-ready-events\.js\?v=/,'production loader includes durable event bridge');
+  assert.match(shell,/memory-ready-events\.js\?v=/,'production loader includes durable event bridge');
   assert.match(sw,/\.\/memory-ready-events\.js/,'offline shell includes durable event bridge');
   console.log('PASS: memory-ready fires once and only after durable consolidated memory.');
 })().catch(error=>{console.error(error);process.exitCode=1});
