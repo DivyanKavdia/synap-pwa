@@ -24,7 +24,7 @@ const block=(from,to)=>source.slice(source.indexOf(from),source.indexOf(to));
   assert.match(stateNode('otaStatus').textContent,/Update paused/);assert.equal(stateNode('setupDeviceStatus').textContent,'Not connected');
   stateNode('otaStatus').textContent='Up to date · 1008';card.renderDeviceSetup();assert.equal(stateNode('otaStatus').textContent,'Connect to check');
   connected=true;card.appState='recording';card.recordingConfirmed=true;card.renderDeviceSetup();
-  assert.equal(stateNode('setupDeviceStatus').textContent,'Recording');assert(stateNode('setupConnect').hidden);assert(card.ui.chooseDeviceButton.disabled);
+  assert.equal(stateNode('setupDeviceStatus').textContent,'Recording');assert(card.ui.chooseDeviceButton.disabled);
   // OTA owns a wake lock even without an active recording session.
   let released=0;const lock={release:async()=>released++,addEventListener(){}};
   const c={navigator:{wakeLock:{request:async()=>lock}},wakeLock:null,firmwareBusy:true,recordingSessionId:0,

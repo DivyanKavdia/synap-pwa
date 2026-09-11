@@ -12,13 +12,6 @@
     const LOGO=logoSource();
     const headerLogo=document.querySelector('.topbar .brand-logo');
     if(headerLogo){headerLogo.src=LOGO;headerLogo.alt='synap';headerLogo.classList.add('synap-brand-image');}
-    const settingsLogo=document.querySelector('.pendant-settings-top .settings-brand-logo');
-    if(settingsLogo){
-      settingsLogo.src=headerLogo?.getAttribute('src')||LOGO;
-      settingsLogo.alt='synap';
-      settingsLogo.classList.add('synap-brand-image');
-      settingsLogo.dataset.brandSource='home-wordmark';
-    }
   }
 
   function init(){

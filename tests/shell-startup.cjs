@@ -20,14 +20,12 @@ test('startup reset remains isolated while explicit tab navigation is controlled
   assert.match(runtime,/history\.replaceState\(history\.state,'',location\.pathname\+location\.search\)/);
 });
 
-test('Home and Settings share the self-theming wordmark',()=>{
+test('Settings keeps the single self-theming header wordmark',()=>{
   const home=html.match(/class="brand-logo synap-brand-image"\s+src="([^"]+)"/);
-  const settings=html.match(/class="synap-brand-image settings-brand-logo"\s+src="([^"]+)"/);
-  assert(home&&settings,'both wordmarks must exist');
-  assert.equal(settings[1],home[1]);
-  assert.match(brandCss,/:root\[data-theme="dark"\] \.pendant-settings-top \.settings-brand-logo[\s\S]*filter:none!important/);
-  assert.match(runtime,/bindSettingsBrand/);
-  assert.match(runtime,/home-wordmark/);
+  assert(home,'header wordmark must exist');
+  assert(!html.includes('settings-brand-logo'));
+  assert(!runtime.includes('bindSettingsBrand'));
+  assert(html.includes('settings-panel.js'));
 });
 
 console.log('PASS: startup reset stays isolated and tab navigation is controlled');

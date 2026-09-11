@@ -2956,9 +2956,6 @@
     status.textContent = recordingReconnectPending && !connected ? "Recording paused" :
       (states[appState] || (connected ? "Connected" : "Not connected"));
     status.dataset.connected = String(connected);
-    const connect = document.getElementById("setupConnect");
-    connect.hidden = connected;
-    connect.disabled = firmwareBusy || connectInProgress || appState === "unsupported";
     ui.chooseDeviceButton.disabled = firmwareBusy || connectInProgress || recordingConfirmed || finalizing || !!currentRecordingId;
     if (!connected && !firmwareBusy) {
       const updateStatus = document.getElementById("otaStatus");
@@ -2971,13 +2968,14 @@
   }
 
   function openSettings() {
+    if (ui.settingsDialog.open) { globalThis.SynapSettingsPanel.close(); return; }
     ui.endpointInput.value = settings.endpoint;
     ui.llmEndpointInput.value = settings.llmEndpoint;
     ui.autoProcessInput.checked = settings.autoProcess;
     ui.tokenInput.value = settings.token;
     ui.wakeLockInput.checked = settings.wakeLock;
     renderDeviceSetup();
-    ui.settingsDialog.showModal();
+    globalThis.SynapSettingsPanel.open();
   }
 
   function bindFirmwareUpdate() {
@@ -3258,7 +3256,10 @@
         connectPendant();
       }
     });
-    ui.settingsButton.addEventListener("click", openSettings);
+    ui.settingsButton.addEventListener("click", function (event) {
+      openSettings();
+      event.preventDefault();
+    });
   }
 
   function bindEvents() {
@@ -3329,16 +3330,6 @@
     });
     ui.startButton.addEventListener("click", startRecording);
     ui.stopButton.addEventListener("click", stopRecording);
-    document.getElementById("setupConnect").addEventListener("click", function () {
-      // Reuse the recorder's connection guards; never turn this action into Disconnect.
-      if (firmwareBusy || connectInProgress || isGattConnected()) {
-        toast(isGattConnected() ? "Your pendant is already connected." : "Wait for the current operation to finish.");
-        return;
-      }
-      if (ui.connectButton.disabled) { toast("Bluetooth is not available in this browser.", "error"); return; }
-      ui.settingsDialog.close();
-      ui.connectButton.click();
-    });
     ui.chooseDeviceButton.addEventListener("click", function () {
       if (firmwareBusy) return;
       if (recordingConfirmed || finalizing || appState === "starting" || appState === "stopping" || recordingReconnectPending) {

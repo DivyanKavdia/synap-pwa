@@ -79,10 +79,15 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  await page.locator('.brain-tabs a[href="#capture"]').click();
  assert.equal(await page.evaluate(()=>bleFixture.appDisconnects),0,'day and section browsing preserves capture');
  await page.waitForTimeout(800);const resumed=await records();assert.equal(resumed.length,1);assert.equal(resumed[0].id,first[0].id);
- await page.locator('#stopButton').click();await page.waitForFunction(()=>document.body.dataset.state==='idle');
+ await page.locator('#settingsButton').click();await page.waitForFunction(()=>document.querySelector('#settingsDialog').open);
+ await page.locator('#settingsDialog').evaluate(node=>node.scrollTop=500);
+ assert.equal(await page.locator('#headerCaptureToggle').getAttribute('aria-label'),'Stop listening');
+ await page.locator('#headerCaptureToggle').click();await page.waitForFunction(()=>document.body.dataset.state==='idle');
+ assert(await page.locator('#settingsDialog').evaluate(node=>node.open),'header Stop keeps Settings open');
+ await page.locator('#settingsButton').click();await page.waitForFunction(()=>!document.querySelector('#settingsDialog').open);
  const saved=await records();assert.equal(saved.length,1);assert.equal(saved[0].id,first[0].id);assert(saved[0].durationMs>=1200);
  assert.equal(await page.evaluate(()=>window.bleFixture.maximum),1);assert.deepEqual(errors,[]);
- console.log('PASS: recording survives native UI visibility changes, a slow GATT reply, day/section navigation and reconnect; one journal, playable PCM, no overlapping GATT requests',saved[0]);
+ console.log('PASS: recording survives native UI visibility changes, a slow GATT reply, navigation and reconnect; header Stop saves from Settings with one journal and no overlapping GATT requests',saved[0]);
 
  const starts=await page.evaluate(()=>bleFixture.starts);
  const sleepPendant=async()=>{await page.waitForFunction(()=>document.body.dataset.eventChannel==='event');await page.evaluate(()=>bleFixture.sleep())};
