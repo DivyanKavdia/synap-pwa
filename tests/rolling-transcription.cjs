@@ -52,6 +52,7 @@ test('final memory response includes the complete combined transcript', () => {
   const pipeline = source('backend/src/pipeline/process.ts');
   assert.match(route, /recording\.sealedTranscript/);
   assert.match(route, /transcript,/);
-  assert.match(pipeline, /const transcript = toSpeakerLines\(words, flat\.join\('\\n'\)\)/);
+  assert.match(pipeline, /grounded = toSpeakerLines\(words, grounded\)/);
+  assert.match(pipeline, /let transcript = flat\.join\('\\n'\)/);
   assert.match(pipeline, /sealedTranscript: sealText/);
 });

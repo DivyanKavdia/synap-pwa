@@ -75,7 +75,7 @@ function speakerSpans(
   durationMs: number,
 ): Span[] {
   const spans: Span[] = [];
-  for (const word of words) {
+  for (const word of words.slice().sort((a,b)=>a.start_ms-b.start_ms)) {
     if (word.speaker !== speaker) continue;
     const startMs = Math.max(0, word.start_ms - segmentStartMs - 80);
     const endMs = Math.min(durationMs, word.end_ms - segmentStartMs + 80);
@@ -84,7 +84,19 @@ function speakerSpans(
     if (previous && startMs <= previous.endMs + 140) previous.endMs = Math.max(previous.endMs, endMs);
     else spans.push({ startMs, endMs });
   }
-  return spans;
+  // Mixed voices must not enter an identity sample, including the padding
+  // around a turn boundary. Unknown-speaker words are competing evidence too.
+  let clean = spans;
+  for(const word of words) {
+    if(word.speaker===speaker)continue;
+    const start=word.start_ms-segmentStartMs-80,end=word.end_ms-segmentStartMs+80;
+    clean=clean.flatMap(span=>{
+      if(end<=span.startMs || start>=span.endMs)return [span];
+      return [{startMs:span.startMs,endMs:Math.min(start,span.endMs)},
+        {startMs:Math.max(end,span.startMs),endMs:span.endMs}].filter(part=>part.endMs>part.startMs);
+    });
+  }
+  return clean;
 }
 
 export interface SpeakerSample {

@@ -75,6 +75,7 @@ export interface RecordingDoc {
 }
 
 export interface SegmentDoc {
+  sealedSpeakerMap?: Sealed | null;
   index: number;
   startMs: number;
   endMs: number;

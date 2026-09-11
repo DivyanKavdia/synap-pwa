@@ -209,7 +209,27 @@
     }).catch(function () { return null; });
   }
 
-  function uploadSegment(processor, job, signal) {
+  async function transcriptionAudio(store,job,original,signal) {
+    const key=[job.recordingId,job.segmentIndex],meta=await store.get('segments',key);
+    if(meta?.transcriptionBlob)return meta.transcriptionBlob;
+    if(!meta || meta.uploadedToBackend || !store.atomic || !root.SynapAudioEnhancement?.prepareForUpload)return original;
+    const copy=await root.SynapAudioEnhancement.prepareForUpload(original,{signal});
+    if(signal?.aborted)throw new DOMException('Upload cancelled.','AbortError');
+    // Persist the exact request body before sending it: retries after a reload
+    // must keep the same digest even when the Worker previously fell back.
+    return store.atomic(['segments'],function(stores,result,transaction){
+      const get=stores.segments.get(key);
+      get.onsuccess=function(){
+        if(!get.result){transaction.abort();return;}
+        const selected=get.result.transcriptionBlob||copy;
+        stores.segments.put({...get.result,transcriptionBlob:selected});result(selected);
+      };
+    });
+  }
+
+  async function uploadSegment(processor, job, signal) {
+    if((await processor.store.get('segments',[job.recordingId,job.segmentIndex]))?.uploadedToBackend)
+      return {transcript:'',uploadedToBackend:true,provider:'synap'};
     var recording = null;
     return safePatchLocalProcessing(processor, job.recordingId, {
       processingStage: 'uploading', processingError: '', processingRetryable: true
@@ -224,7 +244,7 @@
       var data = values[0]; recording = values[1];
       if (!data.blob && !data.frames.length) throw permanent('Segment has no complete PCM frames.');
       var wav = data.blob || root.DKAudioCodec.wav(data.frames);
-      return wav.arrayBuffer();
+      return transcriptionAudio(processor.store,job,wav,signal).then(function(copy){return copy.arrayBuffer()});
     }).then(function (buffer) {
       return sha256Hex(buffer).then(function (digest) {
         var bounds = segmentBounds(recording, job.segmentIndex);
@@ -238,7 +258,11 @@
           method: 'PUT', headers: headers, body: buffer, signal: signal
         });
       });
-    }).then(function () {
+    }).then(async function () {
+      if(processor.store.atomic)await processor.store.atomic(['segments'],function(stores){
+        const get=stores.segments.get([job.recordingId,job.segmentIndex]);
+        get.onsuccess=function(){if(get.result){const meta={...get.result,uploadedToBackend:true};delete meta.transcriptionBlob;stores.segments.put(meta)}};
+      });
       return { transcript: '', uploadedToBackend: true, provider: 'synap', uploadedAt: new Date().toISOString() };
     });
   }
@@ -459,6 +483,7 @@
     mirrorEndpoints:mirrorEndpoints,
     toRecordingFields:toRecordingFields,
     segmentBounds:segmentBounds,
+    transcriptionAudio:transcriptionAudio,
     requestBudget:requestBudget,
     ask:function(query,scope){return request('/v1/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:query,scope:scope||{}})});},
     dailyBrief:function(day){return request('/v1/days/'+encodeURIComponent(day)+'/brief');},

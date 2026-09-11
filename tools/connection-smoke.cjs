@@ -59,6 +59,10 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  await page.waitForFunction(()=>document.body.dataset.state==='idle');
  await page.evaluate(()=>localStorage.setItem('dk-pendant-auto-reconnect','on'));
  await page.locator('#startButton').click();await page.waitForFunction(()=>document.body.dataset.state==='recording');
+ // A real model Worker may now run during rolling capture. Exercise the same
+ // automatic entry point while BLE packets continue arriving on the main thread.
+ const {wav,fixture}=require('./audio-enhancement-fixtures.cjs');
+ await page.evaluate(bytes=>{window.qaAudioPreparation=SynapAudioEnhancement.prepareForUpload(new Blob([new Uint8Array(bytes)],{type:'audio/wav'})).then(copy=>copy.size)},[...wav(fixture(16000,3))]);
  const records=()=>page.evaluate(()=>new Promise((resolve,reject)=>{const r=indexedDB.open('dk-pendant-recordings');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,read=db.transaction('recordings').objectStore('recordings').getAll();read.onsuccess=()=>{db.close();resolve(read.result.map(x=>({id:x.id,status:x.status,sizeBytes:x.sizeBytes,durationMs:x.durationMs})))}}}));
  await page.waitForTimeout(800);const first=await records();assert.equal(first.length,1);
  await page.evaluate(()=>{bleFixture.hideOnNextConnect();bleFixture.disconnect()});
@@ -81,6 +85,7 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  assert.equal(await page.locator('#headerCaptureToggle').getAttribute('aria-label'),'Stop listening');
  await page.locator('.brain-tabs a[href="#capture"]').click();
  assert.equal(await page.evaluate(()=>bleFixture.appDisconnects),0,'day and section browsing preserves capture');
+ assert.equal(await page.evaluate(()=>qaAudioPreparation),96044,'local preprocessing completes during capture');
  await page.waitForTimeout(800);const resumed=await records();assert.equal(resumed.length,1);assert.equal(resumed[0].id,first[0].id);
  await page.locator('#settingsButton').click();await page.waitForFunction(()=>document.querySelector('#settingsDialog').open);
  await page.locator('#settingsDialog').evaluate(node=>node.scrollTop=500);

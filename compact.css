@@ -660,6 +660,13 @@ body.synap-refresh :is(#capture,#insights,#myActions,#library,#synapWeeklyReview
 .synap-refresh .speaker-name-fields input{box-sizing:border-box;width:100%;min-height:44px;padding:10px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--ink);font-size:16px}
 .synap-refresh .speaker-name-actions{display:flex;flex-wrap:wrap;gap:8px}
 .synap-refresh .speaker-name-actions button{min-height:44px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--accent);font-size:12px}
+.synap-refresh #askAnswer .answer-sources{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;overflow:visible;margin-top:14px}
+.synap-refresh #askAnswer .answer-sources>span{justify-self:start;font-size:11px;letter-spacing:.04em}
+.synap-refresh #askAnswer .answer-sources button{display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:start;gap:5px 10px;width:100%;min-width:0;min-height:44px;padding:12px;border-radius:12px;white-space:normal;overflow-wrap:anywhere;color:var(--ink)}
+.synap-refresh #askAnswer .answer-sources button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.synap-refresh #askAnswer .ask-source-quote{grid-column:1/-1;max-width:none;margin:0;font-size:12px;line-height:1.5;color:var(--muted)}
+.synap-refresh #askAnswer .answer-copy>div{min-width:0}
+.synap-refresh #askAnswer .ask-answer-text{white-space:pre-wrap;overflow-wrap:anywhere}
 .synap-refresh .speaker-name-actions button[type="submit"]{background:var(--action);color:var(--on-action)}
 .synap-refresh #myActions{scroll-margin-top:0}
 .synap-refresh #myActionsBody{padding:0}

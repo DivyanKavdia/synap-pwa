@@ -28,7 +28,7 @@ function setup() {
     postMessage(data) { this.worker.postMessage(data); }
     terminate() { this.terminated=true;this.worker.terminate(); }
   }
-  const context={Blob,WebAssembly,Worker:BrowserWorker,URL,DOMException,document:{currentScript:{src:'https://synap.test/audio-enhancement.js'}}};
+  const context={Blob,WebAssembly,Worker:BrowserWorker,URL,DOMException,setTimeout,clearTimeout,document:{currentScript:{src:'https://synap.test/audio-enhancement.js'}}};
   context.window=context;
   vm.runInNewContext(fs.readFileSync(path.join(root,'audio-enhancement.js'),'utf8'),context);
   return {api:context.SynapAudioEnhancement,instances};
@@ -54,9 +54,10 @@ test('actual local model reduces generated noise, preserves the WAV timeline and
     if(correlation>bestCorrelation){bestCorrelation=correlation;bestLag=lag;}
   }
   console.log(JSON.stringify({noiseReductionDb:20*Math.log10(noiseRatio),syntheticVoiceRms:voice,outputSamples:output.length,bestLagSamples:bestLag}));
-  assert.ok(noiseRatio<.5,'stationary noise should be attenuated by at least 6 dB');
+  assert.ok(noiseRatio<.85,'stationary noise is reduced conservatively');
+  for(let i=0;i<input.length;i++)assert.ok(Math.abs(output[i])>=Math.abs(input[i])*.70-1,'no sample can be gated away by the denoiser');
   assert.ok(voice>20,'voiced test signal must not be replaced by silence');
-  assert.ok(voice>rms(output,8000,11000)*3,'voiced interval remains stronger than background');
+  assert.ok(voice>rms(output,8000,11000),'voiced interval remains stronger than background');
   assert.ok(Math.abs(bestLag)<16,'model delay must be removed so speech still matches its source timestamps');
   assert.equal(progress.at(-1).stage,'complete');assert.equal(progress.at(-1).progress,1);
   const values=progress.filter(item=>item.stage==='processing').map(item=>item.progress);
@@ -105,4 +106,29 @@ test('duration limit rejects a long recording from metadata before loading audio
   const h=setup(),bytes=wav(new Int16Array(16000*1200+1));
   await assert.rejects(h.api.enhance(new Blob([bytes])),/up to 20 minutes/);
   assert.equal(h.api.busy(),false);assert.ok(h.instances.every(worker=>worker.terminated));
+});
+
+test('quiet voices and noise-like consonants retain their waveform instead of being gated out',async()=>{
+  const h=setup(),input=fixture(16000,1.017,{voiceThroughout:true});
+  for(let i=0;i<input.length;i++)input[i]=Math.round(input[i]*.035);
+  const output=pcm(new Uint8Array(await (await h.api.enhance(new Blob([wav(input)]))).arrayBuffer()));
+  let xy=0,xx=0,yy=0;
+  for(let i=0;i<input.length;i++) {
+    assert(Math.abs(output[i])>=Math.abs(input[i])*.7-1);
+    xy+=input[i]*output[i];xx+=input[i]**2;yy+=output[i]**2;
+  }
+  assert(xy/Math.sqrt(xx*yy)>.95,'quiet waveform is retained without shifting its phase');
+});
+
+test('automatic preparation falls back on model failure or contention, while cancellation stops upload',async()=>{
+  const h=setup(),bad=new Blob([wav(new Int16Array(100),44100)]);
+  assert.equal(await h.api.prepareForUpload(bad),bad);
+  const original=new Blob([wav(fixture(16000,2))]);
+  const running=h.api.enhance(original);
+  assert.equal(await h.api.prepareForUpload(original),original);
+  await running;
+  const controller=new AbortController();controller.abort();
+  await assert.rejects(h.api.prepareForUpload(original,{signal:controller.signal}),{name:'AbortError'});
+  await assert.rejects(h.api.enhance(original,{timeoutMs:1}),/processing budget/);
+  assert.equal(h.api.busy(),false);
 });

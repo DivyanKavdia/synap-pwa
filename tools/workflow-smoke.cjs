@@ -228,6 +228,23 @@ async function run() {
       await page.waitForTimeout(300);
       assert.equal(await page.locator('.synap-merged-card').count(), 0, 'stale merge cannot pollute another day');
       assert.equal(await page.locator('.synap-merge-check').count(), 0);
+      // Source quotations share the Actions panel and wrap as rectangular rows.
+      await page.evaluate(async()=>{
+        const previous=SynapAuth.authedFetch;
+        SynapAuth.authedFetch=async(url,options)=>url.includes('/ask') ? new Response(JSON.stringify({
+          answer:'We discussed the brand.\nThe next step is reviewing supply.',confidence:'high',searched:{conversations:2},
+          sources:[{recording_id:'journey-0',start_ms:7000,quote:'co-founder of Stitch Lane, a D2C streetwear brand'},
+            {recording_id:'journey-1',start_ms:0,quote:"We focus on high-margin SKUs, and we've recently optimized our supply chain through just-in-time manufacturing to reduce dead stock."}]
+        })) : previous(url,options);
+        SynapDashboardUI.setView('ask');await SynapAsk.ask('What did we discuss?');
+      });
+      const cards=page.locator('#askAnswer .ask-source');assert.equal(await cards.count(),2);
+      const sourceLayout=await cards.evaluateAll(nodes=>nodes.map(node=>({rect:node.getBoundingClientRect().toJSON(),radius:getComputedStyle(node).borderRadius,overflow:node.scrollWidth>node.clientWidth})));
+      assert(sourceLayout.every(item=>item.radius==='12px'&&!item.overflow));
+      assert(sourceLayout[1].rect.y>=sourceLayout[0].rect.bottom,'quotes are stacked, never squeezed into circles');
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+      await cards.last().scrollIntoViewIfNeeded();
+      if(process.env.SYNAP_WORKFLOW_OUTPUT)await page.locator('#myActions').screenshot({path:path.join(process.env.SYNAP_WORKFLOW_OUTPUT,`sources-${mode}-${width}.png`)});
       assert.deepEqual(errors, [], 'no uncaught page errors');
       console.log(`PASS workflows/${mode}/${width}: merge/retry/reload/unmerge, unchanged sources, stable tabs, search, People recall, follow-up retry, day-change race`);
       if (process.env.SYNAP_WORKFLOW_OUTPUT) {

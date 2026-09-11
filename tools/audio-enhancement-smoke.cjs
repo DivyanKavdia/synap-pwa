@@ -46,7 +46,7 @@ const server=http.createServer((req,res)=>{
     },bytes);
     assert.equal(result.supported,true);assert.equal(result.size,bytes.length);assert.equal(result.rate,16000);
     assert.equal(result.preserved,true);assert.equal(result.busy,false);assert.equal(result.last.stage,'complete');
-    assert.ok(result.voiceRms>result.noiseRms*3);assert.ok(result.voiceRms>20);
+    assert.ok(result.voiceRms>result.noiseRms);assert.ok(result.voiceRms>20);
     const cancelled=await page.evaluate(async bytes=>{
       const controller=new AbortController();
       try{await SynapAudioEnhancement.enhance(new Blob([new Uint8Array(bytes)]),{signal:controller.signal,
