@@ -599,6 +599,7 @@ body.synap-refresh :is(#capture,#insights,#followupInbox,#peopleMemory,#ask,#lib
 .synap-refresh .library-search{margin-bottom:8px;padding-top:2px;padding-bottom:2px}
 .synap-refresh .library-toolbar{margin-bottom:8px}
 .synap-refresh .compact-recorder{margin-top:8px!important;padding-top:8px!important}
+.synap-refresh .reconnect-status{margin:8px 0;color:var(--muted);font-size:12px;line-height:1.5}
 .synap-refresh .gesture-guide{margin-top:10px;padding-top:10px}
 .synap-refresh .capture-safety{margin:8px 0;font-size:11px}
 .synap-refresh .palette-heading{font-size:12px;margin:14px 0 8px;color:var(--muted);font-weight:600}

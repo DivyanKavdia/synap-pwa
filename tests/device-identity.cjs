@@ -57,7 +57,7 @@ async function connect({id=A, local=storage(), stale=false, mismatch=false}={}) 
     recordingReconnectPending:false,
     navigator:{bluetooth:{}},SERVICE_UUID:'service',AUDIO_CHAR_UUID:'audio',CONTROL_CHAR_UUID:'control',CMD_STOP:0,CMD_GET_STATUS:2,
     DEVICE_STATE:{CONNECTED_IDLE:1,STREAMING:2,ERROR:3},deviceStatus:{state:1,error:0},deviceAssociation:null,deviceIdentityMessage:'',
-    clearReconnectTimer(){},setReconnectCapability(){},setAppState(s){c.state=s;},log(){},toast(){},
+    stopRememberedMonitoring(){},syncRememberedMonitoring(){},clearReconnectTimer(){},setReconnectCapability(){},setAppState(s){c.state=s;},log(){},toast(){},
     cleanupCharacteristics(){c.connectionEpoch++;c.deviceAssociation=null;},attachBluetoothDevice(d){c.bluetoothDevice=d;},
     withTimeout:p=>p,isGattConnected:()=>Boolean(c.bluetoothDevice?.gatt.connected),queueGattOperation:f=>f(),
     handleAudioNotification(){},handleStatusNotification(){},delay:async()=>{},writeCommand:async()=>{},readControlStatus:async()=>{},

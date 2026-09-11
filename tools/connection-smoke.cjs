@@ -14,9 +14,11 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  const context=await browser.newContext({viewport:{width:390,height:900}});
  await context.route('**/*',r=>new URL(r.request().url()).origin===origin?r.continue():r.abort());
  await context.addInitScript(()=>{
-   localStorage.setItem('dk-pendant-auto-reconnect','off');
+   if(!localStorage.getItem('dk-pendant-auto-reconnect'))localStorage.setItem('dk-pendant-auto-reconnect','off');
    localStorage.setItem('dk-pendant-settings',JSON.stringify({autoProcess:false,wakeLock:false}));
-   let state=1,sequence=0,audioTimer=null,inFlight=0,maxInFlight=0;
+   let state=1,sequence=0,audioTimer=null,inFlight=0,maxInFlight=0,present=true,watching=false;
+   const count=key=>Number(sessionStorage.getItem(key)||0);
+   const increment=key=>sessionStorage.setItem(key,String(count(key)+1));
    const uuid=n=>'4fa123'+n+'-0000-1000-8000-00805f9b34fb';
    const status=()=>{const v=new DataView(new ArrayBuffer(16));v.setUint8(0,0x5a);v.setUint8(1,2);v.setUint8(2,state);v.setUint16(4,512,true);v.setUint16(6,509,true);v.setUint8(8,4);v.setUint8(9,8);v.setUint16(10,16000,true);v.setUint16(12,800,true);v.setUint16(14,400,true);return v};
    async function operation(fn){inFlight++;maxInFlight=Math.max(maxInFlight,inFlight);if(inFlight>1)throw Error('Overlapping GATT requests');try{await new Promise(r=>setTimeout(r,5));return fn()}finally{inFlight--}}
@@ -24,19 +26,27 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
      constructor(id){super();this.id=id;this.properties={write:true,read:true,notify:true};this.value=null}
      startNotifications(){return operation(()=>this)}
      readValue(){return operation(()=>this.id===uuid('47')?status():this.id===uuid('4c')?new DataView(new TextEncoder().encode('SYNAP-ABCDEF123456').buffer):new DataView(new Uint8Array([0xe2,1,1,0,0x82,4]).buffer))}
-     writeValueWithResponse(value){return operation(()=>{if(value[0]===1){state=2;sequence=0;clearInterval(audioTimer);audioTimer=setInterval(frame,50)}if(value[0]===0){state=1;clearInterval(audioTimer)}this.value=status();this.dispatchEvent(new Event('characteristicvaluechanged'))})}
+     writeValueWithResponse(value){return operation(()=>{if(value[0]===1){increment('qa-starts');state=2;sequence=0;clearInterval(audioTimer);audioTimer=setInterval(frame,50)}if(value[0]===0){state=1;clearInterval(audioTimer)}this.value=status();this.dispatchEvent(new Event('characteristicvaluechanged'))})}
    }
    const audio=new Characteristic(uuid('46')),control=new Characteristic(uuid('47'));
    const chars=new Map([[uuid('46'),audio],[uuid('47'),control],[uuid('4c'),new Characteristic(uuid('4c'))],[uuid('4e'),new Characteristic(uuid('4e'))]]);
    const service={getCharacteristic:id=>operation(()=>{if(!chars.has(id))throw new DOMException('No optional characteristic','NotFoundError');return chars.get(id)})};
    const device=new EventTarget();device.id='fixture-device';device.name='synap';
-   device.gatt={connected:false,connect(){return operation(()=>{this.connected=true;state=1;return this})},getPrimaryService(){return operation(()=>service)},disconnect(){this.connected=false;clearInterval(audioTimer);device.dispatchEvent(new Event('gattserverdisconnected'))}};
+   device.gatt={connected:false,connect(){increment('qa-connects');return operation(()=>{if(!present)throw new DOMException('Pendant is asleep','NetworkError');this.connected=true;state=1;return this})},getPrimaryService(){return operation(()=>service)},disconnect(){const wasConnected=this.connected;this.connected=false;clearInterval(audioTimer);if(wasConnected)device.dispatchEvent(new Event('gattserverdisconnected'))}};
+   device.watchAdvertisements=async({signal})=>{watching=true;signal.addEventListener('abort',()=>{watching=false},{once:true})};
    function frame(){for(let chunk=0;chunk<4;chunk++){const v=new DataView(new ArrayBuffer(408));v.setUint8(0,0xa5);v.setUint8(1,2);v.setUint16(2,sequence,true);v.setUint8(4,chunk);v.setUint8(5,4);v.setUint16(6,400,true);audio.value=v;audio.dispatchEvent(new Event('characteristicvaluechanged'))}sequence=(sequence+1)&65535}
-   const bluetooth=new EventTarget();bluetooth.requestDevice=async()=>device;bluetooth.getDevices=async()=>[device];
+   const bluetooth=new EventTarget();bluetooth.requestDevice=async()=>{increment('qa-pickers');sessionStorage.setItem('qa-permitted','1');return device};
+   if(!location.search.includes('noRestore'))bluetooth.getDevices=async()=>sessionStorage.getItem('qa-permitted')?[device]:[];
    Object.defineProperty(navigator,'bluetooth',{configurable:true,value:bluetooth});
-   window.bleFixture={disconnect:()=>device.gatt.disconnect(),get maximum(){return maxInFlight}};
+   window.bleFixture={disconnect:()=>device.gatt.disconnect(),get maximum(){return maxInFlight},get watching(){return watching},
+     get connects(){return count('qa-connects')},get pickers(){return count('qa-pickers')},get starts(){return count('qa-starts')},
+     disableAdvertisements(){delete device.watchAdvertisements},
+     sleep(){const events=chars.get(uuid('4e'));events.value=new DataView(new Uint8Array([0xe2,1,3,1,0x82,4]).buffer);events.dispatchEvent(new Event('characteristicvaluechanged'));present=false;device.gatt.disconnect()},
+     wake(){present=true;if(watching){const event=new Event('advertisementreceived');event.device=device;device.dispatchEvent(event)}}
+   };
  });
- const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin);
+ const page=await context.newPage(),errors=[];page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
+ await page.clock.install({time:new Date('2026-09-11T10:00:00Z')});await page.goto(origin);
  await page.waitForFunction(()=>window.SynapCompactLayout);await page.locator('.brain-tabs a[href="#capture"]').click();await page.locator('#connectButton').click();
  await page.waitForFunction(()=>document.body.dataset.state==='idle');
  await page.evaluate(()=>localStorage.setItem('dk-pendant-auto-reconnect','on'));
@@ -51,6 +61,59 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  const saved=await records();assert.equal(saved.length,1);assert.equal(saved[0].id,first[0].id);assert(saved[0].durationMs>=1200);
  assert.equal(await page.evaluate(()=>window.bleFixture.maximum),1);assert.deepEqual(errors,[]);
  console.log('PASS: real PWA graph connects, records, reconnects into one journal, saves playable PCM, and never overlaps GATT operations',saved[0]);
+
+ const starts=await page.evaluate(()=>bleFixture.starts);
+ const sleepPendant=async()=>{await page.waitForFunction(()=>document.body.dataset.eventChannel==='event');await page.evaluate(()=>bleFixture.sleep())};
+ await page.reload();await page.waitForFunction(()=>document.body.dataset.state==='idle');
+ assert.equal(await page.evaluate(()=>bleFixture.pickers),1,'reload reuses permission without a chooser');
+ assert.equal(await page.evaluate(()=>bleFixture.starts),starts,'reload does not start recording');
+ assert(await page.locator('#captureBody').evaluate(n=>n.hidden),'automatic recovery preserves collapsed Capture');
+ await sleepPendant();
+ await page.waitForFunction(()=>SynapSleepStateGuard.locked&&document.body.dataset.state==='disconnected');
+ const sleepingConnects=await page.evaluate(()=>bleFixture.connects);
+ await page.waitForTimeout(150);
+ assert.equal(await page.evaluate(()=>bleFixture.connects),sleepingConnects,'no immediate reconnection during sleep transition');
+ await page.clock.fastForward(6000);await page.waitForFunction(()=>bleFixture.watching);
+ await page.evaluate(()=>bleFixture.wake());await page.waitForFunction(()=>document.body.dataset.state==='idle');
+ assert.equal(await page.evaluate(()=>SynapSleepStateGuard.locked),false,'live service clears stale sleep lock');
+ assert.equal(await page.evaluate(()=>bleFixture.pickers),1);
+ console.log('PASS: reload restores the permitted pendant and a wake advertisement reconnects without another picker or START');
+
+ await page.evaluate(()=>bleFixture.disableAdvertisements());await sleepPendant();
+ await page.waitForFunction(()=>SynapSleepStateGuard.locked&&document.body.dataset.state==='disconnected');
+ await page.clock.fastForward(6000);await page.waitForTimeout(200);
+ const unavailableAttempts=await page.evaluate(()=>bleFixture.connects);
+ await page.evaluate(()=>bleFixture.wake());
+ await page.clock.fastForward(31000);await page.waitForFunction(()=>document.body.dataset.state==='idle');
+ assert((await page.evaluate(()=>bleFixture.connects))>unavailableAttempts,'periodic recovery detects wake without advertisements');
+
+ await sleepPendant();await page.waitForFunction(()=>SynapSleepStateGuard.locked);
+ await page.locator('#settingsButton').click();await page.locator('#autoReconnectInput').uncheck();
+ const disabledConnects=await page.evaluate(()=>bleFixture.connects);
+ await page.evaluate(()=>bleFixture.wake());await page.clock.fastForward(31000);await page.waitForTimeout(100);
+ assert.equal(await page.evaluate(()=>bleFixture.connects),disabledConnects,'off preference is respected during sleep/wake');
+ await page.locator('#autoReconnectInput').check();await page.waitForFunction(()=>document.body.dataset.state==='idle');
+ await page.locator('#closeSettingsButton').click();
+ assert.equal(await page.evaluate(()=>bleFixture.starts),starts);
+ console.log('PASS: periodic fallback recovers a later wake and respects the reconnect preference without changing recording state');
+
+ await sleepPendant();await page.waitForFunction(()=>SynapSleepStateGuard.locked);
+ // The fixture reappears on reload, like a pendant woken while this page was closed.
+ await page.reload();await page.waitForFunction(()=>document.body.dataset.state==='idle');
+ assert.equal(await page.evaluate(()=>SynapSleepStateGuard.locked),false);
+ assert.equal(await page.evaluate(()=>bleFixture.pickers),1,'persisted sleep state cannot block reload recovery');
+ assert.equal(await page.evaluate(()=>bleFixture.starts),starts);
+ console.log('PASS: a stale sleep flag from the previous page clears after reload connects to the awake pendant');
+
+ await page.goto(origin+'/?noRestore=1');await page.waitForFunction(()=>window.SynapCompactLayout);
+ await page.locator('.brain-tabs a[href="#capture"]').click();
+ await page.waitForFunction(()=>document.querySelector('#reconnectStatus').textContent.includes('tap on Connect'));
+ assert.equal(await page.evaluate(()=>bleFixture.pickers),1,'unsupported restore never prompts automatically');
+ assert(await page.locator('#reconnectStatus').isVisible());
+ await page.locator('#connectButton').click();await page.waitForFunction(()=>document.body.dataset.state==='idle');
+ assert.equal(await page.evaluate(()=>bleFixture.pickers),2,'manual connection remains usable on limited browsers');
+ assert.deepEqual(errors,[]);
+ console.log('PASS: browsers without getDevices show an actionable hint and retain manual connection');
  await context.close();
  }finally{await browser.close();server.close()}
 })().catch(error=>{console.error(error);server.close();process.exitCode=1});

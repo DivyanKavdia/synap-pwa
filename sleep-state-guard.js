@@ -7,11 +7,13 @@
   const POWER_EVENT_MAGIC=0xE2;
   const POWER_EVENT_VERSION=1;
   const POWER_STATE_DEEP_SLEEP=3;
+  let memoryLocked=false,savedPreference='on';
 
   function get(key){try{return root.localStorage?.getItem(key)??null}catch(_){return null}}
   function set(key,value){try{root.localStorage?.setItem(key,value);return true}catch(_){return false}}
   function remove(key){try{root.localStorage?.removeItem(key)}catch(_){}}
-  function locked(){return get(SLEEP_STATE_KEY)==='1'}
+  function locked(){return memoryLocked||get(SLEEP_STATE_KEY)==='1'}
+  function reconnectOnWake(){return (memoryLocked?savedPreference:(get(SAVED_RECONNECT_KEY)||savedPreference))!=='off'}
   function parseHex(hex){return String(hex||'').trim().split(/\s+/).filter(Boolean).map(v=>Number.parseInt(v,16))}
   function currentReconnectPreference(){
     const checkbox=document.getElementById('autoReconnectInput');
@@ -30,16 +32,20 @@
   }
   function beginSleepLock(){
     const alreadyLocked=locked();
+    if(alreadyLocked)savedPreference=reconnectOnWake()?'on':'off';
     if(!alreadyLocked){
-      set(SAVED_RECONNECT_KEY,currentReconnectPreference());
+      savedPreference=currentReconnectPreference();
+      set(SAVED_RECONNECT_KEY,savedPreference);
       set(SLEEP_STATE_KEY,'1');
     }
+    memoryLocked=true;
     forceReconnectOff();
     if(!alreadyLocked)root.dispatchEvent?.(new CustomEvent('synap-intentional-sleep',{detail:{active:true,owner:'sleep-state-guard'}}));
   }
   function clearSleepLock(){
     if(!locked())return;
-    const previous=get(SAVED_RECONNECT_KEY)==='off'?'off':'on';
+    const previous=reconnectOnWake()?'on':'off';
+    memoryLocked=false;
     remove(SLEEP_STATE_KEY);
     remove(SAVED_RECONNECT_KEY);
     set(AUTO_RECONNECT_KEY,previous);
@@ -50,6 +56,13 @@
     const checkbox=document.getElementById('autoReconnectInput');
     if(checkbox)checkbox.checked=previous!=='off';
     root.dispatchEvent?.(new CustomEvent('synap-intentional-sleep',{detail:{active:false,owner:'sleep-state-guard'}}));
+  }
+  function setReconnectPreference(enabled){
+    const value=enabled?'on':'off';
+    if(locked()){
+      if(!set(SAVED_RECONNECT_KEY,value))throw new Error('Could not save the reconnect preference.');
+      savedPreference=value;forceReconnectOff();
+    }else if(!set(AUTO_RECONNECT_KEY,value))throw new Error('Could not save the reconnect preference.');
   }
   function handlePowerPacket(event){
     const bytes=parseHex(event?.detail?.hex);
@@ -72,7 +85,8 @@
   }
   root.SynapSleepStateGuard={
     AUTO_RECONNECT_KEY,SLEEP_STATE_KEY,SAVED_RECONNECT_KEY,
-    get locked(){return locked()},beginSleepLock,clearSleepLock,forceReconnectOff
+    get locked(){return locked()},get reconnectOnWake(){return reconnectOnWake()},
+    beginSleepLock,clearSleepLock,forceReconnectOff,setReconnectPreference
   };
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind,{once:true});
   else bind();

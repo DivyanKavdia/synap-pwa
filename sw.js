@@ -4,8 +4,8 @@ const APP_VERSION='1.0.0';
 const CLIENT_REVISION='1.0.0-audio2';
 /* Changing this marker refreshes the installed shell for small UI updates
    without changing the audio compatibility or cache generation. */
-const UI_RECOVERY_REVISION='1.0.0-workflows1';
-const CACHE_REVISION='1.0.0-shell45-memory-workflows';
+const UI_RECOVERY_REVISION='1.0.0-wake1';
+const CACHE_REVISION='1.0.0-shell46-wake-reconnect';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings-icon-fix.css',
