@@ -5,12 +5,9 @@
   const configs=[
     ['capture','.ambient-capture-head','Capture',false],
     ['insights','.section-heading','Memories',false],
-    ['followupInbox','.section-heading','Follow-ups',false],
-    ['peopleMemory','.section-heading','People',false],
-    ['ask','.ask-head','Ask synap',false],
+    ['myActions','.section-heading','My actions',true],
     ['library','.section-heading','Library',false],
     ['synapWeeklyReview','.synap-weekly-head','Weekly review',false],
-    ['dailyFocus','.focus-heading','Next steps',false],
     ['dayConversations','header','Conversations',true]
   ];
   let preferences={};try{const saved=JSON.parse(localStorage.getItem(KEY)||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved))preferences=saved}catch(_){}
@@ -46,6 +43,7 @@
   function reveal(target){
     if(typeof target==='string')target=document.getElementById(target.replace(/^#/,''));
     if(!target)return;
+    root.SynapMyActions?.reveal(target);
     for(const tile of tiles.values())if(tile.section===target||tile.section.contains(target))setExpanded(tile,true);
   }
   function captureState(){

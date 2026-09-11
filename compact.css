@@ -538,7 +538,7 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
 .synap-refresh .workspace-tile>.tile-heading{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;align-items:center;gap:8px;min-height:54px;margin:0!important;padding:5px 12px!important;cursor:pointer}
 .synap-refresh .workspace-tile>.tile-heading>div:first-child{flex:1;min-width:0}
 .synap-refresh #peopleMemory .tile-heading h2{font-size:15px!important;letter-spacing:-.2px}
-body.synap-refresh :is(#capture,#insights,#followupInbox,#peopleMemory,#ask,#library,#synapWeeklyReview,#dailyFocus).workspace-tile{padding:0!important;min-height:0!important}
+body.synap-refresh :is(#capture,#insights,#myActions,#library,#synapWeeklyReview).workspace-tile{padding:0!important;min-height:0!important}
 .synap-refresh #synapWeeklyReview:not(.is-expanded) #synapWeekRange{display:none}
 .synap-refresh footer{display:none!important}
 .synap-refresh .tile-heading>:first-child{min-width:0;margin:0}
@@ -615,8 +615,8 @@ body.synap-refresh :is(#capture,#insights,#followupInbox,#peopleMemory,#ask,#lib
  .synap-refresh .app-shell{width:calc(100% - 236px);max-width:1200px;margin-right:24px}
  .synap-refresh main{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
  .synap-refresh #today{grid-column:1/-1}
- body.synap-refresh main>:is(#capture,#insights,#ask,#library,#followupInbox,#peopleMemory).workspace-tile{grid-column:auto;margin:0!important}
- body.synap-refresh main>:is(#capture,#insights,#ask,#library,#followupInbox,#peopleMemory).workspace-tile.is-expanded{grid-column:1/-1}
+ body.synap-refresh main>:is(#capture,#insights,#myActions,#library).workspace-tile{grid-column:auto;margin:0!important}
+ body.synap-refresh main>:is(#capture,#insights,#myActions,#library).workspace-tile.is-expanded{grid-column:1/-1}
  body.synap-refresh main>#today{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:24px;row-gap:8px;align-items:center}
  .synap-refresh #today>.day-brief{grid-column:1/-1}
  .synap-refresh #today>.day-navigation{margin:0}
@@ -649,6 +649,20 @@ body.synap-refresh :is(#capture,#insights,#followupInbox,#peopleMemory,#ask,#lib
 .synap-refresh .settings-panel #chooseDeviceButton{display:inline-flex!important;flex:0 1 auto}
 .synap-refresh .settings-device-label{font-size:14px!important;font-weight:650;margin:0 0 4px}
 :root[data-theme] .synap-refresh .brain-tabs{background:var(--chrome)}
+/* One action workspace; existing forms and lists stay mounted in their panels. */
+.synap-refresh #myActions{scroll-margin-top:0}
+.synap-refresh .actions-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;padding:3px;margin-bottom:12px;border-radius:10px;background:var(--surface-2)}
+.synap-refresh .actions-tabs>[role="tab"]{min-width:0;min-height:44px;padding:7px 4px!important;border:0;border-radius:8px;background:transparent;color:var(--muted);font:inherit;font-size:12px!important;line-height:1.25;font-weight:600;cursor:pointer}
+.synap-refresh .actions-tabs>[aria-selected="true"]{background:var(--action);color:var(--on-action);box-shadow:0 1px 3px var(--shadow)}
+body.synap-refresh #myActions [data-actions-panel]{display:block;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;min-height:0;scroll-margin-top:100px}
+body.synap-refresh #myActions [data-actions-panel][hidden]{display:none!important}
+.synap-refresh #myActions :is(.ask-head,.focus-heading),.synap-refresh #myActions #followupInbox>.section-heading{display:none!important}
+.synap-refresh #myActions #peopleMemory>.section-heading>div{display:none}
+.synap-refresh #myActions #peopleMemory>.section-heading{justify-content:flex-end;margin:0 0 6px!important}
+.synap-refresh #myActions #peopleMemory>.section-heading:not(:has(#peopleBrowseToggle:not([hidden]))){display:none}
+.synap-refresh #myActions :is(.ask-form,.followup-tabs){margin-top:0}
+.synap-refresh #myActions .actions-day{margin:0 0 8px;color:var(--muted);font-size:12px}
+.synap-refresh #myActions .focus-tabs~section{background:transparent;box-shadow:none;border:0;padding:6px 0 0}
 @media(min-width:992px){
  .synap-refresh .settings-panel .settings-form{padding:0 20px 32px!important}
  :root[data-theme] .synap-refresh .brain-tabs{background:transparent}

@@ -88,6 +88,8 @@
     get locked(){return locked()},get reconnectOnWake(){return reconnectOnWake()},
     beginSleepLock,clearSleepLock,forceReconnectOff,setReconnectPreference
   };
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind,{once:true});
-  else bind();
+  // Restoring a permitted pendant can finish while the remaining scripts load.
+  // Subscribe now so that service readiness cannot leave a stale sleep lock.
+  bind();
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{if(locked())reflectLocked()},{once:true});
 })(globalThis);

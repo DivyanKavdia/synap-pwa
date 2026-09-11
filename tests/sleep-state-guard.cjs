@@ -44,3 +44,20 @@ test('changing the reconnect preference during sleep survives the next wake',()=
   assert.equal(saved.get('dk-pendant-auto-reconnect'),'off');
   assert.equal(checkbox.checked,false);
 });
+
+test('a restored pendant clears persisted sleep before DOMContentLoaded',()=>{
+  const saved=new Map([['synap-intentional-sleep-v1','1'],['synap-reconnect-before-sleep-v1','on'],['dk-pendant-auto-reconnect','off']]);
+  const listeners={},domListeners={},checkbox={checked:false},body={dataset:{}};
+  const ctx={document:{readyState:'loading',body,getElementById:()=>checkbox,addEventListener:(name,fn)=>{domListeners[name]=fn}},
+    localStorage:{getItem:key=>saved.get(key)??null,setItem:(key,value)=>saved.set(key,String(value)),removeItem:key=>saved.delete(key)},
+    addEventListener:(name,fn)=>{listeners[name]=fn}};
+  vm.createContext(ctx);vm.runInContext(source,ctx);
+  assert.equal(typeof listeners['synap-gatt-service-ready'],'function','readiness must be observed during parsing');
+  listeners['synap-gatt-service-ready']({detail:{service:{}}});
+  assert.equal(ctx.SynapSleepStateGuard.locked,false);
+  assert.equal(saved.get('dk-pendant-auto-reconnect'),'on');
+  assert.equal(checkbox.checked,true);
+  domListeners.DOMContentLoaded();
+  assert.equal(ctx.SynapSleepStateGuard.locked,false,'later UI initialization cannot reapply the saved sleep state');
+  assert.notEqual(body.dataset.powerState,'deep-sleep');
+});

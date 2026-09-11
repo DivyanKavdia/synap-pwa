@@ -48,7 +48,7 @@ function dedupeSelector(selector){const nodes=[...document.querySelectorAll(sele
 function dedupeSingletons(){
   dedupeSelector('#ask');dedupeSelector('#followupInbox');dedupeSelector('#peopleMemory');
   const nav=document.querySelector('.brain-tabs');
-  if(nav){const askLinks=[...nav.querySelectorAll('a[href="#ask"]')];for(const link of askLinks.slice(1))link.remove();const captureLinks=[...nav.querySelectorAll('a[href="#capture"]')];for(const link of captureLinks.slice(1))link.remove();}
+  if(nav){const actionLinks=[...nav.querySelectorAll('a[href="#myActions"]')];for(const link of actionLinks.slice(1))link.remove();const captureLinks=[...nav.querySelectorAll('a[href="#capture"]')];for(const link of captureLinks.slice(1))link.remove();}
 }
 
 function injectStyle(){

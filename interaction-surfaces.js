@@ -12,7 +12,7 @@ function sourceOffset(value,conversation){if(value?.start_ms!=null&&Number.isFin
 function openDb(){return new Promise((res,rej)=>{const q=indexedDB.open(DB);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
 async function load(){const db=await openDb();try{return await new Promise((res,rej)=>{const q=db.transaction('recordings').objectStore('recordings').getAll();q.onsuccess=()=>res(q.result||[]);q.onerror=()=>rej(q.error)})}finally{db.close()}}
 function dedupeId(id){const nodes=$$('[id="'+id+'"]');nodes.slice(1).forEach(n=>n.remove());return nodes[0]||null}
-function dedupe(){['followupInbox','peopleMemory','ask','followupList','peopleList','askForm','askInput','askAnswer'].forEach(dedupeId);const links=$$('.brain-tabs a[href="#ask"]');links.slice(1).forEach(n=>n.remove())}
+function dedupe(){['followupInbox','peopleMemory','ask','followupList','peopleList','askForm','askInput','askAnswer'].forEach(dedupeId);const links=$$('.brain-tabs a[href="#myActions"]');links.slice(1).forEach(n=>n.remove())}
 function localRecord(id){return currentRecords.find(x=>String(x.id)===String(id))||null}
 function showLibrary(){if(root.SynapDashboardUI?.setView)root.SynapDashboardUI.setView('library',false);else location.hash='#library'}
 function openSource(id,ms=0){

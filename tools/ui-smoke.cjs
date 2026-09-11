@@ -187,14 +187,14 @@ async function run() {
         await page.screenshot({path:path.join(output,`home-${mode}-${width}.png`)});
         await page.locator('.brand-logo').screenshot({path:path.join(output,`brand-${mode}-${width}.png`)});
       }
-      for (const href of ['#capture','#insights','#ask','#library','#today']) {
+      for (const href of ['#capture','#insights','#myActions','#library','#today']) {
         await page.locator(`.brain-tabs a[href="${href}"]`).click();
         assert.equal(await page.locator('.brain-tabs a[aria-current="page"]').count(),1);
         assert.equal(await page.locator('.brain-tabs a[aria-current="page"]').getAttribute('href'),href);
         assert(await page.locator(href).isVisible());
       }
       // Focus tabs keep their selection through memory refresh and work by keyboard.
-      await page.locator('#dailyFocus .tile-toggle').click();
+      await page.evaluate(()=>SynapCompactLayout.reveal('dailyFocus'));
       await page.locator('#focusCommitments').focus();
       await page.keyboard.press('ArrowRight');
       assert.equal(await page.locator('#focusDecisions').getAttribute('aria-selected'),'true');
@@ -206,7 +206,7 @@ async function run() {
       assert.equal(await page.locator('#focusCommitments').getAttribute('aria-selected'),'true');
       for (const target of ['synapWeeklyReview','peopleMemory','followupInbox']) {
         await page.evaluate(id=>SynapCompactLayout.reveal(id),target);
-        assert(await page.locator('#'+target+'Body').isVisible(),'secondary tile opens without recreating content');
+        assert(await page.locator('#'+(target==='synapWeeklyReview'?target+'Body':target)).isVisible(),'secondary surface opens without recreating content');
         await page.locator('.brain-tabs a[href="#today"]').click();
       }
       await page.locator('#settingsButton').click();
@@ -253,6 +253,7 @@ async function run() {
         await page.locator('#conversationList .conversation-card').first().click();
         assert(await page.locator('#conversationList .digest-summary').innerText());
         assert.match(await page.locator('#conversationList .conversation-people').innerText(),/Alex/);
+        await page.evaluate(()=>SynapCompactLayout.reveal('dailyFocus'));
         await page.locator('#focusDecisions').click();
         await page.evaluate(()=>SynapCloudHistory.refreshUiInPlace({source:'isolated-focus-fixture'}));
         await page.waitForTimeout(200);
@@ -309,7 +310,8 @@ async function run() {
         await page.waitForTimeout(700);
         assert(await page.locator('#recording-ui-sample').evaluate(card=>card.open),'source tile stays open after background hydration');
         assert(await page.locator('#recording-ui-sample audio').evaluate(audio=>audio===window.qaAudio),'refresh preserves the same native audio player');
-        await page.locator('.brain-tabs a[href="#ask"]').click();
+        await page.locator('.brain-tabs a[href="#myActions"]').click();
+        await page.locator('#actionsTab-ask').click();
         await page.locator('#askInput').fill('What did I decide today?');
         await page.locator('#askForm button[type="submit"]').click();
         await page.waitForFunction(()=>document.getElementById('askAnswer').textContent.toLowerCase().includes('prototype'));
@@ -375,6 +377,7 @@ async function run() {
         assert(cardRect.y<800&&cardRect.y+cardRect.height>100,'source card is actually in the viewport');
         await page.screenshot({path:path.join(output,`library-${mode}-${width}.png`)});
         await page.evaluate(()=>{const date=new Date();const picker=document.getElementById('datePicker');picker.value=[date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-');picker.dispatchEvent(new Event('change',{bubbles:true}));});
+        await page.evaluate(()=>SynapCompactLayout.reveal('peopleMemory'));
         await page.locator('#peopleMemory').scrollIntoViewIfNeeded();
         assert.equal(await page.locator('#peopleList .person-card').count(),3,'compact recent people preview');
         assert((await page.locator('#peopleMemory').boundingBox()).height<380,'People stays compact');
@@ -387,6 +390,8 @@ async function run() {
         assert.equal(await page.locator('#peopleList .person-card').count(),1);
         await page.locator('#peopleList .person-card').click();
         assert.equal(await page.locator('#askInput').inputValue(),'Person 14','person opens grounded recall');
+        assert(await page.locator('#askInput').isVisible(),'person recall selects the Ask tab');
+        await page.locator('#actionsTab-peopleMemory').click();
         await page.locator('#peopleBrowseToggle').click();
         assert.equal(await page.locator('#peopleList .person-card').count(),3);
         // Canonical People uses the same compact layout, including real name controls.
