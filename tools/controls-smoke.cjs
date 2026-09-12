@@ -102,14 +102,16 @@ const waitState=(page,state)=>page.waitForFunction(state=>document.body.dataset.
 
     {
       const t=await setup('/',()=>{
-        const open=IDBFactory.prototype.open;let first=true;
-        IDBFactory.prototype.open=function(...args){if(args[0]==='dk-pendant-recordings'&&first){first=false;throw new DOMException('Temporary storage failure','UnknownError')}return open.apply(this,args)};
+        const open=IDBFactory.prototype.open;window.qaStorageUnavailable=true;
+        IDBFactory.prototype.open=function(...args){if(args[0]==='dk-pendant-recordings'&&qaStorageUnavailable)throw new DOMException('Temporary storage failure','UnknownError');return open.apply(this,args)};
       }),{page}=t;
       await page.waitForFunction(()=>document.body.dataset.startup==='error');
       assert.match(await page.locator('#startupNotice').textContent(),/Temporary storage failure/);
       assert(await page.locator('#headerCaptureToggle').isDisabled());
       await page.locator('#settingsButton').tap();assert(await page.locator('#settingsDialog').evaluate(node=>node.open));
-      await page.locator('#closeSettingsButton').tap();await page.locator('#startupRetry').tap();await waitReady(page);
+      await page.locator('#closeSettingsButton').tap();
+      await page.evaluate(()=>{qaStorageUnavailable=false});
+      await page.locator('#startupRetry').tap();await waitReady(page);
       await page.locator('#headerCaptureToggle').tap();await waitState(page,'recording');
       await page.locator('#headerCaptureToggle').tap();await waitState(page,'idle');
       assert.equal(await page.evaluate(()=>bleFixture.starts),1,'retry binds record only once');
