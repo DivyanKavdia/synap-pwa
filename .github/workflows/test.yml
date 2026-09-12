@@ -45,6 +45,9 @@ jobs:
       - run: node tools/settings-smoke.cjs
         env:
           SYNAP_SETTINGS_OUTPUT: artifacts/workflows/settings
+      - run: node tools/library-selection-smoke.cjs
+        env:
+          SYNAP_LIBRARY_OUTPUT: artifacts/workflows/library
       - run: node tools/actions-smoke.cjs
         env:
           SYNAP_ACTIONS_OUTPUT: artifacts/workflows/actions

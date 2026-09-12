@@ -99,8 +99,6 @@
     insightsCount: document.getElementById("insightsCount"),
     emptyInsights: document.getElementById("emptyInsights"),
     emptyRecordings: document.getElementById("emptyRecordings"),
-    clearRecordingsButton:
-      document.getElementById("clearRecordingsButton"),
     diagnosticsLog: document.getElementById("diagnosticsLog"),
     copyDiagnosticsButton:
       document.getElementById("copyDiagnosticsButton"),
@@ -154,6 +152,7 @@
   let libraryQuery = "";
   let libraryVisibleCount = LIBRARY_PAGE_SIZE;
   let libraryRenderEpoch = 0;
+  let libraryMutationActive = false;
 
   let deviceStatus = {
     state: DEVICE_STATE.DISCONNECTED,
@@ -2305,22 +2304,97 @@
     });
   }
 
-  async function clearAllRecordings() {
-    if (journal) return journal.clear();
-    const database = await openDatabase();
+  // Recording library UI
 
-    return new Promise(function (resolve, reject) {
-      const transaction =
-        database.transaction("recordings", "readwrite");
-      transaction.objectStore("recordings").clear();
-      transaction.oncomplete = function () { resolve(); };
-      transaction.onerror = function () {
-        reject(transaction.error);
-      };
-    });
+  function protectedLibraryRecording(recording) {
+    const id=String(recording.id);
+    return id===String(currentRecordingId)||id===String(globalThis.SynapDesktopCapture?.state()?.recordingId);
   }
 
-  // Recording library UI
+  function requireLibraryAction() {
+    if(!startupReady||!appLockHeld)throw new Error("Finish opening the app before changing recordings.");
+    if(firmwareBusy||currentRecordingId||openingCapture||recordingConfirmed||finalizing||globalThis.SynapDesktopCapture?.state()?.active)
+      throw new Error("Stop and save the active recording before changing recordings.");
+    if(libraryMutationActive)throw new Error("Wait for the current recording action to finish.");
+  }
+
+  async function processLibraryRecordings(recordingIds,onProgress=()=>{}) {
+    requireLibraryAction();
+    const ids=[...new Set(recordingIds.map(String))],result={done:[],failed:[],skipped:[]};
+    const provider=JSON.parse(localStorage.getItem('synap-ai-provider-settings')||'{}').provider||'synap';
+    if(provider==='synap'){
+      if(!globalThis.SynapAuth?.isSignedIn?.())throw new Error("Sign in under Settings → Memory to process recordings.");
+      if(!globalThis.SynapAuth.config().backendUrl)throw new Error("Set up Synap Cloud under Settings → Memory first.");
+    }else{
+      try{if([settings.endpoint,settings.llmEndpoint].some(url=>new URL(url).protocol!=='https:'))throw new Error();}
+      catch(_){throw new Error("Add transcription and summary endpoints under Settings → Memory first.");}
+    }
+    const queueWasPaused=processor.paused,previousScope=processor.recordingScope?Array.from(processor.recordingScope):null;
+    libraryMutationActive=true;
+    try{
+      await processor.pause();
+      for(const [index,id] of ids.entries()){
+        try{
+          const recording=await journal.get('recordings',id);
+          if(!recording)throw new Error("This recording is no longer available.");
+          let jobs=await journal.all('jobs','recording',id);
+          const model=globalThis.SynapLibraryTools.state(recording,jobs,provider);
+          if(protectedLibraryRecording(recording)||model.protectedRecording)throw new Error("This recording must be stopped and saved first.");
+          if(model.ready||(model.failed&&recording.processingRetryable===false)){
+            result.skipped.push({id,message:model.ready?'Already ready.':'This failure cannot be retried.'});continue;
+          }
+          if(!recording.journal&&recording.blob?.size)await journal.enqueueLegacy(id,{preserveTranscript:provider!=='synap'});
+          jobs=await journal.all('jobs','recording',id);
+          if(provider==='synap'&&(recording.processingStage==='failed'||(!jobs.some(job=>job.state!=='done')&&recording.restoredFromCloud))){
+            const reply=await globalThis.SynapBackend.retryRecording(id);
+            if(reply.already_complete){
+              await globalThis.SynapExperienceRecovery.hydrateSource(id,true);
+              result.skipped.push({id,message:'Already ready in Synap Cloud; refreshed the transcript.'});continue;
+            }
+            if(!jobs.some(job=>job.state!=='done')){
+              if(reply.awaiting_upload)throw new Error("The original audio is needed to finish this upload.");
+              await journal.enqueueCloudMonitor(id);
+            }
+          }
+          jobs=await journal.all('jobs','recording',id);
+          if(!jobs.some(job=>job.state!=='done'))throw new Error("No pending processing work or original audio is available for this recording.");
+          result.done.push(id);
+        }catch(error){result.failed.push({id,message:friendlyError(error)});}
+        finally{onProgress(index+1,ids.length);}
+      }
+    }finally{libraryMutationActive=false;}
+    if(result.done.length)await processor.queueRecordings(result.done);
+    else if(!queueWasPaused)void processor.resume(previousScope);
+    return result;
+  }
+
+  async function deleteLibraryRecordings(recordingIds,{cloud=false,onProgress=()=>{}}={}) {
+    requireLibraryAction();
+    const ids=[...new Set(recordingIds.map(String))],result={done:[],failed:[],skipped:[]};
+    const account=globalThis.SynapAuth?.session?.()?.profile?.uid;
+    if(cloud&&!globalThis.SynapAuth?.isSignedIn?.())throw new Error("Sign in before deleting cloud copies.");
+    const queueWasPaused=processor.paused,previousScope=processor.recordingScope?Array.from(processor.recordingScope):null;
+    libraryMutationActive=true;
+    try{
+      await processor.pause();
+      for(const [index,id] of ids.entries()){
+        try{
+          const recording=await journal.get('recordings',id);
+          if(recording&&protectedLibraryRecording(recording))throw new Error("The active recording cannot be deleted.");
+          if(cloud){
+            if(!globalThis.SynapAuth.isSignedIn()||account!==globalThis.SynapAuth.session()?.profile?.uid)throw new Error("The signed-in account changed. Please try again.");
+            await globalThis.SynapBackend.deleteRecording(id);
+          }
+          if(recording)await deleteRecording(id);
+          result.done.push(id);
+        }catch(error){result.failed.push({id,message:friendlyError(error)});}
+        finally{onProgress(index+1,ids.length);}
+      }
+    }finally{libraryMutationActive=false;if(!queueWasPaused)void processor.resume(previousScope);}
+    log('Selected recordings deleted',{count:result.done.length,cloud});
+    if(result.done.length)globalThis.dispatchEvent(new CustomEvent('synap-cloud-history-updated',{detail:{source:'recordings-deleted'}}));
+    return result;
+  }
 
   function localDateKey(value) {
     const date = value instanceof Date ? value : new Date(value);
@@ -2511,10 +2585,10 @@
     // Reconcile by recording ID below: replacing the list closes the tile and
     // destroys its native audio player immediately after a source is opened.
 
-    let recordings = [];
+    let recordings = [],jobs=[];
 
     try {
-      recordings = await getAllRecordings();
+      [recordings,jobs] = await Promise.all([getAllRecordings(),globalThis.SynapLibraryTools&&journal?journal.all('jobs'):Promise.resolve([])]);
     } catch (error) {
       if (epoch !== libraryRenderEpoch) return;
       log("Could not load recordings", friendlyError(error));
@@ -2523,6 +2597,8 @@
     }
 
     if (epoch !== libraryRenderEpoch) return;
+
+    globalThis.SynapLibraryTools?.setJobs(jobs);
 
     recordings.sort(function (a, b) {
       return new Date(b.createdAt) - new Date(a.createdAt);
@@ -2549,23 +2625,20 @@
       "hidden",
       recordings.length > 0
     );
-    ui.clearRecordingsButton.classList.toggle(
-      "hidden",
-      recordings.length === 0
-    );
-
     libraryRecordings = recordings;
     renderLibraryPage();
   }
 
   function renderLibraryPage() {
-    const matches = libraryRecordings.filter(recording => recordingMatchesQuery(recording, libraryQuery));
+    const queryMatches = libraryRecordings.filter(recording => recordingMatchesQuery(recording, libraryQuery));
+    const matches = queryMatches.filter(recording => !globalThis.SynapLibraryTools||globalThis.SynapLibraryTools.matches(recording));
+    globalThis.SynapLibraryTools?.update(queryMatches,matches);
     const count = Math.min(libraryVisibleCount, matches.length);
     const searchStatus = document.getElementById("librarySearchStatus");
     if (searchStatus) {
-      searchStatus.hidden = !libraryQuery.trim();
+      searchStatus.hidden = !libraryQuery.trim()&&!globalThis.SynapLibraryTools?.filtered;
       searchStatus.textContent = matches.length ? matches.length + " matching recording" + (matches.length === 1 ? "" : "s") :
-        "No matching recordings. Try another name, topic or phrase.";
+        "No matching recordings. Try another search or status filter.";
     }
     const clearSearch = document.getElementById("clearLibrarySearch");
     if (clearSearch) clearSearch.hidden = !libraryQuery;
@@ -2590,6 +2663,7 @@
       let card = Array.from(ui.recordingsList.children).find(node => node.id === "recording-" + recording.id);
       if (card) updateRecordingCard(card, recording);
       else card = createRecordingCard(recording);
+      globalThis.SynapLibraryTools?.decorate(card,recording);
       const position = ui.recordingsList.children[index];
       if (position !== card) {
         if (position) ui.recordingsList.insertBefore(card, position);
@@ -2683,6 +2757,7 @@
 
   function revealRecording(id) {
     resetLibrarySearch();
+    globalThis.SynapLibraryTools?.reset();
     const index = libraryRecordings.findIndex(function (recording) { return recording.id === id; });
     if (index < 0) return;
     libraryVisibleCount = Math.max(libraryVisibleCount, Math.ceil((index + 1) / LIBRARY_PAGE_SIZE) * LIBRARY_PAGE_SIZE);
@@ -2799,25 +2874,11 @@
     );
 
     const transcribeButton =
-      makeActionButton("Process queue", async function () {
-        if (firmwareBusy || recordingConfirmed || finalizing || appState === "starting") {
-          toast("Stop and save before processing.");return;
-        }
-        if (!recording.journal) await journal.enqueueLegacy(recording.id);
-        return processor?.resume();
-      });
+      makeActionButton("Process recording", function () { return globalThis.SynapLibraryTools.processIds([recording.id]); });
     actions.appendChild(transcribeButton);
 
     actions.appendChild(
-      makeActionButton("Delete", async function () {
-        if (!window.confirm("Delete this recording permanently?")) {
-          return;
-        }
-        processor?.pause();
-        await deleteRecording(recording.id);
-        log("Recording deleted", { id: recording.id });
-        await renderRecordings();
-      }, true)
+      makeActionButton("Delete", function () { globalThis.SynapLibraryTools.requestDelete([recording.id]); }, true)
     );
 
     const notes = document.createElement("textarea");
@@ -3440,6 +3501,7 @@
     });
     window.addEventListener("synap-library-source", function (event) {
       resetLibrarySearch();
+      globalThis.SynapLibraryTools?.reset();
       const index = libraryRecordings.findIndex(recording => String(recording.id) === String(event.detail?.recordingId));
       if (index >= 0) libraryVisibleCount = Math.max(libraryVisibleCount, Math.ceil((index + 1) / LIBRARY_PAGE_SIZE) * LIBRARY_PAGE_SIZE);
       renderLibraryPage();
@@ -3520,27 +3582,6 @@
         ui.installButton.disabled = false;
       }
     });
-
-    ui.clearRecordingsButton.addEventListener(
-      "click",
-      async function () {
-        if (currentRecordingId || openingCapture || recordingConfirmed || finalizing) {
-          toast("Stop and save the active take before clearing recordings.", "error");return;
-        }
-        if (
-          !window.confirm(
-            "Delete all locally stored recordings permanently?"
-          )
-        ) {
-          return;
-        }
-
-        processor?.pause();
-        await clearAllRecordings();
-        log("All local recordings deleted");
-        await renderRecordings();
-      }
-    );
 
     ui.copyDiagnosticsButton.addEventListener(
       "click",
@@ -3751,10 +3792,12 @@
     globalThis.SynapMoments?.configure({store:journal,context:()=>({active:recordingConfirmed&&appState==='recording'&&!recordingReconnectPending,recordingId:currentRecordingId,offsetMs:globalThis.SynapCaptureStability.timelineOffsetMs(currentRecordingId)})});
     const recovered = await journal.recover();
     ui.appVersion.textContent = APP_VERSION;
-    processor = new globalThis.DKFIFOProcessor(journal, {settings:()=>settings,canRun:()=>!firmwareBusy,onChange:function (message) {
+    processor = new globalThis.DKFIFOProcessor(journal, {settings:()=>settings,canRun:()=>!firmwareBusy&&!libraryMutationActive,onChange:function (message) {
       ui.queueStatus.textContent=message;log("FIFO",message);
       if (message === "Queue complete") renderRecordings();
     }});
+    globalThis.SynapLibraryTools?.configure({render:renderLibraryPage,refresh:renderRecordings,process:processLibraryRecordings,
+      remove:deleteLibraryRecordings,protected:protectedLibraryRecording});
     if (recovered) log("Recovered interrupted recordings from stored chunks", {count:recovered});
     await renderRecordings();
     bindEvents();

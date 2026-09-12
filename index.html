@@ -20,6 +20,7 @@
   <link rel="stylesheet" href="brain.css?v=1.0.0-actions1">
   <link rel="stylesheet" href="compact.css?v=1.0.0-actions3" data-synap-compact="refresh1">
   <link rel="stylesheet" href="settings.css?v=1.0.0-settings2">
+  <link rel="stylesheet" href="library-tools.css?v=1.0.0-library1">
   <script src="theme.js?v=1.0.0-cleanup1"></script>
 <link rel="stylesheet" href="meeting-tools.css?v=1.0.0-meetings2"></head>
 <body data-startup="loading" data-state="disconnected" class="synap-refresh">
@@ -60,7 +61,26 @@
 </section>
 
 <section id="insights" class="section-card insights-section memory-feed"><div class="section-heading"><div><p class="section-eyebrow">YOUR MEMORY</p><h2>Conversations &amp; moments <span id="insightsCount" class="count-badge">0</span></h2><p class="section-copy">Decisions, discussions and context you can come back to.</p></div><span id="memoryProcessingStatus" hidden></span></div><div id="emptyInsights" class="empty-state"><span class="empty-state-icon" aria-hidden="true"><svg><use href="#i-note"/></svg></span><h3>No memories for this day</h3><p>Processed recordings appear here.</p></div><div id="insightsList" class="insights-list"></div></section>
-<section id="library" class="section-card recordings-section" aria-labelledby="libraryTitle"><div class="section-heading"><div><p class="section-eyebrow">THE ORIGINALS</p><h2 id="libraryTitle">Your recordings <span id="recordingsCount" class="count-badge">0</span></h2></div><button id="clearRecordingsButton" class="text-button" type="button">Clear</button></div><div class="library-search"><svg aria-hidden="true"><use href="#i-search"/></svg><input id="librarySearch" type="search" aria-label="Search recordings" placeholder="Find a name, topic or phrase…" autocomplete="off"><button id="clearLibrarySearch" type="button" hidden>Clear search</button></div><p id="librarySearchStatus" class="library-search-status" role="status" hidden></p><div class="library-toolbar"><div class="library-scope" role="group" aria-label="Recording date filter"><button type="button" data-library-scope="all" aria-pressed="true">All dates</button><button type="button" data-library-scope="day" aria-pressed="false">Selected day</button></div><p id="libraryScopeHint">All recordings saved in this browser</p></div><div id="emptyRecordings" class="empty-state"><span class="empty-state-icon" aria-hidden="true"><svg><use href="#i-wave"/></svg></span><h3>No recordings</h3><p>Use the microphone above to start recording.</p></div><div id="recordingsList" class="recordings-list"></div><div id="libraryPagination" hidden><p id="libraryCountLabel"></p><button id="showMoreRecordingsButton" type="button">Show more</button><button id="showLessRecordingsButton" type="button" hidden>Show less</button></div></section><section id="processing" hidden><p id="queueStatus">Ready.</p><button id="runQueueButton" type="button">Process pending memories</button><button id="pauseQueueButton" type="button">Pause</button></section></main><footer><span>synap</span><span id="appVersion">1.0.0</span></footer></div>
+<section id="library" class="section-card recordings-section" aria-labelledby="libraryTitle">
+  <div class="section-heading"><div><p class="section-eyebrow">THE ORIGINALS</p><h2 id="libraryTitle">Your recordings <span id="recordingsCount" class="count-badge">0</span></h2></div><button id="selectRecordingsButton" class="text-button" type="button" aria-pressed="false">Select</button></div>
+  <div class="library-search"><svg aria-hidden="true"><use href="#i-search"/></svg><input id="librarySearch" type="search" aria-label="Search recordings" placeholder="Find a name, topic or phrase…" autocomplete="off"><button id="clearLibrarySearch" type="button" hidden>Clear search</button></div>
+  <div class="library-toolbar">
+    <div class="library-scope" role="group" aria-label="Recording date filter"><button type="button" data-library-scope="all" aria-pressed="true">All dates</button><button type="button" data-library-scope="day" aria-pressed="false">Selected day</button></div>
+    <label class="library-status-control"><span>Processing status</span><select id="libraryStatusFilter" aria-label="Filter recordings by processing status"></select></label>
+    <button id="clearRecordingFilters" type="button" hidden>Reset status</button>
+    <p id="libraryScopeHint">All recordings saved in this browser</p>
+  </div>
+  <p id="librarySearchStatus" class="library-search-status" role="status" hidden></p>
+  <div id="librarySelectionBar" class="library-selection-bar" aria-label="Selected recording actions" hidden>
+    <div class="library-selection-summary"><label><input id="selectAllRecordings" type="checkbox"><span id="selectAllRecordingsLabel">Select all</span></label><strong id="librarySelectedCount" role="status">0 selected</strong></div>
+    <button id="processSelectedRecordings" type="button" disabled>Process selected</button><button id="deleteSelectedRecordings" type="button" disabled>Delete selected</button>
+    <p>Select all includes every matching recording across pages.</p>
+  </div>
+  <p id="libraryActionStatus" class="library-action-status" role="status" hidden></p>
+  <div id="emptyRecordings" class="empty-state"><span class="empty-state-icon" aria-hidden="true"><svg><use href="#i-wave"/></svg></span><h3>No recordings</h3><p>Use the microphone above to start recording.</p></div>
+  <div id="recordingsList" class="recordings-list"></div>
+  <div id="libraryPagination" hidden><p id="libraryCountLabel"></p><button id="showMoreRecordingsButton" type="button">Show more</button><button id="showLessRecordingsButton" type="button" hidden>Show less</button></div>
+</section><section id="processing" hidden><p id="queueStatus">Ready.</p><button id="runQueueButton" type="button">Process pending memories</button><button id="pauseQueueButton" type="button">Pause</button></section></main><footer><span>synap</span><span id="appVersion">1.0.0</span></footer></div>
 <nav class="wireframe-tabs brain-tabs" aria-label="Primary"><a href="#today" class="active" aria-current="page"><svg><use href="#i-spark"/></svg><span>Today</span></a><a href="#insights"><svg><use href="#i-note"/></svg><span>Memories</span></a><a href="#library"><svg><use href="#i-library"/></svg><span>Library</span></a></nav><div id="toastRegion"></div>
 <dialog id="settingsDialog" class="modal" aria-labelledby="settingsTitle">
 <form id="settingsForm" class="settings-form">
@@ -131,10 +151,18 @@
   <div class="settings-save-bar"><button id="settingsSaveButton" type="submit">Save changes</button></div>
   <div hidden aria-hidden="true"><button id="connectButton" class="device-summary" type="button"><span class="device-summary-copy"><strong>synap Pendant</strong><span id="connectionBadge" class="status-badge status-offline"><span id="connectionText">Not connected</span></span></span><span id="connectButtonLabel">Connect</span></button><button id="retrySaveButton" type="button">Retry storage</button><button id="recoveryButton" type="button">Recover</button></div>
 </form></dialog>
+<dialog id="deleteRecordingsDialog" class="library-delete-dialog" aria-labelledby="deleteRecordingsTitle" aria-describedby="deleteRecordingsDescription">
+  <h2 id="deleteRecordingsTitle">Delete recordings?</h2>
+  <p id="deleteRecordingsDescription">Permanently remove the selected audio, transcripts, notes and queued work from this browser. This cannot be undone.</p>
+  <label class="library-cloud-delete"><input id="deleteRecordingsCloud" type="checkbox"><span><strong>Also delete cloud copies</strong><small>Remove these recordings and their derived memories from your synap Cloud account.</small></span></label>
+  <p class="library-delete-note">Cloud copies remain available to restore unless you select this option.</p><p id="deleteRecordingsCloudHint" class="library-delete-note">Sign in to also delete cloud copies.</p>
+  <p id="deleteRecordingsStatus" role="status"></p>
+  <div class="library-delete-actions"><button id="cancelDeleteRecordings" type="button">Cancel</button><button id="confirmDeleteRecordings" type="button">Delete</button></div>
+</dialog>
 <script src="device-identity.js?v=1.0.0-cleanup1"></script>
 <script>(function(){function renderSynapDeviceId(){var el=document.getElementById('setupDeviceId');if(!el)return;try{var key=(globalThis.SynapDevices&&globalThis.SynapDevices.KEY)||'synap-device-associations-v1';var data=JSON.parse(localStorage.getItem(key)||'null');var devices=Array.isArray(data&&data.devices)?data.devices.slice():[];devices.sort(function(a,b){return String(b.lastConnectedAt||'').localeCompare(String(a.lastConnectedAt||''));});var id=devices[0]&&devices[0].deviceId?String(devices[0].deviceId):'';el.textContent=id?id.toLowerCase():'No pendant selected';el.title=id;el.dataset.deviceId=id;}catch(e){el.textContent='No pendant selected';el.title='';el.dataset.deviceId='';}}document.addEventListener('DOMContentLoaded',function(){renderSynapDeviceId();var status=document.getElementById('setupDeviceStatus');if(status)new MutationObserver(renderSynapDeviceId).observe(status,{childList:true,subtree:true,characterData:true});document.getElementById('settingsButton')?.addEventListener('click',function(){setTimeout(renderSynapDeviceId,80)});});globalThis.renderSynapDeviceId=renderSynapDeviceId;})();</script>
 <script src="runtime-compat.js?v=1.0.0-controls1"></script>
-<script src="audio-store.js?v=1.0.0-storage2"></script>
+<script src="audio-store.js?v=1.0.0-library1"></script>
 <script src="battery-popover-fix.js?v=1.0.0-cleanup1"></script>
 <script src="capture-stability.js?v=1.0.0-moments1"></script>
 <script src="sleep-state-guard.js?v=1.0.0-actions1"></script>
@@ -152,11 +180,12 @@
 <script src="meeting-tools.js?v=1.0.0-actions3"></script>
 <script src="disconnect-protection.js?v=1.0.0-meetings2"></script>
 <script src="experience-recovery.js?v=1.0.0-transcripts1"></script>
-<script src="app.js?v=1.0.0-settings2"></script>
-<script src="enhancements.js?v=1.0.0-settings2"></script>
+<script src="library-tools.js?v=1.0.0-library1"></script>
+<script src="app.js?v=1.0.0-library1"></script>
+<script src="enhancements.js?v=1.0.0-library1"></script>
 <script src="google-auth.js?v=1.0.0-brain1"></script>
 <script src="ai-providers.js?v=1.0.0-brain1"></script>
-<script src="synap-backend.js?v=1.0.0-actions3"></script>
+<script src="synap-backend.js?v=1.0.0-library1"></script>
 <script src="processing-pipeline-ui.js?v=1.0.0-pipeline1"></script>
 <script src="memory-ui-fix.js?v=1.0.0-moments1"></script>
 <script src="synap-account-ui.js?v=1.0.0-brain1"></script>

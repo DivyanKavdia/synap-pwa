@@ -392,8 +392,8 @@
   }
 
   function consolidate(processor, job, signal) {
-    return uploadHighlights(processor, job.recordingId, signal)
-      .then(function () { return finalize(processor, job, signal); })
+    return (job.cloudOnly ? Promise.resolve() : uploadHighlights(processor, job.recordingId, signal)
+      .then(function () { return finalize(processor, job, signal); }))
       .then(function () {
         return waitForProcessing(processor, job, function (status) {
           var percent = Math.round((Number(status.progress) || 0) * 100);
@@ -438,7 +438,7 @@
       }
       var endpoint = managedEndpoint();
       if (!endpoint) { this.onChange('Synap Cloud is not configured for this build.'); return Promise.resolve(); }
-      if (!this.__synapFinalizeRecoveryDone) {
+      if (!this.__synapFinalizeRecoveryDone && !this.recordingScope) {
         this.__synapFinalizeRecoveryDone = true;
         var recoveryProcessor = this;
         return recoverLegacyFinalizeFailures(this).then(function () { return recoveryProcessor.run(); });
@@ -499,6 +499,7 @@
     dailyBrief:function(day){return request('/v1/days/'+encodeURIComponent(day)+'/brief');},
     people:function(){return request('/v1/people');},
     retryRecording:function(recordingId){var id=String(recordingId||'');if(!id)return Promise.reject(permanent('Recording id is required.'));return request('/v1/recordings/'+encodeURIComponent(id)+'/retry',{method:'POST',headers:{'Idempotency-Key':userRetryKey(id)}});},
+    deleteRecording:function(recordingId){var id=String(recordingId||'');if(!id)return Promise.reject(permanent('Recording id is required.'));return request('/v1/recordings/'+encodeURIComponent(id),{method:'DELETE'}).catch(function(error){if(error.status!==404)throw error;});},
     recordings:function(options){var opts=options||{},query=[];if(opts.day)query.push('day='+encodeURIComponent(opts.day));if(opts.limit)query.push('limit='+encodeURIComponent(opts.limit));if(opts.transcript)query.push('include_transcript=true');return request('/v1/recordings'+(query.length?'?'+query.join('&'):''));},
     followUps:function(state,owner){return request('/v1/follow-ups?state='+encodeURIComponent(state||'open')+'&owner='+encodeURIComponent(owner||'all'));},
     resolveFollowUp:function(id,state){return request('/v1/follow-ups/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:state})});},

@@ -192,15 +192,27 @@
       }
       return assemble(await this.all('packets','segment',[recordingId,index]));
     }
-    async enqueueLegacy(recordingId) {
+    async enqueueLegacy(recordingId,{preserveTranscript=false}={}) {
       return this.atomic(['recordings','segments','jobs'],s=>{
         const req=s.recordings.get(recordingId);
         req.onsuccess=()=>{
           const r=req.result;if(!r || r.journal || r.queuedLegacy || !r.blob)return;
           s.recordings.put({...r,queuedLegacy:true});
-          s.segments.put({recordingId,index:0,closed:true,legacy:true,frameCount:Math.max(1,Math.ceil((r.durationMs||50)/50))});
+          const transcribed=preserveTranscript&&r.transcriptComplete!==false&&typeof r.transcript==='string'&&(r.transcript.trim()||r.transcriptComplete===true);
+          s.segments.put({recordingId,index:0,closed:true,legacy:true,...(transcribed?{transcript:r.transcript}:{}),frameCount:Math.max(1,Math.ceil((r.durationMs||50)/50))});
           for(const kind of ['transcribe','summarize','consolidate'])enqueueJob(s.jobs,{recordingId,
-            segmentIndex:kind==='consolidate'?-1:0,kind,dedupe:recordingId+':legacy:'+kind,state:'pending',attempts:0,nextAt:0});
+            segmentIndex:kind==='consolidate'?-1:0,kind,dedupe:recordingId+':legacy:'+kind,state:transcribed&&kind==='transcribe'?'done':'pending',attempts:0,nextAt:0});
+        };
+      });
+    }
+    async enqueueCloudMonitor(recordingId) {
+      return this.atomic(['recordings','jobs'],s=>{
+        const record=s.recordings.get(recordingId);
+        record.onsuccess=()=>{
+          if(!record.result)return;
+          const dedupe=recordingId+':cloud-monitor',get=s.jobs.index('dedupe').get(dedupe);
+          get.onsuccess=()=>s.jobs.put({...get.result,recordingId,kind:'consolidate',segmentIndex:-1,
+            dedupe,cloudOnly:true,state:'pending',attempts:0,nextAt:0,lastError:''});
         };
       });
     }
@@ -305,8 +317,8 @@
     async head() {
       const jobs=await this.all('jobs');return jobs.sort((a,b)=>a.id-b.id).find(j=>j.state!=='done')||null;
     }
-    async nextRunnable(now=Date.now(),excludedRecordings=new Set()) {
-      const jobs=(await this.all('jobs')).sort((a,b)=>a.id-b.id),blocked=new Set(this.recoveryFailures.keys()),deferred=new Set();let wakeAt=Infinity;
+    async nextRunnable(now=Date.now(),excludedRecordings=new Set(),allowedRecordings=null) {
+      const jobs=(await this.all('jobs')).filter(job=>!allowedRecordings||allowedRecordings.has(job.recordingId)).sort((a,b)=>a.id-b.id),blocked=new Set([...this.recoveryFailures.keys()].filter(id=>!allowedRecordings||allowedRecordings.has(id))),deferred=new Set();let wakeAt=Infinity;
       for(const job of jobs){
         if(job.state==='done')continue;
         if(job.state==='failed'){blocked.add(job.recordingId);continue;}
@@ -339,20 +351,25 @@
       onChange=()=>{},now=()=>Date.now(),canRun=()=>true}={}){
       this.store=store;this.settings=settings;this.fetch=fetcher;this.locks=locks;this.onChange=onChange;this.now=now;
       this.running=false;this.paused=true;this.controllers=new Map();this.timer=null;this.canRun=canRun;
+      this.recordingScope=null;this.settled=Promise.resolve();
       root.SynapProcessingQueue={
         retryRecording:(recordingId)=>this.retryRecording(recordingId),
+        queueRecordings:(recordingIds)=>this.queueRecordings(recordingIds),
         resume:()=>this.resume()
       };
     }
-    pause(){this.paused=true;clearTimeout(this.timer);for(const controller of this.controllers.values())controller.abort();this.onChange('Queue paused');}
-    async resume(){if(!this.canRun())return;this.paused=false;return this.run();}
+    pause(){this.paused=true;clearTimeout(this.timer);for(const controller of this.controllers.values())controller.abort();this.onChange('Queue paused');return this.settled;}
+    async resume(recordingIds=null){if(!this.canRun())return;this.recordingScope=recordingIds?new Set(recordingIds):null;this.paused=false;return this.run();}
     async retry(){
       const jobs=(await this.store.all('jobs')).sort((a,b)=>a.id-b.id),job=jobs.find(j=>j.state==='failed')||jobs.find(j=>j.state!=='done');
       if(job)await this.store.patchJob(job.id,{state:'pending',attempts:0,nextAt:0,lastError:''});return this.resume();
     }
     async retryRecording(recordingId){
       const id=String(recordingId||'');
-      if(!id)return this.resume();
+      if(!id)return;
+      return this.queueRecordings([id]);
+    }
+    async prepareRecordingRetry(id){
       const jobs=(await this.store.all('jobs','recording',id)).sort((a,b)=>a.id-b.id);
       const failed=jobs.filter(job=>job.state==='failed');
       for(const job of failed){
@@ -362,8 +379,15 @@
         const waiting=jobs.find(job=>job.state!=='done'&&job.state!=='running');
         if(waiting)await this.store.patchJob(waiting.id,{state:'pending',attempts:0,nextAt:0,lastError:''});
       }
-      this.onChange('Retrying recording');
-      return this.resume();
+    }
+    async queueRecordings(recordingIds){
+      const ids=[...new Set((recordingIds||[]).map(String).filter(Boolean))];
+      if(!ids.length)return 0;
+      await this.pause();
+      for(const id of ids)await this.prepareRecordingRetry(id);
+      this.onChange('Queued '+ids.length+' selected recording'+(ids.length===1?'':'s'));
+      void this.resume(ids);
+      return ids.length;
     }
     async execute(job,config,url){
       await this.store.patchJob(job.id,{state:'running',startedAt:this.now()});
@@ -382,15 +406,17 @@
       if(this.paused || this.running || !this.canRun())return;
       if(!this.locks){this.onChange('Processing requires Web Locks. Use a current supported browser.');return;}
       this.running=true;clearTimeout(this.timer);
+      let settled;this.settled=new Promise(resolve=>{settled=resolve;});
       try {
         await this.locks.request('dk-pendant-processing',{ifAvailable:true},async lock=>{
           if(!lock){this.onChange('Another tab is processing recordings');return;}
           const active=new Map();
+          try {
           while(!this.paused&&this.canRun()){
             let launched=false;
             while(active.size<MAX_PROCESSING_CONCURRENCY&&!this.paused&&this.canRun()){
               const excluded=new Set([...active.values()].map(x=>x.recordingId));
-              const selected=await this.store.nextRunnable(this.now(),excluded);if(!selected.job)break;
+              const selected=await this.store.nextRunnable(this.now(),excluded,this.recordingScope);if(!selected.job||this.paused||!this.canRun())break;
               const job=selected.job,config=this.settings(),url=job.kind==='transcribe'?config.endpoint:config.llmEndpoint;
               if(!url){this.onChange('Queue waiting: configure '+(job.kind==='transcribe'?'transcription':'LLM')+' endpoint');break;}
               if(new URL(url).protocol!=='https:')throw new Error('Processing endpoints must use HTTPS');
@@ -398,16 +424,17 @@
               const promise=this.execute(job,config,url).then(()=>job.id,()=>job.id);active.set(job.id,{recordingId:job.recordingId,promise});launched=true;
             }
             if(active.size){const done=await Promise.race([...active.values()].map(x=>x.promise));active.delete(done);continue;}
-            const selected=await this.store.nextRunnable(this.now());
+            const selected=await this.store.nextRunnable(this.now(),new Set(),this.recordingScope);
             if(selected.job){if(!launched)continue;}
             else if(selected.wakeAt>this.now()){
               this.onChange('Processing retry scheduled');this.timer=setTimeout(()=>this.run(),selected.wakeAt-this.now()+20);return;
             } else if(selected.blockedCount){this.onChange(selected.blockedCount+' recording'+(selected.blockedCount===1?'':'s')+' need retry; other recordings are complete');return;}
             else {this.onChange('Queue complete');return;}
           }
+          } finally {await Promise.all([...active.values()].map(work=>work.promise));}
         });
       } catch(e){this.onChange('Queue error: '+e.message);}
-      finally {this.running=false;}
+      finally {this.running=false;settled();}
     }
     async process(job,config,url){
       const headers={'Idempotency-Key':job.dedupe};if(config.token)headers.Authorization='Bearer '+config.token;

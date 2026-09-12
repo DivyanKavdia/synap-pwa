@@ -32,7 +32,7 @@ assert.deepEqual(disclosures.map(node=>node.children[0].textContent),['Notes','T
 assert(disclosures.every(node=>!node.open),'extra text is initially collapsed');
 assert.equal(content.querySelectorAll('textarea')[0].value,'My note');assert.equal(content.querySelectorAll('textarea')[1].value,'Transcript text');
 assert.equal(content.querySelectorAll('input')[0].attrs['aria-label'],'Recording name');
-assert.equal(content.children[1].children[2].textContent,'Process queue');
+assert.equal(content.children[1].children[2].textContent,'Process recording');
 last.open=false;last.events.toggle();assert.equal(content.children[0].paused,true);
 last.open=true;last.events.toggle();assert.equal(last.children.length,2,'reopening does not duplicate audio');
 c.libraryVisibleCount=5;c.renderLibraryPage();assert.equal(last.hidden,true);assert.equal(last.open,false);
