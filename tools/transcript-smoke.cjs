@@ -33,6 +33,7 @@ async function fixture(page) {
       for (const id of ids) {
         stores.recordings.put({ id, name: 'Conversation ' + id, createdAt, sealed: true, status: 'complete',
           durationMs: 1000, notes: 'Original note', blob: new Blob([header.buffer, pcm], { type: 'audio/wav' }),
+          ...(id !== 'partial' ? { processedAt: createdAt } : {}),
           transcript: id === 'cached' ? 'Preserved spoken words' : '', summary: id === 'partial' ? '' : 'Saved summary ' + id,
           processingStage: id === 'partial' ? 'failed' : 'ready', processingRetryable: id === 'partial' });
         qa.sources[id] = { recording_id: id, started_at: createdAt, duration_ms: 1000,
@@ -42,6 +43,10 @@ async function fixture(page) {
           transcript_complete: id !== 'partial', transcript_segments: 1, segment_count: id === 'partial' ? 2 : 1 };
       }
     });
+    // These are saved history, present before sign-in. Give them the same
+    // baseline as startup so a pending queue scan cannot announce new memory
+    // and race this metadata-only test with an unrelated /source refresh.
+    await SynapMemoryReadyEvents.scan(true);
     SynapAuth.isSignedIn = () => true;
     SynapAuth.session = () => ({ profile: { uid: 'transcript-fixture' } });
     SynapAuth.authedFetch = async (url, options = {}) => {
