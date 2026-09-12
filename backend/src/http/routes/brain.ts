@@ -9,6 +9,7 @@ import { config } from '../../config.js';
 import { openJson, sealJson } from '../../crypto/envelope.js';
 import { answerFromEvidence, parseQuery, type Evidence } from '../../gemini/ask.js';
 import { embedContent } from '../../gemini/client.js';
+import { prepareMeeting } from '../../pipeline/meeting-preparation.js';
 import { readDay, rebuildDay } from '../../pipeline/brief.js';
 import { binding } from '../../pipeline/process.js';
 import * as db from '../../store/firestore.js';
@@ -110,6 +111,15 @@ export function brainRoutes(): Router {
     }),
   );
 
+  router.get('/people/:personId/preparation',handler<AuthedRequest>(async(req,res)=>{
+    const personId=String(req.params.personId);
+    const person=await db.getPerson(req.uid,personId);
+    if(!person)throw new HttpError(404,'not_found','Unknown person.');
+    const profile=openJson<{name:string}>(req.dek,person.sealedProfile,binding(req.uid,`person/${personId}`,'profile'));
+    const [conversations,followUps]=await Promise.all([db.conversationsForPerson(req.uid,personId),db.listFollowUps(req.uid,'open','all')]);
+    res.json({person:{id:personId,name:profile.name},...prepareMeeting(req.uid,req.dek,personId,conversations,followUps)});
+  }));
+
   router.patch(
     '/people/:personId',
     handler<AuthedRequest>(async (req, res) => {
@@ -174,7 +184,7 @@ export function brainRoutes(): Router {
 
       res.status(200).json({
         follow_ups: items.map((item) => {
-          const task = openJson<{ task: string; owner: string }>(
+          const task = openJson<{ task: string; owner: string; kind?: string }>(
             req.dek,
             item.sealedTask,
             binding(req.uid, `followUp/${item.followUpId}`, 'task'),
@@ -182,6 +192,7 @@ export function brainRoutes(): Router {
           return {
             id: item.followUpId,
             task: task.task,
+            kind: task.kind || "commitment",
             owner: {
               type: item.ownerType,
               person_id: item.counterpartyPersonId,

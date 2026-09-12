@@ -28,7 +28,7 @@
         const data=await requestPath('/v1/known-speakers');voiceList.replaceChildren();
         for(const voice of data.speakers||[]){
           const row=document.createElement('div'),name=document.createElement('span'),remove=document.createElement('button');
-          row.className='known-speaker-row';name.textContent=voice.name;remove.type='button';remove.textContent='Remove';remove.setAttribute('aria-label','Remove saved voice for '+voice.name);
+          row.className='known-speaker-row';name.textContent=voice.name+' · '+(voice.sample_count||1)+' sample'+((voice.sample_count||1)===1?'':'s');remove.type='button';remove.textContent='Remove';remove.setAttribute('aria-label','Remove saved voice for '+voice.name);
           remove.addEventListener('click',async()=>{
             if(!root.confirm('Remove the saved voice for '+voice.name+'? Future recordings will no longer identify it automatically.'))return;
             remove.disabled=true;
@@ -54,10 +54,14 @@
             if(busy()){status.textContent='Stop and save the current recording first.';return}
             const name=input.value.trim();
             if(!name || !state.data.names_confirmed || state.data.speaker_names?.[speaker.label]!==name){status.textContent='Save and confirm this name before remembering the voice.';return}
-            if(!root.confirm('Remember '+name+' for future speaker identification? Only continue if you have this person’s permission. Synap will store an encrypted voice fingerprint in your account; no extra audio copy is saved.'))return;
-            pending(true);status.textContent='Creating a saved voice from clear speech…';
+            pending(true);
             try{
-              await requestPath('/v1/recordings/'+encodeURIComponent(state.record.id)+'/remember-speaker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:speaker.label,revision:state.data.revision,consent:true})});
+              const known=await requestPath('/v1/known-speakers');
+              if(busy()){status.textContent='Stop and save the current recording first.';return}
+              const existing=(known.speakers||[]).find(voice=>voice.name.normalize('NFKC').toLowerCase()===name.normalize('NFKC').toLowerCase());
+              if(!root.confirm((existing?'Add this confirmed sample to the saved voice for ':'Remember ')+name+' for future speaker identification? Only continue if you have this person’s permission. Synap will store an encrypted voice fingerprint in your account; no extra audio copy is saved.'))return;
+              status.textContent='Creating a saved voice from clear speech…';
+              await requestPath('/v1/recordings/'+encodeURIComponent(state.record.id)+'/remember-speaker',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:speaker.label,revision:state.data.revision,consent:true,...(existing?{existing_id:existing.id}:{})})});
               status.textContent='Voice remembered. Future recordings can identify '+name+'.';if(directory.open)await loadVoices();
             }catch(error){status.textContent=error.message}
             finally{pending(false)}

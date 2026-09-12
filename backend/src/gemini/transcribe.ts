@@ -15,6 +15,7 @@
  * as context without fighting the transcriber.
  */
 
+import { speechWindow } from './speech-window.js';
 import { config } from '../config.js';
 import { offsetToMs } from '../util/retry.js';
 import type { TranscriptWord } from '../store/types.js';
@@ -58,8 +59,12 @@ export async function transcribeSegment(
     signal,
   } = options;
 
+  if(signal?.aborted)throw signal.reason;
+  const prepared=mimeType==='audio/wav' ? speechWindow(audio) : {audio,offsetMs:0,silent:false};
+  if(prepared.silent)return {text:'',words:[],speakers:[],model:config.gemini.transcribeModel,review:{attempted:false,annotationsComplete:true}};
+  const sourceOffsetMs=baseOffsetMs+prepared.offsetMs;
   const input: InteractionPart[] = [
-    { type: 'audio', data: audio.toString('base64'), mime_type: mimeType },
+    { type: 'audio', data: prepared.audio.toString('base64'), mime_type: mimeType },
   ];
 
   const mode: Record<string, unknown> = { type: 'verbatim' };
@@ -84,8 +89,8 @@ export async function transcribeSegment(
   const convert = (value: typeof response):TranscriptWord[] => interactionWords(value).map((word) => ({
     text: word.text,
     speaker: word.speaker ?? null,
-    start_ms: baseOffsetMs + offsetToMs(word.start_offset),
-    end_ms: baseOffsetMs + offsetToMs(word.end_offset),
+    start_ms: sourceOffsetMs + offsetToMs(word.start_offset),
+    end_ms: sourceOffsetMs + offsetToMs(word.end_offset),
   }));
   let words=convert(response),attempted=false;
   if(diarize && wordTimestamps && (rawText || words.length) && !annotationsComplete(rawText,words)) {
@@ -114,7 +119,7 @@ export async function transcribeSegment(
    * comparison, so fully annotated captures still render with real speaker
    * labels and word-derived timestamps.
    */
-  const text = rawText ? `[${formatMs(baseOffsetMs)}] S?: ${rawText}` : '';
+  const text = rawText ? `[${formatMs(sourceOffsetMs)}] S?: ${rawText}` : '';
 
   return {
     text,

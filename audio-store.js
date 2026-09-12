@@ -1,5 +1,5 @@
 /* Synap browser journal and resilient processing queue.
- * Recording storage stays in the PWA/browser only; the pendant remains stateless.
+ * Durable recording storage stays in the PWA; pendant recovery buffers are volatile.
  */
 (function (root) {
   'use strict';

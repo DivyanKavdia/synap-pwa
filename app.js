@@ -178,6 +178,7 @@
   let reloadRecoveryRunning = false;
   let lastReloadRecoveryAt = 0;
   let recordingReconnectPending = false;
+  let recordingTransportPreserved = false;
   let recordingDisconnectedAt = 0;
   let recordingReconnectDeadline = null;
   let recordingResumeDeviceId = null;
@@ -714,7 +715,8 @@
     }
   }
 
-  async function prepareRecordingTransportResume() {
+  async function prepareRecordingTransportResume(preserveSequence = false) {
+    recordingTransportPreserved = preserveSequence;
     if (!recordingReconnectPending || !isCurrentSession(recordingSessionId)) return false;
     if (openingCapture && !currentRecordingId) {
       currentRecordingId = await openingCapture;
@@ -726,7 +728,7 @@
     completedSequences.clear();
     lastObservedSequence = null;
     lastFrameCleanupAt = 0;
-    globalThis.SynapCaptureStability?.beginTransportEpoch(currentRecordingId, 0);
+    if(!preserveSequence)globalThis.SynapCaptureStability?.beginTransportEpoch(currentRecordingId, 0);
     setAppState("starting");
     return true;
   }
@@ -734,7 +736,7 @@
   function completeRecordingTransportResume(source) {
     if (!recordingReconnectPending) return;
     const now = performance.now();
-    if (recordingWasConfirmedBeforeDisconnect && recordingStartedAt && recordingDisconnectedAt) {
+    if (!recordingTransportPreserved && recordingWasConfirmedBeforeDisconnect && recordingStartedAt && recordingDisconnectedAt) {
       recordingStartedAt += Math.max(0, now - recordingDisconnectedAt);
     }
     clearRecordingReconnectState();
@@ -991,7 +993,11 @@
         handleStatusNotification
       );
 
-      if (resumingRecording) await prepareRecordingTransportResume();
+      const protection = globalThis.SynapDisconnectProtection;
+      const recoveryInfo = await protection?.discover(service, queueGattOperation, assertConnection, resumingRecording);
+      const resumeBuffered = resumingRecording && protection?.canResume(recoveryInfo);
+      if(resumingRecording && recoveryInfo?.waiting && !resumeBuffered)throw new Error("Buffered audio belongs to a different app session. Waiting for the pendant to return to idle.");
+      if (resumingRecording) await prepareRecordingTransportResume(Boolean(resumeBuffered));
 
       await queueGattOperation(function () {
         return controlCharacteristic.startNotifications();
@@ -1005,6 +1011,7 @@
 
       // Let the CCCD subscription reach the peripheral before START is possible.
       await delay(180);
+      if(resumeBuffered) { await protection.resume(); log("Recovering buffered pendant audio", {capacityMs:protection.capacityMs()}); }
       await writeCommand(CMD_GET_STATUS);
       await delay(120);
       await readControlStatus();
@@ -1020,6 +1027,8 @@
 
       if (resumingRecording && deviceStatus.state === DEVICE_STATE.CONNECTED_IDLE &&
           deviceStatus.error === 0) {
+        if(resumeBuffered)await prepareRecordingTransportResume(false);
+        if(recoveryInfo?.available)await protection.arm();
         log("Interrupted recording found pendant idle; restarting stream in same journal");
         await writeCommand(CMD_START, assertConnection);
         await delay(140);
@@ -1057,6 +1066,7 @@
         deviceStatus.state === DEVICE_STATE.CONNECTED_IDLE &&
         deviceStatus.error === 0
       ) {
+        if(recoveryInfo?.available && await protection.arm())log("Disconnect protection armed",{capacityMs:protection.capacityMs()});
         // Persist only after identity read and idle acknowledgement belong to the same connection.
         assertConnection();
         rememberDeviceAssociation(connectedDeviceId, connectingDevice, identityMessage);
@@ -1188,6 +1198,7 @@
   }
 
   function cleanupCharacteristics() {
+    globalThis.SynapDisconnectProtection?.detach();
     globalThis.SynapDevices?.clearService?.();
     deviceAssociation = null;
     deviceIdentityMessage = "Not connected";
@@ -1547,11 +1558,12 @@
     clearStartTimeout();
 
     try {
-      for (let attempt = 0; attempt < 3; attempt += 1) {
+      const drainDeadline=Date.now()+(globalThis.SynapDisconnectProtection?.capacityMs()?35000:0);
+      for (let attempt = 0; attempt < 3 || Date.now()<drainDeadline; attempt += 1) {
         if (!isCurrentSession(sessionId) || appState !== "stopping") return;
         if (!isGattConnected()) break;
         await writeCommand(CMD_STOP);
-        await delay(150);
+        await delay(attempt<3?150:700);
         if (!isCurrentSession(sessionId) || appState !== "stopping") return;
         await readControlStatus();
         if (!isCurrentSession(sessionId) || appState !== "stopping") return;
@@ -1599,6 +1611,8 @@
     try {
       if (journal) {
         if (openingCapture) currentRecordingId = await openingCapture;
+        if(currentRecordingId && globalThis.SynapAudioQuality)await updateRecordingFields(currentRecordingId,{audioQuality:globalThis.SynapAudioQuality.snapshot()});
+        globalThis.SynapAudioQuality?.clear();
         const saved = currentRecordingId ? await journal.close(currentRecordingId, reason) : null;
         log("Chunk journal sealed", { id: currentRecordingId, reason, stats: saved?.stats });
         toast(saved?.durationMs ? "Recording saved; processing jobs queued" : "No complete frames received; partial chunks retained");
@@ -1663,6 +1677,9 @@
   }
 
   function resetCollector() {
+    recordingTransportPreserved = false;
+    globalThis.SynapDisconnectProtection?.resetRecording();
+    globalThis.SynapAudioQuality?.reset();
     clearRecordingReconnectState();
     pendingFrames.clear();
     completedSequences.clear();
@@ -1874,9 +1891,11 @@
     if (completedSequences.size > RECENT_FRAME_WINDOW) {
       completedSequences.delete(completedSequences.keys().next().value);
     }
+    globalThis.SynapDisconnectProtection?.received(frame.sequence);
     sessionStats.completeFrames += 1;
     sessionStats.pcmBytes += pcm.length;
 
+    globalThis.SynapAudioQuality?.observe(pcm);
     updateAudioLevel(pcm);
     updateMetrics();
   }
@@ -2396,7 +2415,7 @@
       label.textContent = "Meeting summary";
       const summary = document.createElement("p");
       summary.className = "insight-summary";
-      summary.textContent = recording.summary;
+      summary.textContent = recording.meeting?.executive_summary || recording.summary;
       card.append(label, summary);
     }
     if (recording.transcript && recording.transcript.trim()) {
@@ -2614,9 +2633,10 @@
       summary.className = "recording-summary";
       content.appendChild(recordingDisclosure("Summary", summary));
     }
-    if (summary) summary.textContent = recording.summary || "";
+    if (summary) summary.textContent = recording.meeting?.executive_summary || recording.summary || "";
     globalThis.SynapSpeakerNames?.attach(card, recording);
     globalThis.SynapMoments?.attach(card, recording);
+    globalThis.SynapMeetingTools?.attach(card, recording);
   }
 
   function revealRecording(id) {
@@ -2794,13 +2814,14 @@
     if (recording.summary) {
       const summary = document.createElement("p");
       summary.className = "recording-summary";
-      summary.textContent = recording.summary;
+      summary.textContent = recording.meeting?.executive_summary || recording.summary;
       card.appendChild(recordingDisclosure("Summary", summary));
     }
 
     card.appendChild(recordingDisclosure("Edit name & details", titleRow, meta));
     globalThis.SynapSpeakerNames?.attach(card, recording);
     globalThis.SynapMoments?.attach(card, recording);
+    globalThis.SynapMeetingTools?.attach(card, recording);
     return card;
   }
 
@@ -3282,6 +3303,7 @@
   }
 
   function bindEvents() {
+    window.addEventListener("synap-recording-draining",()=>{if(recordingConfirmed&&!finalizing){clearStartTimeout();setAppState("stopping");}});
     bindCoreControls();
     document.querySelectorAll("[data-day-step]").forEach(function (button) {
       button.addEventListener("click", function () { moveDay(Number(button.dataset.dayStep)); });

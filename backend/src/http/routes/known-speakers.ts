@@ -27,6 +27,8 @@ export function knownSpeakerRoutes():Router {
     if(req.body?.consent!==true)throw new HttpError(400,'consent_required','Confirm you have permission to remember this voice.');
     if(!speakerServiceConfigured())throw new HttpError(503,'unavailable','Speaker recognition is temporarily unavailable.');
     const id=String(req.params.recordingId),label=String(req.body?.label||'');
+    const existingId=req.body?.existing_id;
+    if(existingId!==undefined && (typeof existingId!=='string'||!/^[a-f0-9]{40}$/.test(existingId)))throw new HttpError(400,'invalid_id','Invalid saved voice.');
     const recording=await db.getRecording(req.uid,id);
     if(!recording)throw new HttpError(404,'not_found','Unknown recording.');
     if(recording.state!=='ready' || req.body?.revision!==recording.updatedAt)throw new HttpError(409,'changed','Reload speaker names before remembering this voice.');
@@ -50,9 +52,10 @@ export function knownSpeakerRoutes():Router {
     if(!sample)throw new HttpError(409,'no_sample','This speaker needs at least 5 seconds of clear, non-overlapping retained audio. Try a recent recording.');
     const embedded=await embedSpeakerAudio(sample.wav);
     const profile={...embedded,duration_ms:sample.speechMs,id:createHash('sha256').update(id+'\0'+label).digest('hex').slice(0,40),name,consentVersion:1 as const,createdAt:new Date().toISOString()};
-    try {await saveKnownSpeaker(req.uid,req.dek,profile,id,recording.updatedAt);}
+    let saved=profile;
+    try {saved=await saveKnownSpeaker(req.uid,req.dek,profile,id,recording.updatedAt,existingId);}
     catch(error){if(error instanceof KnownSpeakerError)throw new HttpError(409,'not_saved',error.message);throw error;}
-    res.json({speaker:speakerViews([profile])[0]});
+    res.json({speaker:speakerViews([saved])[0]});
   }));
   return router;
 }

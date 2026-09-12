@@ -37,11 +37,13 @@ const ACTION = {
   type: 'object',
   properties: {
     task: { type: 'string' },
+    kind: { type: 'string', enum: ['commitment', 'reminder'], description: 'reminder only for an explicit spoken request to remember or be reminded to do something' },
+    evidence: { type: 'string', description: 'Exact short supporting quote from the transcript' },
     owner: { type: 'string', description: 'A name from the people list, or "self"' },
     due_date: { type: ['string', 'null'], description: 'YYYY-MM-DD, or null if never stated' },
     ...SOURCE_FIELDS,
   },
-  required: ['task', 'owner', 'due_date', 'start_ms', 'end_ms'],
+  required: ['task', 'kind', 'evidence', 'owner', 'due_date', 'start_ms', 'end_ms'],
 } as const;
 
 const STATEMENT = {
@@ -74,6 +76,8 @@ const CONVERSATION = {
       description: 'Named people referenced or discussed but not evidenced as participants in this conversation.',
     },
     topics: { type: 'array', items: { type: 'string' } },
+    chapters: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, summary: { type: 'string' }, ...SOURCE_FIELDS }, required: ['title', 'summary', 'start_ms', 'end_ms'] }, description: 'Non-overlapping topic chapters inside this conversation. Use real topic changes, not upload boundaries; at most 12.' },
+    unresolved_questions: { type: 'array', items: STATEMENT },
     decisions: { type: 'array', items: STATEMENT },
     action_items: { type: 'array', items: ACTION },
     follow_ups: { type: 'array', items: FOLLOW_UP },
@@ -87,6 +91,8 @@ const CONVERSATION = {
     'participants',
     'mentioned_people',
     'topics',
+    'chapters',
+    'unresolved_questions',
     'decisions',
     'action_items',
     'follow_ups',

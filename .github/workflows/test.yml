@@ -30,6 +30,10 @@ jobs:
         env:
           SYNAP_WORKFLOW_OUTPUT: artifacts/workflows
       - run: node tools/connection-smoke.cjs
+      - run: node tools/connection-smoke.cjs
+        env:
+          SYNAP_RECOVERY_FIXTURE: "1"
+      - run: node tools/meeting-features-smoke.cjs
       - run: node tools/firmware-progress-smoke.cjs
         env:
           SYNAP_FIRMWARE_OUTPUT: artifacts/workflows/firmware
