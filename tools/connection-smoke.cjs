@@ -36,7 +36,7 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
    const service={getCharacteristic:id=>operation(()=>{if(!chars.has(id))throw new DOMException('No optional characteristic','NotFoundError');return chars.get(id)})};
    const device=new EventTarget();device.id='fixture-device';device.name='synap';
    function loseLink(){const wasConnected=device.gatt.connected;device.gatt.connected=false;clearInterval(audioTimer);if(wasConnected)device.dispatchEvent(new Event('gattserverdisconnected'))}
-   device.gatt={connected:false,connect(){increment('qa-connects');return operation(()=>{if(!present)throw new DOMException('Pendant is asleep','NetworkError');this.connected=true;state=1;if(hideOnConnect){hideOnConnect=false;setVisibility('hidden')}return this})},getPrimaryService(){return operation(()=>service)},disconnect(){appDisconnects++;loseLink()}};
+   device.gatt={connected:sessionStorage.getItem('qa-retain-link')==='1',connect(){increment('qa-connects');return operation(()=>{if(!present)throw new DOMException('Pendant is asleep','NetworkError');this.connected=true;state=1;if(hideOnConnect){hideOnConnect=false;setVisibility('hidden')}return this})},getPrimaryService(){return operation(()=>service)},disconnect(){appDisconnects++;loseLink()}};
    device.watchAdvertisements=async({signal})=>{watching=true;signal.addEventListener('abort',()=>{watching=false},{once:true})};
    function frame(){for(let chunk=0;chunk<4;chunk++){const v=new DataView(new ArrayBuffer(408));v.setUint8(0,0xa5);v.setUint8(1,2);v.setUint16(2,sequence,true);v.setUint8(4,chunk);v.setUint8(5,4);v.setUint16(6,400,true);audio.value=v;audio.dispatchEvent(new Event('characteristicvaluechanged'))}sequence=(sequence+1)&65535}
    const bluetooth=new EventTarget();bluetooth.requestDevice=async()=>{increment('qa-pickers');sessionStorage.setItem('qa-permitted','1');return device};
@@ -58,6 +58,12 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  await page.waitForFunction(()=>window.SynapCompactLayout&&document.querySelector('#diagnosticsLog')?.textContent.includes('Application started'));await page.locator('#headerPendantStatus').click();
  await page.waitForFunction(()=>document.body.dataset.state==='idle');
  await page.evaluate(()=>localStorage.setItem('dk-pendant-auto-reconnect','on'));
+ await page.waitForFunction(()=>!document.body.hasAttribute('data-auto-reconnecting'));
+ const idleReads=await page.evaluate(()=>bleFixture.statusReads);
+ await page.evaluate(()=>{bleFixture.hide();bleFixture.show()});await page.waitForTimeout(250);
+ assert.equal(await page.evaluate(()=>bleFixture.statusReads),idleReads,'foregrounding an idle link does not probe native GATT');
+ assert.equal(await page.evaluate(()=>bleFixture.appDisconnects),0);
+
  await page.locator('#headerCaptureToggle').click();await page.waitForFunction(()=>document.body.dataset.state==='recording');
  // A real model Worker may now run during rolling capture. Exercise the same
  // automatic entry point while BLE packets continue arriving on the main thread.
@@ -161,6 +167,14 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  const stopped=await records();assert.equal(stopped.length,2);assert(stopped.every(r=>r.status==='saved'&&r.durationMs>0));
  assert.equal(await page.evaluate(()=>bleFixture.maximum),1);assert.deepEqual(errors,[]);
  console.log('PASS: Stop remains bounded when a native read never replies; the app disconnects deliberately and saves received audio');
+ await page.locator('#headerPendantStatus').click();await page.waitForFunction(()=>document.body.dataset.state==='idle'&&!document.body.hasAttribute('data-auto-reconnecting'));
+ const nativeConnects=await page.evaluate(()=>bleFixture.connects);
+ await page.evaluate(()=>{localStorage.setItem('dk-pendant-auto-reconnect','on');sessionStorage.setItem('qa-retain-link','1')});
+ await page.goto(origin);await page.waitForFunction(()=>document.body.dataset.state==='idle'&&!document.body.hasAttribute('data-auto-reconnecting'));
+ assert.equal(await page.evaluate(()=>bleFixture.connects),nativeConnects,'a retained native link is adopted without connect()');
+ assert.equal(await page.evaluate(()=>bleFixture.appDisconnects),0,'adopting a retained link never disconnects it');
+ await page.waitForFunction(()=>document.body.dataset.eventChannel==='event');
+ console.log('PASS: foreground preserves an idle link; reload adopts a retained native connection without disconnect/connect churn');
  await context.close();
  }finally{await browser.close();server.close()}
 })().catch(error=>{console.error(error);server.close();process.exitCode=1});
