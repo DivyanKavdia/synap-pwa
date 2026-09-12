@@ -6,7 +6,6 @@ const root=path.join(__dirname,'..');
 const runtime=fs.readFileSync(path.join(root,'runtime-ui.js'),'utf8');
 const theme=fs.readFileSync(path.join(root,'theme.js'),'utf8');
 const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
-const brandCss=fs.readFileSync(path.join(root,'settings-icon-fix.css'),'utf8');
 
 test('startup reset remains isolated while explicit tab navigation is controlled',()=>{
   assert.match(theme,/scrollRestoration='manual'/);

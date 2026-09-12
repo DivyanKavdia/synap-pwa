@@ -3,6 +3,20 @@
   'use strict';
   let dialog,header,main,nav,backdrop,headerSpacer,previousFocus,previousInert=false,scrollPosition=0;
   let active=false,frame=0,bodyOverflow='',htmlOverflow='';
+  let selected='device';
+  const sections=['device','memory','appearance','support'],positions=new Map();
+  function select(section,{focus=false}={}){
+    if(!dialog||!sections.includes(section))return;
+    if(selected!==section)positions.set(selected,dialog.scrollTop);
+    selected=section;
+    for(const key of sections){
+      const tab=document.getElementById('settingsTab-'+key),panel=dialog.querySelector('[data-settings-panel="'+key+'"]');
+      if(tab){tab.setAttribute('aria-selected',String(key===selected));tab.tabIndex=key===selected?0:-1;}
+      if(panel)panel.hidden=key!==selected;
+    }
+    dialog.scrollTop=positions.get(section)||0;
+    if(focus)document.getElementById('settingsTab-'+section)?.focus({preventScroll:true});
+  }
   function layout(){
     frame=0;if(!active)return;
     const bounds=main.getBoundingClientRect(),navigation=nav?.getBoundingClientRect();
@@ -50,6 +64,16 @@
     main=document.querySelector('main');nav=document.querySelector('.brain-tabs');
     if(!dialog||!header||!main){dialog=null;return false;}
     dialog.classList.add('settings-panel');
+    dialog.querySelector('.settings-tabs')?.addEventListener('click',event=>{
+      const tab=event.target.closest('[role="tab"]');if(tab)select(tab.id.replace('settingsTab-',''));
+    });
+    dialog.querySelector('.settings-tabs')?.addEventListener('keydown',event=>{
+      const index=sections.indexOf(event.target.id.replace('settingsTab-',''));
+      if(index<0||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();
+      const next=event.key==='Home'?0:event.key==='End'?sections.length-1:(index+(event.key==='ArrowRight'?1:-1)+sections.length)%sections.length;
+      select(sections[next],{focus:true});
+    });
     dialog.setAttribute('aria-modal','false');
     document.getElementById('settingsButton')?.setAttribute('aria-controls',dialog.id);
     document.getElementById('settingsButton')?.setAttribute('aria-expanded','false');
@@ -78,6 +102,6 @@
   }
   function close(){if(!dialog?.open)return;dialog.close();sync();}
   function toggle(){if(!init())return;dialog.open?close():open();}
-  root.SynapSettingsPanel=Object.freeze({open,close,toggle});
+  root.SynapSettingsPanel=Object.freeze({open,close,toggle,select});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })(globalThis);

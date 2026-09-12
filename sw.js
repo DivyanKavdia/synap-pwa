@@ -3,11 +3,11 @@ const APP_VERSION='1.0.0';
 /* app.js owns the client compatibility revision used for update signalling. */
 const CLIENT_REVISION='1.0.0-audio2';
 /* Refresh the installed shell without changing audio protocol compatibility. */
-const UI_RECOVERY_REVISION='1.0.0-actions3';
-const CACHE_REVISION='1.0.0-shell67-actions';
+const UI_RECOVERY_REVISION='1.0.0-settings2';
+const CACHE_REVISION='1.0.0-shell68-settings';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
-  './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings-icon-fix.css',
+  './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings.css',
   './touch-event-bridge.js','./battery-v2-ui.js','./event-channel.js','./audio-codec-v3.js','./battery-popover-fix.js','./memory-ui-fix.js','./memory-tools.js','./voice-profile.js','./device-identity.js','./runtime-compat.js','./audio-store.js','./capture-stability.js','./ota.js','./releases.js',
   './disconnect-protection.js','./audio-quality.js','./meeting-tools.js','./meeting-tools.css','./app.js','./moments.js','./speaker-names.js','./settings-panel.js','./enhancements.js','./capture-ui.js','./brain-ui.js','./ask-synap.js','./product-ui.js','./runtime-ui.js','./dashboard-ui.js','./provenance-links.js','./productivity-tools.js','./desktop-capture.js','./interaction-surfaces.js','./memory-ready-events.js','./experience-recovery.js',
   './my-actions.js','./compact-layout.js','./audio-enhancement.js','./audio-enhancement-ui.js','./audio-enhancement-worker.js','./vendor/audio-enhancement/rnnoise-sync.js',

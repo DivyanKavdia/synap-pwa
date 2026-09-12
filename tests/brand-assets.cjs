@@ -50,8 +50,7 @@ test('favicon, Home, Settings and offline cache use the new identity consistentl
   assert.match(html,/<link rel="icon" href="icon\.svg\?v=1\.0\.0-brand2" type="image\/svg\+xml">/);
   assert.match(html,/apple-touch-icon" href="icon-192\.png\?v=1\.0\.0-brand2/);
   for(const asset of ['synap-logo-light.png','synap-logo-dark.png','icon.svg','icon-192.png','icon-512.png'])assert(sw.includes(`'./${asset}'`));
-  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell67-actions'/);
-  assert.match(read('settings-icon-fix.css'),/filter:none!important/);
+  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell68-settings'/);
 });
 
 test('both display wordmarks are explicit 800px PNGs with alpha',()=>{

@@ -898,7 +898,7 @@
       const message = "Bluetooth access is not available yet. Check this browser's Bluetooth permission, then tap Connect again.";
       setAppState("unsupported", message);
       setReconnectCapability("Bluetooth unavailable", message);
-      if (!silent) { if (!ui.settingsDialog.open) openSettings(); toast(message, "error"); }
+      if (!silent) { openDeviceSettings(); toast(message, "error"); }
       return;
     }
 
@@ -1121,6 +1121,7 @@
       if (!silent) {
         setReconnectCapability("Manual connection failed", error?.name === "NotFoundError"
           ? "No pendant selected. Tap Connect to try again." : message);
+        if (ui.settingsDialog.open) openDeviceSettings();
         if (error?.name !== "NotFoundError") toast(message, "error");
       }
 
@@ -3048,6 +3049,12 @@
     globalThis.SynapSettingsPanel.open();
   }
 
+  function openDeviceSettings() {
+    if (!ui.settingsDialog.open) openSettings();
+    globalThis.SynapSettingsPanel.select("device");
+    ui.settingsDialog.scrollTop = 0;
+  }
+
   function bindFirmwareUpdate() {
     if (firmwareControlsBound) return;
     firmwareControlsBound = true;
@@ -3167,7 +3174,7 @@
     cancel.addEventListener('click',()=>downloadController?.abort());
     async function updateLatest() {
       if(firmwareBusy || updateRequested)return;
-      if(!ui.settingsDialog.open)openSettings();
+      openDeviceSettings();
       if(!eligible()) {
         status.textContent=!appLockHeld?'Close other Synap tabs, then tap Retry.':
           isGattConnected()?'Stop and save the recording before updating.':'Connect your pendant above, then tap Update.';
@@ -3650,7 +3657,7 @@
     if (appLockHeld) return true;
     const message = document.getElementById("startupMessage").textContent || "Opening the app. Try Connect again shortly.";
     setReconnectCapability("Connection waiting for app ownership", message);
-    if (!ui.settingsDialog.open) openSettings();
+    openDeviceSettings();
     if (!startupPending) startApplication();
     return false;
   }
@@ -3659,7 +3666,7 @@
     if (firmwareBusy || ui.connectButton.disabled) return;
     if (!window.isSecureContext) {
       setReconnectCapability("Secure connection required", "Open Synap over HTTPS to connect your pendant.");
-      if (!ui.settingsDialog.open) openSettings();
+      openDeviceSettings();
       return;
     }
     if (!requireAppOwnership()) return;

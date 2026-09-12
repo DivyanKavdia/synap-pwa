@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),out=process.env.SYNAP_FIRMWARE_OUTPUT||'/tmp/synap-firmware-progress-qa';
 const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
-const firmware=app.slice(app.indexOf('  function bindFirmwareUpdate()'),app.indexOf('  async function registerServiceWorker()'));
+const firmware=app.slice(app.indexOf('  function openDeviceSettings()'),app.indexOf('  async function registerServiceWorker()'));
 const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.webmanifest':'application/manifest+json'};
 const server=http.createServer((req,res)=>{const file=path.resolve(root,'.'+new URL(req.url,'http://localhost').pathname.replace(/^\/$/,'/index.html'));if(!file.startsWith(root+path.sep))return res.writeHead(403).end();fs.readFile(file,(error,data)=>{if(error)return res.writeHead(404).end();res.writeHead(200,{'Content-Type':mime[path.extname(file)]||'application/octet-stream'});res.end(data)})});
 async function run(){
@@ -34,7 +34,7 @@ async function run(){
       const releases={IDENTITY_UUID:'identity',validateManifest:value=>value,latest:async()=>manifest,compatible:(m,info)=>m.build>info.build,
         download:async(_m,_capacity,_fetcher,signal)=>{const pending=gate('download');signal.addEventListener('abort',()=>qa.download.reject(Error('Download cancelled')),{once:true});return pending}};
       qa.resetBuild=()=>{build=503};
-      const context={globalThis:{SynapOTA:{Client},SynapReleases:releases},deviceAssociation:{deviceId:id},connectionEpoch:0,
+      const context={globalThis:{SynapOTA:{Client},SynapReleases:releases,SynapSettingsPanel:window.SynapSettingsPanel},deviceAssociation:{deviceId:id},connectionEpoch:0,
         isGattConnected:()=>connected,connectInProgress:false,recordingConfirmed:false,finalizing:false,currentRecordingId:null,openingCapture:null,unsavedAudio:false,appState:'idle',deviceStatus:{error:0},SERVICE_UUID:'service',queueGattOperation:fn=>fn(),
         gattServer:{getPrimaryService:async()=>({getCharacteristic:async()=>({readValue:async()=>new TextEncoder().encode(manifest.identity)})})},
         ui:{settingsDialog:node('settingsDialog'),chooseDeviceButton:node('chooseDeviceButton'),runQueueButton:node('runQueueButton'),queueStatus:node('queueStatus')},

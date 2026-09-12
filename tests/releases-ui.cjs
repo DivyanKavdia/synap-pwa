@@ -1,6 +1,6 @@
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict');
 const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
-const source=app.slice(app.indexOf('  function bindFirmwareUpdate()'),app.indexOf('  async function registerServiceWorker()'));
+const source=app.slice(app.indexOf('  function openDeviceSettings()'),app.indexOf('  async function registerServiceWorker()'));
 function setup(options={}){
   const nodes=new Map(),events={},calls=[],storage=new Map();let connected=true,clock=100000,build=503;
   const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',files:[],disabled:false,checked:false,hidden:false,textContent:'',events:{},
@@ -52,6 +52,7 @@ function setup(options={}){
       if(options.changedHandle)c.bluetoothDevice.id='new-browser-handle';
       if(options.switchedPendant)c.deviceAssociation={deviceId:OTHER};}},
     recoverRememberedConnection:()=>calls.push('recover')};
+  c.globalThis.SynapSettingsPanel={select:section=>{node('settingsDialog').section=section;}};
   vm.createContext(c);vm.runInContext(source,c);c.bindFirmwareUpdate();
   node('settingsDialog').open=!!options.settingsOpen;
   return {c,node,calls,storage,click:async id=>{for(const fn of node(id).events.click||[])await fn();},tick:()=>events.timer()};
@@ -61,6 +62,7 @@ function setup(options={}){
   await t.click('firmwareUpdateButton');
   assert(t.calls.includes('flash'));assert(t.calls.includes('reconnect'));assert.match(t.node('otaStatus').textContent,/Update complete/);assert.equal(t.storage.size,0);assert(!t.c.firmwareBusy);
   assert(t.node('firmwareUpdateSpinner').hidden);assert(t.node('firmwareNoticeProgress').hidden);assert(t.node('firmwareUpdateButton').hidden);assert(t.node('settingsDialog').open);
+  assert.equal(t.node('settingsDialog').section,'device');
   t=setup({settingsOpen:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert(t.node('settingsDialog').open,'starting inside Settings keeps it open');assert(!t.calls.includes('settings'),'the update must not toggle Settings closed');
   t=setup({commitDrop:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert.match(t.node('otaStatus').textContent,/Update complete/);
   t=setup({flashFail:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert.match(t.node('otaStatus').textContent,/Flash failed/);assert(!t.c.firmwareBusy);assert(t.node('otaCancel').hidden);assert(t.node('otaProgress').hidden);assert(t.node('firmwareNoticeProgress').hidden);assert(t.node('firmwareUpdateSpinner').hidden);assert.equal(t.node('firmwareUpdateButton').hidden,false);assert(t.calls.includes('release'));

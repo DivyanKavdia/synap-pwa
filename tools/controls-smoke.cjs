@@ -166,7 +166,7 @@ const waitState=(page,state)=>page.waitForFunction(state=>document.body.dataset.
       }),{page}=t;
       await page.waitForFunction(()=>window.qaRecoveryWaiting);
       assert(await page.locator('#headerPendantStatus').isEnabled(),'Connect remains available while library recovery is pending');
-      await page.locator('#settingsButton').tap();await page.locator('#connectButton').tap();await waitState(page,'idle');
+      await page.locator('#settingsButton').tap();await page.locator('#headerPendantStatus').tap();await waitState(page,'idle');
       assert(await page.locator('#headerCaptureToggle').isDisabled(),'recording waits until storage recovery finishes');
       assert.equal(await page.evaluate(()=>bleFixture.connects),1);
       await page.evaluate(()=>qaFinishRecovery());await waitReady(page);await waitState(page,'idle');
@@ -179,32 +179,37 @@ const waitState=(page,state)=>page.waitForFunction(state=>document.body.dataset.
     {
       const t=await setup('/?lateBluetooth'),{page}=t;await waitReady(page);await waitState(page,'unsupported');
       assert(await page.locator('#headerPendantStatus').isEnabled(),'Bluetooth unavailability must not permanently disable Connect');
+      await page.locator('#settingsButton').tap();await page.locator('#settingsTab-support').tap();
+      await page.locator('#settingsButton').tap();
       await page.locator('#headerPendantStatus').tap();
       assert(await page.locator('#settingsDialog').evaluate(node=>node.open));
       assert.match(await page.locator('#reconnectStatus').textContent(),/Bluetooth access is not available/);
       assert(await page.locator('#reconnectStatus').isVisible(),'the connection explanation is visible inside Settings');
+      await page.locator('#settingsTab-memory').tap();await page.locator('#headerPendantStatus').tap();
+      assert(await page.locator('#reconnectStatus').isVisible(),'connection errors return to Device from another open section');
       await page.evaluate(()=>bleFixture.enableBluetooth());
-      await page.locator('#connectButton').tap();await waitState(page,'idle');
+      await page.locator('#headerPendantStatus').tap();await waitState(page,'idle');
       assert.equal(await page.evaluate(()=>bleFixture.pickers),1,'Connect uses Bluetooth that became available after startup');
-      await page.locator('#connectButton').tap();await waitState(page,'disconnected');
+      await page.locator('#headerPendantStatus').tap();await waitState(page,'disconnected');
       assert(await page.locator('#settingsDialog').evaluate(node=>node.open),'Disconnect leaves Settings open');
       await page.locator('#settingsButton').tap();
       await page.evaluate(()=>{window.qaSyntheticConnects=0;document.addEventListener('click',event=>{if(!event.isTrusted&&event.target.closest?.('#connectButton'))qaSyntheticConnects++},true)});
       await page.locator('#headerPendantStatus').tap();await waitState(page,'idle');
       assert.equal(await page.evaluate(()=>qaSyntheticConnects),0,'header Connect calls the action without a synthetic tap into a closed dialog');
       assert.equal(await page.evaluate(()=>bleFixture.starts),0,'Connect never silently starts recording');
-      assert.deepEqual(t.errors,[]);await t.context.close();console.log('PASS delayed Bluetooth, direct Settings/header Connect, Disconnect and visible permission feedback');
+      assert.deepEqual(t.errors,[]);await t.context.close();console.log('PASS delayed Bluetooth, single header Connect in Settings, Disconnect and visible permission feedback');
     }
 
     for(const errorName of ['NotFoundError','NotAllowedError']){
       const t=await setup(),{page}=t;await waitReady(page);
       await page.locator('#settingsButton').tap();
+      await page.locator('#settingsTab-appearance').tap();
       await page.evaluate(name=>bleFixture.rejectNextPicker(name,'Bluetooth permission was denied'),errorName);
-      await page.locator('#connectButton').tap();
+      await page.locator('#headerPendantStatus').tap();
       await page.waitForFunction(()=>bleFixture.pickers===1&&document.body.dataset.state==='disconnected');
       assert(await page.locator('#reconnectStatus').isVisible());
-      assert(await page.locator('#connectButton').isEnabled());
-      await page.locator('#connectButton').tap();await waitState(page,'idle');
+      assert(await page.locator('#headerPendantStatus').isEnabled());
+      await page.locator('#headerPendantStatus').tap();await waitState(page,'idle');
       assert.equal(await page.evaluate(()=>bleFixture.pickers),2);
       assert.deepEqual(t.errors,[]);await t.context.close();console.log('PASS Connect recovers after '+errorName+' without a reload');
     }
@@ -227,7 +232,11 @@ const waitState=(page,state)=>page.waitForFunction(state=>document.body.dataset.
       t.holdReleases();await page.locator('#otaReleaseCheck').tap();
       await page.waitForFunction(()=>document.getElementById('otaStatus').textContent==='Checking…');
       assert(await page.locator('#otaLatest').isEnabled());
-      await page.locator('#otaLatest').tap();
+      if(c3){
+        await page.locator('#settingsTab-memory').tap();await page.locator('#settingsButton').tap();
+        await page.locator('#firmwareUpdateButton').tap();
+        assert.equal(await page.locator('#settingsTab-device').getAttribute('aria-selected'),'true','firmware notification opens Device');
+      }else await page.locator('#otaLatest').tap();
       await page.waitForFunction(()=>document.getElementById('otaStatus').textContent.includes('before installing'));
       await page.evaluate(()=>bleFixture.holdFirmware(true));t.release();
       await waitState(page,'updating');await page.waitForFunction(()=>bleFixture.otaBegins===1);
@@ -269,7 +278,7 @@ const waitState=(page,state)=>page.waitForFunction(state=>document.body.dataset.
       assert.match(await page.locator('#startupNotice').textContent(),/Temporary storage failure/);
       assert(await page.locator('#headerCaptureToggle').isDisabled());
       await page.locator('#settingsButton').tap();assert(await page.locator('#settingsDialog').evaluate(node=>node.open));
-      await page.locator('#connectButton').tap();await waitState(page,'idle');
+      await page.locator('#headerPendantStatus').tap();await waitState(page,'idle');
       await page.evaluate(()=>bleFixture.delayStatusRead());await page.waitForFunction(()=>bleFixture.readPending);
       await page.locator('#chooseDeviceButton').tap();
       await page.waitForFunction(()=>bleFixture.pickers===2);

@@ -2,7 +2,7 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),asse
 const root=path.join(__dirname,'..'),html=fs.readFileSync(path.join(root,'index.html'),'utf8'),source=fs.readFileSync(path.join(root,'app.js'),'utf8');
 assert(!html.slice(html.indexOf('<main>'),html.indexOf('</main>')).includes('id="diagnostics"'));
 const settings=html.slice(html.indexOf('<dialog id="settingsDialog"'),html.indexOf('</dialog>'));
-assert.match(settings,/<details id="diagnostics" class="settings-row diagnostics-settings">/);
+assert.match(settings,/<details id="diagnostics" class="settings-disclosure diagnostics-settings">/);
 for(const id of ['copyDiagnosticsButton','clearDiagnosticsButton'])assert.match(settings,new RegExp('id="'+id+'"[^>]*type="button"'));
 const block=source.slice(source.indexOf('    ui.copyDiagnosticsButton.addEventListener('),source.indexOf('    ui.clearDiagnosticsButton.addEventListener('));
 async function check({clipboard=true,copy=true,open=true}={}){

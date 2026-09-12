@@ -14,13 +14,13 @@ test('compact shell presents the day without redundant identity copy',()=>{
 });
 
 test('Settings promotes the firmware-backed synap serial into the device title',()=>{
-  const start=html.indexOf('<section class="settings-card pendant-settings-card">');
+  const start=html.indexOf('<section class="settings-card settings-device-card">');
   const end=html.indexOf('</section>',start);
   const card=html.slice(start,end);
-  assert.match(card,/<h3 id="setupDeviceId">synap-—<\/h3>/);
-  assert.match(card,/<p class="pendant-meta"><span id="setupDeviceStatus">Not connected<\/span><\/p>/);
+  assert.match(card,/<h3 id="setupDeviceId">No pendant selected<\/h3>/);
+  assert.match(card,/<span id="setupDeviceStatus">Not connected<\/span>/);
   assert.doesNotMatch(card,/>Synap Pendant</);
-  assert.match(html,/el\.textContent=id\?id\.toLowerCase\(\):'synap-—'/);
+  assert.match(html,/el\.textContent=id\?id\.toLowerCase\(\):'No pendant selected'/);
   assert.match(html,/el\.dataset\.deviceId=id/);
 });
 
@@ -31,7 +31,7 @@ test('static shell never paints a capitalized synap brand before runtime normali
   assert.doesNotMatch(visibleShell,/\bSynap\b/);
   assert.match(visibleShell,/Day summary/);
   assert.match(visibleShell,/Use the microphone above to start recording/);
-  assert.match(visibleShell,/Back to synap/);
+  assert.match(visibleShell,/Close settings/);
 });
 
 test('runtime does not rewrite user transcripts and names for brand casing',()=>{

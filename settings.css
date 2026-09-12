@@ -1,0 +1,143 @@
+/* One Settings workspace; live connection and capture remain in the app header. */
+#settingsDialog.settings-panel{scrollbar-width:thin;scroll-padding-top:140px}
+#settingsDialog .settings-form{display:flex;flex-direction:column;gap:0;min-height:calc(100dvh - var(--settings-top,64px) - var(--settings-bottom,88px));max-width:760px;padding:0 8px!important}
+#settingsDialog .modal-header{display:grid;grid-template-columns:1fr 40px;align-items:center;gap:18px 12px;position:sticky;top:0!important;z-index:4;margin:0!important;padding:18px 0 12px!important;background:var(--bg);border:0!important}
+#settingsDialog .modal-header::after{content:none}
+#settingsDialog .settings-eyebrow{margin:0 0 5px;font-size:9px;line-height:1.4;font-weight:700;letter-spacing:2px;color:var(--accent)}
+#settingsDialog .modal-header h2{margin:0;font-size:28px!important;line-height:1.12;font-weight:700;letter-spacing:-1px;text-align:left}
+#settingsDialog #closeSettingsButton{display:grid;place-items:center;width:40px;height:40px;min-height:40px;padding:0;border:1px solid var(--border);border-radius:50%;background:var(--surface);color:var(--muted);cursor:pointer}
+#settingsDialog #closeSettingsButton svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8}
+#settingsDialog .settings-tabs{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);gap:4px;padding:4px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2)}
+#settingsDialog .settings-tabs button{min-width:0;min-height:44px;padding:8px 2px;border:0;border-radius:10px;background:transparent;color:var(--muted);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+#settingsDialog .settings-tabs button[aria-selected="true"]{background:var(--surface);color:var(--accent);box-shadow:0 2px 6px var(--shadow)}
+#settingsDialog .settings-page{display:grid;align-content:start;gap:14px;padding:10px 0 20px;min-width:0}
+#settingsDialog .settings-section-intro{padding:2px 2px 4px}
+#settingsDialog .settings-section-intro h3{margin:0 0 5px;font-size:18px;letter-spacing:-.45px;font-weight:650}
+#settingsDialog .settings-section-intro p{margin:0;font-size:12px;color:var(--muted);line-height:1.5}
+#settingsDialog .settings-card{margin:0;padding:18px!important;border:1px solid var(--border)!important;border-radius:18px!important;background:var(--surface);box-shadow:0 4px 18px color-mix(in srgb,var(--shadow) 30%,transparent)!important;min-width:0}
+#settingsDialog .settings-card-title{margin:0 0 14px;font-size:13px;font-weight:650;letter-spacing:.1px}
+#settingsDialog .settings-device-card{display:flex;flex-direction:column;gap:14px;background:linear-gradient(125deg,var(--accent-soft),var(--surface) 62%)}
+#settingsDialog .settings-device-top{display:flex;align-items:center;gap:12px;min-width:0}
+#settingsDialog .settings-device-icon,#settingsDialog .settings-account-icon{display:grid;place-items:center;flex:0 0 46px;width:46px;height:54px;border:1px solid color-mix(in srgb,var(--accent) 20%,var(--border));border-radius:18px;background:var(--surface);color:var(--accent)}
+#settingsDialog .settings-device-icon svg{width:22px;height:26px;stroke:currentColor;fill:none;stroke-width:1.8}
+#settingsDialog .settings-device-copy{min-width:0}
+#settingsDialog .settings-label{margin:0 0 4px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted)}
+#settingsDialog #setupDeviceId{margin:0;font-size:15px;font-weight:650;letter-spacing:-.3px;line-height:1.4;overflow-wrap:anywhere}
+#settingsDialog .settings-device-status{display:flex;align-items:center;gap:6px;margin:5px 0 0;font-size:11px;color:var(--muted)}
+#settingsDialog .settings-status-dot{width:6px;height:6px;border-radius:50%;background:var(--muted)}
+body:is([data-state="idle"],[data-state="recording"],[data-state="starting"]) #settingsDialog .settings-status-dot{background:var(--success)}
+#settingsDialog .settings-device-actions{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#settingsDialog .settings-caption{font-size:11px;line-height:1.5;color:var(--muted);margin:0}
+#settingsDialog button{font-family:inherit;cursor:pointer}
+#settingsDialog button:disabled{cursor:default;opacity:.5}
+#settingsDialog #chooseDeviceButton{display:inline-flex!important;justify-content:center;flex:0 0 auto;min-height:44px!important;padding:8px 12px!important;border:1px solid var(--border);border-radius:11px!important;background:var(--surface);color:var(--ink);font-size:12px!important;font-weight:600}
+#settingsDialog .settings-firmware{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;border-top:1px solid var(--border);padding-top:14px;min-width:0}
+#settingsDialog .settings-firmware h4{margin:0 0 4px;font-size:12px;font-weight:650}
+#settingsDialog #otaStatus{display:block!important;grid-area:auto;margin:0!important;font-size:11px!important;line-height:1.5;overflow-wrap:anywhere;color:var(--muted)}
+#settingsDialog .settings-firmware-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;max-width:160px}
+#settingsDialog :is(#otaReleaseCheck,#otaLatest,#otaCancel){grid-area:auto;width:auto!important;height:auto;min-height:44px!important;font-size:11px!important;line-height:1.35;padding:9px 11px!important;border:1px solid var(--border)!important;border-radius:11px!important;background:var(--surface)!important;color:var(--accent)!important;white-space:normal}
+#settingsDialog #otaReleaseCheck::before{content:none}
+#settingsDialog #otaLatest{background:var(--action)!important;color:var(--on-action)!important;border-color:var(--action)!important}
+#settingsDialog #otaCancel{color:var(--rose)!important}
+#settingsDialog #otaProgress{grid-column:1/-1;grid-row:auto;width:100%;height:6px;border:0;border-radius:6px;accent-color:var(--accent)}
+#settingsDialog .settings-hint,#settingsDialog .reconnect-status{font-size:11px;line-height:1.5;color:var(--muted);margin:0}
+#settingsDialog .settings-preferences .settings-card-title{margin-bottom:0}
+#settingsDialog .settings-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:70px;padding:13px 0;margin:0;cursor:pointer}
+#settingsDialog .settings-toggle-row+.settings-toggle-row{border-top:1px solid var(--border)}
+#settingsDialog .settings-toggle-row:last-child{padding-bottom:0;min-height:60px}
+#settingsDialog .settings-toggle-row>span{display:grid;gap:4px;min-width:0}
+#settingsDialog .settings-toggle-row strong{font-size:13px;line-height:1.4;font-weight:600}
+#settingsDialog .settings-toggle-row small{font-size:11px;line-height:1.45;color:var(--muted)}
+#settingsDialog .settings-toggle-row .switch-input{appearance:none;-webkit-appearance:none;position:relative;flex:0 0 44px;width:44px;height:26px;border:1px solid var(--control-border);border-radius:20px;background:var(--switch-off);cursor:pointer;transition:background .15s}
+#settingsDialog .switch-input::before{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--on-action);box-shadow:0 1px 3px var(--shadow);transition:transform .15s}
+#settingsDialog .switch-input:checked{background:var(--action);border-color:var(--action)}
+#settingsDialog .switch-input:checked::before{transform:translateX(18px)}
+#settingsDialog .synap-account{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:10px;padding:0;background:transparent;border:0;min-width:0}
+#settingsDialog .settings-account-icon{width:36px;height:40px;border:0;border-radius:12px;background:var(--accent-soft)}
+#settingsDialog .settings-account-icon svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7}
+#settingsDialog .synap-account-copy{display:grid;gap:4px;min-width:0}
+#settingsDialog .synap-account-copy strong{font-size:13px;line-height:1.4;font-weight:650;overflow-wrap:anywhere}
+#settingsDialog .synap-account-copy span{font-size:11px;line-height:1.45;color:var(--muted);overflow-wrap:anywhere}
+#settingsDialog .synap-account button{min-height:44px!important;font-size:12px!important;padding:8px 12px;border-radius:11px;white-space:nowrap}
+#settingsDialog .synap-account-status{font-size:12px;color:var(--muted);line-height:1.5;margin:10px 0 0}
+#settingsDialog .synap-account-status:empty{display:none}
+#settingsDialog .synap-account-status[data-kind="error"]{color:var(--rose)}
+#settingsDialog .synap-gsi-host{display:flex;justify-content:center;margin-top:12px}
+#settingsDialog .synap-voice-profile{margin-top:14px;padding:12px 0 0;border:0;border-top:1px solid var(--border);border-radius:0;background:transparent}
+#settingsDialog .settings-disclosure{border:0;border-top:1px solid var(--border);border-radius:0;margin:0;padding:0;background:transparent;min-width:0}
+#settingsDialog .settings-disclosure summary,#settingsDialog #systemHealth>summary{display:flex;align-items:center;gap:11px;min-height:58px;margin:0;padding:10px 0;list-style:none;font-size:13px;font-weight:550;cursor:pointer}
+#settingsDialog summary::-webkit-details-marker{display:none}
+#settingsDialog .settings-disclosure>summary::after,#settingsDialog #systemHealth>summary::after{content:"";flex:0 0 6px;width:6px;height:6px;margin-left:auto;margin-right:4px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);color:var(--muted);transition:transform .15s}
+#settingsDialog .settings-disclosure[open]>summary::after,#settingsDialog #systemHealth[open]>summary::after{transform:rotate(45deg)}
+#settingsDialog .settings-row-body,#settingsDialog .processing-fields{display:grid;gap:12px;padding:4px 0 14px;min-width:0}
+#settingsDialog .settings-row-body label{display:grid;gap:6px;font-size:12px;color:var(--muted)}
+#settingsDialog .settings-form :is(input:not([type="checkbox"]),select){width:100%;min-width:0;min-height:46px!important;padding:10px 12px;background:var(--bg);border:1px solid var(--control-border);border-radius:10px;color:var(--ink);font:inherit;font-size:16px!important}
+#settingsDialog .appearance-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:0;margin-bottom:12px;background:none}
+#settingsDialog .appearance-options button{display:grid;justify-items:center;gap:9px;min-width:0;min-height:105px;padding:10px 6px;border:1px solid var(--border);border-radius:13px;background:var(--bg);color:var(--muted);font-size:12px}
+#settingsDialog .appearance-options button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+#settingsDialog .settings-theme-preview{width:42px;height:55px;display:flex;flex-direction:column;gap:5px;padding:9px 6px;border:1px solid #789188;border-radius:8px;background:#f4f7f5;box-shadow:0 2px 4px var(--shadow)}
+#settingsDialog .settings-theme-preview i{height:3px;border-radius:3px;background:#93aaa2}
+#settingsDialog .settings-theme-preview i:first-child{width:55%;height:5px;background:#367864;margin-bottom:3px}
+#settingsDialog .preview-dark{background:#16271f;border-color:#526c61}
+#settingsDialog .preview-dark i{background:#708f81}
+#settingsDialog .preview-dark i:first-child{background:#b9dbcc}
+#settingsDialog .preview-auto{background:linear-gradient(90deg,#f4f7f5 50%,#16271f 50%)}
+#settingsDialog .palette-heading{margin:24px 0 12px;font-size:13px;font-weight:650}
+#settingsDialog .palette-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+#settingsDialog .palette-options button{display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;min-height:78px;min-width:0;padding:8px 2px;border:1px solid transparent;border-radius:12px;background:transparent;font-size:11px;font-weight:500;color:var(--muted)}
+#settingsDialog .palette-options button[aria-pressed="true"]{border-color:var(--border);background:var(--surface-2);color:var(--ink)}
+#settingsDialog .palette-swatch{width:25px;height:25px;border-radius:50%;border:3px solid var(--surface);box-shadow:0 0 0 1px var(--border)}
+#settingsDialog .settings-instant-note{padding-top:14px;text-align:center}
+#settingsDialog .settings-support-stack{padding:0 18px!important}
+#settingsDialog .settings-support-stack>.settings-disclosure:first-child{border-top:0}
+#settingsDialog .settings-support-stack>details>summary>svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;color:var(--accent)}
+#settingsDialog #systemHealth{padding:0!important;margin:0;border:0!important;border-top:1px solid var(--border)!important;border-radius:0!important;background:transparent;box-shadow:none!important}
+#settingsDialog #systemHealth>summary .settings-icon{width:18px;height:18px;flex-basis:18px;border-radius:0;background:none}
+#settingsDialog #systemHealth>summary .settings-icon svg{width:18px;height:18px;stroke:currentColor;fill:none}
+#settingsDialog #systemHealth>summary strong{font-size:13px;font-weight:550}
+#settingsDialog #systemHealth>summary .disclosure-chevron{display:none}
+#settingsDialog .system-health-body{padding:0 0 14px}
+#settingsDialog .system-health-row{font-size:11px;line-height:1.5;gap:12px;padding:8px 0}
+#settingsDialog .system-health-row strong{overflow-wrap:anywhere}
+#settingsDialog .system-health-warning{font-size:11px;margin-bottom:8px}
+#settingsDialog .device-panel{padding:0 0 14px}
+#settingsDialog .metrics-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#settingsDialog .metrics-grid>div{padding:12px;border:1px solid var(--border);border-radius:11px;background:var(--bg)}
+#settingsDialog .metrics-grid span,#settingsDialog .metrics-grid small{font-size:10px;line-height:1.4;overflow-wrap:anywhere}
+#settingsDialog .metrics-grid strong{font-size:17px;margin:6px 0}
+#settingsDialog .capture-help-content{position:static;display:block;padding:0 0 14px;background:transparent;border:0;box-shadow:none;font-size:12px}
+#settingsDialog .gesture-guide{margin:0;padding:4px 0}
+#settingsDialog .gesture-guide>div{padding:8px 0}
+#settingsDialog .capture-safety{font-size:11px;line-height:1.5;color:var(--muted)}
+#settingsDialog .diagnostics-settings pre{font-size:10px;line-height:1.5;max-height:230px;margin:0;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere;border-radius:10px}
+#settingsDialog .setting-actions{gap:6px}
+#settingsDialog .setting-actions button{flex:1;min-height:44px;padding:8px 6px;font-size:11px;border-radius:10px}
+#settingsDialog #clearDiagnosticsButton{color:var(--rose)}
+#settingsDialog #settingsDeviceExtras:empty{display:none}
+#settingsDialog .desktop-capture-card{margin:0;padding:16px;border-radius:16px;background:var(--surface);box-shadow:none}
+#settingsDialog .desktop-capture-card button{min-height:44px;background:var(--action);color:var(--on-action)}
+#settingsDialog .settings-save-bar{position:sticky;bottom:0;z-index:3;display:flex;margin-top:auto;padding:12px 0;background:var(--bg);border-top:1px solid var(--border)}
+#settingsDialog #settingsSaveButton{width:100%;min-height:46px;padding:12px 18px;border:1px solid var(--action);border-radius:13px;background:var(--action);color:var(--on-action);font-size:13px;font-weight:650;box-shadow:0 3px 8px color-mix(in srgb,var(--action) 15%,transparent)}
+#settingsDialog :is(button,summary,input,select):focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media(min-width:900px){
+ #settingsDialog .settings-form{padding:8px 24px 0!important}
+ #settingsDialog .settings-page{gap:18px;padding-top:18px;padding-bottom:28px}
+ #settingsDialog #settingsDevice{grid-template-columns:1.1fr 1fr;align-items:start}
+ #settingsDialog .settings-section-intro,#settingsDialog #settingsDeviceExtras{grid-column:1/-1}
+ #settingsDialog .settings-tabs button{font-size:13px}
+ #settingsDialog .settings-card{padding:22px!important}
+ #settingsDialog .settings-support-stack{padding:0 22px!important}
+ #settingsDialog .settings-save-bar{justify-content:flex-end}
+ #settingsDialog #settingsSaveButton{width:auto;min-width:160px}
+}
+@media(max-width:360px){
+ #settingsDialog .settings-tabs button{font-size:11px}
+ #settingsDialog .settings-form{padding:0 2px!important}
+ #settingsDialog .settings-card{padding:14px!important}
+ #settingsDialog .settings-support-stack{padding:0 14px!important}
+ #settingsDialog .synap-account{grid-template-columns:minmax(0,1fr) auto}
+ #settingsDialog .settings-account-icon{display:none}
+ #settingsDialog .settings-firmware-actions{max-width:134px}
+}
+@media(prefers-reduced-motion:reduce){#settingsDialog *,#settingsDialog *::before,#settingsDialog *::after{transition:none!important}}
+@media(forced-colors:active){#settingsDialog .settings-toggle-row .switch-input{appearance:auto;-webkit-appearance:auto}#settingsDialog .switch-input::before{display:none}#settingsDialog .settings-tabs button[aria-selected="true"]{outline:2px solid Highlight}#settingsDialog .palette-swatch{forced-color-adjust:none}}

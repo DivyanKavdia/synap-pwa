@@ -39,6 +39,46 @@ async function run(){
       await page.locator('#headerBatteryStatus').click();
       assert(await page.locator('#synapBatteryPopover').isVisible(),'battery details still open above settings');
       await page.locator('#headerBatteryStatus').click();
+      const controls=['setupDeviceId','chooseDeviceButton','otaReleaseCheck','wakeLockInput','autoReconnectInput','providerInput','autoProcessInput','synapSignInButton','diagnostics','settingsSaveButton'];
+      for(const id of controls)assert.equal(await page.locator('[id="'+id+'"]').count(),1,'one owner for '+id);
+      assert.equal(await page.locator('#connectButton:visible').count(),0,'header owns the single visible connection control');
+      const tabs=page.locator('.settings-tabs [role="tab"]');
+      assert.deepEqual(await tabs.allTextContents(),['Device','Memory','Appearance','Support']);
+      await page.screenshot({path:path.join(out,`settings-device-${mode}-${width}.png`)});
+      await page.locator('#wakeLockInput').uncheck();
+      await page.evaluate(()=>{window.settingsOriginalInput=document.getElementById('wakeLockInput')});
+      for(const section of ['memory','appearance','support','device']){
+        await page.locator('#settingsTab-'+section).click();
+        assert.equal(await page.locator('[data-settings-panel]:visible').count(),1);
+        assert.equal(await page.locator('.settings-tabs [aria-selected="true"]').count(),1);
+        assert(await tabs.evaluateAll(nodes=>nodes.every(node=>node.scrollWidth<=node.clientWidth)),'tab labels fit without clipping or overlapping');
+        assert.equal(await page.locator('#settingsSaveButton:visible').count(),1);
+        assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+        if(section==='memory'){
+          await page.locator('#settingsProcessingOptions > summary').click();
+          await page.locator('#providerInput').selectOption('custom');assert(await page.locator('#endpointInput').isVisible());
+          await page.locator('#providerInput').selectOption('synap');assert(await page.locator('#synapSignInButton').isVisible());
+          await page.locator('#settingsProcessingOptions > summary').click();
+        }
+        if(section==='appearance'){
+          await page.locator('[data-theme-choice="'+mode+'"]').click();
+          await page.locator('[data-palette-choice="lavender"]').click();
+          assert.equal(await page.evaluate(()=>localStorage.getItem('synap-palette')),'lavender');
+          await page.locator('[data-palette-choice="olive"]').click();
+        }
+        if(section==='support'){
+          assert.equal(await page.locator('#settingsConnectionHealth #pendantHealth').count(),1);
+          await page.locator('#diagnostics > summary').click();
+          assert(await page.locator('#copyDiagnosticsButton').isVisible());
+          await page.locator('#diagnostics > summary').click();
+        }
+        await page.screenshot({path:path.join(out,`settings-${section}-${mode}-${width}.png`)});
+      }
+      assert(await page.evaluate(()=>settingsOriginalInput===document.getElementById('wakeLockInput')&&!settingsOriginalInput.checked),'panels preserve live inputs and drafts');
+      await page.locator('#settingsTab-device').focus();await page.keyboard.press('End');
+      assert.equal(await page.locator('#settingsTab-support').getAttribute('aria-selected'),'true');
+      await page.keyboard.press('Home');
+      assert.equal(await page.locator('#settingsTab-device').getAttribute('aria-selected'),'true');
       await page.locator('#settingsDialog').evaluate(node=>node.scrollTop=400);
       await hit(page,'#headerCaptureToggle');await hit(page,'#closeSettingsButton');
       await page.screenshot({path:path.join(out,`settings-${mode}-${width}.png`)});
@@ -48,7 +88,7 @@ async function run(){
       const returnedScroll=await page.evaluate(()=>scrollY);
       assert(Math.abs(returnedScroll-before.scroll)<1,`return to original reading position: ${before.scroll} → ${returnedScroll}`);
       await page.locator('#settingsButton').click();await page.locator('#wakeLockInput').uncheck();
-      await page.locator('#settingsForm > button[type="submit"]').click();
+      await page.locator('#settingsSaveButton').click();
       await page.waitForFunction(()=>!document.querySelector('#settingsDialog').open);
       assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('dk-pendant-settings')).wakeLock),false);
       await page.locator('#settingsButton').click();await page.keyboard.press('Escape');

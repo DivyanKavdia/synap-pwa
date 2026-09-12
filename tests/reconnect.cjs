@@ -46,6 +46,7 @@ async function connectionTest({fail=false,reselect=false,auto=false,orphan=false
   const c={stopRememberedMonitoring(){},syncRememberedMonitoring(){},rememberDeviceAssociation(){},console,Boolean,Error,checkFirmwareRelease:null,connectInProgress:false,finalizing:false,needsDeviceSelection:reselect,bluetoothDevice:missing?null:device,manualDisconnect:false,connectionEpoch:0,gattServer:null,recordingReconnectPending:false,
     navigator:{bluetooth:{requestDevice(){calls.push('chooser');return cancel?Promise.reject(Object.assign(new Error('cancel'),{name:'NotFoundError'})):Promise.resolve(device);}}},SERVICE_UUID:'service',AUDIO_CHAR_UUID:'audio',CONTROL_CHAR_UUID:'control',CMD_STOP:0,CMD_GET_STATUS:2,DEVICE_STATE:{CONNECTED_IDLE:1,STREAMING:2,ERROR:3},deviceStatus:{state:orphan?2:1,error:0},clearReconnectTimer(){},setReconnectCapability(){},setAppState(s){c.state=s;},log(){},toast(){},cleanupCharacteristics(){c.connectionEpoch++;},attachBluetoothDevice(d){c.bluetoothDevice=d;},withTimeout:p=>p,isGattConnected:()=>Boolean(c.bluetoothDevice?.gatt.connected),queueGattOperation:f=>f(),handleAudioNotification(){},handleStatusNotification(){},delay:async()=>{},writeCommand:async cmd=>{calls.push('command '+cmd);if(cmd===0)c.deviceStatus.state=1;},readControlStatus:async()=>{},reconnectAttempts:0,localStorage:{setItem(){}},friendlyError:e=>e.message,scheduleAutoReconnect(){calls.push('retry');}};
   c.document={body:{dataset:{}},visibilityState:'visible'};c.reconnectRequested=()=>true;c.reconnectPageHidden=false;
+  c.ui={settingsDialog:{open:false}};
   c.disconnectGatt=(reason,d=c.bluetoothDevice)=>d?.gatt.disconnect();
   if(hidden){const connect=device.gatt.connect;device.gatt.connect=async function(){const result=await connect.call(this);c.document.visibilityState='hidden';return result;};}
   c.renderDeviceSetup=()=>assert.equal(c.connectInProgress,false,'refresh device controls after connection setup finishes');
@@ -63,7 +64,7 @@ async function workerTests(){
   async function fetch(url,mode='navigate',method='GET'){let result;handlers.fetch({request:{url,mode,method},respondWith:p=>result=p});return result;}
   assert.equal(await fetch(scope+'?from=home'),'./index.html');
   let reply;handlers.message({data:{type:'GET_VERSION'},source:{postMessage:d=>reply=d}});
-  assert.equal(reply.type,'APP_VERSION');assert.equal(reply.version,'1.0.0');assert.equal(reply.release,'1.0.0');assert.equal(reply.revision,'1.0.0-audio2');assert.equal(reply.shellRevision,'1.0.0-shell67-actions');
+  assert.equal(reply.type,'APP_VERSION');assert.equal(reply.version,'1.0.0');assert.equal(reply.release,'1.0.0');assert.equal(reply.revision,'1.0.0-audio2');assert.equal(reply.shellRevision,'1.0.0-shell68-settings');
 }
 
 (async()=>{

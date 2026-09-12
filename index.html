@@ -16,10 +16,10 @@
   <script>globalThis.SYNAP_STATIC_BOOTSTRAP=true;</script>
   <link rel="stylesheet" href="styles.css?v=1.0.0-controls1">
   <link rel="stylesheet" href="brand.css?v=1.0.0-brain1" data-synap-brand="brain1">
-  <link rel="stylesheet" href="polish.css?v=1.0.0-ui5">
+  <link rel="stylesheet" href="polish.css?v=1.0.0-settings2">
   <link rel="stylesheet" href="brain.css?v=1.0.0-actions1">
   <link rel="stylesheet" href="compact.css?v=1.0.0-actions3" data-synap-compact="refresh1">
-  <link rel="stylesheet" href="settings-icon-fix.css?v=1.0.0-ui-fix1">
+  <link rel="stylesheet" href="settings.css?v=1.0.0-settings2">
   <script src="theme.js?v=1.0.0-cleanup1"></script>
 <link rel="stylesheet" href="meeting-tools.css?v=1.0.0-meetings2"></head>
 <body data-startup="loading" data-state="disconnected" class="synap-refresh">
@@ -62,27 +62,77 @@
 <section id="insights" class="section-card insights-section memory-feed"><div class="section-heading"><div><p class="section-eyebrow">YOUR MEMORY</p><h2>Conversations &amp; moments <span id="insightsCount" class="count-badge">0</span></h2><p class="section-copy">Decisions, discussions and context you can come back to.</p></div><span id="memoryProcessingStatus" hidden></span></div><div id="emptyInsights" class="empty-state"><span class="empty-state-icon" aria-hidden="true"><svg><use href="#i-note"/></svg></span><h3>No memories for this day</h3><p>Processed recordings appear here.</p></div><div id="insightsList" class="insights-list"></div></section>
 <section id="library" class="section-card recordings-section" aria-labelledby="libraryTitle"><div class="section-heading"><div><p class="section-eyebrow">THE ORIGINALS</p><h2 id="libraryTitle">Your recordings <span id="recordingsCount" class="count-badge">0</span></h2></div><button id="clearRecordingsButton" class="text-button" type="button">Clear</button></div><div class="library-search"><svg aria-hidden="true"><use href="#i-search"/></svg><input id="librarySearch" type="search" aria-label="Search recordings" placeholder="Find a name, topic or phrase…" autocomplete="off"><button id="clearLibrarySearch" type="button" hidden>Clear search</button></div><p id="librarySearchStatus" class="library-search-status" role="status" hidden></p><div class="library-toolbar"><div class="library-scope" role="group" aria-label="Recording date filter"><button type="button" data-library-scope="all" aria-pressed="true">All dates</button><button type="button" data-library-scope="day" aria-pressed="false">Selected day</button></div><p id="libraryScopeHint">All recordings saved in this browser</p></div><div id="emptyRecordings" class="empty-state"><span class="empty-state-icon" aria-hidden="true"><svg><use href="#i-wave"/></svg></span><h3>No recordings</h3><p>Use the microphone above to start recording.</p></div><div id="recordingsList" class="recordings-list"></div><div id="libraryPagination" hidden><p id="libraryCountLabel"></p><button id="showMoreRecordingsButton" type="button">Show more</button><button id="showLessRecordingsButton" type="button" hidden>Show less</button></div></section><section id="processing" hidden><p id="queueStatus">Ready.</p><button id="runQueueButton" type="button">Process pending memories</button><button id="pauseQueueButton" type="button">Pause</button></section></main><footer><span>synap</span><span id="appVersion">1.0.0</span></footer></div>
 <nav class="wireframe-tabs brain-tabs" aria-label="Primary"><a href="#today" class="active" aria-current="page"><svg><use href="#i-spark"/></svg><span>Today</span></a><a href="#insights"><svg><use href="#i-note"/></svg><span>Memories</span></a><a href="#library"><svg><use href="#i-library"/></svg><span>Library</span></a></nav><div id="toastRegion"></div>
-<dialog id="settingsDialog" class="modal" aria-labelledby="settingsTitle"><form id="settingsForm" class="settings-form"><div class="modal-header"><button id="closeSettingsButton" type="button" aria-label="Back to synap"><svg aria-hidden="true"><use href="#i-chevron-left"/></svg></button><h2 id="settingsTitle">Settings</h2></div>
-<section class="settings-card pendant-settings-card">
-  <div class="pendant-settings-top"><div class="pendant-settings-copy"><p class="settings-device-label">Pendant</p><h3 id="setupDeviceId">synap-—</h3><p class="pendant-meta"><span id="setupDeviceStatus">Not connected</span></p></div></div>
-  <div class="pendant-connection"><button id="connectButton" class="device-summary" type="button"><span class="device-summary-copy"><strong>synap Pendant</strong><span id="connectionBadge" class="status-badge status-offline"><span id="connectionText">Not connected</span></span></span><span id="connectButtonLabel">Connect</span></button><p id="disconnectProtectionStatus" class="settings-hint" hidden></p><p id="reconnectStatus" class="reconnect-status" role="status" hidden></p></div><div class="pendant-actions"><button id="chooseDeviceButton" class="button button-secondary" type="button">Change</button></div>
-  <div id="firmwareSettings" class="firmware-inline"><div class="firmware-inline-head"><h4 id="firmwareTitle">Firmware</h4></div><p id="otaStatus" role="status">Connect to check</p><progress id="otaProgress" value="0" max="1" aria-label="Firmware transfer progress" hidden></progress><div class="firmware-actions"><button id="otaReleaseCheck" type="button" aria-label="Check firmware update" title="Check firmware update">Check for update</button><button id="otaLatest" class="button button-primary" type="button" hidden>Update</button><button id="otaCancel" type="button" hidden>Cancel</button></div></div>
-</section>
-<section class="settings-card connection-settings"><details class="recorder-details"><summary>Connection health</summary><div class="device-panel"><div class="led-key"><span>Offline</span><span>Ready</span><span>Listening</span></div><div class="metrics-grid"><div><span>Audio level</span><strong id="signalMetric">—</strong><small id="signalDetail">No stream</small></div><div><span>Frames</span><strong id="framesMetric">0</strong><small id="framesDetail">Complete</small></div><div><span>Transport</span><strong id="transportMetric">—</strong><small id="transportDetail">MTU / chunks</small></div><div><span>Quality</span><strong id="qualityMetric">—</strong><small id="qualityDetail">Waiting</small></div></div></div></details><details class="recording-help"><summary>Recording help</summary><div class="capture-help-content"><div class="gesture-guide" aria-label="Pendant touch controls"><div><span class="gesture-dots" aria-hidden="true">••</span><span><strong>Double tap</strong>Record on / off</span></div><div><span class="gesture-dots" aria-hidden="true">•••</span><span><strong>Triple tap</strong>Sleep / wake</span></div></div><p class="capture-safety">Keep this app open while listening. Audio is saved on this device.</p></div></details></section><section class="appearance-settings"><h3>Appearance</h3><div class="appearance-options" role="group" aria-label="Light and dark mode"><button type="button" data-theme-choice="system">Auto</button><button type="button" data-theme-choice="light">Light</button><button type="button" data-theme-choice="dark">Dark</button></div><h4 class="palette-heading">Color palette</h4><div class="palette-options" role="group" aria-label="Color palette"><button type="button" data-palette-choice="olive"><span class="palette-swatch" aria-hidden="true"></span>Olive</button><button type="button" data-palette-choice="blue"><span class="palette-swatch" aria-hidden="true"></span>Blue</button><button type="button" data-palette-choice="pink"><span class="palette-swatch" aria-hidden="true"></span>Pink</button><button type="button" data-palette-choice="lavender"><span class="palette-swatch" aria-hidden="true"></span>Lavender</button></div></section>
-<section class="settings-card memory-settings-card">
-  <h3>Memory &amp; AI</h3>
-  <label class="memory-provider"><span>Where memories are built</span><select id="providerInput"><option value="synap">synap cloud · encrypted</option><option value="custom">Custom endpoints</option></select></label>
-  <div id="synapAccountFields">
-    <div class="synap-account"><div class="synap-account-copy"><strong id="synapAccountName">Not signed in</strong><span id="synapAccountEmail">Sign in with Google to build your second brain.</span></div><button id="synapSignInButton" class="button button-primary" type="button">Sign in</button><button id="synapSignOutButton" class="button button-secondary" type="button" hidden>Sign out</button></div>
-    <div id="synapSignInButtonHost" class="synap-gsi-host" hidden></div>
-    <p id="synapAccountStatus" class="synap-account-status" role="status"></p>
-    <details class="synap-connection" id="synapConnectionDetails"><summary>Connection</summary><div class="settings-row-body"><label><span>Backend URL</span><input id="synapBackendUrlInput" inputmode="url" autocomplete="off" placeholder="https://synap-backend-xxxx.a.run.app"></label><label><span>Google client ID</span><input id="synapClientIdInput" autocomplete="off" placeholder="xxxxx.apps.googleusercontent.com"></label><p class="settings-hint">Conversations are sealed with a key only your account can unwrap. Raw audio is deleted on a schedule; the memory it produced stays.</p></div></details>
+<dialog id="settingsDialog" class="modal" aria-labelledby="settingsTitle">
+<form id="settingsForm" class="settings-form">
+  <div class="modal-header">
+    <div class="settings-title"><p class="settings-eyebrow">YOUR SYNAP</p><h2 id="settingsTitle">Settings</h2></div>
+    <button id="closeSettingsButton" type="button" aria-label="Close settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+    <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+      <button id="settingsTab-device" type="button" role="tab" aria-controls="settingsDevice" aria-selected="true">Device</button>
+      <button id="settingsTab-memory" type="button" role="tab" aria-controls="settingsMemory" aria-selected="false" tabindex="-1">Memory</button>
+      <button id="settingsTab-appearance" type="button" role="tab" aria-controls="settingsAppearance" aria-selected="false" tabindex="-1">Appearance</button>
+      <button id="settingsTab-support" type="button" role="tab" aria-controls="settingsSupport" aria-selected="false" tabindex="-1">Support</button>
+    </div>
   </div>
-  <div class="processing-fields" id="customEndpointFields"><label><span>Transcription endpoint</span><input id="endpointInput"></label><label><span>Summary endpoint</span><input id="llmEndpointInput"></label><label><span id="apiKeyLabel">Access token</span><input id="tokenInput" type="password"></label></div>
-</section>
-<label><input id="autoProcessInput" type="checkbox"> Process memories automatically</label><label><input id="wakeLockInput" type="checkbox" checked> Keep screen awake while listening</label><label><input id="autoReconnectInput" type="checkbox" checked> Reconnect pendant automatically</label><button id="retrySaveButton" type="button">Retry storage</button><button id="recoveryButton" type="button">Recover</button><button id="installButton" type="button" hidden>Install app</button><button type="submit">Save</button><details id="diagnostics" class="settings-row diagnostics-settings"><summary>Diagnostics</summary><div class="settings-row-body"><pre id="diagnosticsLog"></pre><div class="setting-actions"><button id="copyDiagnosticsButton" type="button">Copy diagnostics</button><button id="clearDiagnosticsButton" type="button">Clear diagnostics</button></div></div></details></form></dialog>
+  <section id="settingsDevice" class="settings-page" role="tabpanel" aria-labelledby="settingsTab-device" data-settings-panel="device">
+    <div class="settings-section-intro"><h3>Ready when you are.</h3><p>Your pendant and how it listens.</p></div>
+    <section class="settings-card settings-device-card">
+      <div class="settings-device-top"><span class="settings-device-icon" aria-hidden="true"><svg><use href="#i-wave"/></svg></span><div class="settings-device-copy"><p class="settings-label">Pendant</p><h3 id="setupDeviceId">No pendant selected</h3><p class="settings-device-status"><span class="settings-status-dot" aria-hidden="true"></span><span id="setupDeviceStatus">Not connected</span></p></div></div>
+      <div class="settings-device-actions"><span class="settings-caption">Use Connect above.</span><button id="chooseDeviceButton" class="button button-secondary" type="button">Change device</button></div>
+      <p id="disconnectProtectionStatus" class="settings-hint" hidden></p><p id="reconnectStatus" class="reconnect-status" role="status" hidden></p>
+      <div id="firmwareSettings" class="settings-firmware">
+        <div class="settings-firmware-copy"><h4 id="firmwareTitle">Firmware</h4><p id="otaStatus" role="status">Connect to check</p></div>
+        <div class="settings-firmware-actions"><button id="otaReleaseCheck" type="button" aria-label="Check firmware update">Check for update</button><button id="otaLatest" class="button button-primary" type="button" hidden>Update</button><button id="otaCancel" type="button" hidden>Cancel</button></div>
+        <progress id="otaProgress" value="0" max="1" aria-label="Firmware transfer progress" hidden></progress>
+      </div>
+    </section>
+    <section class="settings-card settings-preferences"><h3 class="settings-card-title">While listening</h3>
+      <label class="settings-toggle-row"><span><strong>Keep screen awake</strong><small>While your pendant is recording.</small></span><input id="wakeLockInput" class="switch-input" type="checkbox" role="switch" aria-label="Keep screen awake while listening" checked></label>
+      <label class="settings-toggle-row"><span><strong>Auto reconnect</strong><small>Reconnect after a brief interruption.</small></span><input id="autoReconnectInput" class="switch-input" type="checkbox" role="switch" aria-label="Reconnect automatically" checked></label>
+    </section>
+    <div id="settingsDeviceExtras"></div>
+  </section>
+  <section id="settingsMemory" class="settings-page" role="tabpanel" aria-labelledby="settingsTab-memory" data-settings-panel="memory" hidden>
+    <div class="settings-section-intro"><h3>Keep the useful parts.</h3><p>Your account and memory preferences.</p></div>
+    <section class="settings-card memory-settings-card"><h3 class="settings-card-title">Memory &amp; AI</h3>
+      <div id="synapAccountFields">
+        <div class="synap-account"><span class="settings-account-icon" aria-hidden="true"><svg><use href="#i-people"/></svg></span><div class="synap-account-copy"><strong id="synapAccountName">Not signed in</strong><span id="synapAccountEmail">Sign in to sync your memories.</span></div><button id="synapSignInButton" class="button button-primary" type="button">Sign in</button><button id="synapSignOutButton" class="button button-secondary" type="button" hidden>Sign out</button></div>
+        <div id="synapSignInButtonHost" class="synap-gsi-host" hidden></div><p id="synapAccountStatus" class="synap-account-status" role="status"></p>
+        <details class="synap-connection settings-disclosure" id="synapConnectionDetails"><summary>Cloud connection</summary><div class="settings-row-body"><label><span>Backend URL</span><input id="synapBackendUrlInput" inputmode="url" autocomplete="off" placeholder="https://synap-backend-xxxx.a.run.app"></label><label><span>Google client ID</span><input id="synapClientIdInput" autocomplete="off" placeholder="xxxxx.apps.googleusercontent.com"></label><p class="settings-hint">Conversations are encrypted for your account.</p></div></details>
+      </div>
+      <label class="settings-toggle-row"><span><strong>Create memories automatically</strong><small>Turn saved audio into summaries and actions.</small></span><input id="autoProcessInput" class="switch-input" type="checkbox" role="switch" aria-label="Create memories automatically"></label>
+      <details class="settings-disclosure" id="settingsProcessingOptions"><summary>Processing options</summary><div class="settings-row-body">
+        <label class="memory-provider"><span>Memory provider</span><select id="providerInput"><option value="synap">synap cloud · encrypted</option><option value="custom">Custom endpoints</option></select></label>
+        <div class="processing-fields" id="customEndpointFields"><label><span>Transcription endpoint</span><input id="endpointInput"></label><label><span>Summary endpoint</span><input id="llmEndpointInput"></label><label><span id="apiKeyLabel">Access token</span><input id="tokenInput" type="password"></label></div>
+      </div></details>
+    </section>
+  </section>
+  <section id="settingsAppearance" class="settings-page" role="tabpanel" aria-labelledby="settingsTab-appearance" data-settings-panel="appearance" hidden>
+    <div class="settings-section-intro"><h3>Make it yours.</h3><p>A look that feels right, day or night.</p></div>
+    <section class="settings-card appearance-settings"><h3 class="settings-card-title">Display</h3>
+      <div class="appearance-options" role="group" aria-label="Light and dark mode">
+        <button type="button" data-theme-choice="system"><span class="settings-theme-preview preview-auto" aria-hidden="true"><i></i><i></i><i></i></span><span>Auto</span></button>
+        <button type="button" data-theme-choice="light"><span class="settings-theme-preview preview-light" aria-hidden="true"><i></i><i></i><i></i></span><span>Light</span></button>
+        <button type="button" data-theme-choice="dark"><span class="settings-theme-preview preview-dark" aria-hidden="true"><i></i><i></i><i></i></span><span>Dark</span></button>
+      </div><p class="settings-caption">Auto switches to light at 7 AM and dark at 7 PM.</p>
+      <h4 class="palette-heading">Accent color</h4><div class="palette-options" role="group" aria-label="Color palette">
+        <button type="button" data-palette-choice="olive"><span class="palette-swatch" aria-hidden="true"></span>Olive</button><button type="button" data-palette-choice="blue"><span class="palette-swatch" aria-hidden="true"></span>Blue</button><button type="button" data-palette-choice="pink"><span class="palette-swatch" aria-hidden="true"></span>Pink</button><button type="button" data-palette-choice="lavender"><span class="palette-swatch" aria-hidden="true"></span>Lavender</button>
+      </div><p class="settings-caption settings-instant-note">Appearance changes apply immediately.</p>
+    </section>
+  </section>
+  <section id="settingsSupport" class="settings-page" role="tabpanel" aria-labelledby="settingsTab-support" data-settings-panel="support" hidden>
+    <div class="settings-section-intro"><h3>A little help, on hand.</h3><p>Connection details and troubleshooting.</p></div>
+    <section class="settings-card settings-support-stack">
+      <details class="recording-help settings-disclosure"><summary><svg aria-hidden="true"><use href="#i-mic"/></svg><span>Recording help</span></summary><div class="capture-help-content"><div class="gesture-guide" aria-label="Pendant touch controls"><div><span class="gesture-dots" aria-hidden="true">••</span><span><strong>Double tap</strong>Record on / off</span></div><div><span class="gesture-dots" aria-hidden="true">•••</span><span><strong>Triple tap</strong>Sleep / wake</span></div></div><p class="capture-safety">Keep this app open while listening. Audio is saved on this device.</p></div></details>
+      <details class="recorder-details settings-disclosure"><summary><svg aria-hidden="true"><use href="#i-wave"/></svg><span>Connection health</span></summary><div class="device-panel"><div class="metrics-grid"><div><span>Audio level</span><strong id="signalMetric">—</strong><small id="signalDetail">No stream</small></div><div><span>Frames</span><strong id="framesMetric">0</strong><small id="framesDetail">Complete</small></div><div><span>Transport</span><strong id="transportMetric">—</strong><small id="transportDetail">MTU / chunks</small></div><div><span>Quality</span><strong id="qualityMetric">—</strong><small id="qualityDetail">Waiting</small></div></div><div id="settingsConnectionHealth"></div></div></details>
+      <details id="diagnostics" class="settings-disclosure diagnostics-settings"><summary><svg aria-hidden="true"><use href="#i-note"/></svg><span>Diagnostic log</span></summary><div class="settings-row-body"><pre id="diagnosticsLog"></pre><div class="setting-actions"><button id="copyDiagnosticsButton" type="button">Copy log</button><button id="clearDiagnosticsButton" type="button">Clear log</button></div></div></details>
+    </section><button id="installButton" type="button" hidden>Install app</button>
+  </section>
+  <div class="settings-save-bar"><button id="settingsSaveButton" type="submit">Save changes</button></div>
+  <div hidden aria-hidden="true"><button id="connectButton" class="device-summary" type="button"><span class="device-summary-copy"><strong>synap Pendant</strong><span id="connectionBadge" class="status-badge status-offline"><span id="connectionText">Not connected</span></span></span><span id="connectButtonLabel">Connect</span></button><button id="retrySaveButton" type="button">Retry storage</button><button id="recoveryButton" type="button">Recover</button></div>
+</form></dialog>
 <script src="device-identity.js?v=1.0.0-cleanup1"></script>
-<script>(function(){function renderSynapDeviceId(){var el=document.getElementById('setupDeviceId');if(!el)return;try{var key=(globalThis.SynapDevices&&globalThis.SynapDevices.KEY)||'synap-device-associations-v1';var data=JSON.parse(localStorage.getItem(key)||'null');var devices=Array.isArray(data&&data.devices)?data.devices.slice():[];devices.sort(function(a,b){return String(b.lastConnectedAt||'').localeCompare(String(a.lastConnectedAt||''));});var id=devices[0]&&devices[0].deviceId?String(devices[0].deviceId):'';el.textContent=id?id.toLowerCase():'synap-—';el.title=id;el.dataset.deviceId=id;}catch(e){el.textContent='synap-—';el.title='';el.dataset.deviceId='';}}document.addEventListener('DOMContentLoaded',function(){renderSynapDeviceId();var status=document.getElementById('setupDeviceStatus');if(status)new MutationObserver(renderSynapDeviceId).observe(status,{childList:true,subtree:true,characterData:true});document.getElementById('settingsButton')?.addEventListener('click',function(){setTimeout(renderSynapDeviceId,80)});});globalThis.renderSynapDeviceId=renderSynapDeviceId;})();</script>
+<script>(function(){function renderSynapDeviceId(){var el=document.getElementById('setupDeviceId');if(!el)return;try{var key=(globalThis.SynapDevices&&globalThis.SynapDevices.KEY)||'synap-device-associations-v1';var data=JSON.parse(localStorage.getItem(key)||'null');var devices=Array.isArray(data&&data.devices)?data.devices.slice():[];devices.sort(function(a,b){return String(b.lastConnectedAt||'').localeCompare(String(a.lastConnectedAt||''));});var id=devices[0]&&devices[0].deviceId?String(devices[0].deviceId):'';el.textContent=id?id.toLowerCase():'No pendant selected';el.title=id;el.dataset.deviceId=id;}catch(e){el.textContent='No pendant selected';el.title='';el.dataset.deviceId='';}}document.addEventListener('DOMContentLoaded',function(){renderSynapDeviceId();var status=document.getElementById('setupDeviceStatus');if(status)new MutationObserver(renderSynapDeviceId).observe(status,{childList:true,subtree:true,characterData:true});document.getElementById('settingsButton')?.addEventListener('click',function(){setTimeout(renderSynapDeviceId,80)});});globalThis.renderSynapDeviceId=renderSynapDeviceId;})();</script>
 <script src="runtime-compat.js?v=1.0.0-controls1"></script>
 <script src="audio-store.js?v=1.0.0-storage2"></script>
 <script src="battery-popover-fix.js?v=1.0.0-cleanup1"></script>
@@ -94,7 +144,7 @@
 <script src="releases.js?v=1.0.0-prod2"></script>
 <script src="audio-enhancement.js?v=1.0.0-meetings1"></script>
 <script src="audio-enhancement-ui.js?v=1.0.0-speech2"></script>
-<script src="settings-panel.js?v=1.0.0-settings1"></script>
+<script src="settings-panel.js?v=1.0.0-settings2"></script>
 <script src="speaker-names.js?v=1.0.0-meetings1"></script>
 <div id="capture" hidden><div class="recording-stage compact-recorder"><div class="recorder-status-copy"><div id="timer" class="timer">00:00</div><h3 id="recorderTitle">Ready when you are</h3><p id="recorderSubtitle">Connect your pendant and let synap listen.</p><div id="levelText" role="status">Waiting for pendant</div></div><div class="canvas-wrap"><canvas id="waveformCanvas"></canvas></div><div class="recorder-controls"><button id="startButton" class="record-button" type="button" disabled><svg aria-hidden="true"><use href="#i-mic"/></svg><span class="record-label">Start listening</span></button><button id="stopButton" class="button stop-button" type="button" disabled><span class="stop-square" aria-hidden="true"></span><span>Stop recording</span></button></div></div></div>
 <script src="moments.js?v=1.0.0-transcripts2"></script>
@@ -102,8 +152,8 @@
 <script src="meeting-tools.js?v=1.0.0-actions3"></script>
 <script src="disconnect-protection.js?v=1.0.0-meetings2"></script>
 <script src="experience-recovery.js?v=1.0.0-transcripts1"></script>
-<script src="app.js?v=1.0.0-transcripts1"></script>
-<script src="enhancements.js?v=1.0.0-actions3"></script>
+<script src="app.js?v=1.0.0-settings2"></script>
+<script src="enhancements.js?v=1.0.0-settings2"></script>
 <script src="google-auth.js?v=1.0.0-brain1"></script>
 <script src="ai-providers.js?v=1.0.0-brain1"></script>
 <script src="synap-backend.js?v=1.0.0-actions3"></script>
@@ -126,7 +176,7 @@
 <script src="product-ui.js?v=1.0.0-actions1"></script>
 <script src="provenance-links.js?v=1.0.0-actions3"></script>
 <script src="productivity-tools.js?v=1.0.0-day-audio1"></script>
-<script src="desktop-capture.js?v=1.0.0-moments1"></script>
+<script src="desktop-capture.js?v=1.0.0-settings2"></script>
 <script src="interaction-surfaces.js?v=1.0.0-actions3"></script>
 <script src="memory-ready-events.js?v=1.0.0-memory-events1"></script>
 </body></html>
