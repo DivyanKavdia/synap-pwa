@@ -43,26 +43,49 @@
     history.sort((a,b)=>b.started_at.localeCompare(a.started_at));
     return {history:history.slice(0,12),open_actions:[],scope:'From memories on this device. Sign in to include the current status of cloud actions.'};
   }
-  let requestGeneration=0;
+  let requestGeneration=0,activeRequest=null;
+  function cancelPreparation(){++requestGeneration;activeRequest?.abort();activeRequest=null;}
   async function prepare(person,records){
-    const generation=++requestGeneration,section=document.getElementById('peopleMemory');if(!section)return;
+    cancelPreparation();
+    const generation=requestGeneration,section=document.getElementById('peopleMemory');if(!section)return;
     let panel=section.querySelector('.meeting-preparation');if(!panel){panel=document.createElement('div');panel.className='meeting-preparation';section.append(panel)}
-    panel.replaceChildren(text('h3','Before meeting '+person.name),text('p','Loading related conversations…'));panel.setAttribute('aria-live','polite');
+    const heading=document.createElement('div');heading.className='meeting-preparation-heading';heading.append(text('h3','Before meeting '+person.name));
+    const close=text('button','Close');close.type='button';close.addEventListener('click',()=>{cancelPreparation();panel.remove()});heading.append(close);
+    const body=document.createElement('div');body.className='meeting-preparation-content';body.setAttribute('aria-busy','true');body.append(text('p','Loading related conversations…'));
+    panel.replaceChildren(heading,body);panel.setAttribute('aria-live','polite');
+    let controller=null,timeout=null;
     try{
       let data;
       if(person.id&&root.SynapAuth?.isSignedIn?.()){
-        const response=await root.SynapAuth.authedFetch('/v1/people/'+encodeURIComponent(person.id)+'/preparation');data=await response.json();
-        if(!response.ok)throw new Error(data.error?.message||'Meeting preparation is unavailable. Try again.');
+        controller=new AbortController();activeRequest=controller;
+        let timedOut=false;
+        const cancelled=new Promise((_,reject)=>controller.signal.addEventListener('abort',()=>reject(new Error(timedOut?'Meeting preparation timed out. Try again.':'Meeting preparation cancelled.')),{once:true}));
+        timeout=root.setTimeout(()=>{timedOut=true;controller.abort()},15000);
+        const load=async()=>{
+          const response=await root.SynapAuth.authedFetch('/v1/people/'+encodeURIComponent(person.id)+'/preparation',{signal:controller.signal});
+          const result=await response.json();
+          if(!response.ok)throw new Error(result?.error?.message||'Meeting preparation is unavailable. Try again.');
+          if(!result||!Array.isArray(result.history)||!Array.isArray(result.open_actions))throw new Error('Meeting preparation could not be loaded. Try again.');
+          return result;
+        };
+        data=await Promise.race([load(),cancelled]);
       }else data=localPreparation(person.name,records);
       if(generation!==requestGeneration)return;
-      const heading=document.createElement('div');heading.className='meeting-preparation-heading';heading.append(text('h3','Before meeting '+person.name));panel.replaceChildren(heading);
-      const close=text('button','Close');close.type='button';close.addEventListener('click',()=>{++requestGeneration;panel.remove()});heading.append(close);
-      group(panel,'Open actions',data.open_actions||[],'');
-      group(panel,'Recent conversations',data.history||[],'');
-      group(panel,'Questions raised', (data.history||[]).flatMap(c=>c.questions||[]),'');
-      if(!data.history?.length&&!data.open_actions?.length)panel.append(text('p','No related memories yet.'));
-      panel.append(text('small',data.scope||''));
-    }catch(error){if(generation===requestGeneration)panel.replaceChildren(text('p',error.message))}
+      body.replaceChildren();
+      group(body,'Open actions',data.open_actions||[],'');
+      group(body,'Recent conversations',data.history||[],'');
+      group(body,'Questions raised', (data.history||[]).flatMap(c=>c.questions||[]),'');
+      if(!data.history?.length&&!data.open_actions?.length)body.append(text('p','No related memories yet.'));
+      body.append(text('small',data.scope||''));
+    }catch(error){
+      if(generation!==requestGeneration)return;
+      const retry=text('button','Retry');retry.type='button';retry.className='meeting-preparation-retry';retry.addEventListener('click',()=>prepare(person,records));
+      body.replaceChildren(text('p',error.message),retry);
+    }finally{
+      root.clearTimeout(timeout);
+      if(activeRequest===controller)activeRequest=null;
+      if(generation===requestGeneration)body.setAttribute('aria-busy','false');
+    }
   }
   function decoratePeople(people,records){
     for(const card of document.querySelectorAll('#peopleList .person-card')){
@@ -71,7 +94,7 @@
       const button=text('button','Prepare');button.type='button';button.className='meeting-prepare';button.setAttribute('aria-label','Prepare for meeting with '+person.name);button.addEventListener('click',()=>prepare(person,records));row.append(button);
     }
   }
-  function init(){root.SynapAuth?.onChange?.(()=>{++requestGeneration;document.querySelector('.meeting-preparation')?.remove()})}
+  function init(){root.SynapAuth?.onChange?.(()=>{cancelPreparation();document.querySelector('.meeting-preparation')?.remove()})}
   root.SynapMeetingTools=Object.freeze({attach,decoratePeople,localPreparation});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })(globalThis);

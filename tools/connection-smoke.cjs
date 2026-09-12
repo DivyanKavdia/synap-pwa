@@ -18,6 +18,7 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
    localStorage.setItem('dk-pendant-settings',JSON.stringify({autoProcess:false,wakeLock:false}));
    const buffered=location.search.includes('buffered');
    let armed=false,waiting=false,finishing=false,owner=[],buffer=[],sendTimer=null;
+   let stopDisconnect=null,pauseReplay=false,idleOnReconnect=false,invalidRecoveryReads=0;
    const recoveryStatus=()=>{const v=new DataView(new ArrayBuffer(16));v.setUint8(0,0x52);v.setUint8(1,1);v.setUint8(2,1+(armed?2:0)+(waiting?4:0)+(finishing?8:0));v.setUint16(4,600,true);let hash=2166136261;for(const byte of owner)hash=Math.imul(hash^byte,16777619)>>>0;v.setUint32(12,hash,true);return v};
    let state=1,sequence=0,audioTimer=null,inFlight=0,maxInFlight=0,present=true,watching=false;
    let visibility='visible',hideOnConnect=false,appDisconnects=0,statusReads=0,holdRead=false,releaseRead=null,readError=null;
@@ -31,7 +32,7 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
    class Characteristic extends EventTarget{
      constructor(id){super();this.id=id;this.properties={write:true,read:true,notify:true};this.value=null}
      startNotifications(){return operation(()=>this)}
-     readValue(){return operation(async()=>{if(this.id===uuid('4f'))return recoveryStatus();if(this.id===uuid('47')){statusReads++;if(holdRead){holdRead=false;await new Promise(resolve=>{releaseRead=resolve})}return status()}return this.id===uuid('4c')?new DataView(new TextEncoder().encode('SYNAP-ABCDEF123456').buffer):new DataView(new Uint8Array([0xe2,1,1,0,0x82,4]).buffer)})}
+     readValue(){return operation(async()=>{if(this.id===uuid('4f')){if(invalidRecoveryReads>0){invalidRecoveryReads--;return new DataView(new ArrayBuffer(4))}return recoveryStatus()}if(this.id===uuid('47')){statusReads++;if(holdRead){holdRead=false;await new Promise(resolve=>{releaseRead=resolve})}return status()}return this.id===uuid('4c')?new DataView(new TextEncoder().encode('SYNAP-ABCDEF123456').buffer):new DataView(new Uint8Array([0xe2,1,1,0,0x82,4]).buffer)})}
      writeValueWithResponse(value){return operation(()=>{
        if(this.id===uuid('4f')){
          if(value[0]===1&&state===1){armed=true;owner=[...value.slice(1,9)];}
@@ -40,11 +41,13 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
          }return;
        }
        if(buffered && value[0]===0 && state===2){
+         if(stopDisconnect==='before'){stopDisconnect=null;setVisibility('hidden');loseLink();throw new DOMException('Link lost before STOP arrived','NetworkError')}
          clearInterval(audioTimer);finishing=true;
          const recovery=chars.get(uuid('4f'));recovery.value=recoveryStatus();recovery.dispatchEvent(new Event('characteristicvaluechanged'));
+         if(stopDisconnect==='after'){stopDisconnect=null;setVisibility('hidden');loseLink();return}
          startSender();return;
        }
-       if(value[0]===1){increment('qa-starts');state=2;sequence=0;clearInterval(audioTimer);audioTimer=setInterval(frame,50)}if(value[0]===0){state=1;clearInterval(audioTimer)}this.value=status();this.dispatchEvent(new Event('characteristicvaluechanged'))})}
+       if(value[0]===1){increment('qa-starts');state=2;sequence=0;buffer=[];finishing=false;waiting=false;clearInterval(sendTimer);sendTimer=null;clearInterval(audioTimer);audioTimer=setInterval(frame,50)}if(value[0]===0){state=1;clearInterval(audioTimer)}this.value=status();this.dispatchEvent(new Event('characteristicvaluechanged'))})}
    }
    const audio=new Characteristic(uuid('46')),control=new Characteristic(uuid('47'));
    const chars=new Map([[uuid('46'),audio],[uuid('47'),control],[uuid('4c'),new Characteristic(uuid('4c'))],[uuid('4e'),new Characteristic(uuid('4e'))]]);
@@ -52,11 +55,11 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
    const service={getCharacteristic:id=>operation(()=>{if(!chars.has(id))throw new DOMException('No optional characteristic','NotFoundError');return chars.get(id)})};
    const device=new EventTarget();device.id='fixture-device';device.name='synap';
    function loseLink(){const wasConnected=device.gatt.connected;device.gatt.connected=false;if(buffered&&armed&&state===2){waiting=true;clearInterval(sendTimer)}else clearInterval(audioTimer);if(wasConnected)device.dispatchEvent(new Event('gattserverdisconnected'))}
-   device.gatt={connected:sessionStorage.getItem('qa-retain-link')==='1',connect(){increment('qa-connects');return operation(()=>{if(!present)throw new DOMException('Pendant is asleep','NetworkError');this.connected=true;if(!waiting)state=1;if(hideOnConnect){hideOnConnect=false;setVisibility('hidden')}return this})},getPrimaryService(){return operation(()=>service)},disconnect(){appDisconnects++;loseLink()}};
+   device.gatt={connected:sessionStorage.getItem('qa-retain-link')==='1',connect(){increment('qa-connects');return operation(()=>{if(!present)throw new DOMException('Pendant is asleep','NetworkError');this.connected=true;if(idleOnReconnect){idleOnReconnect=false;waiting=false;finishing=false;buffer=[];clearInterval(audioTimer)}if(!waiting)state=1;if(hideOnConnect){hideOnConnect=false;setVisibility('hidden')}return this})},getPrimaryService(){return operation(()=>service)},disconnect(){appDisconnects++;loseLink()}};
    device.watchAdvertisements=async({signal})=>{watching=true;signal.addEventListener('abort',()=>{watching=false},{once:true})};
    function emit(seq){for(let chunk=0;chunk<4;chunk++){const v=new DataView(new ArrayBuffer(408));v.setUint8(0,0xa5);v.setUint8(1,2);v.setUint16(2,seq,true);v.setUint8(4,chunk);v.setUint8(5,4);v.setUint16(6,400,true);for(let i=8;i<408;i+=2)v.setInt16(i,(seq%20000)+1,true);audio.value=v;audio.dispatchEvent(new Event('characteristicvaluechanged'))}}
    function startSender(){if(sendTimer)clearInterval(sendTimer);sendTimer=setInterval(()=>{
-     if(!device.gatt.connected||waiting)return;
+     if(!device.gatt.connected||waiting||pauseReplay)return;
      if(buffer.length)emit(buffer.shift());
      else if(finishing){clearInterval(sendTimer);state=1;finishing=false;control.value=status();control.dispatchEvent(new Event('characteristicvaluechanged'))}
    },15)}
@@ -66,6 +69,7 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
    Object.defineProperty(navigator,'bluetooth',{configurable:true,value:bluetooth});
    window.bleFixture={disconnect:loseLink,get maximum(){return maxInFlight},get watching(){return watching},
      get captured(){return sequence},get pendingFrames(){return buffer.length},get recoveryWaiting(){return waiting},get armed(){return armed},
+     interruptNextStop(mode){stopDisconnect=mode},holdReplay(value){pauseReplay=value},expireBuffer(){idleOnReconnect=true},invalidRecoveryOnce(){invalidRecoveryReads=1},
      get appDisconnects(){return appDisconnects},get statusReads(){return statusReads},get readError(){return readError},get readPending(){return Boolean(releaseRead)},
      hideOnNextConnect(){hideOnConnect=true},show:()=>setVisibility('visible'),hide:()=>setVisibility('hidden'),
      delayStatusRead(){holdRead=true;readError=null;SynapDevices.connection.queue(()=>control.readValue(),'Delayed diagnostic read').catch(error=>{readError=error.name})},
@@ -93,6 +97,47 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
    assert.equal(stored.stats.missingFrames,0);assert.equal(stored.durationMs,captured*50);
    assert.equal(await page.evaluate(()=>bleFixture.starts),1,'recovery never starts a second firmware recording');
    assert.deepEqual(errors,[]);console.log('PASS buffered recovery: offline capture, same timeline, no START and stop drains queued audio');
+   for(const mode of ['after','before','expired']){
+     await page.waitForFunction(()=>!document.body.hasAttribute('data-auto-reconnecting'));
+     const previous=await page.evaluate(async()=>({ids:(await new DKAudioStore().all('recordings')).map(r=>r.id),starts:bleFixture.starts}));
+     await page.locator('#headerCaptureToggle').click();await page.waitForFunction(starts=>document.body.dataset.state==='recording'&&bleFixture.starts===starts+1&&bleFixture.captured>=12,previous.starts);
+     await page.evaluate(()=>{bleFixture.holdReplay(true);bleFixture.hide();bleFixture.disconnect()});await page.waitForTimeout(850);
+     await page.evaluate(()=>bleFixture.show());await page.waitForFunction(()=>document.body.dataset.state==='recording'&&!bleFixture.recoveryWaiting);
+     await page.evaluate(mode=>bleFixture.interruptNextStop(mode==='before'?'before':'after'),mode);
+     await page.locator('#headerCaptureToggle').click();
+     await page.waitForFunction(()=>document.body.dataset.state==='disconnected'&&document.body.dataset.recordingInterrupted==='true');
+     const stoppedAt=await page.evaluate(()=>bleFixture.captured);await page.waitForTimeout(250);
+     if(mode!=='before')assert.equal(await page.evaluate(()=>bleFixture.captured),stoppedAt,'acknowledged Stop keeps the microphone off while disconnected');
+     const pending=await page.evaluate(async ids=>(await new DKAudioStore().all('recordings')).find(r=>!ids.includes(r.id)),previous.ids);
+     assert.equal(pending.status,'recording','the journal is not sealed while remaining audio can be recovered');
+     await page.evaluate(mode=>{bleFixture.holdReplay(false);if(mode==='expired')bleFixture.expireBuffer();bleFixture.show()},mode);
+     await page.waitForFunction(()=>document.body.dataset.state==='idle'&&document.body.dataset.recordingInterrupted==='false');
+     const saved=await page.evaluate(async ids=>(await new DKAudioStore().all('recordings')).find(r=>!ids.includes(r.id)),previous.ids);
+     assert.equal(saved.status,'saved');assert(saved.durationMs>0);
+     if(mode!=='expired'){assert.equal(saved.stats.completeFrames,await page.evaluate(()=>bleFixture.captured));assert.equal(saved.stats.missingFrames,0)}
+     assert.equal(await page.evaluate(()=>bleFixture.starts),previous.starts+1,'reconnecting after Stop must never issue START');
+     assert.deepEqual(errors,[]);console.log('PASS buffered Stop/'+mode+': Stop intent survives reconnect and the same journal is saved without another START');
+   }
+   await page.waitForFunction(()=>!document.body.hasAttribute('data-auto-reconnecting'));
+   const previous=await page.evaluate(async()=>({ids:(await new DKAudioStore().all('recordings')).map(r=>r.id),starts:bleFixture.starts}));
+   await page.locator('#headerCaptureToggle').click();await page.waitForFunction(starts=>document.body.dataset.state==='recording'&&bleFixture.starts===starts+1&&bleFixture.captured>=12,previous.starts);
+   await page.evaluate(()=>{
+     const put=IDBObjectStore.prototype.put;
+     window.qaQualityAborts=0;
+     IDBObjectStore.prototype.put=function(value,...rest){
+       if(this.name==='recordings'&&value.audioQuality&&!qaQualityAborts){qaQualityAborts++;this.transaction.abort();return}
+       return put.call(this,value,...rest);
+     };
+     bleFixture.hide();bleFixture.disconnect();bleFixture.invalidRecoveryOnce();bleFixture.show();
+   });
+   await page.waitForFunction(()=>document.querySelector('#diagnosticsLog').textContent.includes('recovery information was incomplete'));
+   await page.waitForFunction(()=>document.body.dataset.state==='recording'&&!document.body.hasAttribute('data-auto-reconnecting'),null,{timeout:15000});
+   await page.locator('#headerCaptureToggle').click();await page.waitForFunction(()=>document.body.dataset.state==='idle');
+   const retained=await page.evaluate(async ids=>(await new DKAudioStore().all('recordings')).find(r=>!ids.includes(r.id)),previous.ids);
+   assert.equal(await page.evaluate(()=>qaQualityAborts),1);assert.equal(retained.status,'saved');
+   assert.equal(retained.stats.completeFrames,await page.evaluate(()=>bleFixture.captured));assert.equal(retained.stats.missingFrames,0);
+   assert.equal(await page.evaluate(()=>bleFixture.starts),previous.starts+1);assert.deepEqual(errors,[]);
+   console.log('PASS incomplete recovery reply retries safely; an optional quality transaction failure cannot prevent sealing audio');
    await context.close();return;
  }
  await page.clock.install({time:new Date('2026-09-11T10:00:00Z')});await page.goto(origin);
