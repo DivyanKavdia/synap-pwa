@@ -2493,6 +2493,7 @@
         card = createInsightCard(recording);
         card.synapMemorySignature = signature;
         card.open = Boolean(previous?.open);
+        card.dataset.synapMemoryView = previous?.querySelector('.synap-memory-tabs [aria-selected="true"]')?.dataset.synapView || previous?.dataset.synapMemoryView || '';
         previous?.remove();
       }
       retained.add(id);
@@ -2653,16 +2654,19 @@
     // Update generated evidence in place, never replace a playing audio element
     // or an editable note/name field while a background refresh is arriving.
     let transcript = content.querySelector(".recording-transcript");
-    if (recording.transcript && !transcript) {
+    if (!transcript) {
       transcript = document.createElement("textarea");
       transcript.className = "recording-transcript";
       transcript.setAttribute("aria-label", "Transcript");
       transcript.readOnly = true;
-      content.appendChild(recordingDisclosure("Transcript", transcript));
+      content.appendChild(recordingDisclosure("Transcript", transcript, globalThis.SynapExperienceRecovery.createTranscriptNotice(recording)));
     }
-    if (transcript && document.activeElement !== transcript) {
-      if (recording.processingStage === "ready" || recording.summary) transcript.readOnly = true;
+    if (transcript) {
+      if (recording.sourceHydratedAt || recording.processingStage === "ready" || recording.summary) transcript.readOnly = true;
       if (transcript.readOnly) transcript.value = recording.transcript || "";
+      transcript.hidden = !transcript.value.trim();
+      const notice = content.querySelector('.synap-transcript-notice');
+      if (notice) globalThis.SynapExperienceRecovery.updateTranscriptNotice(notice, recording);
     }
     let summary = content.querySelector(".recording-summary");
     if (recording.summary && !summary) {
@@ -2831,12 +2835,13 @@
       () => recording.blob || journal.blob(recording), () => recording.name);
     card.appendChild(recordingDisclosure("Notes", notes));
 
-    if (recording.transcript) {
+    {
       const transcript = document.createElement("textarea");
       transcript.className = "recording-transcript";
-      transcript.value = recording.transcript;
+      transcript.value = recording.transcript || "";
+      transcript.hidden = !transcript.value.trim();
       transcript.setAttribute("aria-label", "Transcript");
-      if (recording.processingStage === "ready" || recording.processingState === "done" || recording.summary) {
+      if (!recording.transcript || recording.sourceHydratedAt || recording.processingStage === "ready" || recording.processingState === "done" || recording.summary) {
         transcript.readOnly = true;
         transcript.title = "Transcript is source evidence for this memory. Refresh memory to rebuild it safely.";
       } else {
@@ -2845,7 +2850,7 @@
           await updateRecordingFields(recording.id, { transcript: recording.transcript });
         });
       }
-      card.appendChild(recordingDisclosure("Transcript", transcript));
+      card.appendChild(recordingDisclosure("Transcript", transcript, globalThis.SynapExperienceRecovery.createTranscriptNotice(recording)));
     }
 
     if (recording.summary) {

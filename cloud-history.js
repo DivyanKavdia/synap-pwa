@@ -94,20 +94,21 @@
       createdAt: startedAt,
       durationMs: Math.max(0, Math.round(Number(item.duration_ms) || 0)),
       notes: '',
-      transcript: '',
       summary: '',
       sizeBytes: 0,
       restoredFromCloud: true,
       restoredAt: new Date().toISOString()
     };
 
-    var ready = item.state === 'ready' || item.title !== undefined || item.conversations !== undefined;
+    var ready = item.state === 'ready' || (!item.state && (item.title !== undefined || item.conversations !== undefined));
     if (ready && api && typeof api.toRecordingFields === 'function') {
       var fields = api.toRecordingFields(item) || {};
       Object.keys(fields).forEach(function (key) {
         if (fields[key] !== undefined) record[key] = fields[key];
       });
     }
+    // A day/history response omits this large field. Do not manufacture an
+    // empty transcript which a ready cloud record would overwrite locally.
     if (typeof item.transcript === 'string') record.transcript = item.transcript;
     if (!record.name) {
       record.name = new Date(startedAt).toLocaleString([], {
@@ -121,10 +122,23 @@
     return record;
   }
 
-  function write(journal, records) {
+  function write(journal, records, knownIds) {
+    var result = { restored: 0, updated: 0 };
     return journal.atomic([STORE], function (stores) {
-      records.forEach(function (record) { stores[STORE].put(record); });
-    }).then(function () { return records.length; });
+      records.forEach(function (record) {
+        var get = stores[STORE].get(record.id);
+        get.onsuccess = function () {
+          var current = get.result;
+          // Read at commit time: a source fetch or notes edit may have finished
+          // while the history request was in flight. Never resurrect a deletion.
+          if (!current && knownIds && knownIds.has(String(record.id))) return;
+          var merged = current ? merge(current, record) : record;
+          if (current && !meaningfullyChanged(current, merged)) return;
+          stores[STORE].put(merged);
+          result[current ? 'updated' : 'restored'] += 1;
+        };
+      });
+    }).then(function () { return result; });
   }
 
   function plan(locals, force) {
@@ -136,37 +150,10 @@
   }
 
   function mergeRemote(journal, locals, remote) {
-    var byId = new Map();
-    locals.forEach(function (record) {
-      if (record && record.id) byId.set(String(record.id), record);
-    });
-
-    var writes = [];
-    var restored = 0;
-    var updated = 0;
-
-    (remote || []).forEach(function (item) {
-      if (!item || !item.recording_id) return;
-      var local = byId.get(String(item.recording_id));
-      var mapped = toLocal(item);
-
-      if (!local) {
-        writes.push(mapped);
-        restored += 1;
-        return;
-      }
-
-      var merged = merge(local, mapped);
-      if (meaningfullyChanged(local, merged)) {
-        writes.push(merged);
-        updated += 1;
-      }
-    });
-
-    if (!writes.length) return Promise.resolve({ restored: 0, updated: 0 });
-    return write(journal, writes).then(function () {
-      return { restored: restored, updated: updated };
-    });
+    var knownIds = new Set(locals.filter(Boolean).map(function (record) { return String(record.id); }));
+    var mapped = (remote || []).filter(function (item) { return item && item.recording_id; }).map(toLocal);
+    if (!mapped.length) return Promise.resolve({ restored: 0, updated: 0 });
+    return write(journal, mapped, knownIds);
   }
 
   /* Account/day reconciliation. This is no longer called on a timer or every
@@ -328,6 +315,13 @@
     var task = store().then(function (journal) {
       return journal.all(STORE).then(function (locals) {
         var local = (locals || []).find(function (item) { return item && String(item.id) === id; });
+        // Library expansion and the Transcript tab share the same source read,
+        // completion check and error state with the recovery runtime.
+        if (local && root.SynapExperienceRecovery && typeof root.SynapExperienceRecovery.hydrateSource === 'function') {
+          return root.SynapExperienceRecovery.hydrateSource(id, force).then(function () {
+            return { restored: 0, updated: 0 }; // Recovery already refreshed in place.
+          });
+        }
         var alreadyComplete = local && String(local.transcript || '').trim() && String(local.summary || '').trim() &&
           (local.processingStage === 'ready' || local.processingState === 'done');
         if (alreadyComplete && !force) return { restored: 0, updated: 0 };
@@ -335,17 +329,12 @@
         return api.recordingMemory(id).then(function (memory) {
           memory = Object.assign({}, memory || {}, {
             recording_id: id,
-            state: 'ready',
+            state: (memory && memory.state) || 'ready',
             started_at: (memory && memory.started_at) || (local && local.createdAt) || new Date().toISOString(),
             duration_ms: Number((memory && memory.duration_ms) || (local && local.durationMs) || 0)
           });
           var mapped = toLocal(memory);
-          if (!local) {
-            return write(journal, [mapped]).then(function () { return { restored: 1, updated: 0 }; });
-          }
-          var merged = merge(local, mapped);
-          if (!meaningfullyChanged(local, merged)) return { restored: 0, updated: 0 };
-          return write(journal, [merged]).then(function () { return { restored: 0, updated: 1 }; });
+          return write(journal, [mapped], new Set(local ? [id] : []));
         });
       });
     }).then(function (result) {

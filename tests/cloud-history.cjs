@@ -38,6 +38,23 @@ function load(overrides) {
 const api = load().SynapCloudHistory;
 assert.ok(api, 'the module exports its testable surface');
 
+// Day lists deliberately omit transcripts. Omitted evidence is not an empty
+// replacement for text already downloaded or just produced in this browser.
+{
+  const history = load({ SynapBackend: { toRecordingFields: memory => ({
+    summary: memory.executive_summary, processingStage: 'ready', processingState: 'done'
+  }) } }).SynapCloudHistory;
+  const local = { id: 'cached', transcript: 'Saved spoken words', notes: 'My note', blob: { size: 4096 } };
+  const metadata = history.toLocal({ recording_id: 'cached', state: 'ready', executive_summary: 'Updated summary' });
+  const merged = history.merge(local, metadata);
+  assert.equal(merged.transcript, local.transcript, 'metadata-only refresh must retain the transcript');
+  assert.equal(merged.summary, 'Updated summary');
+  assert.equal(merged.notes, local.notes);
+  assert.equal(merged.blob, local.blob);
+  assert.equal(history.merge(local, history.toLocal({ recording_id: 'cached', state: 'ready', transcript: 'Recovered complete words' })).transcript,
+    'Recovered complete words', 'an explicitly fetched transcript can still replace stale evidence');
+}
+
 // ---------------------------------------------------------------------------
 // merge: local always wins
 // ---------------------------------------------------------------------------

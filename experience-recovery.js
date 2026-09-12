@@ -11,6 +11,7 @@
 
   var hydrated = new Set();
   var sourcePending = Object.create(null);
+  var transcriptNotices = new Map();
   var audioPending = new WeakMap();
   var objectUrls = new Set();
 
@@ -56,36 +57,88 @@
 
   async function saveSource(id, source) {
     var journal = await openJournal();
-    var current = await journal.get('recordings', id);
-    if (!current) return false;
-
-    var fields = {
-      transcript: typeof source.transcript === 'string' ? source.transcript : String(current.transcript || ''),
-      durationMs: Math.max(Number(current.durationMs) || 0, Number(source.duration_ms) || 0),
-      processingStage: String(source.state || current.processingStage || ''),
-      processingProgress: Number.isFinite(Number(source.progress)) ? Number(source.progress) : current.processingProgress,
-      processingError: source.error_code || '',
-      processingRetryable: source.retryable !== false,
-      sourceHydratedAt: new Date().toISOString(),
-      transcriptComplete: source.transcript_complete === true,
-      transcriptSegments: Number(source.transcript_segments || 0),
-      sourceSegmentCount: Number(source.segment_count || 0)
-    };
-
-    if (String(source.state || '') === 'ready' && root.SynapBackend && typeof root.SynapBackend.toRecordingFields === 'function') {
-      fields = Object.assign(fields, root.SynapBackend.toRecordingFields(source) || {}, {
-        transcript: typeof source.transcript === 'string' ? source.transcript : String(current.transcript || ''),
-        transcriptComplete: source.transcript_complete === true,
-        transcriptSegments: Number(source.transcript_segments || 0),
-        sourceSegmentCount: Number(source.segment_count || 0),
-        sourceHydratedAt: new Date().toISOString()
-      });
-    }
-
-    await journal.atomic(['recordings'], function (stores) {
-      stores.recordings.put(Object.assign({}, current, fields));
+    return journal.atomic(['recordings'], function (stores, result) {
+      var get = stores.recordings.get(id);
+      get.onsuccess = function () {
+        var current = get.result;
+        if (!current) { result(false); return; }
+        var fields = {};
+        if (source.state === 'ready' && (source.executive_summary || source.title || source.conversations) &&
+            root.SynapBackend && typeof root.SynapBackend.toRecordingFields === 'function') {
+          fields = root.SynapBackend.toRecordingFields(source) || {};
+        }
+        if (current.name || fields.name === undefined) delete fields.name;
+        if (source.state) fields.processingState = source.state === 'ready' ? 'done' : 'pending';
+        Object.assign(fields, {
+          // An incomplete/empty source response cannot erase preserved words.
+          transcript: typeof source.transcript === 'string' && (source.transcript.trim() || source.transcript_complete === true)
+            ? source.transcript : String(current.transcript || ''),
+          durationMs: Math.max(Number(current.durationMs) || 0, Number(source.duration_ms) || 0),
+          processingStage: String(source.state || current.processingStage || ''),
+          processingProgress: source.progress != null && Number.isFinite(Number(source.progress)) ? Number(source.progress) : current.processingProgress,
+          processingError: source.error_code || '',
+          processingRetryable: source.retryable !== false,
+          sourceHydratedAt: new Date().toISOString(),
+          transcriptComplete: source.transcript_complete === true,
+          transcriptSegments: Number(source.transcript_segments || 0),
+          sourceSegmentCount: Number(source.segment_count || 0)
+        });
+        // Merge in the transaction so notes/audio edits and deletions which
+        // finished during the request cannot be undone by a stale snapshot.
+        var saved = Object.assign({}, current, fields);
+        stores.recordings.put(saved);
+        result(saved);
+      };
     });
-    return true;
+  }
+
+  function paintTranscriptNotice(node, latest) {
+    if (latest) node.synapRecording = latest;
+    var recording = node.synapRecording || {};
+    var state = transcriptNotices.get(String(recording.id)) || {};
+    var hasText = Boolean(String(recording.transcript || '').trim());
+    var message = state.message || '';
+    if (!message && !hasText) {
+      message = recording.transcriptComplete ? 'No speech was found in this recording.'
+        : recording.sourceHydratedAt ? 'The transcript is not ready yet. Check memory processing in Library.'
+        : signedIn() ? 'Load this recording’s transcript.' : 'No transcript saved yet. Process this recording to create one.';
+    } else if (!message && recording.sourceHydratedAt && !recording.transcriptComplete) {
+      message = 'Transcript available so far. Some audio still needs transcription.';
+    }
+    var text = node.querySelector('p');
+    text.textContent = message;
+    text.hidden = !message;
+    var button = node.querySelector('button');
+    button.textContent = state.error ? 'Retry transcript' : hasText ? 'Refresh transcript' : 'Load transcript';
+    button.disabled = state.loading === true;
+    button.hidden = !recording.id || !signedIn();
+    node.setAttribute('aria-busy', String(state.loading === true));
+  }
+
+  function createTranscriptNotice(recording) {
+    var node = root.document.createElement('div');
+    node.className = 'synap-transcript-notice';
+    node.dataset.recordingId = String(recording.id);
+    node.synapRecording = recording;
+    var text = root.document.createElement('p');
+    text.setAttribute('role', 'status');
+    var button = root.document.createElement('button');
+    button.type = 'button';
+    button.className = 'button button-secondary button-small synap-transcript-retry';
+    button.addEventListener('click', function () { hydrateSource(recording.id, true); });
+    node.append(text, button);
+    paintTranscriptNotice(node);
+    return node;
+  }
+
+  function updateTranscriptNotices(id, state, recording) {
+    if (state) transcriptNotices.set(id, state); else transcriptNotices.delete(id);
+    var nodes = root.document && root.document.querySelectorAll('.synap-transcript-notice');
+    Array.from(nodes || []).forEach(function (node) {
+      if (node.dataset.recordingId !== id) return;
+      if (recording) node.synapRecording = recording;
+      paintTranscriptNotice(node);
+    });
   }
 
   function refreshUi(id) {
@@ -108,17 +161,22 @@
     if (!id || !signedIn()) return Promise.resolve(false);
     if (!force && hydrated.has(id)) return Promise.resolve(true);
     if (sourcePending[id]) return sourcePending[id];
+    if (force) hydrated.delete(id);
+
+    updateTranscriptNotices(id, { loading: true, message: 'Loading transcript…' });
 
     var task = json('/v1/recordings/' + encodeURIComponent(id) + '/source')
       .then(function (source) { return saveSource(id, source).then(function (saved) { return [source, saved]; }); })
       .then(function (values) {
         var source = values[0], saved = values[1];
-        if (source.transcript_complete === true || String(source.state || '') === 'ready') hydrated.add(id);
+        if (saved && source.transcript_complete === true && source.state === 'ready') hydrated.add(id);
+        updateTranscriptNotices(id, null, saved || null);
         if (saved) refreshUi(id);
-        return saved;
+        return Boolean(saved);
       })
       .catch(function (error) {
         if (root.console && root.console.warn) root.console.warn('[synap source] hydration failed', error);
+        updateTranscriptNotices(id, { error: true, message: 'Could not load the transcript. Check your connection and try again.' });
         return false;
       })
       .finally(function () { delete sourcePending[id]; });
@@ -271,11 +329,18 @@
       var card = event && event.target;
       if (!card || !card.classList || !card.classList.contains('recording-card') || !card.open) return;
       var id = recordingIdFromCard(card);
-      if (id) hydrateSource(id, false);
+      if (id && !root.SynapCloudHistory) hydrateSource(id, false);
       root.setTimeout(function () {
         var audio = card.querySelector && card.querySelector('audio');
         if (audio && !audio.src && !audio.currentSrc) ensureAudio(audio);
       }, 20);
+    }, true);
+
+    root.document.addEventListener('toggle', function (event) {
+      var target = event && event.target;
+      if (!target || !target.open || !target.classList.contains('recording-disclosure') || !target.querySelector('.recording-transcript')) return;
+      var card = target.closest('.recording-card');
+      if (card) hydrateSource(recordingIdFromCard(card), false);
     }, true);
 
     root.document.addEventListener('pointerdown', function (event) {
@@ -295,7 +360,7 @@
       var tab = event && event.target && event.target.closest ? event.target.closest('.synap-memory-tabs button') : null;
       if (!tab || String(tab.textContent || '').trim() !== 'Transcript') return;
       var card = tab.closest('.insight-card[data-recording-id]');
-      if (card && card.dataset.recordingId) hydrateSource(card.dataset.recordingId, false);
+      if (card && card.dataset.recordingId && !root.SynapCloudHistory) hydrateSource(card.dataset.recordingId, false);
     }, true);
 
     if (typeof root.addEventListener === 'function') {
@@ -303,7 +368,7 @@
         var id = event && event.detail && event.detail.recordingId;
         if (!id) return;
         hydrated.delete(String(id));
-        hydrateSource(id, true);
+        if (!root.SynapCloudHistory) hydrateSource(id, true);
       });
       root.addEventListener('pagehide', function () {
         objectUrls.forEach(function (url) { try { root.URL.revokeObjectURL(url); } catch (_) {} });
@@ -321,6 +386,8 @@
   installWhenReady(0);
   root.SynapExperienceRecovery = {
     hydrateSource: hydrateSource,
+    createTranscriptNotice: createTranscriptNotice,
+    updateTranscriptNotice: paintTranscriptNotice,
     ensureAudio: ensureAudio,
     cloudAudio: cloudAudio,
     recoverMediaError: recoverMediaError,

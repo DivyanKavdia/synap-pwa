@@ -14,7 +14,8 @@ const fixture=i=>({id:String(i),name:'Moment '+i,createdAt:'2026-09-02T09:00:00Z
 const ui={recordingsList:new Element('div'),libraryPagination:new Element('div'),libraryCountLabel:new Element('p'),showMoreRecordingsButton:new Element('button'),showLessRecordingsButton:new Element('button')};
 const searchStatus=new Element('p'),searchClear=new Element('button');
 const c={ui,document:{getElementById:id=>id==='librarySearchStatus'?searchStatus:id==='clearLibrarySearch'?searchClear:null,createElement:tag=>new Element(tag),createElementNS:(_,tag)=>new Element(tag)},libraryQuery:'',libraryVisibleCount:5,libraryRecordings:[],LIBRARY_PAGE_SIZE:5,
-  formatDuration:()=> '01:00',formatDate:()=> '2 Sep',formatBytes:()=> '100 B',DEFAULT_SAMPLE_RATE:16000,renderedObjectUrls:[],bindDebouncedSave(){}};
+  formatDuration:()=> '01:00',formatDate:()=> '2 Sep',formatBytes:()=> '100 B',DEFAULT_SAMPLE_RATE:16000,renderedObjectUrls:[],bindDebouncedSave(){},
+  SynapExperienceRecovery:{createTranscriptNotice(){const node=new Element('div');node.className='synap-transcript-notice';return node;},updateTranscriptNotice(){}}};
 vm.createContext(c);
 vm.runInContext(source.slice(source.indexOf('  function renderLibraryPage()'),source.indexOf('  function bindDebouncedSave(')),c);
 for(const length of [0,3,5,8]){

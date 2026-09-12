@@ -32,8 +32,12 @@ function setup() {
       open() { return Promise.resolve(this); }
       all() { return Promise.resolve([...rows.values()]); }
       atomic(names, write) {
-        write({ recordings: { put: row => rows.set(row.id, row) } });
-        return Promise.resolve();
+        const reads = [];
+        write({ recordings: {
+          get(id) { const request = {}; reads.push(() => { request.result = rows.get(id); request.onsuccess?.(); }); return request; },
+          put: row => rows.set(row.id, row)
+        } });
+        return Promise.resolve().then(() => reads.forEach(read => read()));
       }
     },
     CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
