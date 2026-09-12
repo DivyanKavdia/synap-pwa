@@ -32,6 +32,43 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     await page.screenshot({path:'/tmp/synap-meetings-'+mode+'.png'});
     await prep.getByRole('button',{name:'Close',exact:true}).click();assert.equal(await page.locator('.meeting-preparation').count(),0);
+    await page.clock.install();
+    await page.evaluate(()=>{
+      window.qaPreparationRequests=[];window.qaOriginalIsSignedIn=SynapAuth.isSignedIn;
+      SynapAuth.isSignedIn=()=>true;
+      const fetch=SynapAuth.authedFetch;
+      SynapAuth.authedFetch=(url,options)=>url.endsWith('/preparation')
+        ? new Promise(resolve=>qaPreparationRequests.push({url,signal:options.signal,resolve}))
+        : fetch(url,options);
+      const list=document.getElementById('peopleList');list.replaceChildren();
+      for(const name of ['Asha','Blair']){const card=document.createElement('button');card.type='button';card.className='person-card';card.dataset.person=name;card.textContent=name;list.append(card)}
+      SynapMeetingTools.decoratePeople([{id:'asha',name:'Asha'},{id:'blair',name:'Blair'}],[]);
+    });
+    const requests=()=>page.evaluate(()=>qaPreparationRequests.length);
+    const answer=(index,title)=>page.evaluate(({index,title})=>qaPreparationRequests[index].resolve({ok:true,json:async()=>({history:[{title,summary:'Cloud recap',source:{recording_id:'qa-meeting',start_ms:1000},questions:[]}],open_actions:[],scope:'Recent cloud conversations.'})}),{index,title});
+    await page.getByRole('button',{name:'Prepare for meeting with Asha'}).click();assert.equal(await requests(),1);
+    assert.equal(await prep.locator('[aria-busy="true"]').count(),1);
+    await prep.getByRole('button',{name:'Close',exact:true}).click();assert(await page.evaluate(()=>qaPreparationRequests[0].signal.aborted));
+    await answer(0,'Late Asha');await page.waitForTimeout(20);assert.equal(await page.locator('.meeting-preparation').count(),0);
+
+    await page.getByRole('button',{name:'Prepare for meeting with Asha'}).click();
+    await page.getByRole('button',{name:'Prepare for meeting with Blair'}).click();assert.equal(await requests(),3);
+    assert(await page.evaluate(()=>qaPreparationRequests[1].signal.aborted));
+    await answer(2,'Blair discussion');await prep.getByText('Blair discussion · 0:01').waitFor();
+    await answer(1,'Late Asha');await page.waitForTimeout(20);assert(!(await prep.innerText()).includes('Late Asha'));
+
+    await page.getByRole('button',{name:'Prepare for meeting with Asha'}).click();assert.equal(await requests(),4);
+    await page.clock.fastForward(15001);await prep.getByText('Meeting preparation timed out. Try again.').waitFor();
+    assert(await page.evaluate(()=>qaPreparationRequests[3].signal.aborted));assert.equal(await prep.locator('[aria-busy="false"]').count(),1);
+    await prep.getByRole('button',{name:'Retry',exact:true}).click();assert.equal(await requests(),5);
+    await answer(4,'Retried discussion');await prep.getByText('Retried discussion · 0:01').waitFor();
+    await page.screenshot({path:'/tmp/synap-preparation-retry-'+mode+'.png'});
+
+    await page.getByRole('button',{name:'Prepare for meeting with Asha'}).click();assert.equal(await requests(),6);
+    await page.evaluate(()=>{SynapAuth.isSignedIn=qaOriginalIsSignedIn;return SynapAuth.signOut()});
+    assert(await page.evaluate(()=>qaPreparationRequests[5].signal.aborted));
+    await answer(5,'Prior account');await page.waitForTimeout(20);assert.equal(await page.locator('.meeting-preparation').count(),0);
+    console.log('PASS preparation/'+mode+': Close during loading, person changes, request timeout, retry and sign-out discard late responses');
     assert.deepEqual(errors,[]);console.log('PASS meeting features/'+mode+': chapter playback, suggested reminders, quality, inline preparation and compact tabs');
     await context.close();
   }}finally{await browser.close();server.close()}

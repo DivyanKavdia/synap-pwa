@@ -17,6 +17,7 @@
     try{
       const found=await queue(()=>service.getCharacteristic(UUID));assertConnection();
       const info=status(await queue(()=>found.readValue()));assertConnection();
+      if(!info && resuming && token)throw new Error("Pendant recovery information was incomplete. Retrying the connection.");
       if(!info?.available){report("Audio recovery is unavailable on this connection.");return null;}
       characteristic=found;capacity=info.frames;
       found.addEventListener("characteristicvaluechanged",onStatus);

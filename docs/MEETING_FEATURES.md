@@ -11,6 +11,12 @@
 - My actions → People → Prepare opens a compact inline view of recent related conversations and open actions. Related people can be mentioned rather than present. Local fallback identifies its narrower scope and does not guess whether old tasks are still open. A missing optional cloud person/recency index falls back to the latest 300 conversations without an infrastructure migration.
 - Recording-quality observations flag clipping, very quiet audio and possible low-frequency interference. They do not modify capture or claim to identify the cause of noise. Saved missing/incomplete-frame information remains visible.
 
+## Recovery and request failures
+
+Stop intent survives a brief disconnect during the final transfer. The app keeps the journal open, reattaches it before draining, and never sends START after a Stop request. If the pendant has already returned to idle, the app seals the received audio. Choosing Stop again while disconnected saves the received audio immediately. Firmware retains its bounded recovery/drain deadlines; expired or volatile audio cannot be recreated.
+
+Malformed recovery replies during an owned recording trigger another connection attempt rather than treating a waiting buffer as a legacy stream. An optional audio-quality metadata failure is logged and does not block closing the audio journal. Meeting preparation has a 15-second request budget, a Close button while loading, and a Retry action on failure. Closing, switching people or changing accounts cancels the request and discards late responses.
+
 ## Compatibility and limits
 
 Control v2/audio v3/OTA v3 are unchanged. Recovery uses optional characteristic `4fa1234f-0000-1000-8000-00805f9b34fb`, protocol v1; its detailed format is documented in the firmware repository. The PWA must be deployed before users rely on this feature, and the pendant must be updated separately. No flash audio, standalone hours of recording or guaranteed background iOS capture is added.
