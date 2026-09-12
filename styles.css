@@ -168,3 +168,5 @@ body[data-state="recording"] .stage-orbit{background:radial-gradient(ellipse,var
 .library-pagination[hidden]{display:none}.library-pagination p{font-size:12px}
 @media(min-width:600px){.recordings-section{padding:18px 22px}}
 @media(hover:hover){.button-primary:hover:not(:disabled),.compact-recorder .record-button:hover:not(:disabled){background:var(--action-hover);color:var(--on-action)}.stop-button:hover:not(:disabled){background:var(--rose);color:var(--on-rose)}.rail-link:hover{background:var(--accent-soft);color:var(--accent)}}
+
+.startup-notice{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.75rem 1rem;margin:.5rem 0;background:var(--amber-soft);color:var(--ink);border:1px solid var(--border);border-radius:16px;font-size:.85rem}.startup-notice[hidden]{display:none}.startup-notice button{flex-shrink:0;min-height:44px;padding:.4rem .85rem;border:1px solid var(--control-border);border-radius:12px;background:var(--surface);color:var(--ink)}

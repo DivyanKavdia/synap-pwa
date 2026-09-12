@@ -69,7 +69,9 @@
     }
     async open() {
       if (this.dbPromise) return this.dbPromise;
+      let failed = false;
       this.dbPromise = new Promise((resolve,reject)=>{
+        const fail=error=>{failed=true;reject(error);};
         const req=this.idb.open(this.name,3);
         req.onupgradeneeded=()=>{
           const db=req.result,tx=req.transaction;
@@ -91,10 +93,15 @@
             const jobs=tx.objectStore('jobs');if(!jobs.indexNames.contains('state'))jobs.createIndex('state','state');
           }
         };
-        req.onblocked=()=>reject(new Error('Storage upgrade blocked. Close other Synap tabs, then reload. Do not clear site data.'));
-        req.onerror=()=>reject(req.error);
-        req.onsuccess=()=>{req.result.onversionchange=()=>req.result.close();resolve(req.result);};
-      });
+        req.onblocked=()=>fail(new Error('Storage upgrade blocked. Close other Synap tabs, then tap Retry. Your recordings are kept.'));
+        req.onerror=()=>fail(req.error);
+        req.onsuccess=()=>{
+          const db=req.result;
+          if(failed){db.close();return;}
+          db.onversionchange=()=>{db.close();this.dbPromise=null;};
+          resolve(db);
+        };
+      }).catch(error=>{this.dbPromise=null;throw error;});
       return this.dbPromise;
     }
     async atomic(names, action) {

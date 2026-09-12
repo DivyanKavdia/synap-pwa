@@ -130,6 +130,11 @@
   // Runtime state
 
   let appState = "disconnected";
+  let startupReady = false;
+  let startupPending = null;
+  let appLockHeld = false;
+  let firmwareControlsBound = false;
+  let eventsBound = false;
   let bluetoothDevice = null;
   let gattServer = null;
   let audioCharacteristic = null;
@@ -3032,6 +3037,8 @@
   }
 
   function bindFirmwareUpdate() {
+    if (firmwareControlsBound) return;
+    firmwareControlsBound = true;
     const cancel = document.getElementById("otaCancel");
     const status = document.getElementById("otaStatus");
     const progress = document.getElementById("otaProgress");
@@ -3053,13 +3060,13 @@
       if(!targetId() || info.deviceId!==targetId()) throw Error("Connect and identify the intended pendant before updating. Device ID mismatch or unavailable.");
       return info.deviceId;
     };
-    let discoveryBusy=false;
+    let discoveryBusy=false, discoveryTask=null, updateRequested=false;
     firmwareUpdater = new globalThis.SynapOTA.Client({
       connected:isGattConnected, queue:queueGattOperation,
       getService:()=>queueGattOperation(()=>gattServer.getPrimaryService(SERVICE_UUID),"Find pendant service"),
       progress:showProgress
     });
-    const eligible = ()=>isGattConnected() && !connectInProgress && !recordingConfirmed &&
+    const eligible = ()=>startupReady && isGattConnected() && !connectInProgress && !recordingConfirmed &&
       !finalizing && !currentRecordingId && !openingCapture && !unsavedAudio &&
       !["starting","stopping","saving"].includes(appState);
     const lock = value=>{
@@ -3070,6 +3077,7 @@
         const control=document.getElementById(id);if(control)control.disabled=value;
       }
       if(!value){spinner.hidden=true;bannerProgress.hidden=true;latestButton.hidden=!offered;bannerButton.hidden=!offered;}
+      document.getElementById("otaReleaseCheck").hidden=value;
       ui.runQueueButton.disabled=value;
       setAppState(isGattConnected() ? (deviceStatus.error ? "error" : "idle") : "disconnected");
     };
@@ -3095,11 +3103,17 @@
         return new TextDecoder().decode(value);
       } catch(error){if(error.name==='NotFoundError')return null;throw error;}
     }
-    async function inspect(force=false) {
-      if(force && !eligible()) {status.textContent=isGattConnected()?"Stop and save before updating.":"Connect to check";return;}
+    function inspect(force=false) {
+      if (discoveryTask) return discoveryTask;
+      discoveryTask = discover(force).finally(() => { discoveryTask=null; });
+      return discoveryTask;
+    }
+    async function discover(force=false) {
+      if(force && !eligible()) {status.textContent=!startupReady?"Finish opening the app first. Use Retry if startup failed.":isGattConnected()?"Stop and save before updating.":"Connect your pendant above to check for updates.";return;}
       if(discoveryBusy||firmwareBusy||!eligible()||document.visibilityState==='hidden'||(!force&&Date.now()-lastCheck<60000))return;
       discoveryBusy=true;lastCheck=Date.now();const epoch=connectionEpoch;status.textContent="Checking…";
-      const discoveryControls=[latestButton,bannerButton,document.getElementById('otaReleaseCheck')];
+      const checkButton=document.getElementById("otaReleaseCheck");checkButton.textContent="Checking…";
+      const discoveryControls=[document.getElementById('otaReleaseCheck')];
       discoveryControls.forEach(control=>control.disabled=true);
       // Discovery only reads through the GATT queue. It must not take the
       // firmware transfer lock or interrupt normal recording/FIFO processing.
@@ -3132,7 +3146,7 @@
         }
       }catch(error){if(firmwareBusy)return;offered=null;bannerButton.hidden=true;latestButton.hidden=true;
         announce("Update check: "+friendlyError(error));
-      }finally{discoveryBusy=false;if(!firmwareBusy)discoveryControls.forEach(control=>control.disabled=false);}
+      }finally{discoveryBusy=false;checkButton.textContent="Check for update";if(!firmwareBusy)discoveryControls.forEach(control=>control.disabled=false);}
     }
     checkFirmwareRelease=()=>inspect().catch(error=>log('Firmware check',friendlyError(error)));
     document.getElementById("otaReleaseCheck").addEventListener("click",()=>inspect(true));
@@ -3140,12 +3154,29 @@
     setInterval(()=>checkFirmwareRelease(),60000);
     cancel.addEventListener('click',()=>downloadController?.abort());
     async function updateLatest() {
-      if(firmwareBusy||discoveryBusy)return;
-      if(!eligible()){openSettings();status.textContent='Connect, then stop and save before updating.';return;}
-      if(!offered||offeredDevice!==targetId()){await inspect(true);return;}
-      const m=offered,id=targetId();
-      if(!window.confirm(`Update synap to ${m.build}?\n${id}\n\nKeep your pendant nearby and this app open.`))return;
+      if(firmwareBusy || updateRequested)return;
       if(!ui.settingsDialog.open)openSettings();
+      if(!eligible()) {
+        status.textContent=!startupReady?'Finish opening the app first. Use Retry if startup failed.':
+          isGattConnected()?'Stop and save the recording before updating.':'Connect your pendant above, then tap Update.';
+        return;
+      }
+      updateRequested=true;
+      const requestedDevice=targetId(), requestedEpoch=connectionEpoch;
+      try {
+        if(discoveryTask || !offered || offeredDevice!==requestedDevice) {
+          status.textContent='Checking update before installing…';
+          await inspect(true);
+        }
+        if(!eligible() || requestedDevice!==targetId() || requestedEpoch!==connectionEpoch) {
+          status.textContent='Pendant state changed. Connect, stop and save, then tap Update again.';
+          return;
+        }
+        if(!offered || offeredDevice!==requestedDevice)return;
+        await installOfferedUpdate(offered,requestedDevice);
+      } finally { updateRequested=false; }
+    }
+    async function installOfferedUpdate(m,id) {
       lock(true);showProgress('Preparing update…',null,true);
       processor?.pause();ui.queueStatus.textContent="Paused · Tap Process recordings to resume";
       let commitSent=false,resumeInterrupted=false;
@@ -3315,6 +3346,7 @@
     coreControlsBound = true;
 
     ui.connectButton.addEventListener("click", function () {
+      if (!requireReady()) return;
       if (isGattConnected()) {
         disconnectPendant();
       } else {
@@ -3325,9 +3357,51 @@
       openSettings();
       event.preventDefault();
     });
+    ui.retrySaveButton.addEventListener("click", async function () {
+      if (!startupReady) { await startApplication(); return; }
+      if (!journal || finalizing || recordingConfirmed || appState === "starting") return;
+      try {
+        await journal.retryFlush();
+        if (currentRecordingId) await journal.close(currentRecordingId,"retried-local-save");
+        currentRecordingId=null;unsavedAudio=false;await renderRecordings();
+        setAppState(isGattConnected() && deviceStatus.state === 1 ? "idle" : "disconnected");
+        toast("Local save completed");
+      } catch(e){toast(friendlyError(e,"Local save"),"error");}
+    });
+    ui.startButton.addEventListener("click", () => { if (requireReady()) startRecording(); });
+    ui.stopButton.addEventListener("click", stopRecording);
+    ui.chooseDeviceButton.addEventListener("click", function () {
+      if (!requireReady() || firmwareBusy) return;
+      if (recordingConfirmed || finalizing || appState === "starting" || appState === "stopping" || recordingReconnectPending) {
+        toast("Stop and save this recording before switching devices.", "error");
+        return;
+      }
+      manualDisconnect = true;
+      clearReconnectTimer(true);
+      if (isGattConnected()) disconnectGatt("User selected another pendant");
+      cleanupCharacteristics();
+      attachBluetoothDevice(null);
+      ui.settingsDialog.close();
+      connectPendant();
+    });
+    ui.closeSettingsButton.addEventListener("click", function () {
+      ui.settingsDialog.close();
+    });
+
+    ui.settingsForm.addEventListener("submit", function (event) {
+      event.preventDefault();
+      try {
+        if (saveSettings()) ui.settingsDialog.close();
+      } catch (error) {
+        toast("Could not save preferences: " + friendlyError(error), "error");
+      }
+    });
+
   }
 
   function bindEvents() {
+    if (eventsBound) return;
+    eventsBound = true;
     window.addEventListener("synap-recording-draining",()=>{if(recordingConfirmed&&!finalizing){recordingStopRequested=true;clearStartTimeout();setAppState("stopping");}});
     bindCoreControls();
     document.querySelectorAll("[data-day-step]").forEach(function (button) {
@@ -3387,32 +3461,6 @@
       processor?.retry();
     });
     ui.pauseQueueButton.addEventListener("click", function () {processor?.pause();});
-    ui.retrySaveButton.addEventListener("click", async function () {
-      if (!journal || finalizing || recordingConfirmed || appState === "starting") return;
-      try {
-        await journal.retryFlush();
-        if (currentRecordingId) await journal.close(currentRecordingId,"retried-local-save");
-        currentRecordingId=null;unsavedAudio=false;await renderRecordings();
-        setAppState(isGattConnected() && deviceStatus.state === 1 ? "idle" : "disconnected");
-        toast("Local save completed");
-      } catch(e){toast(friendlyError(e,"Local save"),"error");}
-    });
-    ui.startButton.addEventListener("click", startRecording);
-    ui.stopButton.addEventListener("click", stopRecording);
-    ui.chooseDeviceButton.addEventListener("click", function () {
-      if (firmwareBusy) return;
-      if (recordingConfirmed || finalizing || appState === "starting" || appState === "stopping" || recordingReconnectPending) {
-        toast("Stop and save this recording before switching devices.", "error");
-        return;
-      }
-      manualDisconnect = true;
-      clearReconnectTimer(true);
-      if (isGattConnected()) disconnectGatt("User selected another pendant");
-      cleanupCharacteristics();
-      attachBluetoothDevice(null);
-      ui.settingsDialog.close();
-      connectPendant();
-    });
     ui.recoveryButton.addEventListener("click", async function () {
       if (appState === "recording" || appState === "starting" || finalizing) {
         toast("Stop the recording first.", "error");
@@ -3432,19 +3480,6 @@
         blob: createWavBlob(completedPcmFrames, DEFAULT_SAMPLE_RATE)
       });
       // Keep this copy until the user closes the page or starts a new take.
-    });
-
-    ui.closeSettingsButton.addEventListener("click", function () {
-      ui.settingsDialog.close();
-    });
-
-    ui.settingsForm.addEventListener("submit", function (event) {
-      event.preventDefault();
-      try {
-        if (saveSettings()) ui.settingsDialog.close();
-      } catch (error) {
-        toast("Could not save preferences: " + friendlyError(error), "error");
-      }
     });
 
     ui.installButton.addEventListener("click", async function () {
@@ -3593,35 +3628,77 @@
     update();
   }
 
+  function requireReady() {
+    if (startupReady) return true;
+    toast(startupPending ? "Opening saved recordings…" : "The app could not start. Tap Retry above.", "error");
+    return false;
+  }
+
+  async function toggleCapture() {
+    if (!requireReady() || firmwareBusy) return;
+    if (!ui.stopButton.disabled) { await stopRecording(); return; }
+    if (["connecting","stopping","saving"].includes(appState)) return;
+    if (!isGattConnected()) await connectPendant();
+    if (appState === "idle" && !ui.startButton.disabled) await startRecording();
+    else if (appState === "error") toast(ui.recorderSubtitle.textContent, "error");
+  }
+
+  globalThis.SynapAppControls = Object.freeze({toggleCapture});
+
+  function setStartup(state, message) {
+    document.body.dataset.startup = state;
+    const notice=document.getElementById("startupNotice");
+    notice.hidden=state==="ready";
+    document.getElementById("startupMessage").textContent=message || "";
+    const retry=document.getElementById("startupRetry");
+    retry.hidden=state!=="error";
+    retry.disabled=state==="loading";
+    ui.retrySaveButton.disabled=state==="loading";
+  }
+
+  function startApplication() {
+    if (startupPending) return startupPending;
+    if (startupReady) return Promise.resolve();
+    setStartup("loading", "Opening saved recordings…");
+    startupPending=initialize().catch(error => {
+      const message=friendlyError(error);
+      log("Application startup failed", message);
+      setAppState("error", message);
+      setStartup("error", message);
+    }).finally(() => { startupPending=null; });
+    return startupPending;
+  }
+
   async function initialize() {
-    if (!journal) throw new Error("Audio storage module did not load. Deploy all v5 files and reload.");
+    bindCoreControls();
+    bindFirmwareUpdate();
+    if (!journal) throw new Error("Audio storage did not load. Reload the app to download its files.");
     if (!navigator.locks) throw new Error("This build needs Web Locks for safe local storage. Use current Android Chrome over HTTPS.");
-    await new Promise(function (resolve, reject) {
+    if (!appLockHeld) await new Promise(function (resolve, reject) {
       navigator.locks.request("dk-pendant-app", {ifAvailable:true}, async function (lock) {
         if (!lock) {reject(new Error("Another pendant tab is open. Close it before using this one."));return;}
-        resolve();await new Promise(function () {}); // Released automatically when this page closes.
+        appLockHeld=true;resolve();await new Promise(function () {}); // Released automatically when this page closes.
       }).catch(reject);
     });
-    // Core navigation must remain usable even if IndexedDB recovery fails.
-    bindCoreControls();
     await journal.open();
     globalThis.SynapMoments?.configure({store:journal,context:()=>({active:recordingConfirmed&&appState==='recording'&&!recordingReconnectPending,recordingId:currentRecordingId,offsetMs:globalThis.SynapCaptureStability.timelineOffsetMs(currentRecordingId)})});
     const recovered = await journal.recover();
     ui.appVersion.textContent = APP_VERSION;
-    loadSettings();
     processor = new globalThis.DKFIFOProcessor(journal, {settings:()=>settings,canRun:()=>!firmwareBusy,onChange:function (message) {
       ui.queueStatus.textContent=message;log("FIFO",message);
       if (message === "Queue complete") renderRecordings();
     }});
     if (recovered) log("Recovered interrupted recordings from stored chunks", {count:recovered});
+    await renderRecordings();
     bindEvents();
-    bindFirmwareUpdate();
     bindReconnectRecovery();
     setupInstallPrompt();
     drawWaveform();
     updateMetrics();
     renderDateStrip();
 
+    startupReady=true;
+    setStartup("ready");
     log("Application started", {
       version: APP_VERSION,
       protocol: PROTOCOL_VERSION,
@@ -3644,16 +3721,13 @@
       setAppState("disconnected");
     }
 
-    await renderRecordings();
     if (settings.autoProcess) processor.resume();
-    registerServiceWorker();
     await recoverRememberedConnection("page-load", true);
   }
 
   bindSectionNavigation();
-  initialize().catch(function (error) {
-    const message = friendlyError(error);
-    log("Fatal initialization error", message);
-    setAppState("error", message);
-  });
+  loadSettings();
+  document.getElementById("startupRetry").addEventListener("click", startApplication);
+  registerServiceWorker();
+  startApplication();
 })();

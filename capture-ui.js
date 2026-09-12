@@ -70,10 +70,7 @@
       toggle.type='button';
       toggle.setAttribute('aria-label','Start listening');
       toggle.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4m-4 0h8"/></svg><span class="header-stop" aria-hidden="true"></span>';
-      toggle.addEventListener('click',()=>{
-        const state=document.body.dataset.state||'';
-        (RECORDING_STATES.has(state)?stop:start).click();
-      });
+      toggle.addEventListener('click',()=>window.SynapAppControls?.toggleCapture());
     }
 
     // Keep order deterministic across hot reloads and cached installs.
@@ -82,7 +79,10 @@
 
     function sync(){
       const state=document.body.dataset.state||'disconnected';
+      const ready=document.body.dataset.startup==='ready';
+      const interrupted=document.body.dataset.recordingInterrupted==='true';
       const recording=RECORDING_STATES.has(state);
+      const canStop=!stop.disabled;
       const connected=ACTIVE_STATES.has(state);
       const busy=BUSY_STATES.has(state);
       sessionBar.hidden=!['starting','recording','stopping','saving'].includes(state)&&document.body.dataset.recordingInterrupted!=='true';
@@ -91,15 +91,20 @@
       status.classList.toggle('is-connected',connected);
       status.classList.toggle('is-recording',recording);
       const label=status.querySelector('.header-status-text');
-      if(label)label.textContent=state==='updating'?'Updating':recording?'Listening':connected?'Connected':state==='connecting'?'Connecting':'Offline';
-      toggle.classList.toggle('is-recording',recording);
-      toggle.disabled=busy&&!recording?true:(recording?stop.disabled:start.disabled);
-      toggle.setAttribute('aria-label',recording?'Stop listening':'Start listening');
+      if(label)label.textContent=!ready?(document.body.dataset.startup==='error'?'Needs retry':'Opening'):state==='updating'?'Updating':interrupted?'Paused':recording?'Listening':connected?'Connected':state==='connecting'?'Connecting':state==='error'?'Check pendant':'Offline';
+      status.disabled=!ready||connect.disabled;
+      status.setAttribute('aria-label',connected?'Disconnect pendant':'Connect pendant');
+      toggle.classList.toggle('is-recording',recording||canStop);
+      toggle.disabled=!ready||(!canStop&&(busy||state==='unsupported'||(connected&&start.disabled)));
+      const action=canStop?(interrupted?'Save received recording':'Stop listening'):!connected?'Connect and start listening':'Start listening';
+      toggle.setAttribute('aria-label',action);
+      toggle.title=action;
     }
 
     if(document.documentElement.dataset.synapCaptureUiBound!=='1'){
       document.documentElement.dataset.synapCaptureUiBound='1';
-      new MutationObserver(sync).observe(document.body,{attributes:true,attributeFilter:['data-state']});
+      new MutationObserver(sync).observe(document.body,{attributes:true,attributeFilter:['data-state','data-startup','data-recording-interrupted']});
+      new MutationObserver(sync).observe(connect,{attributes:true,attributeFilter:['disabled']});
       new MutationObserver(sync).observe(start,{attributes:true,attributeFilter:['disabled']});
       new MutationObserver(sync).observe(stop,{attributes:true,attributeFilter:['disabled']});
     }

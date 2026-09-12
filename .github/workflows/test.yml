@@ -29,6 +29,7 @@ jobs:
       - run: node tools/workflow-smoke.cjs
         env:
           SYNAP_WORKFLOW_OUTPUT: artifacts/workflows
+      - run: node tools/controls-smoke.cjs
       - run: node tools/connection-smoke.cjs
       - run: node tools/connection-smoke.cjs
         env:

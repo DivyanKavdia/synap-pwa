@@ -148,6 +148,12 @@
       } catch (_) {}
     }
 
+    // A reload must not leave this page's fallback lease blocking its successor.
+    // A page kept in the back/forward cache still owns its live application.
+    root.addEventListener('pagehide', event => {
+      if (!event.persisted) [...heldKeys].forEach(release);
+    });
+
     async function request(name, options, callback) {
       if (typeof options === 'function') { callback = options; options = {}; }
       options = options || {};

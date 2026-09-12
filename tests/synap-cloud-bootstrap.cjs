@@ -25,6 +25,7 @@ function run(initial={}){
     Math,
     JSON,
     Promise,
+    addEventListener(){},
     localStorage,
     navigator:{userAgent:'Mozilla/5.0 (Linux; Android 16) Chrome/140.0'},
     document:{getElementById:()=>null},
