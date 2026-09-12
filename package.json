@@ -1,0 +1,22 @@
+{
+  "name": "synap-pwa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Synap browser companion and local development tools",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node tools/serve.cjs",
+    "test": "node --test tests/*.cjs",
+    "test:browser": "node tools/browser-tests.cjs",
+    "test:backend": "npm test --prefix backend",
+    "typecheck": "npm run typecheck --prefix backend",
+    "format": "prettier --write",
+    "format:check": "prettier --check"
+  },
+  "devDependencies": {
+    "playwright": "1.51.1",
+    "prettier": "3.6.2"
+  }
+}

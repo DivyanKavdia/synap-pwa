@@ -34,3 +34,26 @@ changes, keyboard navigation, deep links, disclosure and Settings navigation.
 `tools/workflow-smoke.cjs` covers populated People recall, follow-up retries,
 source navigation and merge/retry/reload/unmerge. The new script is included
 in the offline shell and the browser checks run in CI.
+
+## Data and request boundaries
+
+Cloud Follow-ups supports Open/Done/Dismissed and You/Others filters using
+canonical task IDs. Done appears for cloud tasks; locally extracted actions keep
+an unsynced label. Canonical People supports search, confirmation, rename and
+Prepare. Editing errors retain the draft, and same-account token refresh does
+not cancel pending work. Switching accounts invalidates older responses.
+
+Cloud Ask has a 20-second deadline covering authentication and response reading,
+Cancel, Retry search and an explicit Search this device fallback. Local recall
+is keyword-based. Source failures show a bounded error and Retry source; citations
+open the identified recording at the evidence timestamp.
+
+The backend list endpoints return up to 200 people and 200 follow-ups. Prepare
+uses up to 12 recent related conversations. Related people may have been
+mentioned rather than present. Reminder suggestions are evidence, not scheduled
+notifications; calendar export creates an importable file, not a subscription.
+New summary fields require new processing or an explicit memory rebuild.
+
+`tools/actions-functional-smoke.cjs` covers populated lists, failed edits, hung
+requests, cancellation, stale responses, account changes and source seeking.
+It uses the real adapter with simulated API responses and real IndexedDB.

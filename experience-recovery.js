@@ -319,9 +319,6 @@
     root.document.__synapExperienceRecoveryInstalled = true;
 
     if (root.SynapBackend) {
-      root.SynapBackend.recordingMemory = function (id) {
-        return json('/v1/recordings/' + encodeURIComponent(String(id || '')) + '/source');
-      };
       root.SynapBackend.recordingAudio = cloudAudio;
     }
 

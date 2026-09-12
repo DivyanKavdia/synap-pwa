@@ -33,7 +33,7 @@ const block=(from,to)=>source.slice(source.indexOf(from),source.indexOf(to));
   await c.acquireWakeLock();assert.equal(c.wakeLock,lock);assert.equal(released,0);
   c.wakeLock=null;c.firmwareBusy=false;await c.acquireWakeLock();assert.equal(released,1);
   // Scheduler cannot launch a job after OTA takes ownership during an awaited selection.
-  require('../audio-store.js');let allowed=false,processed=0,selections=0;
+  require('../audio-store.js');require('../processing-queue.js');let allowed=false,processed=0,selections=0;
   const store={nextRunnable:async()=>{selections++;return{job:null,wakeAt:0,blockedCount:0};}};
   let fifo=new globalThis.DKFIFOProcessor(store,{canRun:()=>allowed,settings:()=>({}),locks:{request:async(n,o,f)=>f({})}});
   await fifo.resume();assert.equal(selections,0);assert.equal(fifo.paused,true);

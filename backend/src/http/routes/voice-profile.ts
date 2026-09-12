@@ -10,10 +10,10 @@ const ENROLL_MAX_MS = 30_000;
 
 export function voiceProfileRoutes(): Router {
   const router = Router();
-  router.use(requireAuth());
 
   router.get(
     '/voice-profile',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const status = await voiceProfileStatus(req.uid, req.dek);
       res.status(200).json({
@@ -31,10 +31,15 @@ export function voiceProfileRoutes(): Router {
 
   router.post(
     '/voice-profile',
+    requireAuth(),
     express.raw({ type: ['audio/wav', 'audio/x-wav'], limit: '2mb' }),
     handler<AuthedRequest>(async (req, res) => {
       if (!speakerServiceConfigured()) {
-        throw new HttpError(503, 'speaker_service_unavailable', 'Voice profiling is not enabled on this Synap backend yet.');
+        throw new HttpError(
+          503,
+          'speaker_service_unavailable',
+          'Voice profiling is not enabled on this Synap backend yet.',
+        );
       }
       if (!Buffer.isBuffer(req.body) || req.body.length < 44) {
         throw new HttpError(400, 'bad_audio', 'Send a mono 16 kHz WAV voice sample.');
@@ -44,10 +49,18 @@ export function voiceProfileRoutes(): Router {
       try {
         embedded = await embedSpeakerAudio(req.body);
       } catch (cause) {
-        throw new HttpError(503, 'speaker_service_failed', (cause as Error).message || 'Voice profile service failed.');
+        throw new HttpError(
+          503,
+          'speaker_service_failed',
+          (cause as Error).message || 'Voice profile service failed.',
+        );
       }
       if (embedded.duration_ms < ENROLL_MIN_MS) {
-        throw new HttpError(400, 'sample_too_short', 'Please record at least 5 seconds of clear speech.');
+        throw new HttpError(
+          400,
+          'sample_too_short',
+          'Please record at least 5 seconds of clear speech.',
+        );
       }
       if (embedded.duration_ms > ENROLL_MAX_MS) {
         throw new HttpError(400, 'sample_too_long', 'Voice enrollment is limited to 30 seconds.');
@@ -69,6 +82,7 @@ export function voiceProfileRoutes(): Router {
 
   router.delete(
     '/voice-profile',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const removed = await deleteVoiceProfile(req.uid);
       res.status(200).json({ removed, enrolled: false });

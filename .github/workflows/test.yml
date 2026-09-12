@@ -14,8 +14,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: |
-          for test_file in tests/*.cjs; do node "$test_file"; done
+      - run: npm ci
+      - run: npm test
 
   workflows:
     runs-on: ubuntu-latest
@@ -24,38 +24,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --no-save --package-lock=false playwright@1.51.1
+      - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: node tools/workflow-smoke.cjs
-        env:
-          SYNAP_WORKFLOW_OUTPUT: artifacts/workflows
-      - run: node tools/transcript-smoke.cjs
-        env:
-          SYNAP_TRANSCRIPT_OUTPUT: artifacts/workflows/transcripts
-      - run: node tools/controls-smoke.cjs
-      - run: node tools/recording-notifications-smoke.cjs
-      - run: node tools/connection-smoke.cjs
-      - run: node tools/connection-smoke.cjs
-        env:
-          SYNAP_RECOVERY_FIXTURE: "1"
-      - run: node tools/meeting-features-smoke.cjs
-      - run: node tools/firmware-progress-smoke.cjs
-        env:
-          SYNAP_FIRMWARE_OUTPUT: artifacts/workflows/firmware
-      - run: node tools/audio-enhancement-smoke.cjs
-      - run: node tools/settings-smoke.cjs
-        env:
-          SYNAP_SETTINGS_OUTPUT: artifacts/workflows/settings
-      - run: node tools/library-selection-smoke.cjs
-        env:
-          SYNAP_LIBRARY_OUTPUT: artifacts/workflows/library
-      - run: node tools/actions-smoke.cjs
-        env:
-          SYNAP_ACTIONS_OUTPUT: artifacts/workflows/actions
-      - run: node tools/actions-functional-smoke.cjs
-      - run: node tools/speaker-names-smoke.cjs
-        env:
-          SYNAP_SPEAKERS_OUTPUT: artifacts/workflows/speakers
+      - run: npm run test:browser
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -74,14 +74,12 @@ const repairCode = transcriptRepairSource
   .replace(/^\s*\/\/.*$/gm, '');
 assert.doesNotMatch(repairCode, /location\s*\.\s*reload\s*\(/,
   'manual transcript repair must update in place rather than refreshing the whole PWA');
-assert.match(transcriptRepairSource, /recordingMemory/,
-  'targeted recording memory fetch should be available for expand/transcript actions');
-assert.doesNotMatch(transcriptRepairSource, /kind==='consolidate'\)emit\('synap-memory-ready'/,
-  'model completion must not announce ready before the recording commit');
-assert.match(memoryReadySource, /Processor\.prototype\.execute/,
-  'durable readiness must hook the FIFO execute boundary after finishJob');
-assert.match(memoryReadySource, /processingStage==='ready'|processingState==='done'/,
-  'durable readiness must verify committed ready/done state before emitting');
+assert.match(fs.readFileSync(path.join(root, 'synap-backend.js'), 'utf8'), /recordingMemory/,
+  'the backend adapter owns targeted recording fetches');
+assert.doesNotMatch(memoryReadySource, /prototype|MutationObserver|indexedDB/,
+  'readiness notifications must not patch queue methods or rescan storage');
+// Actual post-commit event ordering and save-failure behavior are exercised in
+// processing-queue.cjs; a source string cannot establish transaction durability.
 
 assert.doesNotMatch(captureSource, /\bconnect\s*\.\s*click\s*\(/,
   'capture stability must not run a second synthetic reconnect loop');

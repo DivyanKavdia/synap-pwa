@@ -43,10 +43,10 @@ function translate(error: unknown): never {
  */
 export function memoryToolRoutes(): Router {
   const router = Router();
-  router.use(requireAuth());
 
   router.get(
     '/memory-merges',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const day = req.query.day === undefined ? undefined : String(req.query.day);
       if (day !== undefined && !DAY_PATTERN.test(day)) {
@@ -59,6 +59,7 @@ export function memoryToolRoutes(): Router {
 
   router.post(
     '/memory-merges',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const body = mergeBody.safeParse(req.body);
       if (!body.success) {
@@ -75,6 +76,7 @@ export function memoryToolRoutes(): Router {
 
   router.delete(
     '/memory-merges/:mergeId',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const removed = await deleteMemoryMerge(req.uid, String(req.params.mergeId));
       if (!removed) throw new HttpError(404, 'not_found', 'Unknown merged memory');

@@ -95,20 +95,13 @@ export function createApp(): Express {
 
   app.use('/v1', authRoutes());
 
-  // Cloud Tasks OIDC must reach its task guard before any blanket user-session
-  // router. This ordering is load-bearing for long recording completion.
+  // Every router authenticates only its own routes. Tasks use service OIDC;
+  // user routes use a session and unwrap the user's data key once per request.
   app.use('/v1', taskRoutes());
-
-  // Source recovery and Ask use route-scoped user auth. They intentionally sit
-  // ahead of recordingRoutes(), which applies requireAuth() to every path that
-  // enters that router. The source route reconstructs transcripts from durable
-  // segment windows and exposes retained encrypted source audio to the owner.
   app.use('/v1', sourceRoutes());
   app.use('/v1', askV3Routes());
 
-  // Retry is route-scoped too: a failed cloud task needs a fresh task identity,
-  // and replaying finalize cannot provide one because finalize is intentionally
-  // idempotent.
+  // Retrying needs a new task identity; finalize deliberately stays idempotent.
   app.use('/v1', retryRoutes());
   app.use('/v1', speakerNameRoutes());
   app.use('/v1', knownSpeakerRoutes());

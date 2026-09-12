@@ -153,14 +153,8 @@ export async function loadSecrets(): Promise<Secrets> {
   const inlineGemini = process.env.SYNAP_GEMINI_API_KEY;
   const inlineSession = process.env.SYNAP_SESSION_SIGNING_KEY;
 
-  if (inlineGemini && inlineSession) {
-    cachedSecrets = {
-      geminiApiKey: inlineGemini,
-      sessionSigningKey: Buffer.from(inlineSession, 'base64'),
-    };
-    return cachedSecrets;
-  }
-
+  // Inline development values and Secret Manager values share validation.
+  // Returning early for inline values used to bypass the signing-key length check.
   const client = new SecretManagerServiceClient();
   const [geminiApiKey, sessionSigningKey] = await Promise.all([
     inlineGemini

@@ -20,18 +20,23 @@ With a compatible pendant, the same open app page can recover buffered audio aft
 
 ## Pendant interaction
 
-Production firmware uses the following touch model:
+The primary ESP32-S3 pendant uses the following touch model:
 
-| State | Gesture | Action |
-| --- | --- | --- |
-| Connected idle | Double tap | Start recording |
-| Recording | Double tap | Stop recording and enter BLE standby |
-| Idle, recording or BLE standby | Triple tap | Enter deep sleep; active recording stops first |
-| BLE standby | Double tap | Wake and start recording |
-| Deep sleep | Triple tap | Wake and continue normal boot |
-| Deep sleep | One or two taps | Return to deep sleep without starting BLE |
+| State                          | Gesture         | Action                                         |
+| ------------------------------ | --------------- | ---------------------------------------------- |
+| Connected idle                 | Double tap      | Start recording                                |
+| Recording                      | Double tap      | Stop recording and enter BLE standby           |
+| Idle, recording or BLE standby | Triple tap      | Enter deep sleep; active recording stops first |
+| BLE standby                    | Double tap      | Wake and start recording                       |
+| Deep sleep                     | Triple tap      | Wake and continue normal boot                  |
+| Deep sleep                     | One or two taps | Return to deep sleep without starting BLE      |
 
-Double-tap Start/Stop is confirmed after a short wait for a possible third tap. This reserves triple tap as the power gesture in both directions.
+Current ESP32-C3 firmware uses double tap for recording and a four-second hold,
+then release, for sleep/wake. Its gesture timing differs from S3. Check the
+[firmware target guide](https://github.com/DivyanKavdia/synap-firmware/blob/346b819caf89d3ed3ac2d401dce939237f9c5390/README.md)
+for the connected board and build.
+
+On S3, double-tap Start/Stop is confirmed after a short wait for a possible third tap. This reserves triple tap as the power gesture in both directions.
 
 The first touch electrically wakes the pendant from deep sleep, but BLE stays off until the complete triple-tap sequence is validated. For compatible firmware, the PWA also places an idle connected pendant into BLE standby after about 30 seconds.
 
@@ -52,7 +57,7 @@ Audio is captured at 16 kHz, mono. Firmware transports independent IMA ADPCM fra
 
 ## Recording and storage
 
-Incoming packets are journaled to IndexedDB before a recording is sealed. The PWA batches packet writes, preserves sequence gaps as silence, compacts processing windows, recovers unsealed recordings, rolls long captures into linked parts, and supports playback plus WAV export/share.
+Incoming packets are journaled to IndexedDB before a recording is sealed. The PWA batches packet writes, preserves sequence gaps as silence, compacts processing windows, recovers unsealed recordings, retains legacy linked parts, and supports playback plus WAV export/share.
 
 Startup recovery reuses existing processing jobs and preserves completed work. A recording that cannot recover is kept with a Retry notice while other recordings remain usable. Recording starts only after a storage write check succeeds; Connect, Change pendant and firmware updates use connection ownership independently of recording storage. Recovery retries target only the affected historical recordings.
 
@@ -76,7 +81,7 @@ The signed production feed is authoritative for the latest firmware build. A Git
 
 ## Memory and AI
 
-Settings → **Memory & AI** supports Synap cloud and custom endpoint processing.
+Settings → **Memory** supports Synap cloud and custom endpoint processing.
 
 The managed backend pipeline is:
 
@@ -100,12 +105,31 @@ For recording interruptions, first determine whether a real GATT disconnect occu
 
 The service worker caches the application shell for offline startup. App reload/update actions must not interrupt recording, saving or firmware OTA. IndexedDB recording data is not cleared by normal service-worker updates.
 
-## Tests
+## Development and documentation
 
-Run browser-side regressions with:
+Start with [Contributing](CONTRIBUTING.md) for local setup, formatting, tests and
+release checks. The [architecture map](docs/ARCHITECTURE.md) identifies each
+module's owner and the remaining maintenance work.
 
-```bash
-node --test tests/*.cjs
+- [Recording lifecycle and reconnect limits](docs/RECORDING_LIFECYCLE.md)
+- [Memory, source editing, merges and audio](docs/MEMORY_AND_AUDIO.md)
+- [Settings and navigation](docs/SETTINGS_AND_NAVIGATION.md)
+- [My actions](docs/MY_ACTIONS.md) and [meeting features](docs/MEETING_FEATURES.md)
+- [Recording notifications and native iOS requirements](docs/RECORDING_NOTIFICATIONS.md)
+- [Speaker names](SPEAKER_NAMES.md), [speaker identification](docs/SPEAKER_IDENTIFICATION.md) and [voice profiles](docs/VOICE_PROFILE.md)
+- [Authentication compatibility](docs/auth-compatibility.md)
+- [Encryption](docs/ENCRYPTION.md), [GCP deployment](docs/GCP_DEPLOYMENT.md) and [GitHub deployment](docs/GITHUB_DEPLOY.md)
+- [Backend/custom endpoint contract](docs/BACKEND_AI_STT_ENDPOINT_SPEC.md)
+
+```sh
+npm ci
+npm ci --prefix backend
+npm test
+npm run test:backend
+npx playwright install chromium
+npm run test:browser
 ```
 
-Before production release, validate BLE connect/reconnect, real-microphone recording, double-tap start/stop, triple-tap deep sleep/wake, wake without premature BLE reconnect, long-recording rollover, foreground recovery, battery telemetry, OTA update/resume/reboot, post-update reconnect, storage recovery and cloud processing.
+Browser fixtures cover simulated BLE, recovery, OTA, notifications and memory
+workflows. Physical recording, gestures, RF interruptions, OS notification
+controls, wake/sleep and firmware transfer still require device validation.

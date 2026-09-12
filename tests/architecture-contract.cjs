@@ -22,9 +22,9 @@ const capture=read('capture-ui.js');
 
 assert(html.includes('globalThis.SYNAP_STATIC_BOOTSTRAP=true'),'production shell must declare deterministic bootstrap');
 const core=[
-  'runtime-compat.js','audio-store.js','battery-popover-fix.js','capture-stability.js','sleep-state-guard.js','recording-bridge.js','event-channel.js',
-  'ota.js','releases.js','moments.js','experience-recovery.js','app.js','google-auth.js','synap-backend.js','processing-pipeline-ui.js','memory-ui-fix.js','cloud-history.js',
-  'memory-tools.js','cost-ui.js','transcript-repair.js','voice-profile.js','ask-synap.js','brain-ui.js','dashboard-ui.js','runtime-ui.js','capture-ui.js','product-ui.js','provenance-links.js','productivity-tools.js','desktop-capture.js','interaction-surfaces.js','memory-ready-events.js'
+  'runtime-compat.js','audio-store.js','memory-ready-events.js','processing-queue.js','rolling-transcription.js','battery-popover-fix.js','capture-stability.js','sleep-state-guard.js','recording-bridge.js','event-channel.js',
+  'ota.js','releases.js','moments.js','experience-recovery.js','google-auth.js','processing-recovery.js','ai-providers.js','synap-backend.js','app.js','processing-pipeline-ui.js','memory-ui-fix.js','cloud-history.js',
+  'memory-tools.js','cost-ui.js','transcript-repair.js','voice-profile.js','ask-synap.js','brain-ui.js','dashboard-ui.js','runtime-ui.js','capture-ui.js','product-ui.js','provenance-links.js','productivity-tools.js','desktop-capture.js','interaction-surfaces.js'
 ];
 let last=-1;
 for(const file of core){
@@ -66,9 +66,9 @@ assert.doesNotMatch(bindBrief,/MutationObserver/,'daily brief refresh must use e
 assert.doesNotMatch(product,/Advanced & recovery/,'product UI must not recreate the removed Advanced & recovery panel');
 assert.doesNotMatch(capture,/backgroundMemoryControls/,'capture UI must not rebuild manual processing controls');
 assert.doesNotMatch(capture,/if\(timer\)new MutationObserver\(sync\)/,'recording timer must not trigger a full capture-header render every second');
-assert(enhancements.includes("SHELL_REVISION='1.0.0-shell70-notifications'"),'update-notice generation must match the service worker');
+assert(enhancements.includes("SHELL_REVISION='1.0.0-shell71-maintenance'"),'update-notice generation must match the service worker');
 assert.doesNotMatch(stability,/observe\(root\.document\.body, \{ childList: true, subtree: true \}\)/,
   'recovery hiding must not watch the entire document forever');
-assert(sw.includes("const CACHE_REVISION='1.0.0-shell70-notifications';"),'service worker revision must advance with the architecture graph');
+assert(sw.includes("const CACHE_REVISION='1.0.0-shell71-maintenance';"),'service worker revision must advance with the architecture graph');
 
 console.log('PASS: production bootstrap, BLE ownership, sleep ownership, render flow and reconnect policy are structurally consistent.');

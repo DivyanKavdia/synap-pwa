@@ -8,6 +8,7 @@ function load(){
   vm.createContext(context);
   vm.runInContext(read('library-tools.js'),context);
   vm.runInContext(read('audio-store.js'),context);
+  vm.runInContext(read('processing-queue.js'),context);
   return context;
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));

@@ -445,7 +445,10 @@
         signal: init.signal
       });
     }).then(function (response) {
-      if (response.status !== 401 || init.__retried) return response;
+      if (response.status !== 401 || init.__retried) {
+        root.SynapProcessingRecovery?.observeResponse(path, response, authedFetch);
+        return response;
+      }
       return refresh().then(function () {
         return authedFetch(path, Object.assign({}, init, { __retried: true }));
       });

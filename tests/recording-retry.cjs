@@ -22,6 +22,7 @@ async function queueTargetsOnlySelectedRecording() {
   context.globalThis = context;
   vm.createContext(context);
   vm.runInContext(read('audio-store.js'), context);
+  vm.runInContext(read('processing-queue.js'), context);
 
   const patches = [];
   const store = {

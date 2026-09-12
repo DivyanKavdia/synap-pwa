@@ -55,6 +55,7 @@ function load(source, overrides) {
   );
   context.globalThis = context;
   vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(root, 'processing-queue.js'), 'utf8'), context);
   vm.runInContext(source, context);
   return context;
 }
@@ -70,7 +71,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell70-notifications'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell71-maintenance'/);
 });
 
 test('the settings form offers the encrypted cloud provider and a sign-in control', () => {
@@ -108,7 +109,11 @@ test('no stored session means not signed in', () => {
 test('a stored refresh token counts as signed in', () => {
   const context = load(authSource, {
     localStorage: storage({
-      'synap-auth-session-v1': JSON.stringify({ refreshToken: 'r', accessToken: 'a', expiresAt: 0 }),
+      'synap-auth-session-v1': JSON.stringify({
+        refreshToken: 'r',
+        accessToken: 'a',
+        expiresAt: 0,
+      }),
     }),
   });
   assert.equal(context.SynapAuth.isSignedIn(), true);
@@ -233,65 +238,41 @@ test('a revoked refresh token clears the session instead of retrying forever', a
   assert.equal(context.SynapAuth.isSignedIn(), false);
 });
 
-test('the backend provider only intercepts jobs when it is the selected provider', () => {
-  class Processor {
-    async process() {
-      return { from: 'original' };
-    }
-  }
-  const context = load(backendSource, {
-    DKFIFOProcessor: Processor,
-    localStorage: storage({ 'synap-ai-provider-settings': JSON.stringify({ provider: 'openai' }) }),
+test('provider registration leaves custom and other provider dispatch intact', async () => {
+  const context = load(backendSource);
+  context.DKFIFOProcessor.registerProvider('fixture', {
+    process: async () => ({ from: 'fixture' }),
   });
-  context.SynapBackend.patchProcessor();
-
-  const processor = new Processor();
-  processor.controllers = new Map();
-  return processor.process({ kind: 'transcribe' }, {}, '').then((result) => {
-    assert.deepEqual(result, { from: 'original' });
-  });
+  const processor = new context.DKFIFOProcessor({}, { provider: () => 'fixture' });
+  processor.paused = false;
+  const result = await processor.process({ id: 1, kind: 'transcribe' }, {}, '');
+  assert.deepEqual(result, { from: 'fixture' });
 });
 
 test('the provider refuses to run while signed out, and does not retry', async () => {
-  class Processor {
-    async process() {
-      return { from: 'original' };
-    }
-  }
   const context = load(backendSource, {
-    DKFIFOProcessor: Processor,
-    localStorage: storage({ 'synap-ai-provider-settings': JSON.stringify({ provider: 'synap' }) }),
     SynapAuth: { isSignedIn: () => false, config: () => ({ backendUrl: '' }) },
   });
-  context.SynapBackend.patchProcessor();
-
-  const processor = new Processor();
-  processor.controllers = new Map();
+  const processor = new context.DKFIFOProcessor({}, { provider: () => 'synap' });
+  processor.paused = false;
   await assert.rejects(
     () => processor.process({ kind: 'transcribe', id: 1 }, {}, ''),
     (error) => {
       assert.match(error.message, /Sign in/);
-      // A signed-out queue must stop and ask, not burn five retries first.
       assert.equal(error.retryable, false);
       return true;
     },
   );
 });
 
-test('patching twice does not stack wrappers', () => {
-  class Processor {
-    async process() {
-      return { from: 'original' };
-    }
-  }
-  const context = load(backendSource, {
-    DKFIFOProcessor: Processor,
-    localStorage: storage(),
-  });
-  context.SynapBackend.patchProcessor();
-  const once = Processor.prototype.process;
-  context.SynapBackend.patchProcessor();
-  assert.equal(Processor.prototype.process, once);
+test('loading a provider never replaces queue methods', () => {
+  const context = load('');
+  const { process, run, execute } = context.DKFIFOProcessor.prototype;
+  vm.runInContext(backendSource, context);
+  vm.runInContext(backendSource, context);
+  assert.equal(context.DKFIFOProcessor.prototype.process, process);
+  assert.equal(context.DKFIFOProcessor.prototype.run, run);
+  assert.equal(context.DKFIFOProcessor.prototype.execute, execute);
 });
 
 test('structured memory maps onto the fields the library already renders', () => {
@@ -334,10 +315,12 @@ test('a memory with no conversations still produces a usable summary', () => {
   assert.equal(fields.summary, 'Nothing was decided.');
 });
 
-test('endpoint mirroring satisfies the queue guard without asking for a paste', () => {
+test('managed configuration is prepared without changing stored custom endpoints', async () => {
   const store = storage({
-    'synap-ai-provider-settings': JSON.stringify({ provider: 'synap' }),
-    'dk-pendant-settings': JSON.stringify({ autoProcess: true }),
+    'dk-pendant-settings': JSON.stringify({
+      endpoint: 'https://mine.example.test',
+      autoProcess: true,
+    }),
   });
   const context = load(backendSource, {
     localStorage: store,
@@ -346,32 +329,39 @@ test('endpoint mirroring satisfies the queue guard without asking for a paste', 
       config: () => ({ backendUrl: 'https://api.example.test' }),
     },
   });
-  context.SynapBackend.mirrorEndpoints();
-
-  const settings = JSON.parse(store.getItem('dk-pendant-settings'));
-  // The FIFO queue refuses to start a job with a blank endpoint, and both must
-  // be HTTPS or app.js rejects them on save.
+  const original = JSON.parse(store.getItem('dk-pendant-settings'));
+  const processor = new context.DKFIFOProcessor({}, { settings: () => original });
+  const settings = await context.DKFIFOProcessor.provider('synap').prepare(processor, original);
   assert.equal(settings.endpoint, 'https://api.example.test/v1/recordings');
   assert.equal(settings.llmEndpoint, 'https://api.example.test/v1/recordings');
   assert.equal(settings.autoProcess, true);
+  assert.deepEqual(JSON.parse(store.getItem('dk-pendant-settings')), original);
+  assert.equal(processor.settings(), original);
 });
 
-test('mirroring does nothing when the cloud provider is not selected', () => {
-  const store = storage({
-    'synap-ai-provider-settings': JSON.stringify({ provider: 'custom' }),
-    'dk-pendant-settings': JSON.stringify({ endpoint: 'https://mine.example.test' }),
-  });
+test('an unconfigured managed provider leaves work pending', async () => {
   const context = load(backendSource, {
-    localStorage: store,
-    SynapAuth: { config: () => ({ backendUrl: 'https://api.example.test' }) },
+    SynapAuth: { isSignedIn: () => true, config: () => ({ backendUrl: '' }) },
   });
-  context.SynapBackend.mirrorEndpoints();
-  assert.equal(JSON.parse(store.getItem('dk-pendant-settings')).endpoint, 'https://mine.example.test');
+  const messages = [];
+  const processor = new context.DKFIFOProcessor(
+    {},
+    { onChange: (message) => messages.push(message) },
+  );
+  assert.equal(await context.DKFIFOProcessor.provider('synap').prepare(processor, {}), null);
+  assert.match(messages.join(' '), /not configured/);
 });
 
 test('the backend read helpers cover the second-brain surface', () => {
   const context = load(backendSource, { localStorage: storage() });
-  for (const method of ['ask', 'dailyBrief', 'people', 'followUps', 'resolveFollowUp', 'confirmPerson']) {
+  for (const method of [
+    'ask',
+    'dailyBrief',
+    'people',
+    'followUps',
+    'resolveFollowUp',
+    'confirmPerson',
+  ]) {
     assert.equal(typeof context.SynapBackend[method], 'function', `${method} is exported`);
   }
 });
@@ -381,11 +371,17 @@ test('a recording is created once, not once per segment', () => {
   // repeating it multiplied requests by capture length and widened the window
   // in which the recording's own metadata could shift between calls.
   assert.match(backendSource, /var createdRecordings = Object\.create\(null\)/);
-  assert.match(backendSource, /if \(createdRecordings\[recordingId\]\) return createdRecordings\[recordingId\]/);
+  assert.match(
+    backendSource,
+    /if \(createdRecordings\[recordingId\]\) return createdRecordings\[recordingId\]/,
+  );
 });
 
 test('a failed create is evicted so the recording is not stuck for the session', () => {
-  assert.match(backendSource, /pending\.catch\(function \(\) \{ delete createdRecordings\[recordingId\]; \}\)/);
+  assert.match(
+    backendSource,
+    /pending\.catch\(function \(\) \{ delete createdRecordings\[recordingId\]; \}\)/,
+  );
 });
 
 test('creating a recording does not depend on an idempotency ledger', () => {
@@ -393,7 +389,10 @@ test('creating a recording does not depend on an idempotency ledger', () => {
   // recording. A body-fingerprint guard there could only reject a valid retry,
   // which is exactly what stalled every capture at its second segment.
   const routes = fs.readFileSync(path.join(root, 'backend/src/http/routes/recordings.ts'), 'utf8');
-  const create = routes.slice(routes.indexOf("'/recordings',"), routes.indexOf("'/recordings/:recordingId/segments/:index'"));
+  const create = routes.slice(
+    routes.indexOf("'/recordings',"),
+    routes.indexOf("'/recordings/:recordingId/segments/:index'"),
+  );
   assert.doesNotMatch(create, /claimIdempotencyKey/);
   assert.doesNotMatch(create, /completeIdempotencyKey/);
 });
@@ -424,7 +423,10 @@ test('a pairing we consumed ourselves resolves instead of reporting failure', ()
 test('other terminal pairing failures still reject', () => {
   // 404 gone, 410 expired and 401 bad secret are real failures and must not be
   // swallowed by the 409 special case.
-  assert.match(authSource, /error\.status === 404 \|\| error\.status === 409 \|\| error\.status === 410 \|\| error\.status === 401/);
+  assert.match(
+    authSource,
+    /error\.status === 404 \|\| error\.status === 409 \|\| error\.status === 410 \|\| error\.status === 401/,
+  );
 });
 
 test('consolidate is given a longer budget than an upload', () => {
@@ -432,7 +434,10 @@ test('consolidate is given a longer budget than an upload', () => {
   // own 120s ceiling is right for an upload and would abort every consolidation.
   assert.match(backendSource, /PROCESSING_TIMEOUT_MS\s*=\s*900000/);
   assert.match(backendSource, /UPLOAD_TIMEOUT_MS\s*=\s*120000/);
-  assert.match(backendSource, /job\.kind === 'consolidate' \? PROCESSING_TIMEOUT_MS : UPLOAD_TIMEOUT_MS/);
+  assert.match(
+    backendSource,
+    /job\.kind === 'consolidate' \? PROCESSING_TIMEOUT_MS : UPLOAD_TIMEOUT_MS/,
+  );
 });
 
 test('uploads are idempotent and finalize retries use deterministic metadata', () => {
@@ -446,9 +451,6 @@ test('uploads are idempotent and finalize retries use deterministic metadata', (
 
 test('the v2 finalize request body is identical across retries', async () => {
   const finalizeCalls = [];
-  class Processor {
-    async process() { return { from: 'original' }; }
-  }
   const recording = {
     id: '11111111-1111-4111-8111-111111111111',
     createdAt: '2026-09-06T03:11:00.000Z',
@@ -466,7 +468,6 @@ test('the v2 finalize request body is identical across retries', async () => {
     text: async () => JSON.stringify(data),
   });
   const context = load(backendSource, {
-    DKFIFOProcessor: Processor,
     localStorage: storage({ 'synap-ai-provider-settings': JSON.stringify({ provider: 'synap' }) }),
     SynapAuth: {
       isSignedIn: () => true,
@@ -476,19 +477,33 @@ test('the v2 finalize request body is identical across retries', async () => {
           finalizeCalls.push({ body: init.body, key: init.headers['Idempotency-Key'] });
           return response({ state: 'uploaded' }, 202);
         }
-        if (String(url).endsWith('/processing')) return response({ state: 'ready', progress: 1, retryable: false });
-        if (String(url).endsWith('/memory')) return response({ title: 'Done', executive_summary: 'Done', key_points: [], people: [], conversations: [], transcript: 'hello' });
+        if (String(url).endsWith('/processing'))
+          return response({ state: 'ready', progress: 1, retryable: false });
+        if (String(url).endsWith('/memory'))
+          return response({
+            title: 'Done',
+            executive_summary: 'Done',
+            key_points: [],
+            people: [],
+            conversations: [],
+            transcript: 'hello',
+          });
         throw new Error('Unexpected URL ' + url);
       },
     },
   });
-  const processor = new Processor();
+  const processor = new context.DKFIFOProcessor({}, { provider: () => 'synap' });
   processor.store = store;
   processor.controllers = new Map();
   processor.paused = false;
   processor.canRun = () => true;
   processor.onChange = () => {};
-  const job = { id: 7, recordingId: recording.id, kind: 'consolidate', dedupe: recording.id + ':consolidate' };
+  const job = {
+    id: 7,
+    recordingId: recording.id,
+    kind: 'consolidate',
+    dedupe: recording.id + ':consolidate',
+  };
 
   await processor.process(job, {}, '');
   await processor.process(job, {}, '');
@@ -500,38 +515,38 @@ test('the v2 finalize request body is identical across retries', async () => {
   assert.equal(JSON.parse(finalizeCalls[0].body).ended_at, '2026-09-06T03:11:20.000Z');
 });
 
-test('legacy idempotency failures self-heal on the next signed-in run', async () => {
+test('legacy idempotency failures self-heal once without resetting unrelated failed work', async () => {
   const patched = [];
-  class Processor {
-    constructor() {
-      this.store = {
-        all: async () => [{ id: 9, recordingId: 'r1', kind: 'consolidate', state: 'failed', attempts: 5, lastError: 'Error: Idempotency-Key reused with a different request body' }],
-        patchJob: async (id, fields) => patched.push({ id, fields }),
-      };
-      this.settings = () => ({});
-      this.onChange = () => {};
-      this.originalRuns = 0;
-    }
-    async run() { this.originalRuns += 1; return 'ran'; }
-    async process() { return {}; }
-  }
   const context = load(backendSource, {
-    DKFIFOProcessor: Processor,
-    localStorage: storage({ 'synap-ai-provider-settings': JSON.stringify({ provider: 'synap' }) }),
-    SynapAuth: { isSignedIn: () => true, config: () => ({ backendUrl: 'https://api.example.test' }) },
+    SynapAuth: {
+      isSignedIn: () => true,
+      config: () => ({ backendUrl: 'https://api.example.test' }),
+    },
   });
-  context.SynapBackend.patchProcessor();
-  const processor = new Processor();
-  const result = await processor.run();
-
-  assert.equal(result, 'ran');
-  assert.equal(processor.originalRuns, 1);
+  const processor = new context.DKFIFOProcessor({
+    all: async () => [
+      {
+        id: 9,
+        kind: 'consolidate',
+        state: 'failed',
+        lastError: 'Error: Idempotency-Key reused with a different request body',
+      },
+      { id: 10, kind: 'transcribe', state: 'failed', lastError: 'HTTP 400' },
+    ],
+    patchJob: async (id, fields) => patched.push({ id, fields }),
+  });
+  const provider = context.DKFIFOProcessor.provider('synap');
+  processor.recordingScope = new Set(['selected']);
+  await provider.prepare(processor, {});
+  assert.equal(patched.length, 0, 'a selected retry must not repair unrelated jobs');
+  processor.recordingScope = null;
+  await provider.prepare(processor, {});
+  await provider.prepare(processor, {});
   assert.equal(patched.length, 1);
   assert.equal(patched[0].id, 9);
   assert.equal(patched[0].fields.state, 'pending');
   assert.equal(patched[0].fields.attempts, 0);
   assert.equal(patched[0].fields.nextAt, 0);
-  assert.equal(patched[0].fields.lastError, '');
 });
 
 test('a paused queue aborts polling instead of holding a job open', () => {
@@ -560,48 +575,133 @@ test('an unset provider preference is written down as the cloud default', () => 
 });
 
 test('marked moments reach the cloud before finalization; upload failures block summary creation', async () => {
-  for (const fail of [false,true]) {
-    class Processor { async process() { return {}; } }
-    const calls=[],recording={id:'11111111-1111-4111-8111-111111111111',createdAt:'2026-09-12T00:00:00.000Z',durationMs:20000,rememberMarkers:[{id:'22222222-2222-4222-8222-222222222222',offsetMs:1250,source:'pwa',createdAt:'2026-09-12T00:00:01.250Z'}]};
-    const response=(data,status=200)=>({ok:status<400,status,text:async()=>JSON.stringify(data)});
-    load(fs.readFileSync(path.join(root,'moments.js'),'utf8')+'\n'+backendSource,{
-      DKFIFOProcessor:Processor,
-      localStorage:storage({'synap-ai-provider-settings':JSON.stringify({provider:'synap'})}),
-      SynapAuth:{isSignedIn:()=>true,config:()=>({backendUrl:'https://api.example.test'}),authedFetch:async(url,init={})=>{
-        const endpoint=new URL(url,'https://api.example.test').pathname.split('/').pop();calls.push({endpoint,body:init.body?JSON.parse(init.body):null});
-        if(endpoint==='highlights')return response(fail?{error:'temporary failure'}:{},fail?503:201);
-        if(endpoint==='finalize')return response({state:'uploaded'},202);
-        if(endpoint==='processing')return response({state:'ready',progress:1,retryable:false});
-        if(endpoint==='memory')return response({title:'Done',transcript:'hello',people:[],conversations:[],key_points:[]});
-        throw Error('Unexpected request '+url);
-      }}
+  for (const fail of [false, true]) {
+    const calls = [],
+      recording = {
+        id: '11111111-1111-4111-8111-111111111111',
+        createdAt: '2026-09-12T00:00:00.000Z',
+        durationMs: 20000,
+        rememberMarkers: [
+          {
+            id: '22222222-2222-4222-8222-222222222222',
+            offsetMs: 1250,
+            source: 'pwa',
+            createdAt: '2026-09-12T00:00:01.250Z',
+          },
+        ],
+      };
+    const response = (data, status = 200) => ({
+      ok: status < 400,
+      status,
+      text: async () => JSON.stringify(data),
     });
-    const processor=new Processor();Object.assign(processor,{store:{get:async()=>recording,all:async()=>[{frameCount:400}],atomic:async()=>{}},controllers:new Map(),paused:false,canRun:()=>true,onChange(){}});
-    const operation=processor.process({id:1,recordingId:recording.id,kind:'consolidate',dedupe:recording.id+':consolidate'},{},'');
-    if(fail){await assert.rejects(operation);assert(!calls.some(c=>c.endpoint==='finalize'));}
-    else{await operation;assert.deepEqual(calls.map(c=>c.endpoint),['highlights','finalize','processing','memory']);}
-    assert.equal(calls[0].body.offset_ms,1250);assert.equal(calls[0].body.source,'pwa');assert.equal(calls[0].body.highlight_id,recording.rememberMarkers[0].id);
+    const context = load(
+      fs.readFileSync(path.join(root, 'moments.js'), 'utf8') + '\n' + backendSource,
+      {
+        localStorage: storage({
+          'synap-ai-provider-settings': JSON.stringify({ provider: 'synap' }),
+        }),
+        SynapAuth: {
+          isSignedIn: () => true,
+          config: () => ({ backendUrl: 'https://api.example.test' }),
+          authedFetch: async (url, init = {}) => {
+            const endpoint = new URL(url, 'https://api.example.test').pathname.split('/').pop();
+            calls.push({ endpoint, body: init.body ? JSON.parse(init.body) : null });
+            if (endpoint === 'highlights')
+              return response(fail ? { error: 'temporary failure' } : {}, fail ? 503 : 201);
+            if (endpoint === 'finalize') return response({ state: 'uploaded' }, 202);
+            if (endpoint === 'processing')
+              return response({ state: 'ready', progress: 1, retryable: false });
+            if (endpoint === 'memory')
+              return response({
+                title: 'Done',
+                transcript: 'hello',
+                people: [],
+                conversations: [],
+                key_points: [],
+              });
+            throw Error('Unexpected request ' + url);
+          },
+        },
+      },
+    );
+    const processor = new context.DKFIFOProcessor({}, { provider: () => 'synap' });
+    Object.assign(processor, {
+      store: {
+        get: async () => recording,
+        all: async () => [{ frameCount: 400 }],
+        atomic: async () => {},
+      },
+      controllers: new Map(),
+      paused: false,
+      canRun: () => true,
+      onChange() {},
+    });
+    const operation = processor.process(
+      {
+        id: 1,
+        recordingId: recording.id,
+        kind: 'consolidate',
+        dedupe: recording.id + ':consolidate',
+      },
+      {},
+      '',
+    );
+    if (fail) {
+      await assert.rejects(operation);
+      assert(!calls.some((c) => c.endpoint === 'finalize'));
+    } else {
+      await operation;
+      assert.deepEqual(
+        calls.map((c) => c.endpoint),
+        ['highlights', 'finalize', 'processing', 'memory'],
+      );
+    }
+    assert.equal(calls[0].body.offset_ms, 1250);
+    assert.equal(calls[0].body.source, 'pwa');
+    assert.equal(calls[0].body.highlight_id, recording.rememberMarkers[0].id);
   }
 });
 
 test('Actions requests release controls even when authentication ignores abort', async () => {
   let deadline, budget, signal;
-  const context=load(backendSource, {
-    setTimeout(fn,ms){deadline=fn;budget=ms;return 1;},clearTimeout(){},
-    SynapAuth:{authedFetch(_path,options){signal=options.signal;return new Promise(()=>{});}}
+  const context = load(backendSource, {
+    setTimeout(fn, ms) {
+      deadline = fn;
+      budget = ms;
+      return 1;
+    },
+    clearTimeout() {},
+    SynapAuth: {
+      authedFetch(_path, options) {
+        signal = options.signal;
+        return new Promise(() => {});
+      },
+    },
   });
-  const pending=context.SynapBackend.people();await Promise.resolve();
-  assert.equal(budget,15000);deadline();
-  await assert.rejects(pending,error=>error.name==='TimeoutError'&&error.retryable===true);
-  assert.equal(signal.aborted,true);
+  const pending = context.SynapBackend.people();
+  await Promise.resolve();
+  assert.equal(budget, 15000);
+  deadline();
+  await assert.rejects(
+    pending,
+    (error) => error.name === 'TimeoutError' && error.retryable === true,
+  );
+  assert.equal(signal.aborted, true);
 });
 
 test('Actions request deadlines include a stalled response body', async () => {
   let deadline;
-  const context=load(backendSource, {
-    setTimeout(fn){deadline=fn;return 1;},clearTimeout(){},
-    SynapAuth:{authedFetch:async()=>({ok:true,text:()=>new Promise(()=>{})})}
+  const context = load(backendSource, {
+    setTimeout(fn) {
+      deadline = fn;
+      return 1;
+    },
+    clearTimeout() {},
+    SynapAuth: { authedFetch: async () => ({ ok: true, text: () => new Promise(() => {}) }) },
   });
-  const pending=context.SynapBackend.followUps('open','all');await Promise.resolve();deadline();
-  await assert.rejects(pending,/timed out/);
+  const pending = context.SynapBackend.followUps('open', 'all');
+  await Promise.resolve();
+  deadline();
+  await assert.rejects(pending, /timed out/);
 });

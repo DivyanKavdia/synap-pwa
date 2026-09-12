@@ -426,72 +426,37 @@
     }).catch(function () { return null; });
   }
 
-  function patch() {
-    var Processor = root.DKFIFOProcessor;
-    if (!Processor || Processor.prototype.__synapBackendPatched) return;
-    var originalProcess = Processor.prototype.process, originalRun = Processor.prototype.run;
-
-    Processor.prototype.run = function () {
-      if (prefs().provider !== 'synap') return originalRun.call(this);
+  const recoveredProcessors = new WeakSet();
+  const processingProvider = {
+    async prepare(processor, config) {
       if (!root.SynapAuth || !root.SynapAuth.isSignedIn()) {
-        this.onChange('Sign in with Google to process pending memories.'); return Promise.resolve();
+        processor.onChange('Sign in with Google to process pending memories.');
+        return null;
       }
-      var endpoint = managedEndpoint();
-      if (!endpoint) { this.onChange('Synap Cloud is not configured for this build.'); return Promise.resolve(); }
-      if (!this.__synapFinalizeRecoveryDone && !this.recordingScope) {
-        this.__synapFinalizeRecoveryDone = true;
-        var recoveryProcessor = this;
-        return recoverLegacyFinalizeFailures(this).then(function () { return recoveryProcessor.run(); });
+      const endpoint = managedEndpoint();
+      if (!endpoint) {
+        processor.onChange('Synap Cloud is not configured for this build.');
+        return null;
       }
-      var originalSettings = this.settings, self = this;
-      this.settings = function () {
-        var config = originalSettings ? originalSettings() : {};
-        return Object.assign({}, config, { endpoint: endpoint, llmEndpoint: endpoint });
-      };
-      var outcome;
-      try { outcome = originalRun.call(this); }
-      catch (error) { this.settings = originalSettings; throw error; }
-      return Promise.resolve(outcome).then(function (value) { self.settings = originalSettings; return value; }, function (error) { self.settings = originalSettings; throw error; });
-    };
-
-    Processor.prototype.process = function (job, config, url) {
-      if (prefs().provider !== 'synap') return originalProcess.call(this, job, config, url);
-      if (!root.SynapAuth || !root.SynapAuth.isSignedIn()) return Promise.reject(permanent('Sign in with Google in Settings to sync your memories.'));
-      var Controller = root.AbortController;
-      if (typeof Controller !== 'function') return handle(this, job, null);
-      var self = this, controller = new Controller();
-      this.controllers.set(job.id, controller);
-      var budget = job.kind === 'consolidate' ? PROCESSING_TIMEOUT_MS : UPLOAD_TIMEOUT_MS;
-      var timer = root.setTimeout(function () { controller.abort(); }, budget);
-      return handle(this, job, controller.signal).then(function (result) {
-        root.clearTimeout(timer); self.controllers.delete(job.id); return result;
-      }, function (error) {
-        root.clearTimeout(timer); self.controllers.delete(job.id); throw error;
-      });
-    };
-    Processor.prototype.__synapBackendPatched = true;
-  }
-
-  // Kept only as a backward-compatible API for older installed shells. Current
-  // production run() injects managed endpoints transiently and never calls this.
-  function mirrorEndpoints() {
-    if (prefs().provider !== 'synap') return;
-    var endpoint = managedEndpoint();
-    if (!endpoint) return;
-    try {
-      var stored = JSON.parse(root.localStorage.getItem('dk-pendant-settings') || '{}');
-      stored.endpoint = endpoint; stored.llmEndpoint = endpoint;
-      root.localStorage.setItem('dk-pendant-settings', JSON.stringify(stored));
-    } catch (_) {}
-  }
-
-  patch();
-  if (root.document && root.document.readyState === 'loading') root.document.addEventListener('DOMContentLoaded', patch, { once: true });
+      if (!recoveredProcessors.has(processor) && !processor.recordingScope) {
+        await recoverLegacyFinalizeFailures(processor);
+        recoveredProcessors.add(processor);
+      }
+      return Object.assign({}, config, { endpoint: endpoint, llmEndpoint: endpoint });
+    },
+    timeout(job) { return job.kind === 'consolidate' ? PROCESSING_TIMEOUT_MS : UPLOAD_TIMEOUT_MS; },
+    process(processor, job, _config, signal) {
+      if (!root.SynapAuth || !root.SynapAuth.isSignedIn()) {
+        return Promise.reject(permanent('Sign in with Google in Settings to sync your memories.'));
+      }
+      return handle(processor, job, signal);
+    }
+  };
+  root.DKFIFOProcessor?.registerProvider('synap', processingProvider);
 
   root.SynapBackend = {
-    patchProcessor:patch,
-    mirrorEndpoints:mirrorEndpoints,
     toRecordingFields:toRecordingFields,
+    recordingMemory:function(id){return request('/v1/recordings/'+encodeURIComponent(id)+'/source');},
     segmentBounds:segmentBounds,
     transcriptionAudio:transcriptionAudio,
     requestBudget:requestBudget,
