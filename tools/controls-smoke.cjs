@@ -270,13 +270,23 @@ const waitState=(page,state)=>page.waitForFunction(state=>document.body.dataset.
       assert(await page.locator('#headerCaptureToggle').isDisabled());
       await page.locator('#settingsButton').tap();assert(await page.locator('#settingsDialog').evaluate(node=>node.open));
       await page.locator('#connectButton').tap();await waitState(page,'idle');
+      await page.evaluate(()=>bleFixture.delayStatusRead());await page.waitForFunction(()=>bleFixture.readPending);
       await page.locator('#chooseDeviceButton').tap();
-      await page.waitForFunction(()=>bleFixture.pickers===2&&document.body.dataset.state==='idle');
+      await page.waitForFunction(()=>bleFixture.pickers===2);
+      assert.equal(await page.evaluate(()=>bleFixture.connects),1,'the chooser opens immediately but the new connection waits for the old native request');
+      await page.evaluate(()=>bleFixture.finishRead());
+      try{await page.waitForFunction(()=>bleFixture.pickers===2&&document.body.dataset.state==='idle');}
+      catch(error){
+        console.error('Change pendant failed',await page.evaluate(()=>({pickers:bleFixture.pickers,connects:bleFixture.connects,
+          state:document.body.dataset.state,maximum:bleFixture.maximum,diagnostics:document.getElementById('diagnosticsLog').textContent})));
+        throw error;
+      }
       await page.locator('#settingsButton').tap();
       await page.locator('#otaReleaseCheck').tap();await page.waitForFunction(()=>!document.getElementById('otaLatest').hidden);
       await page.locator('#otaLatest').tap();
       await page.waitForFunction(()=>document.getElementById('otaStatus').textContent==='Update complete · 1201');await waitState(page,'idle');
       assert.equal(await page.evaluate(()=>document.body.dataset.startup),'error','OTA does not pretend failed storage is writable');
+      assert.equal(await page.evaluate(()=>bleFixture.maximum),1,'Change and OTA keep native Bluetooth operations serialized');
       assert.equal(await page.evaluate(()=>bleFixture.starts),0);assert(await page.locator('#headerCaptureToggle').isDisabled());
       await page.locator('#closeSettingsButton').tap();
       await page.evaluate(()=>{qaStorageUnavailable=false});

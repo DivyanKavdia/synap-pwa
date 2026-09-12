@@ -941,6 +941,10 @@
       const connectingDevice = bluetoothDevice;
       lastGattDisconnectRequest = null;
       try {
+        // Change opens the chooser in the tap, then waits for the old native
+        // request to settle before beginning another connection handshake.
+        if(settings.previousGatt)await withTimeout(settings.previousGatt,COMMAND_TIMEOUT_MS,"Previous Bluetooth operation");
+        if(epoch!==connectionEpoch||connectingDevice!==bluetoothDevice)throw new Error("Connection changed before connecting.");
         if(connectingDevice.gatt.connected)log("Restoring subscriptions on retained GATT link");
         gattServer = connectingDevice.gatt.connected ? connectingDevice.gatt :
           await withTimeout(connectingDevice.gatt.connect(), 12000, "Connection");
@@ -3380,11 +3384,12 @@
       }
       manualDisconnect = true;
       clearReconnectTimer(true);
+      const previousGatt = gattQueue;
       if (isGattConnected()) disconnectGatt("User selected another pendant");
       cleanupCharacteristics();
       attachBluetoothDevice(null);
       ui.settingsDialog.close();
-      connectPendant();
+      connectPendant({previousGatt});
     });
     ui.closeSettingsButton.addEventListener("click", function () {
       ui.settingsDialog.close();
