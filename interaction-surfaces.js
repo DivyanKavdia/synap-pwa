@@ -4,7 +4,9 @@
 const DB='dk-pendant-recordings';
 const $=(s,h=document)=>h.querySelector(s),$$=(s,h=document)=>[...h.querySelectorAll(s)];
 const mine=o=>/^(me|i|myself|self|you|user)$/i.test(String(o||'').trim());
-let currentRecords=[],canonicalPeople=null,canonicalFollowups=null,canonicalAt=0,refreshing=false,canonicalScope='';
+let currentRecords=[],canonicalPeople=null,canonicalFollowups=null,canonicalAt=0,canonicalScope='';
+let canonicalPending={people:null,followups:null},canonicalGeneration=0,refreshGeneration=0,followMutation=0;
+const listStates={people:{},followups:{}},pendingDone=new Set(),closedAfterRead=new Map();
 function day(v){const d=new Date(v);if(Number.isNaN(d.getTime()))return'';return[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
 function selected(){return $('#datePicker')?.value||day(Date.now())}
 function signedIn(){try{return Boolean(root.SynapAuth?.isSignedIn?.())}catch(_){return false}}
@@ -23,12 +25,12 @@ function openSource(id,ms=0){
   return Promise.resolve(false);
 }
 function openAsk(person){dedupe();if(root.SynapAsk?.open){root.SynapAsk.open(person);return}if(root.SynapDashboardUI?.setView)root.SynapDashboardUI.setView('ask',false);else location.hash='#ask';const input=$('#askInput'),form=$('#askForm');if(input){input.value=person;input.focus({preventScroll:true})}if(form)form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))}
-function followEntries(r){const api=root.SynapBrainUI;if(!api)return[];const out=[];for(const entry of api.actionEntries?.(r)||[]){const a=entry.value||{},text=String(a.task||'').trim();if(!text)continue;const owner=String(a.owner||'').trim();out.push({r,text,owner,due:a.due_date||'',mine:mine(owner)||!owner,startMs:sourceOffset(a,entry.conversation),meta:[owner,a.due_date].filter(Boolean).join(' · ')})}for(const entry of api.followUpEntries?.(r)||[]){const v=entry.value||{},text=typeof v==='string'?v.trim():String(v.text||'').trim();if(!text)continue;const owner=String(v.owner||'').trim();out.push({r,text,owner,due:'',mine:mine(owner),startMs:sourceOffset(v,entry.conversation),meta:[owner,'Follow-up'].filter(Boolean).join(' · ')})}const seen=new Set();return out.filter(x=>{const k=x.r.id+'|'+x.startMs+'|'+x.text.toLowerCase();if(seen.has(k))return false;seen.add(k);return true})}
+function followEntries(r){const api=root.SynapBrainUI;if(!api)return[];const out=[];for(const entry of api.actionEntries?.(r)||[]){const a=entry.value||{},text=String(a.task||'').trim();if(!text||['done','dismissed'].includes(a.state||a.status))continue;const owner=String(a.owner||'').trim();out.push({r,text,owner,due:a.due_date||'',mine:mine(owner)||!owner,startMs:sourceOffset(a,entry.conversation),meta:[owner,a.due_date].filter(Boolean).join(' · ')})}for(const entry of api.followUpEntries?.(r)||[]){const v=entry.value||{},text=typeof v==='string'?v.trim():String(v.text||'').trim();if(!text||['done','dismissed'].includes(v.state||v.status))continue;const owner=String(v.owner||'').trim();out.push({r,text,owner,due:'',mine:mine(owner),startMs:sourceOffset(v,entry.conversation),meta:[owner,'Follow-up'].filter(Boolean).join(' · ')})}const seen=new Set();return out.filter(x=>{const k=x.r.id+'|'+x.startMs+'|'+x.text.toLowerCase();if(seen.has(k))return false;seen.add(k);return true})}
 function canonicalFollowEntry(item){const ownerType=String(item?.owner?.type||'');return{id:String(item?.id||''),recordingId:String(item?.source?.recording_id||''),startMs:Math.max(0,Number(item?.source?.start_ms)||0),text:String(item?.task||'').trim(),owner:String(item?.owner?.display_name||''),due:item?.due_date||'',mine:ownerType==='self',meta:[item?.kind==='reminder'?'Suggested reminder':'',item?.owner?.display_name,item?.due_date].filter(Boolean).join(' · ')}}
 function makeSourceButton(x,kind){const b=document.createElement('button');b.type='button';b.className='brain-action-row source-jump';b.dataset.id=x.recordingId||x.r?.id||'';b.dataset.offsetMs=String(x.startMs||0);const icon=document.createElement('span');icon.className='brain-action-icon';icon.textContent=kind==='mine'?'→':'←';const copy=document.createElement('span'),strong=document.createElement('strong');strong.textContent=x.text;copy.appendChild(strong);if(x.meta){const small=document.createElement('small');small.textContent=x.meta;copy.appendChild(small)}b.append(icon,copy);return b}
 function activeMode(){return $('.followup-tabs .active')?.dataset.follow||'mine'}
-function followData(){if(Array.isArray(canonicalFollowups))return canonicalFollowups.map(canonicalFollowEntry).filter(x=>x.text&&x.recordingId);return currentRecords.filter(r=>day(r.createdAt)===selected()).flatMap(followEntries).map(x=>({...x,recordingId:x.r.id}))}
-function renderFollowups(mode){const host=$('#followupList');if(!host)return;const entries=followData(),mineItems=entries.filter(x=>x.mine),waiting=entries.filter(x=>!x.mine),items=mode==='mine'?mineItems:mode==='waiting'?waiting:entries;const count=$('#followupCount');if(count)count.textContent=String(entries.length);host.replaceChildren();if(!items.length){const p=document.createElement('p');p.className='brain-empty';p.textContent='Nothing open right now.';host.appendChild(p);return}items.slice(0,30).forEach(x=>{if(x.id&&Array.isArray(canonicalFollowups)){const row=document.createElement('div');row.className='synap-follow-row';row.appendChild(makeSourceButton(x,x.mine?'mine':'waiting'));const done=document.createElement('button');done.type='button';done.className='synap-follow-done';done.dataset.followupId=x.id;done.textContent='Done';done.setAttribute('aria-label','Mark follow-up done');row.appendChild(done);host.appendChild(row)}else host.appendChild(makeSourceButton(x,x.mine?'mine':'waiting'))})}
+function followData(){if(Array.isArray(canonicalFollowups))return canonicalFollowups.map(canonicalFollowEntry).filter(x=>x.text&&x.recordingId);return currentRecords.flatMap(followEntries).map(x=>({...x,recordingId:x.r.id}))}
+function renderFollowups(mode){const host=$('#followupList');if(!host)return;const entries=followData(),mineItems=entries.filter(x=>x.mine),waiting=entries.filter(x=>!x.mine),items=mode==='mine'?mineItems:mode==='waiting'?waiting:entries;const count=$('#followupCount');if(count)count.textContent=String(entries.length);host.replaceChildren();if(!items.length){const p=document.createElement('p');p.className='brain-empty';p.textContent=Array.isArray(canonicalFollowups)?'Nothing open right now.':'No follow-ups found in saved memories.';host.appendChild(p);return}items.forEach(x=>{if(x.id&&Array.isArray(canonicalFollowups)){const row=document.createElement('div');row.className='synap-follow-row';row.appendChild(makeSourceButton(x,x.mine?'mine':'waiting'));const done=document.createElement('button');done.type='button';done.className='synap-follow-done';done.dataset.followupId=x.id;done.disabled=pendingDone.has(x.id);done.textContent=done.disabled?'Saving…':'Done';done.setAttribute('aria-label','Mark follow-up done');row.appendChild(done);host.appendChild(row)}else host.appendChild(makeSourceButton(x,x.mine?'mine':'waiting'))})}
 const PEOPLE_PREVIEW_LIMIT=3;
 let peopleExpanded=false,peopleQuery='',peopleRows=[];
 function ensurePeopleControls(){
@@ -60,6 +62,8 @@ function renderPeopleRows(){
   if(section)section.dataset.peopleExpanded=String(peopleExpanded);
   const matches=peopleRows.filter(person=>!peopleQuery||(person.name+' '+person.detail).toLowerCase().includes(peopleQuery));
   const shown=peopleExpanded?matches:matches.slice(0,PEOPLE_PREVIEW_LIMIT);
+  const signature=JSON.stringify([peopleExpanded,peopleQuery,shown]);
+  if(host.synapPeopleSignature===signature){root.SynapMeetingTools?.decoratePeople(peopleRows,currentRecords);root.SynapPeopleConfirmUI?.decorate?.();return}host.synapPeopleSignature=signature;
   host.replaceChildren();
   if(!shown.length){const empty=document.createElement('p');empty.className='brain-empty';empty.textContent=peopleRows.length?'No matching people. Try another name.':'People appear here after a conversation is processed.';host.appendChild(empty);return;}
   for(const person of shown){
@@ -90,33 +94,82 @@ function renderLocalPeople(list){
   renderPeopleRows();
 }
 function accountKey(){return signedIn()?String(root.SynapAuth?.session?.()?.profile?.uid||'signed-in'):''}
-async function loadCanonical(force=false){
+function resetCanonical(key){
+  canonicalScope=key;canonicalPeople=null;canonicalFollowups=null;canonicalAt=0;canonicalPending={people:null,followups:null};
+  ++canonicalGeneration;listStates.people={};listStates.followups={};pendingDone.clear();closedAfterRead.clear();followMutation=0;
+}
+function listStatus(kind){
+  const state=listStates[kind],isPeople=kind==='people',list=$(isPeople?'#peopleList':'#followupList');if(!list)return;
+  let notice=$(isPeople?'#peopleStatus':'#followupStatus');
+  if(!notice){notice=document.createElement('div');notice.id=isPeople?'peopleStatus':'followupStatus';notice.className='synap-action-status';
+    const message=document.createElement('p');message.setAttribute('role','status');
+    const retry=document.createElement('button');retry.type='button';retry.className='button button-secondary button-small';retry.textContent=isPeople?'Retry People':'Retry Follow-ups';
+    retry.addEventListener('click',()=>refresh(true,kind));notice.append(message,retry);list.before(notice);
+  }
+  const cached=Array.isArray(isPeople?canonicalPeople:canonicalFollowups);
+  const scope=isPeople?'Showing people from saved memories on this device.':'From saved memories on this device; completion status has not been synced.';
+  const message=state.error?(isPeople?'Could not refresh People. ':'Could not refresh Follow-ups. ')+(cached?'Showing the last loaded list.':scope)
+    :state.loading?(cached?'Refreshing…':'Loading cloud '+(isPeople?'people':'follow-ups')+'… '+scope):!cached?scope:'';
+  const text=notice.querySelector('p');if(text.textContent!==message)text.textContent=message;
+  notice.querySelector('button').hidden=!state.error;notice.querySelector('button').disabled=Boolean(state.loading);
+  notice.hidden=!message;notice.setAttribute('aria-busy',String(Boolean(state.loading)));
+}
+function renderPeopleSource(){if(Array.isArray(canonicalPeople))renderCanonicalPeople(canonicalPeople);else renderLocalPeople(currentRecords);listStatus('people')}
+async function loadCanonical(force=false,onlyKind){
   const api=root.SynapBackend,key=accountKey();
-  if(key!==canonicalScope){canonicalScope=key;canonicalPeople=null;canonicalFollowups=null;canonicalAt=0;}
+  if(key!==canonicalScope)resetCanonical(key);
   if(!key||!api)return false;
   if(!force&&canonicalAt&&Date.now()-canonicalAt<15000&&canonicalPeople&&canonicalFollowups)return true;
-  const [p,f]=await Promise.allSettled([api.people?.(),api.followUps?.('open','all')]);
-  if(key!==accountKey())return false;
-  if(p.status==='fulfilled'&&Array.isArray(p.value?.people))canonicalPeople=p.value.people;
-  if(f.status==='fulfilled'&&Array.isArray(f.value?.follow_ups))canonicalFollowups=f.value.follow_ups;
-  if(canonicalPeople||canonicalFollowups)canonicalAt=Date.now();
-  return Boolean(canonicalPeople||canonicalFollowups);
+  const generation=canonicalGeneration,mutationAtStart=followMutation;
+  const valid=()=>generation===canonicalGeneration&&key===accountKey();
+  const loadOne=(kind,load)=>{
+    if(canonicalPending[kind])return canonicalPending[kind];
+    const task=(async()=>{
+    listStates[kind]={loading:true};listStatus(kind);
+    try{
+      const result=await load();if(!valid())return;
+      const rows=kind==='people'?result?.people:result?.follow_ups;
+      if(!Array.isArray(rows))throw Error('Invalid list response');
+      if(kind==='people'){canonicalPeople=rows;root.SynapPeopleConfirmUI?.acceptPeople?.({people:rows});}
+      else canonicalFollowups=rows.filter(item=>!(closedAfterRead.get(String(item.id))>mutationAtStart));
+      listStates[kind]={};
+    }catch(error){if(!valid())return;listStates[kind]={error:error.message||'Could not load this list.'};}
+    if(!valid())return;
+    if(kind==='people')renderPeopleSource();else{renderFollowups(activeMode());listStatus(kind);}
+    })().finally(()=>{if(canonicalPending[kind]===task)canonicalPending[kind]=null});
+    canonicalPending[kind]=task;return task;
+  };
+  const requests=[];
+  if(!onlyKind||onlyKind==='people')requests.push(loadOne('people',()=>api.people?.()));
+  if(!onlyKind||onlyKind==='followups')requests.push(loadOne('followups',()=>api.followUps?.('open','all')));
+  await Promise.allSettled(requests);
+  if(valid()&&['people','followups'].every(kind=>!listStates[kind].error&&!listStates[kind].loading))canonicalAt=Date.now();
+  return valid()&&Boolean(canonicalPeople||canonicalFollowups);
 }
-async function refresh(forceCanonical=false){if(refreshing)return;refreshing=true;try{dedupe();currentRecords=await load().catch(()=>[]);await loadCanonical(forceCanonical);const list=currentRecords.filter(r=>day(r.createdAt)===selected());if(Array.isArray(canonicalPeople))renderCanonicalPeople(canonicalPeople);else renderLocalPeople(list);renderFollowups(activeMode());root.SynapPeopleConfirmUI?.decorate?.()}finally{refreshing=false}}
+async function refresh(forceCanonical=false,onlyKind){
+  const version=++refreshGeneration,key=accountKey();if(key!==canonicalScope)resetCanonical(key);
+  dedupe();const loaded=await load().catch(()=>currentRecords);if(version!==refreshGeneration||key!==accountKey())return;
+  currentRecords=loaded;renderPeopleSource();renderFollowups(activeMode());listStatus('followups');
+  await loadCanonical(forceCanonical,onlyKind);
+}
 function followError(message){
   let node=$('#followupError');
   if(!node){node=document.createElement('p');node.id='followupError';node.className='synap-merge-error';node.setAttribute('role','alert');$('#followupList')?.before(node)}
   node.textContent=message;node.hidden=!message;
 }
 async function markDone(id,button){
-  const api=root.SynapBackend;
+  const api=root.SynapBackend,key=accountKey(),generation=canonicalGeneration;
   if(!id||!api?.resolveFollowUp){followError('Follow-ups are unavailable. Please retry after reconnecting.');return}
-  followError('');button.disabled=true;const old=button.textContent;button.textContent='Saving…';
+  if(pendingDone.has(id))return;
+  followError('');pendingDone.add(id);button.disabled=true;button.textContent='Saving…';
   try{
     await api.resolveFollowUp(id,'done');
+    if(key!==accountKey()||generation!==canonicalGeneration)return;
+    closedAfterRead.set(id,++followMutation);
     if(Array.isArray(canonicalFollowups))canonicalFollowups=canonicalFollowups.filter(x=>String(x.id)!==String(id));
-    renderFollowups(activeMode());root.dispatchEvent?.(new CustomEvent('synap-follow-up-updated',{detail:{id,state:'done'}}));
-  }catch(error){button.disabled=false;button.textContent=old;followError(error.message||'Could not save follow-up. Please retry.')}
+    root.dispatchEvent?.(new CustomEvent('synap-follow-up-updated',{detail:{id,state:'done'}}));
+  }catch(error){if(key===accountKey()&&generation===canonicalGeneration)followError(error.message||'Could not save follow-up. Please retry.');}
+  finally{if(generation===canonicalGeneration){pendingDone.delete(id);renderFollowups(activeMode());}}
 }
 function recordingForInsight(card){const id=card?.dataset?.recordingId;if(id)return id;const dt=card?.querySelector('time')?.dateTime;if(!dt)return'';const target=new Date(dt).getTime();return currentRecords.find(r=>new Date(r.createdAt).getTime()===target)?.id||''}
 function bind(){
@@ -129,9 +182,10 @@ function bind(){
   },true);
   $('#datePicker')?.addEventListener('change',()=>setTimeout(()=>refresh(false),20));
   ['synap-memory-ready','synap-cloud-history-updated','synap-transcript-updated','synap-processing-complete'].forEach(n=>root.addEventListener(n,()=>{canonicalAt=0;setTimeout(()=>refresh(true),50)}));
-  root.SynapAuth?.onChange?.(()=>{canonicalPeople=null;canonicalFollowups=null;canonicalAt=0;setTimeout(()=>refresh(true),20)});
+  root.SynapAuth?.onChange?.(()=>{const key=accountKey();if(key!==canonicalScope){resetCanonical(key);++refreshGeneration;}setTimeout(()=>refresh(true),20)});
+  root.addEventListener('synap-person-updated',()=>{canonicalAt=0;setTimeout(()=>refresh(true),20)});
 }
-function style(){if($('#synap-interaction-style'))return;const s=document.createElement('style');s.id='synap-interaction-style';s.textContent='.insight-card .insight-top{cursor:pointer}.person-card,.brain-action-row,.followup-tabs button{cursor:pointer}.synap-follow-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center}.synap-follow-done{border:1px solid var(--border,#d9e2ec);background:var(--surface,#fff);color:inherit;border-radius:9px;padding:6px 8px;font:inherit;font-size:10px;font-weight:750;cursor:pointer}.synap-follow-done:disabled{opacity:.55;cursor:wait}';document.head.appendChild(s)}
+function style(){if($('#synap-interaction-style'))return;const s=document.createElement('style');s.id='synap-interaction-style';s.textContent='.synap-action-status{font-size:12px;line-height:1.4;margin:0 0 8px}.synap-action-status p{margin:0 0 6px}.insight-card .insight-top{cursor:pointer}.person-card,.brain-action-row,.followup-tabs button{cursor:pointer}.synap-follow-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center}.synap-follow-done{border:1px solid var(--border,#d9e2ec);background:var(--surface,#fff);color:inherit;border-radius:9px;padding:6px 8px;font:inherit;font-size:10px;font-weight:750;cursor:pointer}.synap-follow-done:disabled{opacity:.55;cursor:wait}';document.head.appendChild(s)}
 function init(){style();dedupe();bind();setTimeout(()=>refresh(true),80);setTimeout(()=>refresh(false),350)}
 root.SynapInteractionSurfaces=Object.freeze({refresh,dedupe,renderFollowups,openAsk,openSource,loadCanonical});
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();

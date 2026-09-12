@@ -70,7 +70,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell66-transcripts'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell67-actions'/);
 });
 
 test('the settings form offers the encrypted cloud provider and a sign-in control', () => {
@@ -582,4 +582,26 @@ test('marked moments reach the cloud before finalization; upload failures block 
     else{await operation;assert.deepEqual(calls.map(c=>c.endpoint),['highlights','finalize','processing','memory']);}
     assert.equal(calls[0].body.offset_ms,1250);assert.equal(calls[0].body.source,'pwa');assert.equal(calls[0].body.highlight_id,recording.rememberMarkers[0].id);
   }
+});
+
+test('Actions requests release controls even when authentication ignores abort', async () => {
+  let deadline, budget, signal;
+  const context=load(backendSource, {
+    setTimeout(fn,ms){deadline=fn;budget=ms;return 1;},clearTimeout(){},
+    SynapAuth:{authedFetch(_path,options){signal=options.signal;return new Promise(()=>{});}}
+  });
+  const pending=context.SynapBackend.people();await Promise.resolve();
+  assert.equal(budget,15000);deadline();
+  await assert.rejects(pending,error=>error.name==='TimeoutError'&&error.retryable===true);
+  assert.equal(signal.aborted,true);
+});
+
+test('Actions request deadlines include a stalled response body', async () => {
+  let deadline;
+  const context=load(backendSource, {
+    setTimeout(fn){deadline=fn;return 1;},clearTimeout(){},
+    SynapAuth:{authedFetch:async()=>({ok:true,text:()=>new Promise(()=>{})})}
+  });
+  const pending=context.SynapBackend.followUps('open','all');await Promise.resolve();deadline();
+  await assert.rejects(pending,/timed out/);
 });

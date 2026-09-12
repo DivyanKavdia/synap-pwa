@@ -35,24 +35,46 @@
     details.hidden=!body.children.length;
   }
   function localPreparation(name,records){
-    const key=String(name).trim().toLowerCase(),history=[];
-    for(const record of records)for(const c of record.meeting?.conversations||record.conversations||[]){
-      if(!(c.people||[]).some(p=>String(p.name||p).toLowerCase()===key)&&!(c.participants||[]).some(p=>String(p).toLowerCase()===key)&&!(c.mentioned_people||[]).some(p=>String(p).toLowerCase()===key))continue;
-      history.push({title:c.title,summary:c.summary,started_at:new Date(Date.parse(record.createdAt)+(c.start_ms||0)).toISOString(),source:{recording_id:record.id,start_ms:c.start_ms||0},questions:(c.unresolved_questions||[]).map(q=>({...q,source:{recording_id:record.id,start_ms:q.start_ms}}))});
+    const normalize=value=>String(value||'').normalize('NFKC').trim().toLowerCase();
+    const key=normalize(name),history=[],mentioned=[];
+    const offset=(item,fallback=0)=>Math.max(0,Number(item?.start_ms??(item?.start_seconds!=null?Number(item.start_seconds)*1000:fallback))||0);
+    for(const record of records||[]){
+      const memory=record.meeting||{},conversations=memory.conversations||record.conversations||[];
+      const list=conversations.length?conversations:[{...memory,title:record.name,summary:memory.executive_summary||record.summary,people:memory.people||record.people||[]}];
+      for(const c of list){
+        if(![...(c.people||[]),...(c.participants||[]),...(c.mentioned_people||[])].some(p=>normalize(p?.name||p)===key))continue;
+        const startMs=offset(c),at=Date.parse(record.createdAt)+startMs,source=item=>({recording_id:record.id,start_ms:offset(item,startMs)});
+        history.push({title:c.title,summary:c.summary,started_at:Number.isFinite(at)?new Date(at).toISOString():'',source:source(c),questions:(c.unresolved_questions||[]).map(q=>({...q,source:source(q)}))});
+        for(const action of c.action_items||[]){
+          if(!action.task||['done','dismissed'].includes(action.state||action.status))continue;
+          mentioned.push({...action,source:source(action)});
+        }
+      }
     }
     history.sort((a,b)=>b.started_at.localeCompare(a.started_at));
-    return {history:history.slice(0,12),open_actions:[],scope:'From memories on this device. Sign in to include the current status of cloud actions.'};
+    return {history:history.slice(0,12),open_actions:[],mentioned_actions:mentioned,scope:'From memories on this device. Mentioned actions may already be complete; sign in to check cloud status.'};
   }
-  let requestGeneration=0,activeRequest=null;
+  let requestGeneration=0,activeRequest=null,preparationAccount=null;
+  function accountKey(){return root.SynapAuth?.isSignedIn?.()?String(root.SynapAuth.session?.()?.profile?.uid||'signed-in'):''}
   function cancelPreparation(){++requestGeneration;activeRequest?.abort();activeRequest=null;}
-  async function prepare(person,records){
-    cancelPreparation();
+  async function prepare(person,records,trigger){
+    cancelPreparation();preparationAccount=accountKey();
     const generation=requestGeneration,section=document.getElementById('peopleMemory');if(!section)return;
-    let panel=section.querySelector('.meeting-preparation');if(!panel){panel=document.createElement('div');panel.className='meeting-preparation';section.append(panel)}
-    const heading=document.createElement('div');heading.className='meeting-preparation-heading';heading.append(text('h3','Before meeting '+person.name));
-    const close=text('button','Close');close.type='button';close.addEventListener('click',()=>{cancelPreparation();panel.remove()});heading.append(close);
+    const scroller=section.closest('.actions-content');
+    let panel=section.querySelector('.meeting-preparation');if(!panel){panel=document.createElement('div');panel.className='meeting-preparation';section.querySelector('#peopleList')?.before(panel);if(!panel.isConnected)section.append(panel)}
+    if(trigger){panel.synapReturnFocus=trigger;panel.synapReturnScroll=scroller?.scrollTop||0;}
+    const heading=document.createElement('div');heading.className='meeting-preparation-heading';
+    const title=text('h3','Before meeting '+person.name);title.id='meetingPreparationTitle';title.tabIndex=-1;heading.append(title);
+    panel.setAttribute('role','region');panel.setAttribute('aria-labelledby',title.id);
+    const close=text('button','Close');close.type='button';close.addEventListener('click',()=>{cancelPreparation();panel.remove();if(scroller)scroller.scrollTop=panel.synapReturnScroll||0;panel.synapReturnFocus?.focus({preventScroll:true})});heading.append(close);
     const body=document.createElement('div');body.className='meeting-preparation-content';body.setAttribute('aria-busy','true');body.append(text('p','Loading related conversations…'));
     panel.replaceChildren(heading,body);panel.setAttribute('aria-live','polite');
+    // The People list can be much taller than the shared Actions viewport.
+    // Reveal the result inside that scroller as soon as the user taps Prepare.
+    root.requestAnimationFrame(()=>{if(generation!==requestGeneration||!panel.isConnected)return;
+      if(scroller)scroller.scrollTop+=title.getBoundingClientRect().top-scroller.getBoundingClientRect().top-12;
+      title.focus({preventScroll:true});
+    });
     let controller=null,timeout=null;
     try{
       let data;
@@ -73,6 +95,7 @@
       if(generation!==requestGeneration)return;
       body.replaceChildren();
       group(body,'Open actions',data.open_actions||[],'');
+      group(body,'Actions mentioned in saved conversations',data.mentioned_actions||[],'');
       group(body,'Recent conversations',data.history||[],'');
       group(body,'Questions raised', (data.history||[]).flatMap(c=>c.questions||[]),'');
       if(!data.history?.length&&!data.open_actions?.length)body.append(text('p','No related memories yet.'));
@@ -81,6 +104,8 @@
       if(generation!==requestGeneration)return;
       const retry=text('button','Retry');retry.type='button';retry.className='meeting-preparation-retry';retry.addEventListener('click',()=>prepare(person,records));
       body.replaceChildren(text('p',error.message),retry);
+      const local=localPreparation(person.name,records);
+      if(local.history.length){group(body,'Saved conversations',local.history,'');group(body,'Actions mentioned in saved conversations',local.mentioned_actions,'');body.append(text('small',local.scope));}
     }finally{
       root.clearTimeout(timeout);
       if(activeRequest===controller)activeRequest=null;
@@ -89,12 +114,17 @@
   }
   function decoratePeople(people,records){
     for(const card of document.querySelectorAll('#peopleList .person-card')){
-      const person=people.find(p=>p.name===card.dataset.person);if(!person)continue;
-      const row=document.createElement('div');row.className='person-with-preparation';card.replaceWith(row);row.append(card);
-      const button=text('button','Prepare');button.type='button';button.className='meeting-prepare';button.setAttribute('aria-label','Prepare for meeting with '+person.name);button.addEventListener('click',()=>prepare(person,records));row.append(button);
+      const person=people.find(p=>card.dataset.personId&&String(p.id)===card.dataset.personId)||people.find(p=>p.name===card.dataset.person);if(!person)continue;
+      let row=card.closest('.person-with-preparation');
+      if(!row){row=document.createElement('div');row.className='person-with-preparation';card.replaceWith(row);row.append(card);
+        const button=text('button','Prepare');button.type='button';button.className='meeting-prepare';row.append(button);
+        button.addEventListener('click',()=>{const current=row.synapPreparation;prepare({...current.person,id:card.dataset.personId||current.person.id,name:card.dataset.person||current.person.name},current.records,button)});
+      }
+      row.synapPreparation={person,records};
+      row.querySelector('.meeting-prepare').setAttribute('aria-label','Prepare for meeting with '+(card.dataset.person||person.name));
     }
   }
-  function init(){root.SynapAuth?.onChange?.(()=>{cancelPreparation();document.querySelector('.meeting-preparation')?.remove()})}
+  function init(){root.SynapAuth?.onChange?.(()=>{if(preparationAccount!==null&&preparationAccount!==accountKey()){cancelPreparation();preparationAccount=null;document.querySelector('.meeting-preparation')?.remove()}})}
   root.SynapMeetingTools=Object.freeze({attach,decoratePeople,localPreparation});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })(globalThis);

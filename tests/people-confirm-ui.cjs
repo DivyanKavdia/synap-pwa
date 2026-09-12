@@ -120,3 +120,10 @@ assert.doesNotMatch(
 );
 
 console.log('PASS: people confirm/rename normalization matches the backend, indexing is defensive, and the control is wired into the shell');
+
+// Canonical IDs remain unambiguous even for duplicate or non-Latin names.
+{
+  const index=api.indexPeople({people:[{person_id:'p4',name:'Alex'},{person_id:'p5',name:'Alex'},{person_id:'p6',name:'李雷'}]});
+  assert.equal(index.byId.get('p4').name,'Alex');assert.equal(index.byId.get('p5').name,'Alex');assert.equal(index.byId.get('p6').name,'李雷');
+  assert.equal(index.has(''),false);
+}

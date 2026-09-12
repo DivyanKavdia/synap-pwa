@@ -20,3 +20,11 @@ test('meeting preparation matches exact people and includes source offsets acros
   const record={id:'r',createdAt:'2026-09-12T00:00:00Z',meeting:{conversations:[{title:'Budget',summary:'Discussed',start_ms:2000,people:[{name:'Asha'}],unresolved_questions:[{text:'When?',start_ms:2500}]}]}};
   const data=api.localPreparation('Asha',[record]);assert.equal(data.history[0].source.start_ms,2000);assert.equal(data.history[0].questions[0].source.start_ms,2500);assert.equal(api.localPreparation('Ash',[record]).history.length,0);
 });
+
+test('local preparation keeps legacy evidence without claiming old actions are open',()=>{
+  const api=load('meeting-tools.js').SynapMeetingTools;
+  const data=api.localPreparation(' IRIS ',[{id:'older',createdAt:'invalid',name:'Earlier project',summary:'Saved recap',meeting:{people:[{name:'Iris'}],action_items:[{task:'Review estimate',start_seconds:3},{task:'Already sent',state:'done'}]}}]);
+  assert.equal(data.history[0].title,'Earlier project');assert.equal(data.history[0].started_at,'');
+  assert.equal(data.mentioned_actions.length,1);assert.equal(data.mentioned_actions[0].source.start_ms,3000);
+  assert.equal(data.open_actions.length,0);assert.match(data.scope,/may already be complete/);
+});

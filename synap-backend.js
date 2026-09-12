@@ -47,6 +47,7 @@
   }
 
   function requestBudget(path, init) {
+    if (/^\/v1\/(people|follow-ups)(\/|\?|$)/.test(String(path))) return 15000;
     if (String(path).indexOf('/processing') !== -1) return STATUS_REQUEST_TIMEOUT_MS;
     if (String(init && init.method || '').toUpperCase() === 'PUT' && String(path).indexOf('/segments/') !== -1) {
       return UPLOAD_TIMEOUT_MS;
@@ -83,17 +84,26 @@
       controller.abort();
     }, timeout);
 
-    return auth().authedFetch(path, init)
-      .then(parseResponse)
+    var rejectAbort;
+    var aborted = new Promise(function (_, reject) {
+      rejectAbort = function () { var error = new Error('Synap request cancelled.'); error.name = 'AbortError'; reject(error); };
+      if (controller.signal.aborted) rejectAbort();
+      else controller.signal.addEventListener('abort', rejectAbort, { once: true });
+    });
+    // Token refresh and some native network bridges may not settle on abort.
+    // Release the UI/queue at its deadline even if that older request hangs.
+    return Promise.race([Promise.resolve().then(function () { return auth().authedFetch(path, init); }).then(parseResponse), aborted])
       .catch(function (error) {
         if (!timedOut) throw error;
-        var timeoutError = new Error('Synap request timed out. Processing will retry safely.');
+        var timeoutError = new Error(/^\/v1\/(people|follow-ups)(\/|\?|$)/.test(String(path))
+          ? 'This request timed out. Please retry.' : 'Synap request timed out. Processing will retry safely.');
         timeoutError.name = 'TimeoutError';
         timeoutError.retryable = true;
         throw timeoutError;
       })
       .finally(function () {
         root.clearTimeout(timer);
+        controller.signal.removeEventListener('abort', rejectAbort);
         if (upstream && typeof upstream.removeEventListener === 'function') upstream.removeEventListener('abort', onUpstreamAbort);
       });
   }

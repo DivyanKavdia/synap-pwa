@@ -4,7 +4,24 @@
 
   const ASK_ENDPOINT = '/v1/ask';
   const MAX_SOURCES = 8;
+  const SEARCH_TIMEOUT_MS = 20000;
   let requestGeneration = 0;
+  let activeRequest = null;
+  let displayedAccount = null;
+
+  function accountKey() {
+    try { return cloudReady() ? String(root.SynapAuth.session?.()?.profile?.uid || 'signed-in') : ''; }
+    catch (_) { return ''; }
+  }
+
+  function cancelSearch(message) {
+    requestGeneration++;
+    activeRequest?.abort();
+    activeRequest = null;
+    displayedAccount = null;
+    setBusy(false);
+    if (answerBox()) answerBox().textContent = message || '';
+  }
 
   function $(selector) { return document.querySelector(selector); }
 
@@ -42,9 +59,14 @@
     p.className = 'brain-empty ask-searching';
     p.textContent = 'Searching your Synap memories…';
     out.appendChild(p);
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = 'Cancel search';
+    cancel.addEventListener('click', () => cancelSearch('Search cancelled. You can ask another question.'));
+    out.appendChild(cancel);
   }
 
-  function showError(error) {
+  function showError(error, query) {
     const out = answerBox();
     if (!out) return;
     out.replaceChildren();
@@ -61,6 +83,29 @@
     body.append(title, message);
     wrap.append(mark, body);
     out.appendChild(wrap);
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.textContent = 'Retry search';
+    retry.addEventListener('click', () => cloudReady() ? askCloud(query) : searchLocal(query));
+    const local = document.createElement('button');
+    local.type = 'button';
+    local.textContent = 'Search this device';
+    local.addEventListener('click', () => searchLocal(query));
+    out.append(retry, local);
+  }
+
+  async function searchLocal(query) {
+    cancelSearch();
+    const generation = requestGeneration;
+    try {
+      await root.SynapBrainUI?.refresh();
+      if (generation !== requestGeneration) return;
+      root.SynapBrainUI?.answerLocal(query);
+      const scope = document.createElement('p');
+      scope.className = 'ask-search-meta';
+      scope.textContent = 'Searched saved memories on this device.';
+      answerBox()?.prepend(scope);
+    } catch (error) { if (generation === requestGeneration) showError(error, query); }
   }
 
   function sourceButton(source, index) {
@@ -136,31 +181,47 @@
   async function askCloud(query) {
     const clean = String(query || '').trim();
     if (!clean) return;
+    activeRequest?.abort();
     const generation = ++requestGeneration;
+    const account = accountKey();
+    displayedAccount = account;
+    const controller = new AbortController();
+    activeRequest = controller;
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, SEARCH_TIMEOUT_MS);
+    const aborted = new Promise((_, reject) => controller.signal.addEventListener('abort', () => {
+      reject(new Error(timedOut ? 'Search timed out. Please retry or search this device.' : 'Search cancelled.'));
+    }, { once: true }));
     setBusy(true);
     showSearching();
     try {
-      const response = await root.SynapAuth.authedFetch(ASK_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: clean, max_sources: MAX_SOURCES })
-      });
-      const raw = await response.text();
-      let data = null;
-      try { data = raw ? JSON.parse(raw) : null; } catch (_) {}
-      if (!response.ok) {
-        const message = data && data.error && data.error.message ? data.error.message : `HTTP ${response.status}`;
-        const error = new Error(message);
-        error.status = response.status;
-        throw error;
-      }
-      if (generation !== requestGeneration) return;
-      renderAnswer(data || {});
+      const result = await Promise.race([aborted, (async () => {
+        const response = await root.SynapAuth.authedFetch(ASK_ENDPOINT, {
+          method: 'POST',
+          signal: controller.signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: clean, max_sources: MAX_SOURCES })
+        });
+        const raw = await response.text();
+        let data = null;
+        try { data = raw ? JSON.parse(raw) : null; } catch (_) {}
+        if (!response.ok) {
+          const message = data && data.error && data.error.message ? data.error.message : `HTTP ${response.status}`;
+          const error = new Error(message);
+          error.status = response.status;
+          throw error;
+        }
+        if (!data || typeof data.answer !== 'string') throw new Error('The search returned an incomplete answer. Please retry.');
+        return data;
+      })()]);
+      if (generation !== requestGeneration || account !== accountKey()) return;
+      renderAnswer(result);
     } catch (error) {
-      if (generation !== requestGeneration) return;
-      showError(error);
+      if (generation !== requestGeneration || account !== accountKey()) return;
+      showError(error, clean);
     } finally {
-      if (generation === requestGeneration) setBusy(false);
+      clearTimeout(timer);
+      if (generation === requestGeneration) { activeRequest = null; setBusy(false); }
     }
   }
 
@@ -230,7 +291,13 @@
   function init() {
     document.addEventListener('submit', onSubmit, true);
     document.addEventListener('click', onClick, true);
-    if (root.SynapAuth && root.SynapAuth.onChange) root.SynapAuth.onChange(scan);
+    let account = accountKey();
+    if (root.SynapAuth && root.SynapAuth.onChange) root.SynapAuth.onChange(() => {
+      const next = accountKey();
+      if (account !== next || (displayedAccount !== null && displayedAccount !== next)) cancelSearch();
+      account = next;
+      scan();
+    });
     scan();
     // Ask is inserted as a direct main section. Descendant changes, including
     // our own copy write, must not schedule another scan every animation frame.

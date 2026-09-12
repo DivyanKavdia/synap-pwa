@@ -701,6 +701,13 @@ body.synap-refresh #myActions [data-actions-panel][hidden]{display:none!importan
 .synap-refresh #myActions .ask-suggestions{flex-wrap:nowrap;overflow-x:auto;gap:6px}
 .synap-refresh #myActions .ask-suggestions button{flex-shrink:0;white-space:nowrap}
 .synap-refresh #myActions #peopleMemory[data-people-expanded="true"] .people-grid{max-height:none;overflow:visible;scrollbar-gutter:auto}
+/* Editing must contribute to the shared scroller, rather than a clipped popup. */
+.synap-refresh #myActions .person-management[open]{grid-column:1/-1;min-width:0}
+.synap-refresh #myActions .person-management[open]>summary{margin-left:auto}
+.synap-refresh #myActions .person-management>.person-verify{position:static;width:auto;max-width:100%;box-shadow:none;border-width:1px 0 0;border-radius:0;padding:8px;overflow-wrap:anywhere}
+.synap-refresh #myActions .person-verify form{width:100%}
+.synap-source-status{grid-column:1/-1;font-size:.85rem;overflow-wrap:anywhere}
+.synap-source-status p{margin:.4rem 0}
 .synap-refresh #myActions .actions-day{margin:0 0 8px;color:var(--muted);font-size:12px}
 .synap-refresh #myActions .focus-tabs~section{background:transparent;box-shadow:none;border:0;padding:6px 0 0}
 @media(min-width:360px){

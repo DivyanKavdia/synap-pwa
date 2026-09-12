@@ -48,6 +48,7 @@ jobs:
       - run: node tools/actions-smoke.cjs
         env:
           SYNAP_ACTIONS_OUTPUT: artifacts/workflows/actions
+      - run: node tools/actions-functional-smoke.cjs
       - run: node tools/speaker-names-smoke.cjs
         env:
           SYNAP_SPEAKERS_OUTPUT: artifacts/workflows/speakers

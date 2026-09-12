@@ -2,7 +2,7 @@
 (function(root){
 'use strict';
 const DB='dk-pendant-recordings',STYLE_ID='synap-provenance-style';
-let records=[],refreshing=false,initialized=false,lockTimer=0;
+let records=[],refreshing=false,initialized=false,lockTimer=0,sourceGeneration=0;
 const $=(s,h=document)=>h.querySelector(s),$$=(s,h=document)=>[...h.querySelectorAll(s)];
 function localDay(value){const d=new Date(value);if(Number.isNaN(d.getTime()))return'';return[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
 function clock(recording,offsetMs=0){const base=new Date(recording?.createdAt||recording?.startedAt||0).getTime();if(!Number.isFinite(base))return'';return new Date(base+Math.max(0,Number(offsetMs)||0)).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}
@@ -49,10 +49,34 @@ function scheduleLocks(){clearTimeout(lockTimer);lockTimer=setTimeout(lockProces
 function prepareTranscript(card,offsetMs){const details=$$('details',card).find(node=>$('summary',node)?.textContent?.trim()==='Transcript');if(details)details.open=true;const recording=recordById(String(card.id||'').replace(/^recording-/,'')),textarea=lockTranscript(card,recording)||$('.recording-transcript',card);if(!textarea)return false;const index=nearestTranscriptPosition(textarea.value,offsetMs);textarea.focus({preventScroll:true});textarea.setSelectionRange(index,index);const ratio=textarea.value.length?index/textarea.value.length:0;textarea.scrollTop=Math.max(0,ratio*(textarea.scrollHeight-textarea.clientHeight));return true}
 function prepareAudio(card,offsetMs){const audio=$('audio',card);if(!audio)return false;if(!audio.getAttribute('src')){const load=$$('.recording-actions button',card).find(button=>button.textContent.trim()==='Load audio');if(load)load.click();let attempts=0;const wait=()=>{const current=document.getElementById(card.id),player=current&&$('audio',current);if(player?.getAttribute('src'))seekAudio(player,offsetMs/1000);else if(++attempts<45)setTimeout(wait,70)};wait()}else seekAudio(audio,offsetMs/1000);return true}
 function revealLibraryCard(recordingId,offsetMs){let attempts=0;const find=()=>{const card=document.getElementById('recording-'+recordingId);if(!card){const more=$('#showMoreRecordingsButton');if(more&&!more.hidden)more.click();if(++attempts<75)return setTimeout(find,40);return}card.open=true;let contentAttempts=0;const ready=()=>{const current=document.getElementById('recording-'+recordingId);if(!current){if(++contentAttempts<75)return setTimeout(ready,40);return}const hasContent=Boolean($('.recording-content',current));if(!hasContent&&++contentAttempts<75)return setTimeout(ready,40);prepareTranscript(current,offsetMs);prepareAudio(current,offsetMs);current.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'center'})};setTimeout(ready,0)};find()}
-async function hydrateRecording(recordingId){if(recordById(recordingId))return recordById(recordingId);if(root.SynapCloudHistory?.restoreRecording)await root.SynapCloudHistory.restoreRecording(recordingId,false).catch?.(()=>{});records=await loadRecords().catch(()=>records);return recordById(recordingId)}
+async function hydrateRecording(recordingId){if(recordById(recordingId))return recordById(recordingId);const result=await root.SynapCloudHistory?.restoreRecording?.(recordingId,false);if(result?.error)throw result.error;records=await loadRecords();const recording=recordById(recordingId);if(!recording)throw new Error('This recording is not saved on this device. Sign in and retry.');return recording}
 function navigate(recording,offsetMs){root.dispatchEvent?.(new CustomEvent('synap-library-source',{detail:{recordingId:recording.id}}));const picker=$('#datePicker'),d=localDay(recording.createdAt);if(picker&&picker.value!==d){picker.value=d;picker.dispatchEvent(new Event('change',{bubbles:true}))}if(root.SynapDashboardUI?.setView)root.SynapDashboardUI.setView('library',false);else location.hash='#library';setTimeout(()=>revealLibraryCard(recording.id,offsetMs),120)}
-function openSource(recordingId,offsetMs=0){const id=String(recordingId||'');if(!id)return false;const offset=Math.max(0,Number(offsetMs)||0),local=recordById(id);if(local){navigate(local,offset);return true}if(!root.SynapCloudHistory?.restoreRecording)return false;Promise.resolve(hydrateRecording(id)).then(recording=>{if(recording)navigate(recording,offset)}).catch(()=>{});return true}
-function bindClicks(){document.addEventListener('click',event=>{const own=event.target.closest?.('.synap-source-link');if(own){event.preventDefault();event.stopImmediatePropagation();openSource(own.dataset.recordingId,explicitOffset(own)||0);return}const legacy=event.target.closest?.('.source-jump[data-id]');if(!legacy)return;const recording=recordById(legacy.dataset.id);if(!recording&&!root.SynapCloudHistory?.restoreRecording)return;event.preventDefault();event.stopImmediatePropagation();openSource(legacy.dataset.id,recording?inferOffset(legacy,recording):(explicitOffset(legacy)||0))},true)}
+function sourceAccount(){try{return root.SynapAuth?.isSignedIn?.()?String(root.SynapAuth.session?.()?.profile?.uid||'signed-in'):''}catch(_){return ''}}
+function sourceNotice(trigger,message,retry){
+  if(!trigger?.isConnected)return;
+  let notice=trigger.synapSourceNotice;
+  if(!notice?.isConnected){notice=document.createElement('div');notice.className='synap-source-status';trigger.after(notice);trigger.synapSourceNotice=notice;}
+  notice.replaceChildren();notice.hidden=!message;if(!message)return;
+  const text=document.createElement('p');text.setAttribute('role','status');text.textContent=message;notice.append(text);
+  if(retry){const button=document.createElement('button');button.type='button';button.textContent='Retry source';button.addEventListener('click',retry);notice.append(button);}
+}
+function openSource(recordingId,offsetMs=0,trigger){
+  const id=String(recordingId||'');if(!id)return false;
+  const offset=Math.max(0,Number(offsetMs)||0),local=recordById(id),generation=++sourceGeneration,account=sourceAccount();
+  if(local){sourceNotice(trigger,'');navigate(local,offset);return true;}
+  if(trigger){trigger.disabled=true;trigger.setAttribute('aria-busy','true');sourceNotice(trigger,'Opening source recording…');}
+  let timer;
+  const deadline=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Opening the recording timed out. Please retry.')),20000)});
+  Promise.race([hydrateRecording(id),deadline]).then(recording=>{
+    if(generation!==sourceGeneration||account!==sourceAccount())return;
+    sourceNotice(trigger,'');navigate(recording,offset);
+  }).catch(error=>{
+    if(generation!==sourceGeneration||account!==sourceAccount())return;
+    sourceNotice(trigger,'Could not open source. '+(error.message||'Please retry.'),()=>openSource(id,offset,trigger));
+  }).finally(()=>{clearTimeout(timer);if(trigger){trigger.disabled=false;trigger.removeAttribute('aria-busy');}});
+  return true;
+}
+function bindClicks(){document.addEventListener('click',event=>{const own=event.target.closest?.('.synap-source-link');if(own){event.preventDefault();event.stopImmediatePropagation();openSource(own.dataset.recordingId,explicitOffset(own)||0,own);return}const legacy=event.target.closest?.('.source-jump[data-id]');if(!legacy)return;const recording=recordById(legacy.dataset.id);event.preventDefault();event.stopImmediatePropagation();openSource(legacy.dataset.id,recording?inferOffset(legacy,recording):(explicitOffset(legacy)||0),legacy)},true)}
 async function refresh(){if(refreshing)return;refreshing=true;try{records=await loadRecords().catch(()=>[]);repairInsightBindings();repairTodayTimes();lockProcessedLibraryTranscripts()}finally{refreshing=false}}
 function init(){if(initialized)return;initialized=true;injectStyle();bindClicks();let refreshTimer=0;const schedule=()=>{clearTimeout(refreshTimer);refreshTimer=setTimeout(refresh,60)};['synap-insights-rendered','synap-memory-ready','synap-cloud-history-updated','synap-transcript-updated','synap-follow-up-updated'].forEach(name=>root.addEventListener(name,schedule));$('#datePicker')?.addEventListener('change',schedule);const library=$('#recordingsList');if(library&&root.MutationObserver)new root.MutationObserver(scheduleLocks).observe(library,{childList:true,subtree:true});document.addEventListener('toggle',event=>{if(event.target?.classList?.contains('recording-card')&&event.target.open)scheduleLocks()},true);refresh();setTimeout(refresh,250)}
 root.SynapProvenance=Object.freeze({refresh,buildMemoryView,openSource,inferOffset,timestampToMs,explicitOffset,revealLibraryCard,lockProcessedLibraryTranscripts,hasStructuredMemory});
