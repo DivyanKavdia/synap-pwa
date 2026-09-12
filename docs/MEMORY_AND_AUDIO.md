@@ -4,7 +4,11 @@ Today follows the selected local date. Previous/next day, the calendar, date
 tiles and Monday–Sunday week navigation share one date-change event. Cloud
 navigation coalesces rapid selections to the latest requested day. Older reads
 cannot replace a newer selection, and failed reads keep the last successful
-content with an error state.
+content with an error state. The header keeps day arrows visible; its calendar
+button reveals the date picker, week controls and recording counts. Escape
+closes the calendar and returns focus to that button. Empty days show a short
+status and, when available, a link to the latest day with saved recordings.
+Zero totals and empty conversation panels stay out of the reading area.
 
 The brief keeps available executive summaries and links each to its source.
 Conversation details retain full summaries, participants, decisions, actions

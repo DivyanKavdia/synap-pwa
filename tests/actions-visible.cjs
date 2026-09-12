@@ -7,5 +7,5 @@ assert(index.includes('href="brain.css?v=1.0.0-actions1"'),'brain.css must be li
 assert(index.includes('id="actionableMemory"'),'Actions must exist in the base Today HTML');
 for(const id of ['decisionCount','commitmentCount','waitingCount','decisionList','commitmentList','waitingList'])assert(index.includes('id="'+id+'"'),'missing static Actions node '+id);
 assert(!/function install\(\)\{\s*if\(\$\('#actionableMemory'\)\)return/.test(brain),'brain-ui must not abort installation when static Actions exists');
-assert(brain.includes("if(brief&&glance&&!$('#actionableMemory'))"),'brain-ui should keep dynamic Actions only as a fallback');
+assert.match(brain,/if\s*\(brief\s*&&\s*glance\s*&&\s*!\$\('#actionableMemory'\)\)/,'brain-ui should keep dynamic Actions only as a fallback');
 console.log('PASS: Action data nodes exist at startup and brain-ui enhances them before My actions groups the panels.');

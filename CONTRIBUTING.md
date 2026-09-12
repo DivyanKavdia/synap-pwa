@@ -44,7 +44,7 @@ Builds remove stale output before compiling.
 | `npm run test:backend`                          | Backend behavior, encryption, grounding and HTTP guards                  |
 | `npm run test:browser`                          | The same browser workflow sequence used in CI                            |
 | `npm run test:browser -- processing connection` | Only those workflows, including buffered connection recovery             |
-| `node tools/ui-smoke.cjs`                       | Additional populated layout checks across phone/desktop sizes and themes |
+| `npm run test:browser -- ui`                    | Populated layouts, date navigation and reading across screen sizes and themes |
 | `npm run format -- processing-queue.js`         | Format the specified files                                               |
 | `npm run format:check -- processing-queue.js`   | Check formatting without editing                                         |
 
