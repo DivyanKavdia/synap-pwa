@@ -100,7 +100,7 @@ function render(detail,notify=true){
       if(state)state.textContent='Percentage unavailable';
       if(meter)meter.style.width='0%';
     }
-    if(help)help.textContent=detail.available?'Estimated battery charge.':'Battery reading is outside the expected range. Check the GPIO1 divider; details are in Diagnostics.';
+    if(help)help.textContent=detail.available?'Estimated battery charge.':'Battery reading is outside the expected range. Check the battery divider; details are in Diagnostics.';
   }
   if(document.body){
     document.body.dataset.batteryPercent=detail.available?String(detail.percent):'';
