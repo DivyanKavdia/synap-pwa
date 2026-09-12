@@ -202,6 +202,10 @@
   let metricsTimer = null;
 
   let diagnosticLines = [];
+  globalThis.addEventListener('synap-battery-status',({detail:b})=>{
+    if(!b)return;
+    log('Battery',`available=${Boolean(b.available)} percent=${b.percent} cellMv=${b.millivolts} adcMv=${b.adcMillivolts??'n/a'} raw=${b.adcRaw??'n/a'}`);
+  });
   let installPrompt = null;
   let renderedObjectUrls = [];
   let waveformPalette = null;

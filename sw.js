@@ -4,7 +4,7 @@ const APP_VERSION='1.0.0';
 const CLIENT_REVISION='1.0.0-audio2';
 /* Refresh the installed shell without changing audio protocol compatibility. */
 const UI_RECOVERY_REVISION='1.0.0-ota-progress1';
-const CACHE_REVISION='1.0.0-shell55-ota-progress';
+const CACHE_REVISION='1.0.0-shell56-battery-reconnect';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings-icon-fix.css',
