@@ -6,7 +6,8 @@ for(const selector of ['.synap-battery-value','.synap-battery-fill','.synap-batt
 const button=element(),pop=element();
 button.querySelector=pop.querySelector=selector=>parts[selector];
 const body={dataset:{state:'idle',deviceState:'1'}};
-const context={document:{body,readyState:'complete',getElementById:id=>id==='headerBatteryStatus'?button:pop},MutationObserver:class{observe(){}},CustomEvent:class{constructor(type,init){this.type=type;this.detail=init.detail}},dispatchEvent(){},console:{info(){},warn(){}},SynapBatteryBridge:{ensureBatteryUi(){}}};
+const listeners={};let connectionChanged;
+const context={document:{body,readyState:'complete',getElementById:id=>id==='headerBatteryStatus'?button:pop},MutationObserver:class{constructor(fn){connectionChanged=fn}observe(){}},CustomEvent:class{constructor(type,init){this.type=type;this.detail=init.detail}},addEventListener(type,fn){listeners[type]=fn},dispatchEvent(){},console:{info(){},warn(){}},SynapBatteryBridge:{ensureBatteryUi(){}}};
 vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../battery-v2-ui.js'),'utf8'),context);
 function send(percent,flags){
  const value=new DataView(new ArrayBuffer(12));
@@ -26,4 +27,9 @@ send(0,0);assert.equal(parts['.synap-battery-value'].textContent,'—');assert.e
 assert.equal(parts['.synap-battery-state'].textContent,'Percentage unavailable');
 body.dataset.deviceState='0';send(100,1);
 assert.equal(button.dataset.state,'disconnected');assert.equal(parts['.synap-battery-big'].textContent,'—');
+body.dataset.deviceState='1';connectionChanged();
+assert.equal(parts['.synap-battery-value'].textContent,'100%','early telemetry is restored when connected');
+listeners['synap-gatt-disconnected']();
+assert.equal(context.SynapBatteryV2.status,null,'new connections cannot inherit stale readings');
+connectionChanged();assert.equal(parts['.synap-battery-value'].textContent,'');
 console.log('PASS battery percentage display, unavailable/disconnected states and retained diagnostics');

@@ -56,12 +56,15 @@ function renderDisconnected(){
   }
   if(document.body)document.body.dataset.batteryPercent='';
 }
-function syncConnectionUi(){if(isDisconnected())renderDisconnected()}
-function render(detail){
+function syncConnectionUi(){
+  if(isDisconnected())renderDisconnected();
+  else if(last)render(last,false);
+}
+function render(detail,notify=true){
   last=detail;
   if(isDisconnected()){
     renderDisconnected();
-    root.dispatchEvent(new CustomEvent('synap-battery-status',{detail}));
+    if(notify)root.dispatchEvent(new CustomEvent('synap-battery-status',{detail}));
     return;
   }
   previousBattery.ensureBatteryUi?.();
@@ -97,7 +100,7 @@ function render(detail){
       if(state)state.textContent='Percentage unavailable';
       if(meter)meter.style.width='0%';
     }
-    if(help)help.textContent=detail.available?'Estimated battery charge.':'Waiting for a valid battery reading.';
+    if(help)help.textContent=detail.available?'Estimated battery charge.':'Battery reading is outside the expected range. Check the GPIO1 divider; details are in Diagnostics.';
   }
   if(document.body){
     document.body.dataset.batteryPercent=detail.available?String(detail.percent):'';
@@ -105,8 +108,10 @@ function render(detail){
     document.body.dataset.batteryAdcMillivolts=String(detail.adcMillivolts||0);
     document.body.dataset.batteryAdcRaw=String(detail.adcRaw||0);
   }
-  console.info('[synap battery v2]',detail);
-  root.dispatchEvent(new CustomEvent('synap-battery-status',{detail}));
+  if(notify){
+    console.info('[synap battery v2]',detail);
+    root.dispatchEvent(new CustomEvent('synap-battery-status',{detail}));
+  }
 }
 
 function inspectV2(event){
@@ -147,4 +152,8 @@ root.SynapBatteryBridge={
 };
 root.SynapBatteryV2={MAGIC,VERSION,parse,get status(){return last}};
 installConnectionObserver();
+root.addEventListener('synap-gatt-disconnected',()=>{
+  last=null;
+  renderDisconnected();
+});
 })(globalThis);
