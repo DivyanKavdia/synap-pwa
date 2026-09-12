@@ -269,9 +269,9 @@
 
   function uploadHighlights(processor, recordingId, signal) {
     return processor.store.get('recordings', recordingId).then(function (recording) {
-      var markers = (recording && (recording.rememberMarkers || recording.highlights)) || [];
+      var markers = recording ? (root.SynapMoments?.markers(recording) || recording.rememberMarkers || recording.highlights || []) : [];
       if (!markers.length) return null;
-      return Promise.all(markers.map(function (marker) {
+      return markers.reduce(function (pending, marker) { return pending.then(function () {
         var id = marker.id || marker.highlightId;
         if (!id) return Promise.resolve(null);
         return request('/v1/recordings/' + encodeURIComponent(recordingId) + '/highlights', {
@@ -284,9 +284,9 @@
             source: marker.source === 'pwa' ? 'pwa' : 'pendant',
             note: marker.note || null
           })
-        }).catch(function () { return null; });
-      })).then(function () { return null; });
-    }).catch(function () { return null; });
+        });
+      }); }, Promise.resolve());
+    });
   }
 
   function finalize(processor, job, signal) {

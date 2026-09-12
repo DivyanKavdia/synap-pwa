@@ -36,12 +36,20 @@
     const processing=document.getElementById('processing');
     if(processing)processing.hidden=true;
 
-    // The recorder is a primary product surface. Older compact revisions hid it
-    // and left only the header shortcut, which made the app feel incomplete and
-    // removed connection health / waveform / explicit Start-Stop affordances.
-    section.classList.remove('capture-minimal');
-    section.classList.add('capture-product');
-    section.removeAttribute('aria-hidden');
+    // Core control nodes remain mounted; the header owns their visible controls.
+    section.hidden=true;
+    const sessionBar=document.createElement('div');sessionBar.id='recordingSessionBar';sessionBar.hidden=true;
+    const mark=document.createElement('button');mark.id='markMoment';mark.type='button';mark.textContent='★ Mark moment';
+    const feedback=document.createElement('span');feedback.id='momentFeedback';feedback.setAttribute('role','status');
+    if(timer){timer.setAttribute('aria-label','Recording elapsed time');sessionBar.append(timer)}
+    sessionBar.append(feedback,mark);header.append(sessionBar);
+    let marking=false;
+    mark.addEventListener('click',async()=>{
+      if(marking)return;marking=true;mark.disabled=true;
+      try{await window.SynapMoments.mark();feedback.textContent='Moment saved'}
+      catch(error){feedback.textContent=error.message||'Could not save moment. Try again.'}
+      finally{marking=false;sync()}
+    });
 
     let status=document.getElementById('headerPendantStatus');
     if(!status){
@@ -77,6 +85,9 @@
       const recording=RECORDING_STATES.has(state);
       const connected=ACTIVE_STATES.has(state);
       const busy=BUSY_STATES.has(state);
+      sessionBar.hidden=!['starting','recording','stopping','saving'].includes(state)&&document.body.dataset.recordingInterrupted!=='true';
+      mark.hidden=state!=='recording';mark.disabled=marking||state!=='recording'||document.body.dataset.recordingInterrupted==='true';
+      if(sessionBar.hidden)feedback.textContent='';
       status.classList.toggle('is-connected',connected);
       status.classList.toggle('is-recording',recording);
       const label=status.querySelector('.header-status-text');
@@ -84,13 +95,11 @@
       toggle.classList.toggle('is-recording',recording);
       toggle.disabled=busy&&!recording?true:(recording?stop.disabled:start.disabled);
       toggle.setAttribute('aria-label',recording?'Stop listening':'Start listening');
-      if(timer)toggle.dataset.time=recording?timer.textContent:'';
     }
 
     if(document.documentElement.dataset.synapCaptureUiBound!=='1'){
       document.documentElement.dataset.synapCaptureUiBound='1';
       new MutationObserver(sync).observe(document.body,{attributes:true,attributeFilter:['data-state']});
-      if(timer)new MutationObserver(()=>{if(RECORDING_STATES.has(document.body.dataset.state||''))toggle.dataset.time=timer.textContent||''}).observe(timer,{childList:true,subtree:true,characterData:true});
       new MutationObserver(sync).observe(start,{attributes:true,attributeFilter:['disabled']});
       new MutationObserver(sync).observe(stop,{attributes:true,attributeFilter:['disabled']});
     }

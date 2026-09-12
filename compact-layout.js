@@ -3,7 +3,6 @@
   'use strict';
   const KEY='synap-expanded-tiles-v1',tiles=new Map();
   const configs=[
-    ['capture','.ambient-capture-head','Capture',false],
     ['insights','.section-heading','Memories',false],
     ['myActions','.section-heading','My actions',true],
     ['library','.section-heading','Library',false],
@@ -46,17 +45,11 @@
     root.SynapMyActions?.reveal(target);
     for(const tile of tiles.values())if(tile.section===target||tile.section.contains(target))setExpanded(tile,true);
   }
-  function captureState(){
-    if(document.body.dataset.state==='connecting'&&document.body.dataset.autoReconnecting==='true')return;
-    if(['starting','recording','stopping','saving','updating','connecting'].includes(document.body.dataset.state))reveal('capture');
-  }
   function init(){
     scan();
     const main=document.querySelector('main'),brief=document.querySelector('.day-brief');
     if(main)new MutationObserver(scan).observe(main,{childList:true});
     if(brief)new MutationObserver(scan).observe(brief,{childList:true});
-    new MutationObserver(captureState).observe(document.body,{attributes:true,attributeFilter:['data-state']});
-    captureState();
   }
   root.SynapCompactLayout=Object.freeze({reveal});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();

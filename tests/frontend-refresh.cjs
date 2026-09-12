@@ -13,10 +13,10 @@ test('refresh has one deterministic final stylesheet before first-paint theme se
   assert.match(html,/<body[^>]*class="synap-refresh"/);
 });
 
-test('capture stays before memory feed in the DOM and documents the agreed gestures', () => {
+test('connection help stays available in Settings and controller nodes stay mounted', () => {
   const html=read('index.html');
-  assert(html.indexOf('<section id="today"') < html.indexOf('<section id="capture"'));
-  assert(html.indexOf('<section id="capture"') < html.indexOf('<section id="insights"'));
+  assert.match(html,/<div id="capture" hidden>/);
+  assert.doesNotMatch(html,/<section id="capture"/);
   assert.match(html,/<strong>Double tap<\/strong>Record on \/ off/);
   assert.match(html,/<strong>Triple tap<\/strong>Sleep \/ wake/);
   assert.match(html,/Keep this app open while listening/);
@@ -26,14 +26,14 @@ test('desktop navigation accounts for side rail and keyboard focus', () => {
   const dashboard=read('dashboard-ui.js');
   assert.match(dashboard,/nav\.top>window\.innerHeight\/2\?nav\.top-12:window\.innerHeight/);
   assert.match(dashboard,/target\.focus\(\{preventScroll:true\}\)/);
-  assert.match(dashboard,/if\(window\.scrollY<4\)return activeView==='capture'\?'capture':'today'/);
+  assert.match(dashboard,/if\(window\.scrollY<4\)return 'today'/);
   assert.match(read('brain-ui.js'),/aria-label="Ask a question about your memories"/);
 });
 
 test('fresh and cached shells share the refresh generation without changing BLE compatibility', () => {
   const sw=read('sw.js');
   const revision=sw.match(/const CACHE_REVISION='([^']+)'/)[1];
-  assert.equal(revision,'1.0.0-shell56-battery-reconnect');
+  assert.equal(revision,'1.0.0-shell57-moments');
   assert(read('enhancements.js').includes(`SHELL_REVISION='${revision}'`));
   assert.match(sw,/CLIENT_REVISION='1\.0\.0-audio2'/);
   assert.match(sw,/'\.\/compact\.css'/);

@@ -4,7 +4,7 @@
   if(root.SynapDashboardUI&&root.SynapDashboardUI.__stableShell)return;
 
   const STYLE_ID='synapDashboardStyle';
-  const VIEW_IDS={today:'#today',capture:'#capture',memories:'#insights',actions:'#myActions',library:'#library'};
+  const VIEW_IDS={today:'#today',memories:'#insights',actions:'#myActions',library:'#library'};
   const ACTION_VIEWS={ask:'ask',dailyFocus:'dailyFocus',followupInbox:'followupInbox',peopleMemory:'peopleMemory'};
   const $=s=>document.querySelector(s);
   const $$=s=>[...document.querySelectorAll(s)];
@@ -14,7 +14,7 @@
   let activeView='today';
 
   function normalizeView(view){return ACTION_VIEWS[view]?'actions':VIEW_IDS[view]?view:'today'}
-  function viewForHref(href){const panel=href?.slice(1);return ACTION_VIEWS[panel]?panel:href==='#capture'?'capture':href==='#insights'?'memories':href==='#myActions'?'actions':href==='#library'?'library':'today'}
+  function viewForHref(href){const panel=href?.slice(1);return ACTION_VIEWS[panel]?panel:href==='#insights'?'memories':href==='#myActions'?'actions':href==='#library'?'library':'today'}
   function sectionFor(view){return document.querySelector(VIEW_IDS[normalizeView(view)])}
 
   function injectStyle(){
@@ -26,25 +26,15 @@ main{display:block!important}
 body[data-synap-view] #today,
 body[data-synap-view] #insights,
 body[data-synap-view] #myActions,
-body[data-synap-view] #capture,
 body[data-synap-view] #library{display:block!important;visibility:visible!important;opacity:1!important}
-#today,#insights,#myActions,#capture,#library{scroll-margin-top:84px;content-visibility:visible!important}
+#today,#insights,#myActions,#library{scroll-margin-top:84px;content-visibility:visible!important}
 .app-shell,main,.brain-home,.day-brief,.actionable-memory,.action-grid,.conversation-lane,.section-card{min-width:0;max-width:100%}
 .section-card{transition:border-color .18s ease,box-shadow .18s ease}
 .brain-tabs{isolation:isolate}
-.brain-tabs:has(a[href="#capture"]):has(a[href="#myActions"]){grid-template-columns:repeat(5,minmax(0,1fr))!important}
+.brain-tabs{grid-template-columns:repeat(4,minmax(0,1fr))!important}
 .brain-tabs a{touch-action:manipulation}
 .brain-tabs a.active{font-weight:800}
 `;
-  }
-
-  function ensureCaptureNav(){
-    const nav=$('.brain-tabs');if(!nav||nav.querySelector('a[href="#capture"]'))return;
-    const link=document.createElement('a');
-    link.href='#capture';
-    link.innerHTML='<svg aria-hidden="true"><use href="#i-mic"></use></svg><span>Capture</span>';
-    const today=nav.querySelector('a[href="#today"]');
-    if(today?.nextSibling)nav.insertBefore(link,today.nextSibling);else nav.prepend(link);
   }
 
   function syncNav(view){
@@ -77,9 +67,7 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
   }
 
   function currentVisibleView(){
-    // Today and Capture share the first desktop row; opening the app starts on
-    // Today, while an explicit Capture selection remains authoritative there.
-    if(window.scrollY<4)return activeView==='capture'?'capture':'today';
+    if(window.scrollY<4)return 'today';
     const header=$('.topbar');
     const top=(header?.getBoundingClientRect().bottom||64)+18;
     // A desktop side rail does not obscure the bottom of the viewport.
@@ -131,8 +119,6 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
     const brief=document.getElementById('dayBriefText');
     brief?.classList.remove('synap-clamped','synap-expanded');
     document.getElementById('dayBriefMore')?.remove();
-    const capture=document.getElementById('capture');
-    if(capture){capture.classList.remove('capture-minimal');capture.classList.add('capture-product');capture.removeAttribute('aria-hidden')}
   }
 
   function bindDailyWorkspace(){
@@ -181,7 +167,7 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
     });
   }
 
-  function scan(){injectStyle();ensureCaptureNav();healLegacyWrappers();bindTabs();bindDailyWorkspace();observeSections();updateFromViewport()}
+  function scan(){injectStyle();healLegacyWrappers();bindTabs();bindDailyWorkspace();observeSections();updateFromViewport()}
   function init(){
     scan();
     // Dynamic second-brain sections are inserted as direct children of <main>.
@@ -189,7 +175,7 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
     // can replace many descendant nodes without causing navigation rescans.
     const main=document.querySelector('main');
     if(main){
-      const mutation=new MutationObserver(()=>requestAnimationFrame(()=>{ensureCaptureNav();observeSections();healLegacyWrappers()}));
+      const mutation=new MutationObserver(()=>requestAnimationFrame(()=>{observeSections();healLegacyWrappers()}));
       mutation.observe(main,{childList:true});
     }
     ['synap-cloud-history-updated','synap-memory-ready','synap-processing-state','synap-transcript-updated'].forEach(name=>addEventListener(name,()=>requestAnimationFrame(updateFromViewport)));
