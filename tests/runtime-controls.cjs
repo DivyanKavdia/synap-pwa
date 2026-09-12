@@ -19,7 +19,7 @@ assert.match(runtime,/min-height:44px/,'primary controls must meet the minimum m
 assert.match(compat,/bindSettingsSafetyNet/,'settings must retain a fallback even if app initialization stops early');
 assert.match(compat,/settingsButton\.addEventListener\('click'/,'settings safety net must be wired directly');
 assert(html.indexOf('runtime-compat.js')<html.indexOf('app.js'),'compatibility guard must load before app.js');
-assert.match(sw,/shell65-transcripts/,'service worker cache must retain controls compatibility while shipping grounded Ask');
+assert.match(sw,/shell66-transcripts/,'service worker cache must retain controls compatibility while shipping grounded Ask');
 assert.match(sw,/\.\/runtime-compat\.js/,'service worker must continue caching the controls compatibility guard');
 assert.match(sw,/\.\/processing-recovery\.js/,'service worker must continue shipping processing recovery');
 assert.match(sw,/\.\/ask-synap\.js/,'service worker must ship grounded Ask Synap');

@@ -37,9 +37,13 @@
     const content=card.querySelector('.recording-content')||card;
     const saved=markers(recording);let panel=content.querySelector('.recording-moments');
     if(!saved.length){panel?.remove();return;}
-    const transcript=content.querySelector('.recording-transcript')?.closest('details');
+    const text=content.querySelector('.recording-transcript');
+    // An empty Transcript disclosure is a loading/retry surface. Keep saved
+    // moments immediately playable while the recording has no transcript text.
+    const transcript=text&&!text.hidden?text.closest('details'):null;
     if(!panel){panel=document.createElement('div');panel.className='recording-moments';content.append(panel)}
-    if(transcript&&panel.parentNode!==transcript)transcript.append(panel);
+    const parent=transcript||content;
+    if(panel.parentNode!==parent)parent.append(panel);
     const signature=saved.map(m=>m.id+':'+m.offsetMs).join(',');
     if(panel.dataset.markers===signature)return;panel.dataset.markers=signature;
     panel.replaceChildren();const label=document.createElement('strong');label.textContent='Marked moments';panel.append(label);
