@@ -59,7 +59,7 @@
       status.type='button';
       status.setAttribute('aria-label','Pendant connection');
       status.innerHTML='<span class="header-status-dot" aria-hidden="true"></span><span class="header-status-text">Offline</span>';
-      status.addEventListener('click',()=>connect.click());
+      status.addEventListener('click',()=>window.SynapAppControls?.toggleConnection());
     }
 
     let toggle=document.getElementById('headerCaptureToggle');
@@ -91,8 +91,8 @@
       status.classList.toggle('is-connected',connected);
       status.classList.toggle('is-recording',recording);
       const label=status.querySelector('.header-status-text');
-      if(label)label.textContent=!ready?(document.body.dataset.startup==='error'?'Needs retry':'Opening'):state==='updating'?'Updating':interrupted?'Paused':recording?'Listening':connected?'Connected':state==='connecting'?'Connecting':state==='error'?'Check pendant':'Offline';
-      status.disabled=!ready||connect.disabled;
+      if(label)label.textContent=state==='updating'?'Updating':interrupted?'Paused':recording?'Listening':connected?'Connected':state==='connecting'?'Connecting':'Connect';
+      status.disabled=connect.disabled;
       status.setAttribute('aria-label',connected?'Disconnect pendant':'Connect pendant');
       toggle.classList.toggle('is-recording',recording||canStop);
       toggle.disabled=!ready||(!canStop&&(busy||state==='unsupported'||(connected&&start.disabled)));
