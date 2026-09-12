@@ -174,6 +174,7 @@
   let finalizing = false;
   let wakeLock = null;
   let recordingSessionId = 0;
+  const recordingControlOwnerId = globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
   let finalizedSessionId = 0;
   let connectionEpoch = 0;
   let gattQueue = Promise.resolve();
@@ -3725,7 +3726,31 @@
     else if (appState === "error") toast(ui.recorderSubtitle.textContent, "error");
   }
 
-  globalThis.SynapAppControls = Object.freeze({toggleCapture,toggleConnection});
+  // External controls must address one confirmed take; never toggle capture.
+  // The page nonce also prevents a notification surviving reload from matching
+  // a later take whose local session counter happens to be the same.
+  function recordingState() {
+    const active = recordingConfirmed && (finalizing || isCurrentSession(recordingSessionId));
+    return {
+      active,
+      sessionId: active ? recordingControlOwnerId + ':' + recordingSessionId : null,
+      source: 'pendant',
+      phase: finalizing ? 'saving' : recordingStopRequested ? 'stopping' : recordingReconnectPending ? 'interrupted' : 'recording',
+      canStop: active && !finalizing && !firmwareBusy &&
+        (appState === 'recording' || appState === 'starting' || (recordingReconnectPending && appState === 'disconnected')),
+      canMark: active && appState === 'recording' && !recordingReconnectPending && !finalizing && !recordingStopRequested,
+      startedAt: active ? Math.round(Date.now() - (performance.now() - recordingStartedAt)) : null
+    };
+  }
+
+  async function stopCapture(sessionId) {
+    const current = recordingState();
+    if (!current.canStop || current.sessionId !== sessionId) return false;
+    await stopRecording();
+    return true;
+  }
+
+  globalThis.SynapAppControls = Object.freeze({toggleCapture,toggleConnection,recordingState,stopCapture});
 
   function setStartup(state, message) {
     document.body.dataset.startup = state;

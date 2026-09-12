@@ -58,6 +58,8 @@ Startup recovery reuses existing processing jobs and preserves completed work. A
 
 Persistent browser storage is requested when available. Clearing site data can remove local recordings that have not been preserved elsewhere.
 
+Settings → **Device → While listening → Recording notification** enables **Stop & save** and **Mark moment** in supported browser notifications after permission is granted. Notifications follow the confirmed take and close when it ends. They do not prevent background suspension. iOS Lock Screen recording controls and Dynamic Island require native Live Activities support; see [recording notifications and native requirements](docs/RECORDING_NOTIFICATIONS.md).
+
 ## Device identity and reconnect
 
 Each pendant exposes a permanent `SYNAP-XXXXXXXXXXXX` identity derived by firmware. The PWA maps browser Bluetooth handles to that identity after a successful connection.

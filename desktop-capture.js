@@ -54,7 +54,7 @@ async function start(options={}){
     recordingId=await journal.begin(name,{deviceId:'desktop-browser',associationId:'desktop-browser',installationId:null});
     await journal.atomic(['recordings'],stores=>{const q=stores.recordings.get(recordingId);q.onsuccess=()=>{if(q.result)stores.recordings.put({...q.result,captureSource:'desktop-meeting',captureMode:'system+microphone',desktopCapture:true})}});
     const pending=[],resample={pos:0};let sequence=0,stopping=false;
-    const state={recordingId,journal,context,processor,systemSource,micSource,destination,display,mic,pending,resample,get sequence(){return sequence},set sequence(v){sequence=v},get stopping(){return stopping},set stopping(v){stopping=v}};
+    const state={recordingId,startedAt:Date.now(),journal,context,processor,systemSource,micSource,destination,display,mic,pending,resample,get sequence(){return sequence},set sequence(v){sequence=v},get stopping(){return stopping},set stopping(v){stopping=v}};
     session=state;
     processor.onaudioprocess=e=>{
       if(stopping||session!==state)return;
@@ -78,6 +78,7 @@ async function start(options={}){
 }
 async function stop(reason='desktop-capture'){
   const s=session;if(!s)return null;session=null;s.stopping=true;
+  root.dispatchEvent?.(new CustomEvent('synap-desktop-capture-stopped'));
   try{
     s.processor.onaudioprocess=null;
     if(s.pending.length){while(s.pending.length<FRAME_SAMPLES)s.pending.push(0);s.journal.append(s.recordingId,{sequence:s.sequence++,chunk:0,total:1,payload:pcm16(s.pending.splice(0,FRAME_SAMPLES))})}
@@ -93,7 +94,7 @@ async function stop(reason='desktop-capture'){
   }catch(error){emitError(error);throw error}
   finally{cleanupResources(s);syncButton()}
 }
-function state(){return session?{active:true,recordingId:session.recordingId}:{active:false,recordingId:null}}
+function state(){return session?{active:true,recordingId:session.recordingId,startedAt:session.startedAt}:{active:false,recordingId:null}}
 function syncButton(){const button=document.getElementById('synapDesktopCaptureButton');if(!button)return;button.textContent=session?'Stop meeting':'Capture meeting';button.dataset.active=String(Boolean(session));button.disabled=!session&&pendantBusy()}
 function install(){if(!supported()||document.getElementById('synapDesktopCapture'))return;const capture=document.getElementById('settingsDeviceExtras')||document.getElementById('settingsForm');if(!capture)return;const box=document.createElement('div');box.id='synapDesktopCapture';box.className='desktop-capture-card';box.innerHTML='<div><strong>Online meeting</strong><small>Capture this computer’s meeting audio + your microphone. No bot joins the call.</small><small id="synapDesktopCaptureStatus" role="status"></small></div><button type="button" id="synapDesktopCaptureButton">Capture meeting</button>';const style=document.createElement('style');style.textContent='.desktop-capture-card{margin-top:12px;padding:11px 12px;border:1px solid var(--border,#d9e2ec);border-radius:14px;display:flex;gap:10px;align-items:center;justify-content:space-between;background:var(--surface,#fff)}.desktop-capture-card strong,.desktop-capture-card small{display:block}.desktop-capture-card small{margin-top:3px;font-size:10px;color:var(--muted,#64748b)}.desktop-capture-card button{border:0;border-radius:10px;padding:8px 11px;font:inherit;font-size:11px;font-weight:800;background:#102744;color:#fff;cursor:pointer}.desktop-capture-card button[data-active="true"]{background:#9f1d35}.desktop-capture-card button:disabled{opacity:.5;cursor:not-allowed}@media(max-width:560px){.desktop-capture-card{display:none}}';document.head.appendChild(style);capture.appendChild(box);const button=document.getElementById('synapDesktopCaptureButton');button.addEventListener('click',async()=>{button.disabled=true;try{if(session)await stop();else await start()}catch(error){emitError(error)}finally{syncButton()}});new MutationObserver(syncButton).observe(document.body,{attributes:true,attributeFilter:['data-state','data-recording-interrupted']});syncButton()}
 root.SynapDesktopCapture={supported,start,stop,state,TARGET_RATE,FRAME_SAMPLES,FRAME_BYTES,autoProcessEnabled,pendantBusy,localDayKey,revealSavedRecording};

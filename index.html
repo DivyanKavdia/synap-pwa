@@ -109,6 +109,7 @@
     <section class="settings-card settings-preferences"><h3 class="settings-card-title">While listening</h3>
       <label class="settings-toggle-row"><span><strong>Keep screen awake</strong><small>While your pendant is recording.</small></span><input id="wakeLockInput" class="switch-input" type="checkbox" role="switch" aria-label="Keep screen awake while listening" checked></label>
       <label class="settings-toggle-row"><span><strong>Auto reconnect</strong><small>Reconnect after a brief interruption.</small></span><input id="autoReconnectInput" class="switch-input" type="checkbox" role="switch" aria-label="Reconnect automatically" checked></label>
+      <label class="settings-toggle-row"><span><strong>Recording notification</strong><small id="recordingNotificationHint" role="status">Stop and mark moments from your notifications on supported browsers.</small></span><input id="recordingNotificationInput" class="switch-input" type="checkbox" role="switch" aria-label="Show recording notification controls" aria-describedby="recordingNotificationHint"></label>
     </section>
     <div id="settingsDeviceExtras"></div>
   </section>
@@ -181,8 +182,9 @@
 <script src="disconnect-protection.js?v=1.0.0-meetings2"></script>
 <script src="experience-recovery.js?v=1.0.0-transcripts1"></script>
 <script src="library-tools.js?v=1.0.0-library1"></script>
-<script src="app.js?v=1.0.0-library1"></script>
-<script src="enhancements.js?v=1.0.0-library1"></script>
+<script src="app.js?v=1.0.0-notifications1"></script>
+<script src="recording-notifications.js?v=1.0.0-notifications1"></script>
+<script src="enhancements.js?v=1.0.0-notifications1"></script>
 <script src="google-auth.js?v=1.0.0-brain1"></script>
 <script src="ai-providers.js?v=1.0.0-brain1"></script>
 <script src="synap-backend.js?v=1.0.0-library1"></script>
@@ -205,7 +207,7 @@
 <script src="product-ui.js?v=1.0.0-actions1"></script>
 <script src="provenance-links.js?v=1.0.0-actions3"></script>
 <script src="productivity-tools.js?v=1.0.0-day-audio1"></script>
-<script src="desktop-capture.js?v=1.0.0-settings2"></script>
+<script src="desktop-capture.js?v=1.0.0-notifications1"></script>
 <script src="interaction-surfaces.js?v=1.0.0-actions3"></script>
 <script src="memory-ready-events.js?v=1.0.0-memory-events1"></script>
 </body></html>

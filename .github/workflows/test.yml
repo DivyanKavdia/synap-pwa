@@ -33,6 +33,7 @@ jobs:
         env:
           SYNAP_TRANSCRIPT_OUTPUT: artifacts/workflows/transcripts
       - run: node tools/controls-smoke.cjs
+      - run: node tools/recording-notifications-smoke.cjs
       - run: node tools/connection-smoke.cjs
       - run: node tools/connection-smoke.cjs
         env:
