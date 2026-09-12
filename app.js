@@ -132,6 +132,7 @@
   let appState = "disconnected";
   let startupReady = false;
   let startupPending = null;
+  let recoveryPending = null;
   let appLockHeld = false;
   let firmwareControlsBound = false;
   let eventsBound = false;
@@ -1124,6 +1125,7 @@
       }
     } finally {
       connectInProgress = false;
+      renderDeviceSetup();
       if (globalThis.document?.body) delete document.body.dataset.autoReconnecting;
       if (isGattConnected()) setReconnectCapability("Pendant connection ready");
       syncRememberedMonitoring();
@@ -3067,7 +3069,7 @@
       getService:()=>queueGattOperation(()=>gattServer.getPrimaryService(SERVICE_UUID),"Find pendant service"),
       progress:showProgress
     });
-    const eligible = ()=>startupReady && isGattConnected() && !connectInProgress && !recordingConfirmed &&
+    const eligible = ()=>appLockHeld && isGattConnected() && !connectInProgress && !recordingConfirmed &&
       !finalizing && !currentRecordingId && !openingCapture && !unsavedAudio &&
       !["starting","stopping","saving"].includes(appState);
     const lock = value=>{
@@ -3110,7 +3112,7 @@
       return discoveryTask;
     }
     async function discover(force=false) {
-      if(force && !eligible()) {status.textContent=!startupReady?"Finish opening the app first. Use Retry if startup failed.":isGattConnected()?"Stop and save before updating.":"Connect your pendant above to check for updates.";return;}
+      if(force && !eligible()) {status.textContent=!appLockHeld?"Close other Synap tabs, then tap Retry.":isGattConnected()?"Stop and save before updating.":"Connect your pendant above to check for updates.";return;}
       if(discoveryBusy||firmwareBusy||!eligible()||document.visibilityState==='hidden'||(!force&&Date.now()-lastCheck<60000))return;
       discoveryBusy=true;lastCheck=Date.now();const epoch=connectionEpoch;status.textContent="Checking…";
       const checkButton=document.getElementById("otaReleaseCheck");checkButton.textContent="Checking…";
@@ -3158,7 +3160,7 @@
       if(firmwareBusy || updateRequested)return;
       if(!ui.settingsDialog.open)openSettings();
       if(!eligible()) {
-        status.textContent=!startupReady?'Finish opening the app first. Use Retry if startup failed.':
+        status.textContent=!appLockHeld?'Close other Synap tabs, then tap Retry.':
           isGattConnected()?'Stop and save the recording before updating.':'Connect your pendant above, then tap Update.';
         return;
       }
@@ -3358,6 +3360,7 @@
     });
     ui.retrySaveButton.addEventListener("click", async function () {
       if (!startupReady) { await startApplication(); return; }
+      if (journal?.recoveryFailures.size && !currentRecordingId && !unsavedAudio) { await retryRecordingRecovery(); return; }
       if (!journal || finalizing || recordingConfirmed || appState === "starting") return;
       try {
         await journal.retryFlush();
@@ -3370,8 +3373,8 @@
     ui.startButton.addEventListener("click", () => { if (requireReady()) startRecording(); });
     ui.stopButton.addEventListener("click", stopRecording);
     ui.chooseDeviceButton.addEventListener("click", function () {
-      if (!requireReady() || firmwareBusy) return;
-      if (recordingConfirmed || finalizing || appState === "starting" || appState === "stopping" || recordingReconnectPending) {
+      if (firmwareBusy || connectInProgress || !requireAppOwnership()) return;
+      if (recordingConfirmed || finalizing || openingCapture || currentRecordingId || unsavedAudio || appState === "starting" || appState === "stopping" || recordingReconnectPending) {
         toast("Stop and save this recording before switching devices.", "error");
         return;
       }
@@ -3633,6 +3636,15 @@
     return false;
   }
 
+  function requireAppOwnership() {
+    if (appLockHeld) return true;
+    const message = document.getElementById("startupMessage").textContent || "Opening the app. Try Connect again shortly.";
+    setReconnectCapability("Connection waiting for app ownership", message);
+    if (!ui.settingsDialog.open) openSettings();
+    if (!startupPending) startApplication();
+    return false;
+  }
+
   function toggleConnection() {
     if (firmwareBusy || ui.connectButton.disabled) return;
     if (!window.isSecureContext) {
@@ -3640,13 +3652,7 @@
       if (!ui.settingsDialog.open) openSettings();
       return;
     }
-    if (!appLockHeld) {
-      const message = document.getElementById("startupMessage").textContent || "Opening the app. Try Connect again shortly.";
-      setReconnectCapability("Connection waiting for app ownership", message);
-      if (!ui.settingsDialog.open) openSettings();
-      if (!startupPending) startApplication();
-      return;
-    }
+    if (!requireAppOwnership()) return;
     // Invoke the native chooser in this visible button's user gesture. Library
     // recovery only gates recording; the owned Bluetooth connection is independent.
     return isGattConnected() ? disconnectPendant() : connectPendant();
@@ -3666,12 +3672,38 @@
   function setStartup(state, message) {
     document.body.dataset.startup = state;
     const notice=document.getElementById("startupNotice");
-    notice.hidden=state==="ready";
+    notice.hidden=state==="ready"&&!message;
     document.getElementById("startupMessage").textContent=message || "";
     const retry=document.getElementById("startupRetry");
-    retry.hidden=state!=="error";
+    retry.hidden=state==="loading"||(state==="ready"&&!message);
     retry.disabled=state==="loading";
     ui.retrySaveButton.disabled=state==="loading";
+  }
+
+  function showRecoveryNotice() {
+    const count=journal.recoveryFailures.size;
+    setStartup("ready",count ? `${count} earlier recording${count===1?"":"s"} need${count===1?"s":""} recovery. Stored audio is kept.` : "");
+    for(const [id,error] of journal.recoveryFailures)log("Recording recovery deferred",{recordingId:id,error:friendlyError(error)});
+  }
+
+  function retryRecordingRecovery() {
+    if(recoveryPending)return recoveryPending;
+    if(firmwareBusy||currentRecordingId||openingCapture||recordingConfirmed||finalizing||unsavedAudio){
+      toast("Finish updating, or stop and save, before retrying recovery.","error");return;
+    }
+    // Only retry the failed historical IDs. A recording started while this
+    // finishes must never be sealed or have its running jobs reset by recovery.
+    const ids=[...journal.recoveryFailures.keys()];
+    if(!ids.length)return;
+    const retry=document.getElementById("startupRetry");retry.disabled=true;
+    recoveryPending=journal.recover(ids).then(async()=>{
+      await renderRecordings();showRecoveryNotice();
+      if(settings.autoProcess&&!firmwareBusy&&!currentRecordingId)processor?.resume();
+    }).catch(error=>{
+      log("Recording recovery failed",friendlyError(error));
+      setStartup("ready","Recovery failed: "+friendlyError(error)+". Stored audio is kept.");
+    }).finally(()=>{recoveryPending=null;retry.disabled=false;});
+    return recoveryPending;
   }
 
   function startApplication() {
@@ -3716,7 +3748,7 @@
     renderDateStrip();
 
     startupReady=true;
-    setStartup("ready");
+    showRecoveryNotice();
     log("Application started", {
       version: APP_VERSION,
       protocol: PROTOCOL_VERSION,
@@ -3744,7 +3776,7 @@
 
   bindSectionNavigation();
   loadSettings();
-  document.getElementById("startupRetry").addEventListener("click", startApplication);
+  document.getElementById("startupRetry").addEventListener("click", () => startupReady ? retryRecordingRecovery() : startApplication());
   registerServiceWorker();
   startApplication();
 })();

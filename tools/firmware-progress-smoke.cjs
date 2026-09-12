@@ -42,7 +42,7 @@ async function run(){
         clearReconnectTimer(){},friendlyError:error=>error.message,log(){},processor:{pause(){}},setInterval(){},acquireWakeLock:async()=>{},releaseWakeLock:async()=>{},
         delay:async ms=>{if(ms===1500)await gate('reboot')},disconnectGatt:()=>{connected=false},recoverRememberedConnection(){},
         connectPendant:async()=>{await gate('reconnect');connected=true;build=manifest.build}};
-      new Function(...Object.keys(context),'let firmwareBusy=false,firmwareUpdater,checkFirmwareRelease,firmwareControlsBound=false,startupReady=true; const setAppState=()=>document.body.dataset.state=firmwareBusy?"updating":"idle";'+source+';bindFirmwareUpdate();')(...Object.values(context));
+      new Function(...Object.keys(context),'let firmwareBusy=false,firmwareUpdater,checkFirmwareRelease,firmwareControlsBound=false,appLockHeld=true; const setAppState=()=>document.body.dataset.state=firmwareBusy?"updating":"idle";'+source+';bindFirmwareUpdate();')(...Object.values(context));
     },firmware);
     await page.locator('#settingsButton').click();await page.locator('#otaReleaseCheck').click();
     await page.waitForFunction(()=>document.querySelector('#otaStatus').textContent.includes('available'));

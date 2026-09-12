@@ -15,6 +15,10 @@
       request.onerror = () => reject(request.error);
     });
   }
+  function enqueueJob(store, job) {
+    const existing=store.index('dedupe').get(job.dedupe);
+    existing.onsuccess=()=>{if(!existing.result)store.add(job);};
+  }
   function wav(frames) {
     const bytes = frames.reduce((n, f) => n + f.byteLength, 0);
     const header = new ArrayBuffer(44), view = new DataView(header);
@@ -66,6 +70,7 @@
       this.onError = options.onError || (()=>{});
       this.buffer = [];this.timer=null;this.writing=Promise.resolve();
       this.failed=null;this.dbPromise=null;this.bufferedCount=0;
+      this.recoveryFailures=new Map();
     }
     async open() {
       if (this.dbPromise) return this.dbPromise;
@@ -112,7 +117,10 @@
         catch (e) {if(e.name!=='TypeError') {reject(e);return;}tx=db.transaction(names,'readwrite');}
         let result, failure;
         tx.oncomplete=()=>resolve(result);
-        tx.onerror=tx.onabort=()=>reject(failure || tx.error || new Error('Storage transaction aborted'));
+        // Request errors bubble before tx.error is populated. Keep the cause,
+        // and wait for rollback to finish before allowing a recovery attempt.
+        tx.onerror=event=>{failure ||= event.target?.error;};
+        tx.onabort=()=>reject(failure || tx.error || new Error('Storage transaction aborted'));
         try {action(Object.fromEntries(names.map(n=>[n,tx.objectStore(n)])),v=>{result=v;},tx);}
         catch(e){failure=e;tx.abort();}
       });
@@ -123,6 +131,19 @@
     async all(store,index,key) {
       const db=await this.open();let source=db.transaction(store).objectStore(store);
       if(index)source=source.index(index);return requestValue(source.getAll(key));
+    }
+    async verifyWritable() {
+      const id='storage-check:'+root.crypto.randomUUID();
+      // These rows are added and removed in one transaction: they are never
+      // visible to readers and do not change any saved recording or job.
+      await this.atomic(['recordings','packets','segments','jobs'],s=>{
+        s.recordings.add({id});s.recordings.delete(id);
+        s.packets.add({recordingId:id,sequence:0,chunk:0,payload:new Uint8Array(1)});
+        s.packets.delete([id,0,0]);
+        s.segments.add({recordingId:id,index:0,pcmBlob:new Blob([new Uint8Array(1)])});
+        s.segments.delete([id,0]);
+        s.jobs.add({id,recordingId:id,dedupe:id});s.jobs.delete(id);
+      });
     }
     async begin(name, association = null) {
       if(this.failed) throw this.failed;
@@ -178,7 +199,7 @@
           const r=req.result;if(!r || r.journal || r.queuedLegacy || !r.blob)return;
           s.recordings.put({...r,queuedLegacy:true});
           s.segments.put({recordingId,index:0,closed:true,legacy:true,frameCount:Math.max(1,Math.ceil((r.durationMs||50)/50))});
-          for(const kind of ['transcribe','summarize','consolidate'])s.jobs.add({recordingId,
+          for(const kind of ['transcribe','summarize','consolidate'])enqueueJob(s.jobs,{recordingId,
             segmentIndex:kind==='consolidate'?-1:0,kind,dedupe:recordingId+':legacy:'+kind,state:'pending',attempts:0,nextAt:0});
         };
       });
@@ -196,8 +217,7 @@
         const cursor=s.packets.index('segment').openCursor(this.keys.only([recordingId,index]));
         cursor.onsuccess=()=>{if(cursor.result){cursor.result.delete();cursor.result.continue();}};
         if(data.completeFrames)for(const kind of ['transcribe','summarize']){
-          const dedupe=recordingId+':'+index+':'+kind,check=s.jobs.index('dedupe').get(dedupe);
-          check.onsuccess=()=>{if(!check.result)s.jobs.add({recordingId,segmentIndex:index,kind,dedupe,state:'pending',attempts:0,nextAt:0});};
+          enqueueJob(s.jobs,{recordingId,segmentIndex:index,kind,dedupe:recordingId+':'+index+':'+kind,state:'pending',attempts:0,nextAt:0});
         }
       });
     }
@@ -231,21 +251,32 @@
           s.recordings.put({...previous,status:complete?'saved':'empty',stopReason:reason,
             durationMs:lastSequence>=0?(lastSequence+1)*50:0,sizeBytes:timelineFrames?44+timelineFrames*PCM_BYTES_PER_FRAME:0,
             stats:{completeFrames:complete,incompleteFrames:incomplete,packetsReceived:packets,missingFrames:missing},sealed:true,compacted:true});
-          if(!previous.sealed && complete)s.jobs.add({recordingId,kind:'consolidate',segmentIndex:-1,
+          if(!previous.sealed && complete)enqueueJob(s.jobs,{recordingId,kind:'consolidate',segmentIndex:-1,
             dedupe:recordingId+':consolidate',state:'pending',attempts:0,nextAt:0});
         };
       });
       return this.get('recordings',recordingId);
     }
-    async recover() {
-      const records=(await this.all('recordings')).filter(r=>r.journal&&!r.sealed).sort((a,b)=>a.createdAt.localeCompare(b.createdAt));
-      for(const r of records)await this.close(r.id,'recovered-after-interruption');
+    async recover(recordingIds) {
+      const selected=recordingIds ? new Set(recordingIds) : null;
+      const records=(await this.all('recordings')).filter(r=>r.journal&&!r.sealed&&(!selected||selected.has(r.id)))
+        .sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')));
+      if(!selected)this.recoveryFailures.clear();
+      const resolved=new Set(selected||[]);let recovered=0;
+      for(const r of records){
+        try{await this.close(r.id,'recovered-after-interruption');resolved.add(r.id);recovered++;}
+        catch(error){this.recoveryFailures.set(r.id,error);resolved.delete(r.id);}
+      }
       // A page/process crash can leave a durable job marked running even though no
-      // worker survives. Reset only at application recovery, before a processor starts.
-      for(const job of (await this.all('jobs')).filter(j=>j.state==='running')){
+      // worker survives. A later retry only touches the failed recordings, never
+      // an active capture or jobs belonging to a live processor.
+      for(const job of (await this.all('jobs')).filter(j=>j.state==='running'&&(!selected||selected.has(j.recordingId))&&
+        (!this.recoveryFailures.has(j.recordingId)||resolved.has(j.recordingId)))){
         await this.patchJob(job.id,{state:'pending',nextAt:0,lastError:'Recovered after interruption'});
       }
-      return records.length;
+      await this.verifyWritable();
+      for(const id of resolved)this.recoveryFailures.delete(id);
+      return recovered;
     }
     async blob(record) {
       if(record.blob)return record.blob;
@@ -275,7 +306,7 @@
       const jobs=await this.all('jobs');return jobs.sort((a,b)=>a.id-b.id).find(j=>j.state!=='done')||null;
     }
     async nextRunnable(now=Date.now(),excludedRecordings=new Set()) {
-      const jobs=(await this.all('jobs')).sort((a,b)=>a.id-b.id),blocked=new Set(),deferred=new Set();let wakeAt=Infinity;
+      const jobs=(await this.all('jobs')).sort((a,b)=>a.id-b.id),blocked=new Set(this.recoveryFailures.keys()),deferred=new Set();let wakeAt=Infinity;
       for(const job of jobs){
         if(job.state==='done')continue;
         if(job.state==='failed'){blocked.add(job.recordingId);continue;}

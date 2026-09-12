@@ -48,6 +48,7 @@ async function connectionTest({fail=false,reselect=false,auto=false,orphan=false
   c.document={body:{dataset:{}},visibilityState:'visible'};c.reconnectRequested=()=>true;c.reconnectPageHidden=false;
   c.disconnectGatt=(reason,d=c.bluetoothDevice)=>d?.gatt.disconnect();
   if(hidden){const connect=device.gatt.connect;device.gatt.connect=async function(){const result=await connect.call(this);c.document.visibilityState='hidden';return result;};}
+  c.renderDeviceSetup=()=>assert.equal(c.connectInProgress,false,'refresh device controls after connection setup finishes');
   vm.createContext(c);vm.runInContext(connectSource,c);await c.connectPendant({autoReconnect:auto,silent:auto,recoveryAttempt:auto});assert(!calls.includes('command 1'));assert.equal(c.connectInProgress,false);
   if(missing&&auto)return;if(fail){assert.equal(c.state,'disconnected');}else if(!cancel){assert.equal(c.state,'idle');assert(calls.indexOf('audio notify')<calls.indexOf('command 2'));}
 }
@@ -62,7 +63,7 @@ async function workerTests(){
   async function fetch(url,mode='navigate',method='GET'){let result;handlers.fetch({request:{url,mode,method},respondWith:p=>result=p});return result;}
   assert.equal(await fetch(scope+'?from=home'),'./index.html');
   let reply;handlers.message({data:{type:'GET_VERSION'},source:{postMessage:d=>reply=d}});
-  assert.equal(reply.type,'APP_VERSION');assert.equal(reply.version,'1.0.0');assert.equal(reply.release,'1.0.0');assert.equal(reply.revision,'1.0.0-audio2');assert.equal(reply.shellRevision,'1.0.0-shell62-connect');
+  assert.equal(reply.type,'APP_VERSION');assert.equal(reply.version,'1.0.0');assert.equal(reply.release,'1.0.0');assert.equal(reply.revision,'1.0.0-audio2');assert.equal(reply.shellRevision,'1.0.0-shell63-storage');
 }
 
 (async()=>{

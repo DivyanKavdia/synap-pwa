@@ -35,7 +35,7 @@ function setup(options={}){
       if(options.badDownload)throw Error('SHA-256 mismatch');
       if(options.disconnectDownload){connected=false;c.connectionEpoch++;}
       if(options.switchDownload)c.deviceAssociation={deviceId:OTHER};return{};}};
-  const c={firmwareControlsBound:false,startupReady:true,deviceAssociation:options.noIdentity?null:{deviceId:ID},console,Promise,Error,TextDecoder,AbortController,Date:{now:()=>clock},globalThis:{SynapOTA:{Client,MIGRATION_MESSAGE:'Install by USB once'},SynapReleases:releases},
+  const c={firmwareControlsBound:false,appLockHeld:true,deviceAssociation:options.noIdentity?null:{deviceId:ID},console,Promise,Error,TextDecoder,AbortController,Date:{now:()=>clock},globalThis:{SynapOTA:{Client,MIGRATION_MESSAGE:'Install by USB once'},SynapReleases:releases},
     document:{getElementById:node,visibilityState:'visible',addEventListener(t,f){events[t]=f;}},window:{confirm:message=>{assert(message.includes(ID));return !options.decline;}},
     ui:{chooseDeviceButton:node('choose'),runQueueButton:node('queue'),queueStatus:node('queueStatus'),settingsDialog:node('settingsDialog')},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     firmwareUpdater:null,firmwareBusy:false,checkFirmwareRelease:null,connectionEpoch:0,bluetoothDevice:{id:'device',gatt:{disconnect:()=>connected=false}},
@@ -70,6 +70,7 @@ function setup(options={}){
   for(const flag of ['recordingConfirmed','finalizing','currentRecordingId','openingCapture','unsavedAudio','connectInProgress']){
     t=setup();await t.click('otaReleaseCheck');t.c[flag]=true;t.node('settingsDialog').open=true;await t.click('otaLatest');assert(!t.calls.includes('flash'),flag);assert(t.node('settingsDialog').open,'blocked update keeps the explanation visible');
   }
+  t=setup();t.c.appLockHeld=false;await t.click('otaReleaseCheck');await t.click('otaLatest');assert(!t.calls.includes('flash'),'firmware requires this tab to own the pendant');assert.match(t.node('otaStatus').textContent,/Close other Synap tabs/);
   t=setup({oldBuild:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert.match(t.node('otaStatus').textContent,/not confirmed/);assert.equal(t.storage.size,1);assert(t.storage.has('synap-ota-pending-device:SYNAP-AABBCCDDEEFF'));
   t=setup({changedHandle:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert.match(t.node('otaStatus').textContent,/Update complete/);
   t=setup({switchedPendant:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert.match(t.node('otaStatus').textContent,/original pendant device ID/);assert.equal(t.storage.size,1);

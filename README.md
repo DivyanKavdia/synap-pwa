@@ -54,6 +54,8 @@ Audio is captured at 16 kHz, mono. Firmware transports independent IMA ADPCM fra
 
 Incoming packets are journaled to IndexedDB before a recording is sealed. The PWA batches packet writes, preserves sequence gaps as silence, compacts processing windows, recovers unsealed recordings, rolls long captures into linked parts, and supports playback plus WAV export/share.
 
+Startup recovery reuses existing processing jobs and preserves completed work. A recording that cannot recover is kept with a Retry notice while other recordings remain usable. Recording starts only after a storage write check succeeds; Connect, Change pendant and firmware updates use connection ownership independently of recording storage. Recovery retries target only the affected historical recordings.
+
 Persistent browser storage is requested when available. Clearing site data can remove local recordings that have not been preserved elsewhere.
 
 ## Device identity and reconnect

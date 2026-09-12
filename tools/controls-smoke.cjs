@@ -24,12 +24,15 @@ const waitState=(page,state)=>page.waitForFunction(state=>document.body.dataset.
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
   const browser=await chromium.launch({headless:true,executablePath:process.env.SYNAP_CHROMIUM_PATH,args:['--no-sandbox']});
   try{
-    async function setup(query='',fault){
+    async function setup(query='',fault,seed){
       const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,serviceWorkers:'block'});
       let releaseGate=null,releaseWait=null;
       await context.route('**/*',async route=>{
         const url=new URL(route.request().url());
-        if(url.origin===origin)return route.continue();
+        if(url.origin===origin){
+          if(url.pathname==='/__qa_storage__')return route.fulfill({contentType:'text/html',body:'<!doctype html><title>Storage fixture</title>'});
+          return route.continue();
+        }
         if(url.href.startsWith(releaseBase)){
           if(url.pathname.endsWith('/latest.json')&&releaseWait)await releaseWait;
           const r=releases.find(r=>url.href.startsWith(r.manifest.url));
@@ -45,8 +48,112 @@ const waitState=(page,state)=>page.waitForFunction(state=>document.body.dataset.
       page.on('pageerror',error=>errors.push(error.message));
       // Embedded browsers may suppress native confirm. OTA must still be usable.
       await page.addInitScript(()=>{window.confirm=()=>false});
+      if(seed){
+        await page.goto(origin+'/__qa_storage__');
+        await page.addScriptTag({path:path.join(root,'audio-store.js')});
+        await page.evaluate(seed);
+      }
       await page.goto(origin+query);
       return{context,page,errors,holdReleases(){releaseWait=new Promise(resolve=>{releaseGate=resolve})},release(){releaseWait=null;releaseGate?.()}};
+    }
+
+    {
+      const t=await setup('/',null,async()=>{
+        const store=new DKAudioStore(),createdAt=new Date().toISOString();
+        const pcm=new Uint8Array(3200);for(let i=0;i<pcm.length;i++)pcm[i]=i%251;
+        await store.atomic(['recordings','segments','jobs'],s=>{
+          s.recordings.put({id:'qa-old',name:'Existing conversation',createdAt,journal:true,status:'complete',notes:'Keep my note',transcript:'Keep my transcript',summary:'Keep my summary'});
+          s.segments.put({recordingId:'qa-old',index:0,closed:true,compacted:true,pcmBlob:new Blob([pcm]),frameCount:2,timelineFrameCount:2,packets:8,firstSequence:0,lastSequence:1});
+          for(const kind of ['transcribe','summarize','consolidate'])s.jobs.add({recordingId:'qa-old',kind,segmentIndex:kind==='consolidate'?-1:0,dedupe:'qa-old:'+(kind==='consolidate'?'': '0:')+kind,state:'done',attempts:1,finishedAt:123});
+        });
+        (await store.open()).close();
+      }),{page}=t;
+      await page.waitForFunction(()=>document.body.dataset.startup!=='loading');
+      assert.equal(await page.evaluate(()=>document.body.dataset.startup),'ready',await page.locator('#startupMessage').textContent());
+      const saved=await page.evaluate(async()=>{
+        const store=new DKAudioStore(),record=await store.get('recordings','qa-old');
+        return{record,jobs:await store.all('jobs'),audio:Array.from(new Uint8Array(await (await store.blob(record)).arrayBuffer()).slice(44)),recoveredAgain:await store.recover()};
+      });
+      assert.equal(saved.record.sealed,true);assert.equal(saved.record.notes,'Keep my note');
+      assert.equal(saved.record.transcript,'Keep my transcript');assert.equal(saved.record.summary,'Keep my summary');
+      assert.equal(saved.jobs.length,3);assert(saved.jobs.every(job=>job.state==='done'&&job.finishedAt===123));
+      assert.deepEqual(saved.audio,Array.from({length:3200},(_,i)=>i%251));assert.equal(saved.recoveredAgain,0);
+      const legacy=await page.evaluate(async()=>{
+        const store=new DKAudioStore({name:'qa-legacy-dedupe'}),blob=new Blob([new Uint8Array([1,2,3])]);
+        await store.atomic(['recordings','jobs'],s=>{
+          s.recordings.add({id:'legacy',blob,notes:'Original note'});
+          for(const kind of ['transcribe','summarize','consolidate'])s.jobs.add({recordingId:'legacy',kind,dedupe:'legacy:legacy:'+kind,state:'done'});
+        });
+        await store.enqueueLegacy('legacy');await store.enqueueLegacy('legacy');
+        const record=await store.get('recordings','legacy');
+        return{record,jobs:await store.all('jobs'),audio:Array.from(new Uint8Array(await record.blob.arrayBuffer()))};
+      });
+      assert.equal(legacy.record.notes,'Original note');assert(legacy.record.queuedLegacy);
+      assert.equal(legacy.jobs.length,3);assert(legacy.jobs.every(job=>job.state==='done'));assert.deepEqual(legacy.audio,[1,2,3]);
+      await page.locator('#headerCaptureToggle').tap();await waitState(page,'recording');
+      await page.locator('#headerCaptureToggle').tap();await waitState(page,'idle');
+      assert.deepEqual(t.errors,[]);await t.context.close();console.log('PASS populated journal recovery preserves audio, notes, transcripts and completed jobs; recording works');
+    }
+
+    {
+      const t=await setup('/',()=>{
+        window.qaRejectOldCompaction=true;
+        const put=IDBObjectStore.prototype.put;
+        IDBObjectStore.prototype.put=function(value,...args){
+          const request=put.call(this,value,...args);
+          if(this.name==='segments'&&value.recordingId==='qa-blocked'&&value.pcmBlob&&qaRejectOldCompaction)
+            request.addEventListener('success',()=>this.transaction.abort());
+          return request;
+        };
+      },async()=>{
+        const store=new DKAudioStore();
+        await store.atomic(['recordings','packets','segments','jobs'],s=>{
+          for(const id of ['qa-blocked','qa-good']){
+            s.recordings.put({id,journal:true,status:'recording',name:id,notes:'Preserve '+id});
+            s.segments.put({recordingId:id,index:0,closed:false});
+            for(let sequence=0;sequence<2;sequence++)for(let chunk=0;chunk<4;chunk++)
+              s.packets.put({recordingId:id,sequence,chunk,total:4,segmentIndex:0,payload:new Uint8Array(400).fill(42)});
+            s.jobs.add({recordingId:id,kind:'consolidate',segmentIndex:-1,dedupe:id+':consolidate',state:'running'});
+          }
+        });
+        (await store.open()).close();
+      }),{page}=t;
+      await waitReady(page);
+      assert.match(await page.locator('#startupNotice').textContent(),/1 earlier recording needs recovery/);
+      const before=await page.evaluate(async()=>{
+        const store=__synapProcessingInstance.store;
+        return{bad:await store.get('recordings','qa-blocked'),good:await store.get('recordings','qa-good'),packets:(await store.all('packets','recording','qa-blocked')).length,
+          segment:await store.get('segments',['qa-blocked',0]),next:(await store.nextRunnable()).job};
+      });
+      assert(!before.bad.sealed);assert(before.good.sealed);assert.equal(before.packets,8);
+      assert(!before.segment.pcmBlob,'an aborted compaction must keep its raw packets');
+      assert.equal(before.next.recordingId,'qa-good','processing excludes only the deferred recording');
+      const rollback=await page.evaluate(async()=>{
+        const store=new DKAudioStore(),job=(await store.all('jobs'))[0];let name;
+        try{await store.atomic(['recordings','jobs'],s=>{s.recordings.add({id:'qa-rolled-back'});s.jobs.add(job);});}catch(error){name=error.name;}
+        return{name,row:await store.get('recordings','qa-rolled-back')};
+      });
+      assert.equal(rollback.name,'ConstraintError','the original request error must reach the caller');
+      assert(!rollback.row,'a rejected transaction has finished rolling back');
+      await page.locator('#headerCaptureToggle').tap();await waitState(page,'recording');
+      await page.locator('#startupRetry').tap();assert.equal(await page.evaluate(()=>document.body.dataset.state),'recording');
+      await page.locator('#headerCaptureToggle').tap();await waitState(page,'idle');
+      const liveId=await page.evaluate(async()=>{
+        const store=new DKAudioStore(),id=await store.begin('New take outside recovery');
+        await store.atomic(['jobs'],s=>s.jobs.add({recordingId:id,kind:'transcribe',dedupe:id+':0:transcribe',state:'running'}));
+        qaRejectOldCompaction=false;return id;
+      });
+      await page.locator('#startupRetry').tap();await page.waitForFunction(()=>document.getElementById('startupNotice').hidden);
+      const after=await page.evaluate(async liveId=>{
+        const store=new DKAudioStore(),record=await store.get('recordings','qa-blocked');
+        return{record,packets:(await store.all('packets','recording','qa-blocked')).length,
+          audio:Array.from(new Uint8Array(await (await store.blob(record)).arrayBuffer()).slice(44)),
+          live:await store.get('recordings',liveId),liveJobs:await store.all('jobs','recording',liveId),jobs:await store.all('jobs','recording','qa-blocked')};
+      },liveId);
+      assert(after.record.sealed);assert.equal(after.record.notes,'Preserve qa-blocked');assert.equal(after.packets,0);
+      assert.deepEqual(after.audio,new Array(3200).fill(42));assert.equal(after.jobs.length,3);
+      assert(!after.live.sealed);assert.equal(after.liveJobs[0].state,'running','Retry cannot reset another recording’s live work');
+      assert.deepEqual(t.errors,[]);await t.context.close();console.log('PASS aborted recovery preserves raw audio, isolates failed work, permits new recording and retries only historical IDs');
     }
 
     {
@@ -154,7 +261,7 @@ const waitState=(page,state)=>page.waitForFunction(state=>document.body.dataset.
     }
 
     {
-      const t=await setup('/',()=>{
+      const t=await setup('/?ota',()=>{
         const open=IDBFactory.prototype.open;window.qaStorageUnavailable=true;
         IDBFactory.prototype.open=function(...args){if(args[0]==='dk-pendant-recordings'&&qaStorageUnavailable)throw new DOMException('Temporary storage failure','UnknownError');return open.apply(this,args)};
       }),{page}=t;
@@ -162,13 +269,43 @@ const waitState=(page,state)=>page.waitForFunction(state=>document.body.dataset.
       assert.match(await page.locator('#startupNotice').textContent(),/Temporary storage failure/);
       assert(await page.locator('#headerCaptureToggle').isDisabled());
       await page.locator('#settingsButton').tap();assert(await page.locator('#settingsDialog').evaluate(node=>node.open));
+      await page.locator('#connectButton').tap();await waitState(page,'idle');
+      await page.locator('#chooseDeviceButton').tap();
+      await page.waitForFunction(()=>bleFixture.pickers===2&&document.body.dataset.state==='idle');
+      await page.locator('#settingsButton').tap();
+      await page.locator('#otaReleaseCheck').tap();await page.waitForFunction(()=>!document.getElementById('otaLatest').hidden);
+      await page.locator('#otaLatest').tap();
+      await page.waitForFunction(()=>document.getElementById('otaStatus').textContent==='Update complete · 1201');await waitState(page,'idle');
+      assert.equal(await page.evaluate(()=>document.body.dataset.startup),'error','OTA does not pretend failed storage is writable');
+      assert.equal(await page.evaluate(()=>bleFixture.starts),0);assert(await page.locator('#headerCaptureToggle').isDisabled());
       await page.locator('#closeSettingsButton').tap();
       await page.evaluate(()=>{qaStorageUnavailable=false});
       await page.locator('#startupRetry').tap();await waitReady(page);
       await page.locator('#headerCaptureToggle').tap();await waitState(page,'recording');
       await page.locator('#headerCaptureToggle').tap();await waitState(page,'idle');
       assert.equal(await page.evaluate(()=>bleFixture.starts),1,'retry binds record only once');
-      assert.deepEqual(t.errors,[]);await t.context.close();console.log('PASS storage startup failure is visible, Settings works and Retry restores recording');
+      assert.deepEqual(t.errors,[]);await t.context.close();console.log('PASS Change pendant and firmware install work with storage unavailable; Retry restores safe recording');
+    }
+
+    {
+      const t=await setup('/',()=>{
+        window.qaRejectWrites=true;
+        const add=IDBObjectStore.prototype.add;
+        IDBObjectStore.prototype.add=function(...args){
+          const request=add.apply(this,args);
+          if(this.name==='packets'&&qaRejectWrites)request.addEventListener('success',()=>this.transaction.abort());
+          return request;
+        };
+      }),{page}=t;
+      await page.waitForFunction(()=>document.body.dataset.startup==='error');
+      assert.match(await page.locator('#startupMessage').textContent(),/Storage transaction aborted|AbortError/);
+      assert(await page.locator('#headerCaptureToggle').isDisabled(),'successful reads alone cannot enable recording');
+      assert.deepEqual(await page.evaluate(async()=>{const store=new DKAudioStore();return Promise.all(['recordings','packets','segments','jobs'].map(async name=>(await store.all(name)).length));}),[0,0,0,0]);
+      await page.evaluate(()=>{qaRejectWrites=false});await page.locator('#startupRetry').tap();await waitReady(page);
+      await page.locator('#headerCaptureToggle').tap();await waitState(page,'recording');
+      await page.locator('#headerCaptureToggle').tap();await waitState(page,'idle');
+      assert.equal(await page.evaluate(()=>bleFixture.starts),1);assert.deepEqual(t.errors,[]);await t.context.close();
+      console.log('PASS storage write check prevents unsafe capture, leaves no test rows and recovers without clearing data');
     }
 
     {
@@ -185,6 +322,9 @@ const waitState=(page,state)=>page.waitForFunction(state=>document.body.dataset.
       assert.match(await other.locator('#startupNotice').textContent(),/Another pendant tab/);
       await other.locator('#startupRetry').tap();await other.waitForFunction(()=>document.body.dataset.startup==='error');
       assert(await other.locator('#headerCaptureToggle').isDisabled(),'Retry never steals a live page lock');
+      await other.locator('#settingsButton').tap();await other.locator('#chooseDeviceButton').tap();
+      assert.equal(await other.evaluate(()=>bleFixture.pickers),0,'Change cannot bypass another page’s connection ownership');
+      await other.locator('#closeSettingsButton').tap();
       await t.page.close();await other.locator('#startupRetry').tap();await waitReady(other);
       await other.locator('#headerCaptureToggle').tap();await waitState(other,'recording');
       await other.locator('#headerCaptureToggle').tap();await waitState(other,'idle');

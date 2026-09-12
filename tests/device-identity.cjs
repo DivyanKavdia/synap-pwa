@@ -63,6 +63,7 @@ async function connect({id=A, local=storage(), stale=false, mismatch=false}={}) 
     handleAudioNotification(){},handleStatusNotification(){},delay:async()=>{},writeCommand:async()=>{},readControlStatus:async()=>{},
     reconnectAttempts:0,localStorage:local,friendlyError:e=>e.message,scheduleAutoReconnect(){}};
   if(mismatch)new devices.Registry(local).associate(B,{id:device.id});
+  c.renderDeviceSetup=()=>assert.equal(c.connectInProgress,false,'refresh device controls after connection setup finishes');
   vm.createContext(c);vm.runInContext(rememberSource+connectSource,c);await c.connectPendant();return c;
 }
 test('actual connect handler enrolls only an acknowledged connection; missing or failed identity is never marked complete', async () => {
