@@ -281,6 +281,18 @@ export async function recentConversations(
   return snapshot.docs.map((doc) => normalizeConversation(doc.data()));
 }
 
+export async function conversationsForPerson(uid:string,personId:string):Promise<ConversationDoc[]> {
+  try {
+    const snapshot=await paths.conversations(uid).where('personIds','array-contains',personId).orderBy('startedAt','desc').limit(12).get();
+    return snapshot.docs.map(doc=>normalizeConversation(doc.data()));
+  }catch(error){
+    if((error as {code?:number}).code!==9)throw error;
+    // A deployment without the optional person/recency index can still prepare
+    // from recent history without delaying the UI or changing infrastructure.
+    return (await recentConversations(uid,300)).filter(c=>c.personIds.includes(personId)).slice(0,12);
+  }
+}
+
 function normalizeConversation(data: FirebaseFirestore.DocumentData): ConversationDoc {
   const embedding = data.embedding;
   return {

@@ -362,6 +362,9 @@ async function understand(
   const confirmedSpeakers = recording.sealedSpeakerNames ? readSpeakerNames(uid, recording, dek) : {};
   const speakerNames = recording.sealedSpeakerNames ? confirmedSpeakers : identified;
   const memory = await extractMemory({
+    startedAt: recording.startedAt,
+    day: recording.day,
+    timezone: recording.timezone,
     transcript: applySpeakerNames(transcript, speakerNames),
     confirmedSpeakers,
     identifiedSpeakers:recording.sealedSpeakerNames ? {} : identified,
@@ -441,6 +444,10 @@ async function index(
           decisions: conversation.decisions,
           actionItems: conversation.action_items,
           followUps: conversation.follow_ups,
+          participants: conversation.participants || [],
+          mentionedPeople: conversation.mentioned_people || [],
+          unresolvedQuestions: conversation.unresolved_questions || [],
+          chapters: conversation.chapters || [],
           people: conversation.people.map((person) => person.name),
         },
         binding(uid, `conversation/${conversationId}`, 'content'),
@@ -535,12 +542,14 @@ async function upsertFollowUps(
   const items = [
     ...conversation.action_items.map((action) => ({
       text: action.task,
+      kind: action.kind || "commitment",
       owner: action.owner,
       dueDate: action.due_date,
       startMs: action.start_ms,
     })),
     ...conversation.follow_ups.map((followUp) => ({
       text: followUp.text,
+      kind: "follow-up",
       owner: followUp.owner,
       dueDate: null as string | null,
       startMs: followUp.start_ms,
@@ -554,7 +563,7 @@ async function upsertFollowUps(
       followUpId,
       sealedTask: sealJson(
         dek,
-        { task: item.text, owner: item.owner },
+        { task: item.text, owner: item.owner, kind: item.kind },
         binding(uid, `followUp/${followUpId}`, 'task'),
       ),
       ownerType: ownerIsSelf ? 'self' : 'other',

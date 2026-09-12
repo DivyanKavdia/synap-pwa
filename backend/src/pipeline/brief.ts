@@ -98,6 +98,7 @@ export function fallbackBrief(
     commitments: [],
     waiting_on: [],
     highlights: [],
+    unresolved: [],
   };
   const people = new Set<string>();
   const topics = new Set<string>();
@@ -107,6 +108,9 @@ export function fallbackBrief(
     memory.topics.forEach((topic) => topics.add(topic));
 
     for (const conversation of memory.conversations) {
+      for (const question of conversation.unresolved_questions || []) {
+        if (!brief.unresolved.includes(question.text)) brief.unresolved.push(question.text);
+      }
       for (const decision of conversation.decisions) {
         brief.decisions.push({ text: decision.text, recording_id, start_ms: decision.start_ms });
       }

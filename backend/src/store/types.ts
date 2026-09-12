@@ -196,13 +196,21 @@ export interface MemoryPerson {
 
 export interface MemoryAction {
   task: string;
+  kind?: 'commitment' | 'reminder';
+  evidence?: string;
   owner: string;
   due_date: string | null;
   start_ms: number;
   end_ms: number;
 }
 
+export interface MemoryChapter { title: string; summary: string; start_ms: number; end_ms: number; }
+
 export interface MemoryConversation {
+  participants?: string[];
+  mentioned_people?: string[];
+  chapters?: MemoryChapter[];
+  unresolved_questions?: { text: string; start_ms: number; end_ms: number }[];
   title: string;
   summary: string;
   start_ms: number;

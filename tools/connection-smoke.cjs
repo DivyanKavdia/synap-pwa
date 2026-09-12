@@ -16,6 +16,9 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  await context.addInitScript(()=>{
    if(!localStorage.getItem('dk-pendant-auto-reconnect'))localStorage.setItem('dk-pendant-auto-reconnect','off');
    localStorage.setItem('dk-pendant-settings',JSON.stringify({autoProcess:false,wakeLock:false}));
+   const buffered=location.search.includes('buffered');
+   let armed=false,waiting=false,finishing=false,owner=[],buffer=[],sendTimer=null;
+   const recoveryStatus=()=>{const v=new DataView(new ArrayBuffer(16));v.setUint8(0,0x52);v.setUint8(1,1);v.setUint8(2,1+(armed?2:0)+(waiting?4:0)+(finishing?8:0));v.setUint16(4,600,true);let hash=2166136261;for(const byte of owner)hash=Math.imul(hash^byte,16777619)>>>0;v.setUint32(12,hash,true);return v};
    let state=1,sequence=0,audioTimer=null,inFlight=0,maxInFlight=0,present=true,watching=false;
    let visibility='visible',hideOnConnect=false,appDisconnects=0,statusReads=0,holdRead=false,releaseRead=null,readError=null;
    Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>visibility});
@@ -28,21 +31,41 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
    class Characteristic extends EventTarget{
      constructor(id){super();this.id=id;this.properties={write:true,read:true,notify:true};this.value=null}
      startNotifications(){return operation(()=>this)}
-     readValue(){return operation(async()=>{if(this.id===uuid('47')){statusReads++;if(holdRead){holdRead=false;await new Promise(resolve=>{releaseRead=resolve})}return status()}return this.id===uuid('4c')?new DataView(new TextEncoder().encode('SYNAP-ABCDEF123456').buffer):new DataView(new Uint8Array([0xe2,1,1,0,0x82,4]).buffer)})}
-     writeValueWithResponse(value){return operation(()=>{if(value[0]===1){increment('qa-starts');state=2;sequence=0;clearInterval(audioTimer);audioTimer=setInterval(frame,50)}if(value[0]===0){state=1;clearInterval(audioTimer)}this.value=status();this.dispatchEvent(new Event('characteristicvaluechanged'))})}
+     readValue(){return operation(async()=>{if(this.id===uuid('4f'))return recoveryStatus();if(this.id===uuid('47')){statusReads++;if(holdRead){holdRead=false;await new Promise(resolve=>{releaseRead=resolve})}return status()}return this.id===uuid('4c')?new DataView(new TextEncoder().encode('SYNAP-ABCDEF123456').buffer):new DataView(new Uint8Array([0xe2,1,1,0,0x82,4]).buffer)})}
+     writeValueWithResponse(value){return operation(()=>{
+       if(this.id===uuid('4f')){
+         if(value[0]===1&&state===1){armed=true;owner=[...value.slice(1,9)];}
+         if(value[0]===2&&waiting&&owner.every((x,i)=>x===value[i+1])){
+           const last=value[9]+value[10]*256,index=buffer.indexOf(last);buffer=buffer.slice(index<0?0:index+1);waiting=false;startSender();
+         }return;
+       }
+       if(buffered && value[0]===0 && state===2){
+         clearInterval(audioTimer);finishing=true;
+         const recovery=chars.get(uuid('4f'));recovery.value=recoveryStatus();recovery.dispatchEvent(new Event('characteristicvaluechanged'));
+         startSender();return;
+       }
+       if(value[0]===1){increment('qa-starts');state=2;sequence=0;clearInterval(audioTimer);audioTimer=setInterval(frame,50)}if(value[0]===0){state=1;clearInterval(audioTimer)}this.value=status();this.dispatchEvent(new Event('characteristicvaluechanged'))})}
    }
    const audio=new Characteristic(uuid('46')),control=new Characteristic(uuid('47'));
    const chars=new Map([[uuid('46'),audio],[uuid('47'),control],[uuid('4c'),new Characteristic(uuid('4c'))],[uuid('4e'),new Characteristic(uuid('4e'))]]);
+   if(buffered)chars.set(uuid('4f'),new Characteristic(uuid('4f')));
    const service={getCharacteristic:id=>operation(()=>{if(!chars.has(id))throw new DOMException('No optional characteristic','NotFoundError');return chars.get(id)})};
    const device=new EventTarget();device.id='fixture-device';device.name='synap';
-   function loseLink(){const wasConnected=device.gatt.connected;device.gatt.connected=false;clearInterval(audioTimer);if(wasConnected)device.dispatchEvent(new Event('gattserverdisconnected'))}
-   device.gatt={connected:sessionStorage.getItem('qa-retain-link')==='1',connect(){increment('qa-connects');return operation(()=>{if(!present)throw new DOMException('Pendant is asleep','NetworkError');this.connected=true;state=1;if(hideOnConnect){hideOnConnect=false;setVisibility('hidden')}return this})},getPrimaryService(){return operation(()=>service)},disconnect(){appDisconnects++;loseLink()}};
+   function loseLink(){const wasConnected=device.gatt.connected;device.gatt.connected=false;if(buffered&&armed&&state===2){waiting=true;clearInterval(sendTimer)}else clearInterval(audioTimer);if(wasConnected)device.dispatchEvent(new Event('gattserverdisconnected'))}
+   device.gatt={connected:sessionStorage.getItem('qa-retain-link')==='1',connect(){increment('qa-connects');return operation(()=>{if(!present)throw new DOMException('Pendant is asleep','NetworkError');this.connected=true;if(!waiting)state=1;if(hideOnConnect){hideOnConnect=false;setVisibility('hidden')}return this})},getPrimaryService(){return operation(()=>service)},disconnect(){appDisconnects++;loseLink()}};
    device.watchAdvertisements=async({signal})=>{watching=true;signal.addEventListener('abort',()=>{watching=false},{once:true})};
-   function frame(){for(let chunk=0;chunk<4;chunk++){const v=new DataView(new ArrayBuffer(408));v.setUint8(0,0xa5);v.setUint8(1,2);v.setUint16(2,sequence,true);v.setUint8(4,chunk);v.setUint8(5,4);v.setUint16(6,400,true);audio.value=v;audio.dispatchEvent(new Event('characteristicvaluechanged'))}sequence=(sequence+1)&65535}
+   function emit(seq){for(let chunk=0;chunk<4;chunk++){const v=new DataView(new ArrayBuffer(408));v.setUint8(0,0xa5);v.setUint8(1,2);v.setUint16(2,seq,true);v.setUint8(4,chunk);v.setUint8(5,4);v.setUint16(6,400,true);for(let i=8;i<408;i+=2)v.setInt16(i,(seq%20000)+1,true);audio.value=v;audio.dispatchEvent(new Event('characteristicvaluechanged'))}}
+   function startSender(){if(sendTimer)clearInterval(sendTimer);sendTimer=setInterval(()=>{
+     if(!device.gatt.connected||waiting)return;
+     if(buffer.length)emit(buffer.shift());
+     else if(finishing){clearInterval(sendTimer);state=1;finishing=false;control.value=status();control.dispatchEvent(new Event('characteristicvaluechanged'))}
+   },15)}
+   function frame(){if(buffered){buffer.push(sequence);if(buffer.length>600)buffer.shift();if(device.gatt.connected&&!waiting&&!sendTimer)startSender()}else emit(sequence);sequence=(sequence+1)&65535}
    const bluetooth=new EventTarget();bluetooth.requestDevice=async()=>{increment('qa-pickers');sessionStorage.setItem('qa-permitted','1');return device};
    if(!location.search.includes('noRestore'))bluetooth.getDevices=async()=>sessionStorage.getItem('qa-permitted')?[device]:[];
    Object.defineProperty(navigator,'bluetooth',{configurable:true,value:bluetooth});
    window.bleFixture={disconnect:loseLink,get maximum(){return maxInFlight},get watching(){return watching},
+     get captured(){return sequence},get pendingFrames(){return buffer.length},get recoveryWaiting(){return waiting},get armed(){return armed},
      get appDisconnects(){return appDisconnects},get statusReads(){return statusReads},get readError(){return readError},get readPending(){return Boolean(releaseRead)},
      hideOnNextConnect(){hideOnConnect=true},show:()=>setVisibility('visible'),hide:()=>setVisibility('hidden'),
      delayStatusRead(){holdRead=true;readError=null;SynapDevices.connection.queue(()=>control.readValue(),'Delayed diagnostic read').catch(error=>{readError=error.name})},
@@ -54,6 +77,24 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
    };
  });
  const page=await context.newPage(),errors=[];page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
+ if(process.env.SYNAP_RECOVERY_FIXTURE==='1'){
+   await page.goto(origin+'/?buffered');await page.waitForFunction(()=>document.querySelector('#diagnosticsLog')?.textContent.includes('Application started'));
+   await page.locator('#headerPendantStatus').click();await page.waitForFunction(()=>document.body.dataset.state==='idle'&&bleFixture.armed);
+   await page.evaluate(()=>localStorage.setItem('dk-pendant-auto-reconnect','on'));
+   await page.locator('#headerCaptureToggle').click();await page.waitForFunction(()=>bleFixture.captured>=12);
+   await page.evaluate(()=>{bleFixture.hide();bleFixture.disconnect()});await page.waitForTimeout(1200);
+   const offline=await page.evaluate(()=>bleFixture.captured);assert(offline>=30,'capture continues while disconnected');
+   await page.evaluate(()=>bleFixture.show());await page.waitForFunction(()=>document.body.dataset.state==='recording'&&!bleFixture.recoveryWaiting);
+   // Stop before replay catches up; received frames must still be drained and sealed.
+   await page.locator('#headerCaptureToggle').click();await page.waitForFunction(()=>document.body.dataset.state==='idle');
+   const captured=await page.evaluate(()=>bleFixture.captured);
+   const stored=await page.evaluate(async()=>{const store=new DKAudioStore();return (await store.all('recordings'))[0]});
+   assert.equal(stored.stats.completeFrames,captured,'every captured offline and live frame is saved');
+   assert.equal(stored.stats.missingFrames,0);assert.equal(stored.durationMs,captured*50);
+   assert.equal(await page.evaluate(()=>bleFixture.starts),1,'recovery never starts a second firmware recording');
+   assert.deepEqual(errors,[]);console.log('PASS buffered recovery: offline capture, same timeline, no START and stop drains queued audio');
+   await context.close();return;
+ }
  await page.clock.install({time:new Date('2026-09-11T10:00:00Z')});await page.goto(origin);
  await page.waitForFunction(()=>window.SynapCompactLayout&&document.querySelector('#diagnosticsLog')?.textContent.includes('Application started'));await page.locator('#headerPendantStatus').click();
  await page.waitForFunction(()=>document.body.dataset.state==='idle');

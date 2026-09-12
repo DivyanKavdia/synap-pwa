@@ -58,10 +58,15 @@ async function run(){
   await page.waitForFunction(()=>document.getElementById('dayBriefText').textContent.includes('Divyan'));
   assert.equal(await page.evaluate(()=>qaSpeakers.remembers),0,'saving names alone never enrolls a voice');
   page.once('dialog',dialog=>dialog.dismiss());await page.getByRole('button',{name:'Remember voice for S1',exact:true}).click();
+  await page.waitForFunction(()=>!document.querySelector('.speaker-name-fields').disabled);
   assert.equal(await page.evaluate(()=>qaSpeakers.remembers),0,'declining permission never stores a voice');
   page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'Remember voice for S1',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('.speaker-names-status').textContent.includes('Voice remembered.'));
   assert.equal(await page.evaluate(()=>qaSpeakers.remembers),1);assert.equal(await page.evaluate(()=>qaSpeakers.lastRemember.consent),true);
+  page.once('dialog',async dialog=>{assert(dialog.message().startsWith('Add this confirmed sample'));await dialog.accept()});
+  await card.getByRole('button',{name:'Remember voice for S1',exact:true}).click();
+  await page.waitForFunction(()=>qaSpeakers.remembers===2);
+  assert.equal(await page.evaluate(()=>qaSpeakers.lastRemember.existing_id),'a'.repeat(40));
   await card.locator('.known-speakers > summary').click();await page.getByRole('button',{name:'Remove saved voice for Divyan',exact:true}).waitFor();
   await page.locator('.speaker-names').screenshot({path:path.join(out,`speakers-${mode}-${width}.png`)});
   await page.reload();const reloaded=await open();assert.equal(await page.getByLabel('Name for S1',{exact:true}).inputValue(),'Divyan');

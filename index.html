@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="compact.css?v=1.0.0-moments1" data-synap-compact="refresh1">
   <link rel="stylesheet" href="settings-icon-fix.css?v=1.0.0-ui-fix1">
   <script src="theme.js?v=1.0.0-cleanup1"></script>
-</head>
+<link rel="stylesheet" href="meeting-tools.css?v=1.0.0-meetings1"></head>
 <body data-state="disconnected" class="synap-refresh">
   <a class="skip-link" href="#today">Skip to your day</a>
   <svg class="icon-defs" aria-hidden="true"><defs>
@@ -65,7 +65,7 @@
 <dialog id="settingsDialog" class="modal" aria-labelledby="settingsTitle"><form id="settingsForm" class="settings-form"><div class="modal-header"><button id="closeSettingsButton" type="button" aria-label="Back to synap"><svg aria-hidden="true"><use href="#i-chevron-left"/></svg></button><h2 id="settingsTitle">Settings</h2></div>
 <section class="settings-card pendant-settings-card">
   <div class="pendant-settings-top"><div class="pendant-settings-copy"><p class="settings-device-label">Pendant</p><h3 id="setupDeviceId">synap-—</h3><p class="pendant-meta"><span id="setupDeviceStatus">Not connected</span></p></div></div>
-  <div class="pendant-connection"><button id="connectButton" class="device-summary" type="button"><span class="device-summary-copy"><strong>synap Pendant</strong><span id="connectionBadge" class="status-badge status-offline"><span id="connectionText">Not connected</span></span></span><span id="connectButtonLabel">Connect</span></button><p id="reconnectStatus" class="reconnect-status" role="status" hidden></p></div><div class="pendant-actions"><button id="chooseDeviceButton" class="button button-secondary" type="button">Change</button></div>
+  <div class="pendant-connection"><button id="connectButton" class="device-summary" type="button"><span class="device-summary-copy"><strong>synap Pendant</strong><span id="connectionBadge" class="status-badge status-offline"><span id="connectionText">Not connected</span></span></span><span id="connectButtonLabel">Connect</span></button><p id="disconnectProtectionStatus" class="settings-hint" hidden></p><p id="reconnectStatus" class="reconnect-status" role="status" hidden></p></div><div class="pendant-actions"><button id="chooseDeviceButton" class="button button-secondary" type="button">Change</button></div>
   <div id="firmwareSettings" class="firmware-inline"><div class="firmware-inline-head"><h4 id="firmwareTitle">Firmware</h4></div><p id="otaStatus">Connect to check</p><progress id="otaProgress" value="0" max="1" aria-label="Firmware transfer progress" hidden></progress><div class="firmware-actions"><button id="otaReleaseCheck" type="button" aria-label="Check firmware update" title="Check firmware update">Firmware</button><button id="otaLatest" class="button button-primary" type="button" hidden>Update</button><button id="otaCancel" type="button" hidden>Cancel</button></div></div>
 </section>
 <section class="settings-card connection-settings"><details class="recorder-details"><summary>Connection health</summary><div class="device-panel"><div class="led-key"><span>Offline</span><span>Ready</span><span>Listening</span></div><div class="metrics-grid"><div><span>Audio level</span><strong id="signalMetric">—</strong><small id="signalDetail">No stream</small></div><div><span>Frames</span><strong id="framesMetric">0</strong><small id="framesDetail">Complete</small></div><div><span>Transport</span><strong id="transportMetric">—</strong><small id="transportDetail">MTU / chunks</small></div><div><span>Quality</span><strong id="qualityMetric">—</strong><small id="qualityDetail">Waiting</small></div></div></div></details><details class="recording-help"><summary>Recording help</summary><div class="capture-help-content"><div class="gesture-guide" aria-label="Pendant touch controls"><div><span class="gesture-dots" aria-hidden="true">••</span><span><strong>Double tap</strong>Record on / off</span></div><div><span class="gesture-dots" aria-hidden="true">•••</span><span><strong>Triple tap</strong>Sleep / wake</span></div></div><p class="capture-safety">Keep this app open while listening. Audio is saved on this device.</p></div></details></section><section class="appearance-settings"><h3>Appearance</h3><div class="appearance-options" role="group" aria-label="Light and dark mode"><button type="button" data-theme-choice="system">Auto</button><button type="button" data-theme-choice="light">Light</button><button type="button" data-theme-choice="dark">Dark</button></div><h4 class="palette-heading">Color palette</h4><div class="palette-options" role="group" aria-label="Color palette"><button type="button" data-palette-choice="olive"><span class="palette-swatch" aria-hidden="true"></span>Olive</button><button type="button" data-palette-choice="blue"><span class="palette-swatch" aria-hidden="true"></span>Blue</button><button type="button" data-palette-choice="pink"><span class="palette-swatch" aria-hidden="true"></span>Pink</button><button type="button" data-palette-choice="lavender"><span class="palette-swatch" aria-hidden="true"></span>Lavender</button></div></section>
@@ -92,14 +92,17 @@
 <script src="event-channel.js?v=1.0.0-cleanup1"></script>
 <script src="ota.js?v=1.0.0-ota4"></script>
 <script src="releases.js?v=1.0.0-prod2"></script>
-<script src="audio-enhancement.js?v=1.0.0-speech2"></script>
+<script src="audio-enhancement.js?v=1.0.0-meetings1"></script>
 <script src="audio-enhancement-ui.js?v=1.0.0-speech2"></script>
 <script src="settings-panel.js?v=1.0.0-settings1"></script>
-<script src="speaker-names.js?v=1.0.0-identify1"></script>
+<script src="speaker-names.js?v=1.0.0-meetings1"></script>
 <div id="capture" hidden><div class="recording-stage compact-recorder"><div class="recorder-status-copy"><div id="timer" class="timer">00:00</div><h3 id="recorderTitle">Ready when you are</h3><p id="recorderSubtitle">Connect your pendant and let synap listen.</p><div id="levelText" role="status">Waiting for pendant</div></div><div class="canvas-wrap"><canvas id="waveformCanvas"></canvas></div><div class="recorder-controls"><button id="startButton" class="record-button" type="button" disabled><svg aria-hidden="true"><use href="#i-mic"/></svg><span class="record-label">Start listening</span></button><button id="stopButton" class="button stop-button" type="button" disabled><span class="stop-square" aria-hidden="true"></span><span>Stop recording</span></button></div></div></div>
 <script src="moments.js?v=1.0.0-moments1"></script>
-<script src="app.js?v=1.0.0-connection-resume1"></script>
-<script src="enhancements.js?v=1.0.0-connection-resume1"></script>
+<script src="audio-quality.js?v=1.0.0-meetings1"></script>
+<script src="meeting-tools.js?v=1.0.0-meetings1"></script>
+<script src="disconnect-protection.js?v=1.0.0-meetings1"></script>
+<script src="app.js?v=1.0.0-meetings1"></script>
+<script src="enhancements.js?v=1.0.0-meetings1"></script>
 <script src="google-auth.js?v=1.0.0-brain1"></script>
 <script src="ai-providers.js?v=1.0.0-brain1"></script>
 <script src="synap-backend.js?v=1.0.0-moments1"></script>
@@ -123,7 +126,7 @@
 <script src="provenance-links.js?v=1.0.0-workflows1"></script>
 <script src="productivity-tools.js?v=1.0.0-day-audio1"></script>
 <script src="desktop-capture.js?v=1.0.0-moments1"></script>
-<script src="interaction-surfaces.js?v=1.0.0-actions1"></script>
+<script src="interaction-surfaces.js?v=1.0.0-meetings1"></script>
 <script src="memory-ready-events.js?v=1.0.0-memory-events1"></script>
 <script src="experience-recovery.js?v=1.0.0-source-recovery2"></script>
 </body></html>

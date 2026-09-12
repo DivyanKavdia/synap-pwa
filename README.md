@@ -14,9 +14,9 @@ Synap is a browser-based companion for the Synap pendant. It receives live audio
 - OTA protocol: **v3**
 - Production firmware feed: `DivyanKavdia/synap-firmware` → `ota-releases/latest.json`
 
-The pendant is stateless for recordings. It captures audio and streams it to the PWA; it does not keep a local recording copy. The browser owns the packet journal, audio, recording metadata, processing state and local memory cache.
+The browser owns the durable packet journal, audio, recording metadata, processing state and local memory cache. Compatible firmware can retain a short, volatile audio buffer for an explicitly negotiated reconnect; it does not write audio to flash.
 
-If Web Bluetooth disconnects, audio from the disconnected interval cannot be recovered. Screen Wake Lock and foreground recovery improve reliability but cannot override OS-level Bluetooth suspension.
+With a compatible pendant, the same open app page can recover buffered audio after a short disconnect. Capacity is reported by the firmware: up to 30 seconds on S3 PSRAM or 5 seconds with sufficient internal memory. Overflow, power loss, sleep or a closed/reloaded app can still lose audio. Screen Wake Lock and foreground recovery cannot override OS-level Bluetooth suspension.
 
 ## Pendant interaction
 
@@ -78,7 +78,9 @@ The managed backend pipeline is:
 
 `audio → transcript → conversations → people / decisions / actions / follow-ups → daily brief → retrieval → grounded answer`
 
-Current capabilities include rolling transcription, speaker diarization, optional owner voice profile, people confirmation/rename, daily briefs, local search, grounded Ask Synap retrieval and cloud history restore.
+Current capabilities include rolling transcription, conservative silence handling, speaker diarization, optional owner voice profile, consented named voices with additional confirmed samples, people confirmation/rename, daily briefs, local search, grounded Ask Synap retrieval and cloud history restore.
+
+New summaries include topic chapters, grounded reminder suggestions and unanswered questions. Library recording details link those items to their source times. People → Prepare shows recent related conversations, open actions and questions inside My actions. Original recordings are retained during local enhancement, with short-window checks that fall back to the original if the enhanced copy is unsafe. See [meeting features](docs/MEETING_FEATURES.md) for usage and limits.
 
 Local recording data always wins during cloud history restoration. Cloud-restored memories do not claim playable audio when the original audio is no longer available.
 

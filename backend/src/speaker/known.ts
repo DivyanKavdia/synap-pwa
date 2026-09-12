@@ -8,6 +8,7 @@ export interface KnownSpeaker extends SpeakerEmbeddingResult {
   name: string;
   consentVersion: 1;
   createdAt: string;
+  references?: { embedding: number[]; sourceId: string }[];
 }
 export class KnownSpeakerError extends Error {}
 const bound = (uid:string) => ({uid,scope:'voiceProfiles/known',field:'profiles'});
@@ -17,7 +18,7 @@ const decode = (uid:string,dek:Buffer,data?:{sealedProfiles?:Sealed}):KnownSpeak
 export async function readKnownSpeakers(uid:string,dek:Buffer):Promise<KnownSpeaker[]> {
   const snapshot=await ref(uid).get();return decode(uid,dek,snapshot.data());
 }
-export const speakerViews=(profiles:KnownSpeaker[])=>profiles.map(({id,name,duration_ms,createdAt})=>({id,name,sample_duration_ms:duration_ms,created_at:createdAt}));
+export const speakerViews=(profiles:KnownSpeaker[])=>profiles.map(({id,name,duration_ms,createdAt,references})=>({id,name,sample_duration_ms:duration_ms,created_at:createdAt,sample_count:references?.length || 1}));
 
 export function updateDirectory(profiles:KnownSpeaker[],profile:KnownSpeaker):KnownSpeaker[] {
   const others=profiles.filter(item=>item.id!==profile.id);
@@ -26,13 +27,27 @@ export function updateDirectory(profiles:KnownSpeaker[],profile:KnownSpeaker):Kn
   return [...others,profile];
 }
 
-export async function saveKnownSpeaker(uid:string,dek:Buffer,profile:KnownSpeaker,recordingId:string,revision:string):Promise<void> {
-  await firestore().runTransaction(async tx=>{
+export function addConfirmedSample(existing:KnownSpeaker, sample:KnownSpeaker):KnownSpeaker {
+  if (existing.model !== sample.model) throw new KnownSpeakerError('The voice model changed. Remove and re-enroll this voice.');
+  if (existing.name.normalize('NFKC').toLowerCase() !== sample.name.normalize('NFKC').toLowerCase()) throw new KnownSpeakerError('The confirmed name does not match the selected saved voice.');
+  const references=existing.references || [{embedding:existing.embedding,sourceId:existing.id}];
+  if (references.some(ref=>ref.sourceId===sample.id)) return existing;
+  if (references.every(ref=>cosineSimilarity(ref.embedding,sample.embedding)<.78)) throw new KnownSpeakerError('This sample differs from the saved voice. Check the speaker or use a clearer recording.');
+  return {...existing,references:[...references,{embedding:sample.embedding,sourceId:sample.id}].slice(-3)};
+}
+
+export async function saveKnownSpeaker(uid:string,dek:Buffer,profile:KnownSpeaker,recordingId:string,revision:string,existingId?:string):Promise<KnownSpeaker> {
+  return firestore().runTransaction(async tx=>{
     const record=await tx.get(paths.recording(uid,recordingId));
     if(!record.exists || record.data()?.state!=='ready' || record.data()?.updatedAt!==revision)throw new KnownSpeakerError('This recording changed. Reload speaker names and try again.');
     const directory=ref(uid),snapshot=await tx.get(directory);
-    const profiles=updateDirectory(decode(uid,dek,snapshot.data()),profile);
+    const current=decode(uid,dek,snapshot.data());
+    const existing=existingId ? current.find(item=>item.id===existingId) : undefined;
+    if(existingId && !existing)throw new KnownSpeakerError('This saved voice was removed. Reload the voice list.');
+    const saved=existing ? addConfirmedSample(existing,profile) : profile;
+    const profiles=updateDirectory(current,saved);
     tx.set(directory,{sealedProfiles:sealJson(dek,profiles,bound(uid)),updatedAt:new Date().toISOString()});
+    return saved;
   });
 }
 
@@ -47,7 +62,7 @@ export async function forgetKnownSpeaker(uid:string,dek:Buffer,id:string):Promis
 
 /** Require separation in both directions: voice→person and person→voice. */
 export function identifyKnownSpeakers(voices:Map<string,SpeakerEmbeddingResult>,profiles:KnownSpeaker[]):Record<string,string> {
-  const scores=[...voices].flatMap(([speaker,voice])=>profiles.filter(p=>p.model===voice.model).map(profile=>({speaker,profile,score:cosineSimilarity(voice.embedding,profile.embedding)})));
+  const scores=[...voices].flatMap(([speaker,voice])=>profiles.filter(p=>p.model===voice.model).map(profile=>({speaker,profile,score:(()=>{const refs=profile.references?.length ? profile.references.map(r=>r.embedding) : [profile.embedding];const scores=refs.map(ref=>cosineSimilarity(voice.embedding,ref)).sort((a,b)=>b-a);return scores.slice(0,2).reduce((a,b)=>a+b,0)/Math.min(scores.length,2)})()})));
   const matches:Record<string,string>=Object.create(null);
   for(const speaker of voices.keys()) {
     const ranked=scores.filter(item=>item.speaker===speaker).sort((a,b)=>b.score-a.score),best=ranked[0];

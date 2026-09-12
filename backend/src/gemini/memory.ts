@@ -37,6 +37,9 @@ Evidence rules, in order of priority:
 10. Language may be English, Hindi or mixed Hinglish. Write summaries in the dominant language of the conversation, preserving names and technical terms as spoken.
 11. A supplied saved-voice match may identify a speaking label; it is an acoustic estimate, not a statement spoken aloud. Explicit user-confirmed labels take precedence. YOU denotes the enrolled wearer. Never turn an anonymous label into a real name using topic, role, or a name mentioned nearby.
 12. Unclear, inaudible or conflicting words are uncertainty, not permission to fill gaps. Preserve negation, conditional statements, numbers, currencies and corrections. Never convert a suggested date into an agreed deadline. Keep important unresolved questions in the summary without inventing an owner.
+14. Topic chapters subdivide a conversation without inventing new meetings. Use chronological non-overlapping spans within the conversation. Return unanswered questions separately; exclude questions resolved later in the same conversation.
+15. An explicit spoken request such as "remind me tomorrow to send the invoice" creates an action with kind "reminder". These are suggestions for review, never scheduled notifications. Preserve an exact supporting quote as evidence. Do not extract quoted examples, hypothetical instructions, or background media as tasks. Use kind "commitment" for actual agreed actions.
+16. Resolve relative dates against the supplied capture date/time, the utterance offset and timezone, never today at processing time. If that context or the intended date is ambiguous, due_date is null.
 13. Write a useful recap: the subject, what was established, why it matters when stated, decisions, and actual next steps. Include concrete details supported by the transcript; avoid vague "they discussed several things" text. Do not copy background songs or isolated unrelated remarks into business commitments.
 
 Return only the requested schema.`;
@@ -64,12 +67,16 @@ export interface MemoryContext {
   identifiedSpeakers?: Record<string,string>;
   transcriptWarnings?: string[];
   language: string;
+  startedAt?: string;
+  day?: string;
+  timezone?: string;
 }
 
 export async function extractMemory(
   context: MemoryContext,
   signal?: AbortSignal,
 ): Promise<StructuredMemory> {
+  if(!context.transcript.trim())return {schema_version:2,title:"No speech detected",executive_summary:"",key_points:[],people:[],topics:[],conversations:[]};
   const highlights = context.highlightOffsetsMs
     .map((offset) => `- HIGHLIGHT at ${formatMs(offset)} (${offset} ms)`)
     .join('\n');
@@ -82,6 +89,8 @@ export async function extractMemory(
 
   const input = [
     `Capture duration: ${context.durationMs} ms.`,
+    `Capture local date: ${context.day || "unknown"}.`,
+    `Capture start: ${context.startedAt || "unknown"}; timezone: ${context.timezone || "unknown"}.`,
     `Detected language: ${context.language}.`,
     known,
     `User-confirmed speaker names for this recording only: ${JSON.stringify(context.confirmedSpeakers || {})}`,
@@ -107,7 +116,7 @@ export async function extractMemory(
     signal,
   );
 
-  return validateMemory(interactionJson<StructuredMemory>(response), context.durationMs);
+  return validateMemory(interactionJson<StructuredMemory>(response), context.durationMs, context.transcript);
 }
 
 /**
@@ -116,9 +125,9 @@ export async function extractMemory(
  * or a person with empty evidence. Anything that fails here is dropped rather
  * than corrected, because a quietly repaired fact is worse than a missing one.
  */
-export function validateMemory(memory: StructuredMemory, durationMs: number): StructuredMemory {
+export function validateMemory(memory: StructuredMemory, durationMs: number, transcript?: string): StructuredMemory {
   const inRange = (start: number, end: number) =>
-    Number.isFinite(start) && Number.isFinite(end) && start >= 0 && start <= durationMs && end >= start;
+    Number.isFinite(start) && Number.isFinite(end) && start >= 0 && start <= durationMs && end >= start && end <= durationMs;
 
   const people = (memory.people ?? []).filter(
     (person) => person.name?.trim() && person.evidence?.trim(),
@@ -149,8 +158,15 @@ export function validateMemory(memory: StructuredMemory, durationMs: number): St
       const participantKeys = new Set(participants.map((name) => name.toLowerCase()));
       const mentionedPeople = cleanNames(extended.mentioned_people)
         .filter((name) => !participantKeys.has(name.toLowerCase()));
+      const within = (item: {start_ms: number; end_ms: number}) => inRange(item.start_ms,item.end_ms) && item.start_ms >= conversation.start_ms && item.end_ms <= conversation.end_ms;
+      const chapters = (conversation.chapters || []).filter(c => c.title?.trim() && within(c) && c.end_ms > c.start_ms).sort((a,b)=>a.start_ms-b.start_ms).slice(0,12);
+      const nonOverlapping: typeof chapters = [];
+      for(const chapter of chapters)if(!nonOverlapping.length || chapter.start_ms >= nonOverlapping[nonOverlapping.length-1]!.end_ms)nonOverlapping.push(chapter);
+      const normalize = (text:string) => text.normalize('NFKC').replace(/\s+/g,' ').trim().toLowerCase();
       return {
         ...conversation,
+        chapters: nonOverlapping,
+        unresolved_questions: (conversation.unresolved_questions || []).filter(q=>q.text?.trim() && within(q)).slice(0,20),
         start_ms: clamp(conversation.start_ms, 0, durationMs),
         end_ms: clamp(conversation.end_ms, 0, durationMs),
         people: (conversation.people ?? []).filter((person) => person.name?.trim()),
@@ -162,7 +178,8 @@ export function validateMemory(memory: StructuredMemory, durationMs: number): St
         action_items: (conversation.action_items ?? []).filter(
           (action) =>
             action.task?.trim() &&
-            inRange(action.start_ms, action.end_ms) &&
+            within(action) &&
+            (action.kind !== 'reminder' || (typeof transcript === 'string' && Boolean(action.evidence?.trim()) && normalize(transcript).includes(normalize(action.evidence!)))) &&
             (action.owner?.toLowerCase() === 'self' ||
               knownNames.has(action.owner?.trim().toLowerCase() ?? '')) &&
             isValidDate(action.due_date),
@@ -187,7 +204,7 @@ export function validateMemory(memory: StructuredMemory, durationMs: number): St
 
 function isValidDate(value: string | null | undefined): boolean {
   if (value === null || value === undefined) return true;
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value;
 }
 
 export interface BriefInput {
