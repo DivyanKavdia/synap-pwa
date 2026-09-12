@@ -31,7 +31,9 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   assert.match(app, /AUDIO_STALL_TIMEOUT_MS = 12000/);
   assert.match(app, /FOREGROUND_STALL_GRACE_MS = 12000/);
   assert.match(app, /document\.visibilityState === "visible"/);
-  assert.match(app, /Foreground pendant status resynchronised/);
+  const foregroundRecovery = app.slice(app.indexOf('document.addEventListener("visibilitychange"', app.indexOf("function bindReconnectRecovery")), app.indexOf('window.addEventListener("pageshow"', app.indexOf("function bindReconnectRecovery")));
+  assert.match(foregroundRecovery, /recoverRememberedConnection/);
+  assert.doesNotMatch(foregroundRecovery, /readControlStatus|disconnectGatt/);
   assert.match(app, /function validHttpsEndpoint/);
 
   assert.match(html, /<strong>Double tap<\/strong>Record on \/ off/);
@@ -42,8 +44,8 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   assert.match(sleepGuard, /synap-gatt-service-ready/);
 
   assert.doesNotMatch(events, /script\.src=['"]audio-codec-v3/);
-  assert.match(sw, /1\.0\.0-shell57-moments/);
-  assert.match(sw, /1\.0\.0-moments1/);
+  assert.match(sw, /1\.0\.0-shell58-connection-resume/);
+  assert.match(sw, /1\.0\.0-connection-resume1/);
   assert.match(sw, /\.\/dashboard-ui\.js/);
   assert.match(sw, /\.\/ask-synap\.js/);
   assert.match(sw, /\.\/sleep-state-guard\.js/);

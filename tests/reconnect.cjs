@@ -16,7 +16,7 @@ const connectSource=app.slice(app.indexOf('  async function connectPendant('),ap
 
 function context(devices=[]){
   const saved=new Map(),calls=[],listeners={},control={checked:true,addEventListener(t,f){listeners.preference=f;}};
-  const c={firmwareBusy:false,console,Boolean,Number,String,Date,Error,Promise,WeakSet,AbortController,withTimeout:p=>p,
+  const c={gattServer:null,controlCharacteristic:null,audioCharacteristic:null,firmwareBusy:false,console,Boolean,Number,String,Date,Error,Promise,WeakSet,AbortController,withTimeout:p=>p,
     navigator:{bluetooth:{getDevices:async()=>devices,addEventListener(t,f){listeners[t]=f;}}},
     document:{body:{dataset:{}},visibilityState:'visible',getElementById:id=>id==='autoReconnectInput'?control:{set textContent(v){calls.push(['status',v]);}},addEventListener(t,f){listeners[t]=f;}},
     window:{isSecureContext:true,addEventListener(t,f){listeners[t]=f;},setTimeout(f,ms){calls.push(['timer',ms]);return 1;}},
@@ -62,7 +62,7 @@ async function workerTests(){
   async function fetch(url,mode='navigate',method='GET'){let result;handlers.fetch({request:{url,mode,method},respondWith:p=>result=p});return result;}
   assert.equal(await fetch(scope+'?from=home'),'./index.html');
   let reply;handlers.message({data:{type:'GET_VERSION'},source:{postMessage:d=>reply=d}});
-  assert.equal(reply.type,'APP_VERSION');assert.equal(reply.version,'1.0.0');assert.equal(reply.release,'1.0.0');assert.equal(reply.revision,'1.0.0-audio2');assert.equal(reply.shellRevision,'1.0.0-shell57-moments');
+  assert.equal(reply.type,'APP_VERSION');assert.equal(reply.version,'1.0.0');assert.equal(reply.release,'1.0.0');assert.equal(reply.revision,'1.0.0-audio2');assert.equal(reply.shellRevision,'1.0.0-shell58-connection-resume');
 }
 
 (async()=>{

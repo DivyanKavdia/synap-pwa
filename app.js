@@ -758,7 +758,7 @@
     const activeJournalBlocksRecovery = Boolean(currentRecordingId) && !recordingReconnectPending;
     if (!reconnectRequested() || manualDisconnect || connectInProgress || reloadRecoveryRunning ||
         reconnectPageHidden || Date.now() < reconnectNotBefore ||
-        finalizing || activeJournalBlocksRecovery || isGattConnected() || document.visibilityState === "hidden") return;
+        finalizing || activeJournalBlocksRecovery || (isGattConnected() && gattServer && controlCharacteristic && audioCharacteristic) || document.visibilityState === "hidden") return;
     if (!window.isSecureContext || !navigator.bluetooth) {
       setReconnectCapability("Web Bluetooth is unavailable here. Installing the PWA does not add Bluetooth support to an unsupported browser.");
       return;
@@ -769,7 +769,7 @@
       // Never open the chooser without a user gesture, and never select by an ambiguous name.
       if (!bluetoothDevice && !await restoreKnownPendant()) return;
       const journalStillBlocksRecovery = Boolean(currentRecordingId) && !recordingReconnectPending;
-      if (!reconnectRequested() || manualDisconnect || connectInProgress || isGattConnected() ||
+      if (!reconnectRequested() || manualDisconnect || connectInProgress || (isGattConnected() && gattServer && controlCharacteristic && audioCharacteristic) ||
           reconnectPageHidden || Date.now() < reconnectNotBefore ||
           finalizing || journalStillBlocksRecovery || document.visibilityState === "hidden") return;
       clearReconnectTimer(false);
@@ -809,11 +809,8 @@
       foregroundAt = performance.now();
       window.dispatchEvent(new CustomEvent('synap-recording-foreground'));
       recoverRememberedConnection("foreground", true);
-      // Audio notifications are the liveness signal during capture. Foreground
-      // transitions must not add a status read to a working recording transport.
-      if (isGattConnected() && !connectInProgress && !firmwareBusy && !finalizing && !recordingConfirmed) {
-        readControlStatus().then(ok=>{if(ok) log("Foreground pendant status resynchronised");});
-      }
+      // Keep the existing subscriptions. Foregrounding alone is not a reason
+      // to probe the native bridge or tear down an otherwise connected link.
     });
     window.addEventListener("pageshow", function (event) {
       reconnectPageHidden = false; syncRememberedMonitoring();
@@ -934,7 +931,9 @@
       const connectingDevice = bluetoothDevice;
       lastGattDisconnectRequest = null;
       try {
-        gattServer = await withTimeout(connectingDevice.gatt.connect(), 12000, "Connection");
+        if(connectingDevice.gatt.connected)log("Restoring subscriptions on retained GATT link");
+        gattServer = connectingDevice.gatt.connected ? connectingDevice.gatt :
+          await withTimeout(connectingDevice.gatt.connect(), 12000, "Connection");
       } catch (error) {
         // disconnect() also cancels an outstanding connect, even while connected is false.
         disconnectGatt("Connection attempt failed: " + friendlyError(error), connectingDevice);
@@ -3091,7 +3090,7 @@
     }
     checkFirmwareRelease=()=>inspect().catch(error=>log('Firmware check',friendlyError(error)));
     document.getElementById("otaReleaseCheck").addEventListener("click",()=>inspect(true));
-    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkFirmwareRelease();});
+    // Discovery runs after connection and on the existing interval, not on app focus.
     setInterval(()=>checkFirmwareRelease(),60000);
     cancel.addEventListener('click',()=>downloadController?.abort());
     async function updateLatest() {
