@@ -49,6 +49,59 @@ const waitState=(page,state)=>page.waitForFunction(state=>document.body.dataset.
       return{context,page,errors,holdReleases(){releaseWait=new Promise(resolve=>{releaseGate=resolve})},release(){releaseWait=null;releaseGate?.()}};
     }
 
+    {
+      const t=await setup('/',()=>{
+        let Store;const gate=new Promise(resolve=>{window.qaFinishRecovery=resolve});
+        Object.defineProperty(window,'DKAudioStore',{configurable:true,get:()=>Store,set(value){
+          Store=value;const recover=Store.prototype.recover;
+          Store.prototype.recover=async function(...args){window.qaRecoveryWaiting=true;await gate;return recover.apply(this,args)};
+        }});
+      }),{page}=t;
+      await page.waitForFunction(()=>window.qaRecoveryWaiting);
+      assert(await page.locator('#headerPendantStatus').isEnabled(),'Connect remains available while library recovery is pending');
+      await page.locator('#settingsButton').tap();await page.locator('#connectButton').tap();await waitState(page,'idle');
+      assert(await page.locator('#headerCaptureToggle').isDisabled(),'recording waits until storage recovery finishes');
+      assert.equal(await page.evaluate(()=>bleFixture.connects),1);
+      await page.evaluate(()=>qaFinishRecovery());await waitReady(page);await waitState(page,'idle');
+      assert.equal(await page.evaluate(()=>bleFixture.connects),1,'finishing startup preserves the existing connection');
+      await page.locator('#headerCaptureToggle').tap();await waitState(page,'recording');
+      await page.locator('#headerCaptureToggle').tap();await waitState(page,'idle');
+      assert.deepEqual(t.errors,[]);await t.context.close();console.log('PASS Connect works during library recovery; recording waits and the link stays connected');
+    }
+
+    {
+      const t=await setup('/?lateBluetooth'),{page}=t;await waitReady(page);await waitState(page,'unsupported');
+      assert(await page.locator('#headerPendantStatus').isEnabled(),'Bluetooth unavailability must not permanently disable Connect');
+      await page.locator('#headerPendantStatus').tap();
+      assert(await page.locator('#settingsDialog').evaluate(node=>node.open));
+      assert.match(await page.locator('#reconnectStatus').textContent(),/Bluetooth access is not available/);
+      assert(await page.locator('#reconnectStatus').isVisible(),'the connection explanation is visible inside Settings');
+      await page.evaluate(()=>bleFixture.enableBluetooth());
+      await page.locator('#connectButton').tap();await waitState(page,'idle');
+      assert.equal(await page.evaluate(()=>bleFixture.pickers),1,'Connect uses Bluetooth that became available after startup');
+      await page.locator('#connectButton').tap();await waitState(page,'disconnected');
+      assert(await page.locator('#settingsDialog').evaluate(node=>node.open),'Disconnect leaves Settings open');
+      await page.locator('#settingsButton').tap();
+      await page.evaluate(()=>{window.qaSyntheticConnects=0;document.addEventListener('click',event=>{if(!event.isTrusted&&event.target.closest?.('#connectButton'))qaSyntheticConnects++},true)});
+      await page.locator('#headerPendantStatus').tap();await waitState(page,'idle');
+      assert.equal(await page.evaluate(()=>qaSyntheticConnects),0,'header Connect calls the action without a synthetic tap into a closed dialog');
+      assert.equal(await page.evaluate(()=>bleFixture.starts),0,'Connect never silently starts recording');
+      assert.deepEqual(t.errors,[]);await t.context.close();console.log('PASS delayed Bluetooth, direct Settings/header Connect, Disconnect and visible permission feedback');
+    }
+
+    for(const errorName of ['NotFoundError','NotAllowedError']){
+      const t=await setup(),{page}=t;await waitReady(page);
+      await page.locator('#settingsButton').tap();
+      await page.evaluate(name=>bleFixture.rejectNextPicker(name,'Bluetooth permission was denied'),errorName);
+      await page.locator('#connectButton').tap();
+      await page.waitForFunction(()=>bleFixture.pickers===1&&document.body.dataset.state==='disconnected');
+      assert(await page.locator('#reconnectStatus').isVisible());
+      assert(await page.locator('#connectButton').isEnabled());
+      await page.locator('#connectButton').tap();await waitState(page,'idle');
+      assert.equal(await page.evaluate(()=>bleFixture.pickers),2);
+      assert.deepEqual(t.errors,[]);await t.context.close();console.log('PASS Connect recovers after '+errorName+' without a reload');
+    }
+
     for(const c3 of [false,true]){
       const t=await setup('/?ota'+(c3?'&c3':'')),{page}=t;await waitReady(page);
       assert(await page.locator('#headerCaptureToggle').isEnabled(),'offline microphone offers connect and record');

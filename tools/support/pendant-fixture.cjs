@@ -64,10 +64,16 @@ module.exports = function pendantFixture(){
      else if(finishing){clearInterval(sendTimer);state=1;finishing=false;control.value=status();control.dispatchEvent(new Event('characteristicvaluechanged'))}
    },15)}
    function frame(){if(buffered){buffer.push(sequence);if(buffer.length>600)buffer.shift();if(device.gatt.connected&&!waiting&&!sendTimer)startSender()}else emit(sequence);sequence=(sequence+1)&65535}
-   const bluetooth=new EventTarget();bluetooth.requestDevice=async()=>{increment('qa-pickers');sessionStorage.setItem('qa-permitted','1');return device};
+   let pickerError=null,bluetoothAvailable=!location.search.includes('lateBluetooth');
+   const bluetooth=new EventTarget();bluetooth.requestDevice=async()=>{
+     if(!navigator.userActivation.isActive)throw new DOMException('Device selection needs a direct user tap','SecurityError');
+     increment('qa-pickers');if(pickerError){const error=pickerError;pickerError=null;throw error;}
+     sessionStorage.setItem('qa-permitted','1');return device;
+   };
    if(!location.search.includes('noRestore'))bluetooth.getDevices=async()=>sessionStorage.getItem('qa-permitted')?[device]:[];
-   Object.defineProperty(navigator,'bluetooth',{configurable:true,value:bluetooth});
+   Object.defineProperty(navigator,'bluetooth',{configurable:true,get:()=>bluetoothAvailable?bluetooth:undefined});
    window.bleFixture={disconnect:loseLink,
+     enableBluetooth(){bluetoothAvailable=true},rejectNextPicker(name,message){pickerError=new DOMException(message,name)},
      get otaBegins(){return otaBegins},get otaCommits(){return otaCommits},get otaOffset(){return otaOffset},get firmwareBuild(){return firmwareBuild},holdFirmware(value){otaHold=value},get maximum(){return maxInFlight},get watching(){return watching},
      get captured(){return sequence},get pendingFrames(){return buffer.length},get recoveryWaiting(){return waiting},get armed(){return armed},
      interruptNextStop(mode){stopDisconnect=mode},holdReplay(value){pauseReplay=value},expireBuffer(){idleOnReconnect=true},invalidRecoveryOnce(){invalidRecoveryReads=1},

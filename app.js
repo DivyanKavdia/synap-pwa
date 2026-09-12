@@ -330,8 +330,7 @@
     if (nextState === "unsupported") {
       ui.connectionBadge.classList.add("status-error");
       ui.connectionText.textContent = "Bluetooth unavailable";
-      ui.connectButtonLabel.textContent = "Not supported";
-      ui.connectButton.disabled = true;
+      ui.connectButtonLabel.textContent = "Try Bluetooth again";
       ui.recorderTitle.textContent = "Browser not supported.";
       ui.recorderSubtitle.textContent =
         message ||
@@ -894,11 +893,11 @@
       return; // Never invoke a permission chooser from a lifecycle event or timer.
     }
 
-    if (!navigator.bluetooth) {
-      setAppState(
-        "unsupported",
-        "Use Android Chrome over HTTPS. iPhone Web Bluetooth is not available."
-      );
+    if (!navigator.bluetooth || (!bluetoothDevice && typeof navigator.bluetooth.requestDevice !== "function")) {
+      const message = "Bluetooth access is not available yet. Check this browser's Bluetooth permission, then tap Connect again.";
+      setAppState("unsupported", message);
+      setReconnectCapability("Bluetooth unavailable", message);
+      if (!silent) { if (!ui.settingsDialog.open) openSettings(); toast(message, "error"); }
       return;
     }
 
@@ -1114,8 +1113,10 @@
         ? "Connection is still unavailable. The current recording remains preserved for reconnect."
         : message);
 
-      if (!silent && error && error.name !== "NotFoundError") {
-        toast(message, "error");
+      if (!silent) {
+        setReconnectCapability("Manual connection failed", error?.name === "NotFoundError"
+          ? "No pendant selected. Tap Connect to try again." : message);
+        if (error?.name !== "NotFoundError") toast(message, "error");
       }
 
       if (autoReconnect && !manualDisconnect) {
@@ -3345,14 +3346,12 @@
     if (coreControlsBound) return;
     coreControlsBound = true;
 
-    ui.connectButton.addEventListener("click", function () {
-      if (!requireReady()) return;
-      if (isGattConnected()) {
-        disconnectPendant();
-      } else {
-        connectPendant();
-      }
-    });
+    ui.connectButton.addEventListener("click", toggleConnection);
+    const refreshBluetoothAvailability = () => {
+      if (appState === "unsupported" && window.isSecureContext && navigator.bluetooth?.requestDevice) setAppState("disconnected");
+    };
+    window.addEventListener("pageshow", refreshBluetoothAvailability);
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refreshBluetoothAvailability(); });
     ui.settingsButton.addEventListener("click", function (event) {
       openSettings();
       event.preventDefault();
@@ -3634,6 +3633,25 @@
     return false;
   }
 
+  function toggleConnection() {
+    if (firmwareBusy || ui.connectButton.disabled) return;
+    if (!window.isSecureContext) {
+      setReconnectCapability("Secure connection required", "Open Synap over HTTPS to connect your pendant.");
+      if (!ui.settingsDialog.open) openSettings();
+      return;
+    }
+    if (!appLockHeld) {
+      const message = document.getElementById("startupMessage").textContent || "Opening the app. Try Connect again shortly.";
+      setReconnectCapability("Connection waiting for app ownership", message);
+      if (!ui.settingsDialog.open) openSettings();
+      if (!startupPending) startApplication();
+      return;
+    }
+    // Invoke the native chooser in this visible button's user gesture. Library
+    // recovery only gates recording; the owned Bluetooth connection is independent.
+    return isGattConnected() ? disconnectPendant() : connectPendant();
+  }
+
   async function toggleCapture() {
     if (!requireReady() || firmwareBusy) return;
     if (!ui.stopButton.disabled) { await stopRecording(); return; }
@@ -3643,7 +3661,7 @@
     else if (appState === "error") toast(ui.recorderSubtitle.textContent, "error");
   }
 
-  globalThis.SynapAppControls = Object.freeze({toggleCapture});
+  globalThis.SynapAppControls = Object.freeze({toggleCapture,toggleConnection});
 
   function setStartup(state, message) {
     document.body.dataset.startup = state;
@@ -3663,7 +3681,7 @@
     startupPending=initialize().catch(error => {
       const message=friendlyError(error);
       log("Application startup failed", message);
-      setAppState("error", message);
+      if (!isGattConnected() && !connectInProgress) setAppState("error", message);
       setStartup("error", message);
     }).finally(() => { startupPending=null; });
     return startupPending;
@@ -3707,18 +3725,17 @@
       userAgent: navigator.userAgent
     });
 
-    if (!window.isSecureContext) {
-      setAppState(
-        "unsupported",
-        "This page must be hosted over HTTPS for Web Bluetooth."
-      );
-    } else if (!navigator.bluetooth) {
-      setAppState(
-        "unsupported",
-        "Use Android Chrome. Web Bluetooth is unavailable in this browser."
-      );
-    } else {
-      setAppState("disconnected");
+    if (!connectInProgress) {
+      if (isGattConnected()) {
+        setAppState(deviceStatus.error ? "error" : "idle");
+        checkFirmwareRelease?.();
+      } else if (!window.isSecureContext) {
+        setAppState("unsupported", "This page must be hosted over HTTPS for Web Bluetooth.");
+      } else if (!navigator.bluetooth) {
+        setAppState("unsupported", "Bluetooth access is not available yet. Check this browser's Bluetooth permission, then tap Connect again.");
+      } else {
+        setAppState("disconnected");
+      }
     }
 
     if (settings.autoProcess) processor.resume();
