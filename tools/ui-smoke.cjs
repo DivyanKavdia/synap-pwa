@@ -311,6 +311,35 @@ async function assertDayReading(page, mode, width) {
   await page.waitForFunction(() => document.getElementById('recording-day-reading')?.open);
   await page.locator('.brain-tabs a[href="#today"]').click();
   const selected = await page.locator('#datePicker').inputValue();
+  assert(!(await page.locator('#dayCalendar').isVisible()), 'calendar starts closed');
+  await page.locator('#toggleDayCalendar').click();
+  assert.equal(await page.locator('#toggleDayCalendar').getAttribute('aria-expanded'), 'true');
+  await page.locator('[data-day-step="-7"]').click();
+  await page.waitForFunction(() =>
+    document.querySelector('.brief-intro').classList.contains('is-empty'),
+  );
+  assert(!(await page.locator('.glance-grid').isVisible()), 'empty days omit zero totals');
+  assert(
+    !(await page.locator('#dayConversations').isVisible()),
+    'empty days omit duplicate conversation placeholders',
+  );
+  const latest = await page.locator('#dayBriefLastActive').getAttribute('data-day');
+  await page.locator('[data-day-step="-7"]').press('Escape');
+  assert(!(await page.locator('#dayCalendar').isVisible()));
+  assert(
+    await page.locator('#toggleDayCalendar').evaluate((node) => node === document.activeElement),
+  );
+  await page.locator('#dayBriefLastActive').click();
+  await page.waitForFunction((key) => document.getElementById('datePicker').value === key, latest);
+  assert(
+    await page.locator('#today').evaluate((node) => node === document.activeElement),
+    'empty-day shortcut leaves focus on the selected day',
+  );
+  await page.locator('#toggleDayCalendar').click();
+  await page.locator('#datePicker').fill(selected);
+  await page.waitForFunction(
+    () => document.getElementById('conversationCount').textContent === '10',
+  );
   await page.locator('[data-day-step="-7"]').click();
   assert.notEqual(await page.locator('#datePicker').inputValue(), selected);
   await page.locator('[data-day-step="7"]').click();
@@ -377,6 +406,9 @@ async function run() {
           () => window.SynapDashboardUI && document.querySelectorAll('.brain-tabs a').length === 4,
         );
         await page.waitForTimeout(800);
+        assert(!(await page.locator('#dayCalendar').isVisible()));
+        assert(!(await page.locator('.glance-grid').isVisible()));
+        assert(!(await page.locator('#dayConversations').isVisible()));
         assert.equal(
           await page.locator('.brain-tabs a[aria-current="page"]').getAttribute('href'),
           '#today',
@@ -461,6 +493,7 @@ async function run() {
         assert(await page.locator('#otaStatus').isVisible());
         assert(!(await page.locator('#otaLatest').isVisible()), 'no phantom firmware update');
         assert(!(await page.locator('#otaCancel').isVisible()), 'no phantom OTA cancel');
+        await page.locator('#settingsTab-appearance').click();
         await page.locator('[data-theme-choice="dark"]').click();
         assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
         await assertWordmarks(page, 'dark');
@@ -949,7 +982,8 @@ async function run() {
           document.body.dataset.state = 'recording';
           document.getElementById('stopButton').disabled = false;
         });
-        assert(await page.locator('#stopButton').isVisible());
+        assert(await page.locator('#headerCaptureToggle').isVisible());
+        await page.waitForFunction(() => !document.getElementById('recordingSessionBar').hidden);
         assert(!(await page.locator('#startButton').isVisible()));
         await page.evaluate(() => {
           document.body.dataset.state = 'disconnected';

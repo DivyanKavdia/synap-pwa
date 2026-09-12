@@ -93,8 +93,6 @@
     dayLensTitle: document.getElementById("dayLensTitle"),
     glanceRecordings: document.getElementById("glanceRecordings"),
     glanceDuration: document.getElementById("glanceDuration"),
-    glanceSummaries: document.getElementById("glanceSummaries"),
-    glanceTranscripts: document.getElementById("glanceTranscripts"),
     insightsList: document.getElementById("insightsList"),
     insightsCount: document.getElementById("insightsCount"),
     emptyInsights: document.getElementById("emptyInsights"),
@@ -2439,12 +2437,8 @@
     const selected = dateFromKey(selectedDayKey);
     const start = new Date(selected);
     start.setDate(start.getDate() - (start.getDay() + 6) % 7);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 6);
-    const weekLabel = document.getElementById("calendarWeekLabel");
-    if (weekLabel) weekLabel.textContent = start.toLocaleDateString([], { day: "numeric", month: "short" }) + " – " + end.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
     const todayButton = document.getElementById("jumpToToday");
-    if (todayButton) todayButton.disabled = selectedDayKey === todayKey;
+    if (todayButton) todayButton.hidden = selectedDayKey === todayKey;
     document.querySelectorAll("[data-day-step]").forEach(function (button) {
       const next = new Date(selected);
       next.setDate(next.getDate() + Number(button.dataset.dayStep));
@@ -2498,15 +2492,10 @@
       ...(date.getFullYear() !== new Date().getFullYear() ? {year: "numeric"} : {})
     });
     ui.glanceRecordings.textContent = String(recordings.length);
+    ui.glanceRecordings.nextElementSibling.textContent = recordings.length === 1 ? "recording" : "recordings";
     ui.glanceDuration.textContent = totalDuration >= 3600000
       ? (totalDuration / 3600000).toFixed(1) + "h"
       : Math.round(totalDuration / 60000) + "m";
-    ui.glanceSummaries.textContent = String(recordings.filter(function (item) {
-      return Boolean(item.summary && item.summary.trim());
-    }).length);
-    ui.glanceTranscripts.textContent = String(recordings.filter(function (item) {
-      return Boolean(item.transcript && item.transcript.trim());
-    }).length);
   }
 
   function createInsightCard(recording) {
@@ -3488,7 +3477,24 @@
     document.querySelectorAll("[data-day-step]").forEach(function (button) {
       button.addEventListener("click", function () { moveDay(Number(button.dataset.dayStep)); });
     });
-    document.getElementById("jumpToToday")?.addEventListener("click", function () { requestDay(localDateKey(new Date())); });
+    document.getElementById("jumpToToday")?.addEventListener("click", function () {
+      requestDay(localDateKey(new Date()));
+      ui.dateStrip.querySelector(".selected")?.focus({ preventScroll: true });
+    });
+    const calendar = document.getElementById("dayCalendar");
+    const calendarToggle = document.getElementById("toggleDayCalendar");
+    function showCalendar(open) {
+      calendar.hidden = !open;
+      calendarToggle.setAttribute("aria-expanded", String(open));
+      calendarToggle.setAttribute("aria-label", open ? "Hide calendar" : "Show calendar");
+    }
+    calendarToggle?.addEventListener("click", function () { showCalendar(calendar.hidden); });
+    calendar?.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape") return;
+      showCalendar(false);
+      calendarToggle.focus();
+      event.stopPropagation();
+    });
     document.getElementById("librarySearch")?.addEventListener("input", function (event) {
       libraryQuery = event.target.value;
       libraryVisibleCount = LIBRARY_PAGE_SIZE;

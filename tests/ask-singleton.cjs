@@ -6,7 +6,7 @@ const path=require('node:path');
 const product=fs.readFileSync(path.join(__dirname,'..','product-ui.js'),'utf8');
 const brain=fs.readFileSync(path.join(__dirname,'..','brain-ui.js'),'utf8');
 
-assert.match(brain,/ask\.id='ask'/,'brain-ui remains the legacy creator of the Ask surface');
+assert.match(brain,/ask\.id\s*=\s*'ask'/,'brain-ui remains the legacy creator of the Ask surface');
 assert.match(product,/function dedupeSingletons\(/,'product runtime must enforce singleton product sections');
 assert.match(product,/dedupeSelector\('#ask'\)/,'duplicate Ask sections must be removed');
 assert.match(product,/querySelectorAll\('a\[href="#myActions"\]'\)/,'duplicate Actions navigation links must be removed');
