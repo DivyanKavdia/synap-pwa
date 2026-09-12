@@ -146,7 +146,17 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  await page.clock.fastForward(6000);await page.waitForTimeout(200);
  const unavailableAttempts=await page.evaluate(()=>bleFixture.connects);
  await page.evaluate(()=>bleFixture.wake());
- await page.clock.fastForward(31000);await page.waitForFunction(()=>document.body.dataset.state==='idle');
+ // This is foreground polling: execute each timer at its deadline. fastForward
+ // models a suspended page and can move an in-flight retry's timeout ahead of
+ // the fixture's connection callback on older Chromium versions.
+ await page.clock.runFor(31000);
+ try{await page.waitForFunction(()=>document.body.dataset.state==='idle');}
+ catch(error){
+   console.error('Periodic wake recovery failed',await page.evaluate(()=>({state:document.body.dataset.state,
+     connects:bleFixture.connects,maximum:bleFixture.maximum,locked:SynapSleepStateGuard.locked,
+     diagnostics:document.getElementById('diagnosticsLog').textContent})));
+   throw error;
+ }
  assert((await page.evaluate(()=>bleFixture.connects))>unavailableAttempts,'periodic recovery detects wake without advertisements');
 
  await sleepPendant();await page.waitForFunction(()=>SynapSleepStateGuard.locked);
