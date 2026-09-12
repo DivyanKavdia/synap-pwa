@@ -162,7 +162,12 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  await sleepPendant();await page.waitForFunction(()=>SynapSleepStateGuard.locked);
  await page.locator('#settingsButton').click();await page.locator('#autoReconnectInput').uncheck();
  const disabledConnects=await page.evaluate(()=>bleFixture.connects);
- await page.evaluate(()=>bleFixture.wake());await page.clock.fastForward(31000);await page.waitForTimeout(100);
+ // Keep the foreground clock running across the switch transition and cooldown,
+ // just as in the wake polling check above. A suspension jump can rewind Date
+ // on the next animation frame in the CI clock implementation.
+ const disabledAt=await page.evaluate(()=>{bleFixture.wake();return Date.now()});
+ await page.clock.runFor(31000);await page.waitForTimeout(100);
+ assert(await page.evaluate(start=>Date.now()-start>=31000,disabledAt),'the disabled interval must elapse before enabling reconnect');
  assert.equal(await page.evaluate(()=>bleFixture.connects),disabledConnects,'off preference is respected during sleep/wake');
  await page.locator('#autoReconnectInput').check();await page.waitForFunction(()=>document.body.dataset.state==='idle');
  await page.locator('#closeSettingsButton').click();
