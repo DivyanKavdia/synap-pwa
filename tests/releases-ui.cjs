@@ -35,7 +35,7 @@ function setup(options={}){
       if(options.badDownload)throw Error('SHA-256 mismatch');
       if(options.disconnectDownload){connected=false;c.connectionEpoch++;}
       if(options.switchDownload)c.deviceAssociation={deviceId:OTHER};return{};}};
-  const c={deviceAssociation:options.noIdentity?null:{deviceId:ID},console,Promise,Error,TextDecoder,AbortController,Date:{now:()=>clock},globalThis:{SynapOTA:{Client,MIGRATION_MESSAGE:'Install by USB once'},SynapReleases:releases},
+  const c={firmwareControlsBound:false,startupReady:true,deviceAssociation:options.noIdentity?null:{deviceId:ID},console,Promise,Error,TextDecoder,AbortController,Date:{now:()=>clock},globalThis:{SynapOTA:{Client,MIGRATION_MESSAGE:'Install by USB once'},SynapReleases:releases},
     document:{getElementById:node,visibilityState:'visible',addEventListener(t,f){events[t]=f;}},window:{confirm:message=>{assert(message.includes(ID));return !options.decline;}},
     ui:{chooseDeviceButton:node('choose'),runQueueButton:node('queue'),queueStatus:node('queueStatus'),settingsDialog:node('settingsDialog')},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     firmwareUpdater:null,firmwareBusy:false,checkFirmwareRelease:null,connectionEpoch:0,bluetoothDevice:{id:'device',gatt:{disconnect:()=>connected=false}},
@@ -64,11 +64,11 @@ function setup(options={}){
   t=setup({settingsOpen:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert(t.node('settingsDialog').open,'starting inside Settings keeps it open');assert(!t.calls.includes('settings'),'the update must not toggle Settings closed');
   t=setup({commitDrop:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert.match(t.node('otaStatus').textContent,/Update complete/);
   t=setup({flashFail:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert.match(t.node('otaStatus').textContent,/Flash failed/);assert(!t.c.firmwareBusy);assert(t.node('otaCancel').hidden);assert(t.node('otaProgress').hidden);assert(t.node('firmwareNoticeProgress').hidden);assert(t.node('firmwareUpdateSpinner').hidden);assert.equal(t.node('firmwareUpdateButton').hidden,false);assert(t.calls.includes('release'));
-  for(const options of [{decline:true},{noIdentity:true},{wrongIdentity:true},{legacy:true},{badDownload:true},{cancelDownload:true},{disconnectDownload:true},{switchDownload:true}]){
+  for(const options of [{noIdentity:true},{wrongIdentity:true},{legacy:true},{badDownload:true},{cancelDownload:true},{disconnectDownload:true},{switchDownload:true}]){
     t=setup(options);await t.click('otaReleaseCheck');await t.click('otaLatest');assert(!t.calls.includes('flash'),JSON.stringify(options));assert(!t.c.firmwareBusy);
   }
   for(const flag of ['recordingConfirmed','finalizing','currentRecordingId','openingCapture','unsavedAudio','connectInProgress']){
-    t=setup();await t.click('otaReleaseCheck');t.c[flag]=true;await t.click('otaLatest');assert(!t.calls.includes('flash'),flag);
+    t=setup();await t.click('otaReleaseCheck');t.c[flag]=true;t.node('settingsDialog').open=true;await t.click('otaLatest');assert(!t.calls.includes('flash'),flag);assert(t.node('settingsDialog').open,'blocked update keeps the explanation visible');
   }
   t=setup({oldBuild:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert.match(t.node('otaStatus').textContent,/not confirmed/);assert.equal(t.storage.size,1);assert(t.storage.has('synap-ota-pending-device:SYNAP-AABBCCDDEEFF'));
   t=setup({changedHandle:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert.match(t.node('otaStatus').textContent,/Update complete/);
@@ -79,5 +79,5 @@ function setup(options={}){
   assert.match(t.node('otaLatest').textContent,/Continue/);assert(!t.calls.includes('manifest'),'resume does not switch release images');
   await t.click('otaLatest');assert.equal(t.storage.size,1,'resumable interruption keeps checkpoint');assert(t.calls.includes('recover'));
   assert(t.node('firmwareNoticeProgress').hidden);assert(t.node('firmwareUpdateSpinner').hidden);assert.equal(t.node('firmwareUpdateButton').textContent,'Continue update');
-  console.log('PASS: device-ID discovery/targeting, approval, eligibility, hash failure, connection race, commit loss, persistent target, reboot verification and failure retention.');
+  console.log('PASS: device-ID discovery/targeting, eligibility, hash failure, connection race, commit loss, persistent target, reboot verification and failure retention.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

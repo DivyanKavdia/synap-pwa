@@ -19,39 +19,6 @@
     }
   }
 
-  function bindFirmwareAffordance(){
-    const check=$('otaReleaseCheck'),latest=$('otaLatest'),status=$('otaStatus'),progress=$('otaProgress');
-    if(!check||!latest||!status)return;
-    status.setAttribute('role','status');
-    status.setAttribute('aria-live','polite');
-    function render(){
-      const message=(status.textContent||'').replace(/\s+/g,' ').trim();
-      const updateReady=!latest.hidden;
-      check.hidden=updateReady;
-      if(updateReady){
-        latest.setAttribute('aria-label',(latest.textContent||'Update').trim()+' firmware');
-        latest.title=message||'Firmware update available';
-        return;
-      }
-      let label='Firmware';
-      if(/^Checking/i.test(message))label='Checking…';
-      else {
-        const current=message.match(/Up to date\s*[·-]\s*(\d+)/i);
-        if(current)label=`FW ${current[1]} ✓`;
-        else if(/paused|continue/i.test(message))label='Continue';
-      }
-      check.textContent=label;
-      check.setAttribute('aria-label',message?`Firmware: ${message}`:'Check firmware update');
-      check.title=message||'Check firmware update';
-      check.dataset.state=/Up to date/i.test(message)?'current':/Checking/i.test(message)?'checking':/error|failed|unable/i.test(message)?'error':'idle';
-      if(progress&&!progress.hidden)check.hidden=true;
-    }
-    new MutationObserver(render).observe(status,{childList:true,subtree:true,characterData:true});
-    new MutationObserver(render).observe(latest,{attributes:true,attributeFilter:['hidden'],childList:true,subtree:true});
-    if(progress)new MutationObserver(render).observe(progress,{attributes:true,attributeFilter:['hidden','value']});
-    render();
-  }
-
   function bindTouchRecordingBridge(){
     const body=document.body,start=$('startButton');
     if(!body||!start||typeof MutationObserver==='undefined')return;
@@ -276,6 +243,6 @@
   }
 
   installBlobRegistry();
-  function init(){bindFirmwareAffordance();if(!globalThis.SynapRecordingBridge)bindTouchRecordingBridge();bindRecordingControls();bindTapResponsiveness();if(!globalThis.SynapDashboardUI)bindBrainTabs();bindReducedMotion()}
+  function init(){if(!globalThis.SynapRecordingBridge)bindTouchRecordingBridge();bindRecordingControls();bindTapResponsiveness();if(!globalThis.SynapDashboardUI)bindBrainTabs();bindReducedMotion()}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
