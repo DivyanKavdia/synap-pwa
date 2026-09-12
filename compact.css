@@ -710,3 +710,26 @@ body.synap-refresh #myActions [data-actions-panel][hidden]{display:none!importan
  .synap-refresh .settings-panel .settings-form{padding:0 20px 32px!important}
  :root[data-theme] .synap-refresh .brain-tabs{background:transparent}
 }
+
+/* One persistent recording surface, with connection details in Settings. */
+body.synap-refresh #capture[hidden]{display:none!important}
+body.synap-refresh .topbar{flex-wrap:wrap}
+body.synap-refresh #recordingSessionBar{flex-basis:100%;display:flex;align-items:center;gap:10px;padding:0 0 8px;min-width:0}
+body.synap-refresh #recordingSessionBar #timer{display:block!important;font-size:15px!important;line-height:1.4;font-variant-numeric:tabular-nums;letter-spacing:0;margin:0;color:var(--ink)}
+#momentFeedback{flex:1;min-width:0;font-size:12px;color:var(--muted)}
+#markMoment,.recording-moments button{border:1px solid var(--border);border-radius:10px;background:var(--accent-soft);color:var(--ink);padding:8px 12px;min-height:40px;font:inherit;font-size:13px;cursor:pointer}
+.recording-moments{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
+.recording-moments strong{flex-basis:100%;font-size:13px}
+.pendant-connection #connectButton{width:100%;margin:8px 0;padding:10px!important;min-height:44px}
+.pendant-connection .device-summary-copy{display:none}
+.connection-settings summary{min-height:44px;display:flex;align-items:center;font-size:14px;cursor:pointer}
+.connection-settings .capture-help-content{position:static;display:block;padding:12px 0;font-size:13px}
+.connection-settings .recorder-details{border:0}
+
+@media(min-width:361px){
+ body.synap-refresh .topbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+ body.synap-refresh .topbar>.brand{min-width:0;max-width:100%}
+ body.synap-refresh .topbar .brand-logo{max-width:100%;height:auto}
+ body.synap-refresh .topbar>.top-actions{width:auto;min-width:0}
+ body.synap-refresh #recordingSessionBar{grid-column:1/-1}
+}

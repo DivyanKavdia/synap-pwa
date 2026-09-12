@@ -17,17 +17,10 @@ assert.doesNotMatch(dashboard,/wrapConversations\s*\(/);
 assert.doesNotMatch(dashboard,/createElement\(['"]details['"]\)/);
 assert.match(dashboard,/scrollIntoView/);
 assert.match(dashboard,/IntersectionObserver/);
-assert.match(dashboard,/capture:'#capture'/);
-assert.match(dashboard,/href='#capture'|href="\#capture"/);
-assert.match(dashboard,/SynapDashboardUI/);
-assert.match(dashboard,/setView/);
-
-// Capture is a first-class visible surface; the header mic is only a shortcut.
-assert.doesNotMatch(compact,/\.capture-minimal\s*\{\s*display\s*:\s*none/i);
-assert.match(compact,/\.capture-minimal,\.capture-product\{display:grid!important/);
-assert.match(capture,/classList\.remove\('capture-minimal'\)/);
-assert.match(capture,/classList\.add\('capture-product'\)/);
-assert.match(capture,/removeAttribute\('aria-hidden'\)/);
+assert.doesNotMatch(dashboard,/capture:'#capture'/);
+assert.match(capture,/section.hidden=true/);
+assert.match(capture,/recordingSessionBar/);
+assert.match(capture,/markMoment/);
 
 // Recording controls remain visible. Old product-ui moved almost every action to
 // a ••• disclosure while runtime-ui hid the remaining loader button.

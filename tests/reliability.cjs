@@ -32,7 +32,7 @@ test('PWA receives explicit app-owned GATT service for dedicated EVENT telemetry
   const identity=fs.readFileSync(path.join(root,'device-identity.js'),'utf8');
   const memoryFix=fs.readFileSync(path.join(root,'memory-ui-fix.js'),'utf8');
   const compat=fs.readFileSync(path.join(root,'runtime-compat.js'),'utf8');
-  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell56-battery-reconnect'/);
+  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell57-moments'/);
   assert.match(sw,/\.\/runtime-compat\.js/);
   assert.match(sw,/\.\/processing-recovery\.js/);
   assert.match(sw,/\.\/ask-synap\.js/);
@@ -83,8 +83,8 @@ test('memory events remain stream-relative and reboot-safe',()=>{
   const touch=fs.readFileSync(path.join(root,'touch-event-bridge.js'),'utf8');
   assert.match(touch,/relative=Boolean\(flags&4\)/);
   assert.match(touch,/streamOffsetMs:relative\?eventTime:null/);
-  assert.match(touch,/pendantEventKey===detail\.eventKey/);
-  assert.match(touch,/pendantStreamOffsetMs:Number\.isFinite\(detail\.streamOffsetMs\)/);
+  assert.match(fs.readFileSync(path.join(root,'moments.js'),'utf8'),/pendantEventKey===detail\.eventKey/);
+  assert.match(fs.readFileSync(path.join(root,'moments.js'),'utf8'),/pendantStreamOffsetMs:Number\.isFinite\(detail\.streamOffsetMs\)/);
   assert.doesNotMatch(touch,/lastCounter/);
   assert.doesNotMatch(touch,/h\.source==='pendant'&&h\.counter===detail\.counter/);
 });

@@ -70,7 +70,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell56-battery-reconnect'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell57-moments'/);
 });
 
 test('the settings form offers the encrypted cloud provider and a sign-in control', () => {
@@ -557,4 +557,29 @@ test('an unset provider preference is written down as the cloud default', () => 
   // intercept every job looking for a key this build no longer asks for.
   assert.match(uiSource, /stored !== 'synap' && stored !== 'openai' && stored !== 'custom'/);
   assert.match(uiSource, /stored = 'synap';\s*\n\s*savePrefs\(\{ provider: stored \}\);/);
+});
+
+test('marked moments reach the cloud before finalization; upload failures block summary creation', async () => {
+  for (const fail of [false,true]) {
+    class Processor { async process() { return {}; } }
+    const calls=[],recording={id:'11111111-1111-4111-8111-111111111111',createdAt:'2026-09-12T00:00:00.000Z',durationMs:20000,rememberMarkers:[{id:'22222222-2222-4222-8222-222222222222',offsetMs:1250,source:'pwa',createdAt:'2026-09-12T00:00:01.250Z'}]};
+    const response=(data,status=200)=>({ok:status<400,status,text:async()=>JSON.stringify(data)});
+    load(fs.readFileSync(path.join(root,'moments.js'),'utf8')+'\n'+backendSource,{
+      DKFIFOProcessor:Processor,
+      localStorage:storage({'synap-ai-provider-settings':JSON.stringify({provider:'synap'})}),
+      SynapAuth:{isSignedIn:()=>true,config:()=>({backendUrl:'https://api.example.test'}),authedFetch:async(url,init={})=>{
+        const endpoint=new URL(url,'https://api.example.test').pathname.split('/').pop();calls.push({endpoint,body:init.body?JSON.parse(init.body):null});
+        if(endpoint==='highlights')return response(fail?{error:'temporary failure'}:{},fail?503:201);
+        if(endpoint==='finalize')return response({state:'uploaded'},202);
+        if(endpoint==='processing')return response({state:'ready',progress:1,retryable:false});
+        if(endpoint==='memory')return response({title:'Done',transcript:'hello',people:[],conversations:[],key_points:[]});
+        throw Error('Unexpected request '+url);
+      }}
+    });
+    const processor=new Processor();Object.assign(processor,{store:{get:async()=>recording,all:async()=>[{frameCount:400}],atomic:async()=>{}},controllers:new Map(),paused:false,canRun:()=>true,onChange(){}});
+    const operation=processor.process({id:1,recordingId:recording.id,kind:'consolidate',dedupe:recording.id+':consolidate'},{},'');
+    if(fail){await assert.rejects(operation);assert(!calls.some(c=>c.endpoint==='finalize'));}
+    else{await operation;assert.deepEqual(calls.map(c=>c.endpoint),['highlights','finalize','processing','memory']);}
+    assert.equal(calls[0].body.offset_ms,1250);assert.equal(calls[0].body.source,'pwa');assert.equal(calls[0].body.highlight_id,recording.rememberMarkers[0].id);
+  }
 });

@@ -155,6 +155,7 @@
   }
 
   root.SynapCaptureStability = Object.freeze({
+    timelineOffsetMs: recordingId => (sequenceStates.get(String(recordingId))?.lastLogical || 0) * 50,
     relativeSequence,
     beginTransportEpoch,
     forgetSequence,

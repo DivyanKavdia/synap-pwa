@@ -2617,6 +2617,7 @@
     }
     if (summary) summary.textContent = recording.summary || "";
     globalThis.SynapSpeakerNames?.attach(card, recording);
+    globalThis.SynapMoments?.attach(card, recording);
   }
 
   function revealRecording(id) {
@@ -2800,6 +2801,7 @@
 
     card.appendChild(recordingDisclosure("Edit name & details", titleRow, meta));
     globalThis.SynapSpeakerNames?.attach(card, recording);
+    globalThis.SynapMoments?.attach(card, recording);
     return card;
   }
 
@@ -3557,6 +3559,7 @@
     // Core navigation must remain usable even if IndexedDB recovery fails.
     bindCoreControls();
     await journal.open();
+    globalThis.SynapMoments?.configure({store:journal,context:()=>({active:recordingConfirmed&&appState==='recording'&&!recordingReconnectPending,recordingId:currentRecordingId,offsetMs:globalThis.SynapCaptureStability.timelineOffsetMs(currentRecordingId)})});
     const recovered = await journal.recover();
     ui.appVersion.textContent = APP_VERSION;
     loadSettings();

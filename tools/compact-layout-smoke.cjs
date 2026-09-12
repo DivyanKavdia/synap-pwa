@@ -30,7 +30,7 @@ try{for(const width of[390,1440]){
  const height=await page.evaluate(()=>document.documentElement.scrollHeight);measurements.push({width,height});
  await page.screenshot({path:path.join(out,'overview-'+width+'.png'),fullPage:true});
  if(!baseline){
-   for(const id of['capture','insights','library','synapWeeklyReview'])assert.equal(await page.locator('#'+id+' .tile-toggle').getAttribute('aria-expanded'),'false',id+' starts compact');
+   for(const id of['insights','library','synapWeeklyReview'])assert.equal(await page.locator('#'+id+' .tile-toggle').getAttribute('aria-expanded'),'false',id+' starts compact');
    assert.equal(await page.locator('.conversation-digest[open]').count(),0);
    const actionsToggle=page.locator('#myActions > .tile-heading .tile-toggle');await actionsToggle.focus();await page.keyboard.press('Space');assert(!(await page.locator('#myActionsBody').isVisible()));await page.keyboard.press('Space');assert(await page.locator('#myActionsBody').isVisible());
    await page.locator('.conversation-card').first().click();assert(await page.locator('.conversation-source').first().isVisible());await page.locator('.conversation-source').first().click();
@@ -42,7 +42,7 @@ try{for(const width of[390,1440]){
    await page.locator('.brain-tabs a[href="#library"]').click();assert(await page.locator('#recording-compact-0 audio').evaluate(node=>node===window.savedPlayer));assert.equal(await notes.inputValue(),'An edit that must survive collapse.');
    await page.locator('.brain-tabs a[href="#insights"]').click();const memory=page.locator('#insightsList .insight-card').first();await memory.locator('summary.insight-top').click();assert(await memory.evaluate(node=>node.open));
    await page.evaluate(()=>document.getElementById('datePicker').dispatchEvent(new Event('change',{bubbles:true})));await page.waitForTimeout(200);assert(await memory.evaluate(node=>node.open),'memory stays open through data refresh');
-   await page.evaluate(()=>{document.body.dataset.state='recording'});assert(await page.locator('#captureBody').isVisible());assert(await page.locator('#stopButton').isVisible());await page.evaluate(()=>{document.body.dataset.state='disconnected'});
+   await page.evaluate(()=>{document.body.dataset.state='recording'});assert(!(await page.locator('#capture').isVisible()));assert(await page.locator('#recordingSessionBar').isVisible());await page.evaluate(()=>{document.body.dataset.state='disconnected'});
    while(await page.locator('main>.workspace-tile.is-expanded .tile-toggle').count())await page.locator('main>.workspace-tile.is-expanded .tile-toggle').first().click();
    await page.locator('.brain-tabs a[href="#today"]').click();
    await page.locator('#settingsButton').click();

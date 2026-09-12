@@ -38,6 +38,9 @@ async function captureTests() {
   assert.equal(api.relativeSequence('b', 65535), 1);
   assert.equal(api.relativeSequence('b', 0), 2, '16-bit wrap must remain recording-relative');
 
+  assert.equal(api.timelineOffsetMs('b'),100,'bookmark clock unwraps the firmware counter');
+  api.beginTransportEpoch('b',20);api.relativeSequence('b',0);
+  assert.equal(api.timelineOffsetMs('b'),1150,'bookmark clock includes the saved reconnect gap');
   const store = new Store();
   store.append('take', { sequence: 32000, chunk: 0, total: 1, payload: new Uint8Array([1]) });
   store.append('take', { sequence: 32001, chunk: 0, total: 1, payload: new Uint8Array([2]) });

@@ -167,7 +167,7 @@ async function run() {
       await page.clock.install({time:new Date('2026-09-10T10:00:00Z')});
       const errors=[]; page.on('pageerror', error => errors.push(error.stack||error.message));
       await page.goto(origin);
-      await page.waitForFunction(() => window.SynapDashboardUI && document.querySelectorAll('.brain-tabs a').length === 5);
+      await page.waitForFunction(() => window.SynapDashboardUI && document.querySelectorAll('.brain-tabs a').length === 4);
       await page.waitForTimeout(800);
       assert.equal(await page.locator('.brain-tabs a[aria-current="page"]').getAttribute('href'),'#today','initial view');
       assert.equal(await page.locator('html').getAttribute('data-theme'), mode);
@@ -187,7 +187,7 @@ async function run() {
         await page.screenshot({path:path.join(output,`home-${mode}-${width}.png`)});
         await page.locator('.brand-logo').screenshot({path:path.join(output,`brand-${mode}-${width}.png`)});
       }
-      for (const href of ['#capture','#insights','#myActions','#library','#today']) {
+      for (const href of ['#insights','#myActions','#library','#today']) {
         await page.locator(`.brain-tabs a[href="${href}"]`).click();
         assert.equal(await page.locator('.brain-tabs a[aria-current="page"]').count(),1);
         assert.equal(await page.locator('.brain-tabs a[aria-current="page"]').getAttribute('href'),href);

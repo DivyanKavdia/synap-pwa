@@ -55,16 +55,16 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  });
  const page=await context.newPage(),errors=[];page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));
  await page.clock.install({time:new Date('2026-09-11T10:00:00Z')});await page.goto(origin);
- await page.waitForFunction(()=>window.SynapCompactLayout);await page.locator('.brain-tabs a[href="#capture"]').click();await page.locator('#connectButton').click();
+ await page.waitForFunction(()=>window.SynapCompactLayout&&document.querySelector('#diagnosticsLog')?.textContent.includes('Application started'));await page.locator('#headerPendantStatus').click();
  await page.waitForFunction(()=>document.body.dataset.state==='idle');
  await page.evaluate(()=>localStorage.setItem('dk-pendant-auto-reconnect','on'));
- await page.locator('#startButton').click();await page.waitForFunction(()=>document.body.dataset.state==='recording');
+ await page.locator('#headerCaptureToggle').click();await page.waitForFunction(()=>document.body.dataset.state==='recording');
  // A real model Worker may now run during rolling capture. Exercise the same
  // automatic entry point while BLE packets continue arriving on the main thread.
  const {wav,fixture}=require('./audio-enhancement-fixtures.cjs');
  await page.evaluate(bytes=>{window.qaAudioPreparation=SynapAudioEnhancement.prepareForUpload(new Blob([new Uint8Array(bytes)],{type:'audio/wav'})).then(copy=>copy.size)},[...wav(fixture(16000,3))]);
- const records=()=>page.evaluate(()=>new Promise((resolve,reject)=>{const r=indexedDB.open('dk-pendant-recordings');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,read=db.transaction('recordings').objectStore('recordings').getAll();read.onsuccess=()=>{db.close();resolve(read.result.map(x=>({id:x.id,status:x.status,sizeBytes:x.sizeBytes,durationMs:x.durationMs})))}}}));
- await page.waitForTimeout(800);const first=await records();assert.equal(first.length,1);
+ const records=()=>page.evaluate(()=>new Promise((resolve,reject)=>{const r=indexedDB.open('dk-pendant-recordings');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,read=db.transaction('recordings').objectStore('recordings').getAll();read.onsuccess=()=>{db.close();resolve(read.result.map(x=>({id:x.id,status:x.status,sizeBytes:x.sizeBytes,durationMs:x.durationMs,rememberMarkers:x.rememberMarkers})))}}}));
+ await page.waitForTimeout(800);await page.locator('#markMoment').click();fs.mkdirSync('/tmp/synap-moments-qa',{recursive:true});await page.screenshot({path:'/tmp/synap-moments-qa/recording-light.png'});await page.evaluate(()=>window.dispatchEvent(new StorageEvent('storage',{key:'synap-appearance',newValue:'dark'}))); await page.screenshot({path:'/tmp/synap-moments-qa/recording-dark.png'});await page.evaluate(()=>window.dispatchEvent(new StorageEvent('storage',{key:'synap-appearance',newValue:'light'}))); await page.waitForFunction(()=>document.querySelector('#momentFeedback').textContent==='Moment saved');const first=await records();assert.equal(first[0].rememberMarkers.length,1);assert(first[0].rememberMarkers[0].offsetMs>0);assert.equal(first.length,1);
  await page.evaluate(()=>{bleFixture.hideOnNextConnect();bleFixture.disconnect()});
  await page.waitForFunction(()=>document.body.dataset.recordingInterrupted==='true');
  await page.waitForFunction(()=>document.body.dataset.state==='recording'&&document.body.dataset.recordingInterrupted==='false',{},{timeout:15000});
@@ -83,7 +83,7 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  await page.locator('.brain-tabs a[href="#myActions"]').click();
  for(const id of ['dailyFocus','followupInbox','peopleMemory','ask'])await page.locator('#actionsTab-'+id).click();
  assert.equal(await page.locator('#headerCaptureToggle').getAttribute('aria-label'),'Stop listening');
- await page.locator('.brain-tabs a[href="#capture"]').click();
+ await page.locator('.brain-tabs a[href="#today"]').click();
  assert.equal(await page.evaluate(()=>bleFixture.appDisconnects),0,'day and section browsing preserves capture');
  assert.equal(await page.evaluate(()=>qaAudioPreparation),96044,'local preprocessing completes during capture');
  await page.waitForTimeout(800);const resumed=await records();assert.equal(resumed.length,1);assert.equal(resumed[0].id,first[0].id);
@@ -93,8 +93,9 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  await page.locator('#headerCaptureToggle').click();await page.waitForFunction(()=>document.body.dataset.state==='idle');
  assert(await page.locator('#settingsDialog').evaluate(node=>node.open),'header Stop keeps Settings open');
  await page.locator('#settingsButton').click();await page.waitForFunction(()=>!document.querySelector('#settingsDialog').open);
- const saved=await records();assert.equal(saved.length,1);assert.equal(saved[0].id,first[0].id);assert(saved[0].durationMs>=1200);
+ const saved=await records();assert.equal(saved[0].rememberMarkers.length,1,'bookmark survives reconnect and saving');assert(!(await page.locator('#markMoment').isVisible()));assert.equal(await page.locator('.brain-tabs a').count(),4);assert.equal(await page.locator('#rememberThis').count(),0);assert(!(await page.locator('#capture').isVisible()));assert.equal(await page.evaluate(()=>SynapMoments.mark().then(()=>false,()=>true)),true,'idle marks are rejected');assert.equal(saved.length,1);assert.equal(saved[0].id,first[0].id);assert(saved[0].durationMs>=1200);
  assert.equal(await page.evaluate(()=>window.bleFixture.maximum),1);assert.deepEqual(errors,[]);
+ await page.locator('.brain-tabs a[href="#library"]').click();await page.locator('#recording-'+saved[0].id+' > summary').click();await page.waitForFunction(()=>!!document.querySelector('.recording-moments button'));assert.equal(await page.locator('.recording-moments button').count(),1);await page.locator('.recording-moments button').click();await page.waitForFunction(()=>{const a=document.querySelector('.recording-content audio');return a&&!a.paused&&a.currentTime>0});await page.locator('.recording-content audio').evaluate(a=>a.pause());
  console.log('PASS: recording survives native UI visibility changes, a slow GATT reply, navigation and reconnect; header Stop saves from Settings with one journal and no overlapping GATT requests',saved[0]);
 
  const starts=await page.evaluate(()=>bleFixture.starts);
@@ -102,7 +103,7 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  await page.reload();await page.waitForFunction(()=>document.body.dataset.state==='idle');
  assert.equal(await page.evaluate(()=>bleFixture.pickers),1,'reload reuses permission without a chooser');
  assert.equal(await page.evaluate(()=>bleFixture.starts),starts,'reload does not start recording');
- assert(await page.locator('#captureBody').evaluate(n=>n.hidden),'automatic recovery preserves collapsed Capture');
+ assert(!(await page.locator('#capture').isVisible()),'automatic recovery does not expose redundant controls');
  await sleepPendant();
  await page.waitForFunction(()=>SynapSleepStateGuard.locked&&document.body.dataset.state==='disconnected');
  const sleepingConnects=await page.evaluate(()=>bleFixture.connects);
@@ -140,21 +141,21 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
  assert.equal(await page.evaluate(()=>bleFixture.starts),starts);
  console.log('PASS: a stale sleep flag from the previous page clears after reload connects to the awake pendant');
 
- await page.goto(origin+'/?noRestore=1');await page.waitForFunction(()=>window.SynapCompactLayout);
- await page.locator('.brain-tabs a[href="#capture"]').click();
+ await page.goto(origin+'/?noRestore=1');await page.waitForFunction(()=>window.SynapCompactLayout&&document.querySelector('#diagnosticsLog')?.textContent.includes('Application started'));
+ await page.locator('.brain-tabs a[href="#today"]').click();
  await page.waitForFunction(()=>document.querySelector('#reconnectStatus').textContent.includes('tap on Connect'));
  assert.equal(await page.evaluate(()=>bleFixture.pickers),1,'unsupported restore never prompts automatically');
- assert(await page.locator('#reconnectStatus').isVisible());
- await page.locator('#connectButton').click();await page.waitForFunction(()=>document.body.dataset.state==='idle');
+ await page.locator('#settingsButton').click();assert(await page.locator('#reconnectStatus').isVisible());await page.locator('#settingsButton').click();
+ await page.locator('#headerPendantStatus').click();await page.waitForFunction(()=>document.body.dataset.state==='idle');
  assert.equal(await page.evaluate(()=>bleFixture.pickers),2,'manual connection remains usable on limited browsers');
  assert.deepEqual(errors,[]);
  console.log('PASS: browsers without getDevices show an actionable hint and retain manual connection');
 
  await page.evaluate(()=>localStorage.setItem('dk-pendant-auto-reconnect','off'));
- await page.locator('#startButton').click();await page.waitForFunction(()=>document.body.dataset.state==='recording');
+ await page.locator('#headerCaptureToggle').click();await page.waitForFunction(()=>document.body.dataset.state==='recording');
  await page.waitForTimeout(400);await page.evaluate(()=>bleFixture.delayStatusRead());
  await page.waitForFunction(()=>bleFixture.readError==='TimeoutError');
- await page.locator('#stopButton').click();await page.waitForFunction(()=>document.body.dataset.state==='disconnected');
+ await page.locator('#headerCaptureToggle').click();await page.waitForFunction(()=>document.body.dataset.state==='disconnected');
  await page.waitForFunction(()=>document.querySelector('#diagnosticsLog').textContent.includes('Recording stop was not acknowledged'));
  await page.evaluate(()=>bleFixture.finishRead());
  const stopped=await records();assert.equal(stopped.length,2);assert(stopped.every(r=>r.status==='saved'&&r.durationMs>0));

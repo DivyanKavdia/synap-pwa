@@ -42,14 +42,14 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   assert.match(sleepGuard, /synap-gatt-service-ready/);
 
   assert.doesNotMatch(events, /script\.src=['"]audio-codec-v3/);
-  assert.match(sw, /1\.0\.0-shell56-battery-reconnect/);
-  assert.match(sw, /1\.0\.0-ota-progress1/);
+  assert.match(sw, /1\.0\.0-shell57-moments/);
+  assert.match(sw, /1\.0\.0-moments1/);
   assert.match(sw, /\.\/dashboard-ui\.js/);
   assert.match(sw, /\.\/ask-synap\.js/);
   assert.match(sw, /\.\/sleep-state-guard\.js/);
   assert.match(sw, /\.\/runtime-compat\.js/);
   assert.match(sw, /\.\/processing-recovery\.js/);
-  assert.match(html, /dashboard-ui\.js\?v=1\.0\.0-actions1/);
+  assert.match(html, /dashboard-ui\.js\?v=1\.0\.0-moments1/);
   assert.match(sw, /\.\/my-actions\.js/);
   assert.match(html, /my-actions\.js\?v=1\.0\.0-actions2/);
   assert.match(html, /ask-synap\.js\?v=1\.0\.0-workflows1/);
@@ -60,7 +60,7 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
 
   // UI architecture: all product surfaces stay mounted. The dashboard only
   // navigates to them; it never collapses/reparents or display:none's the app.
-  assert.match(dashboard, /capture:'#capture'/);
+  assert.doesNotMatch(dashboard, /capture:'#capture'/);
   assert.match(dashboard, /scrollIntoView/);
   assert.match(dashboard, /IntersectionObserver/);
   assert.match(dashboard, /overflow-x:clip/);

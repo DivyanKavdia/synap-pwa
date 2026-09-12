@@ -30,7 +30,7 @@ test('static shell never paints a capitalized synap brand before runtime normali
   const visibleShell=html.slice(start,end);
   assert.doesNotMatch(visibleShell,/\bSynap\b/);
   assert.match(visibleShell,/Day summary/);
-  assert.match(visibleShell,/let synap listen/);
+  assert.match(visibleShell,/Use the microphone above to start recording/);
   assert.match(visibleShell,/Back to synap/);
 });
 
