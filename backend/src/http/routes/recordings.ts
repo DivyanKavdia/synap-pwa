@@ -7,7 +7,12 @@ import { binding } from '../../pipeline/process.js';
 import { transcribeUploadedWindow } from '../../pipeline/rolling-transcription.js';
 import * as db from '../../store/firestore.js';
 import { segmentPath, writeSealedSegment } from '../../store/gcs.js';
-import type { HighlightDoc, RecordingDoc, SegmentDoc, StructuredMemory } from '../../store/types.js';
+import type {
+  HighlightDoc,
+  RecordingDoc,
+  SegmentDoc,
+  StructuredMemory,
+} from '../../store/types.js';
 import { fingerprint, localDay, sha256 } from '../../util/ids.js';
 import { log } from '../../util/log.js';
 import { speakerTranscriptFields } from '../../speaker/names.js';
@@ -52,13 +57,13 @@ function idempotencyKey(req: AuthedRequest): string {
 
 export function recordingRoutes(): Router {
   const router = Router();
-  router.use(requireAuth());
 
   // -------------------------------------------------------------------------
   // Create
   // -------------------------------------------------------------------------
   router.post(
     '/recordings',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const body = createBody.safeParse(req.body);
       if (!body.success) {
@@ -111,6 +116,7 @@ export function recordingRoutes(): Router {
   // -------------------------------------------------------------------------
   router.put(
     '/recordings/:recordingId/segments/:index',
+    requireAuth(),
     raw({ type: ['audio/wav', 'application/octet-stream'], limit: config.limits.maxSegmentBytes }),
     handler<AuthedRequest>(async (req, res) => {
       const recordingId = String(req.params.recordingId);
@@ -138,7 +144,11 @@ export function recordingRoutes(): Router {
         // A retry after upload but before/while ASR completed must continue the
         // missing transcription rather than returning early and leaving a hole.
         let completed = existing;
-        if (!existing.sealedTranscript || !existing.sealedWords || existing.state !== 'transcribed') {
+        if (
+          !existing.sealedTranscript ||
+          !existing.sealedWords ||
+          existing.state !== 'transcribed'
+        ) {
           try {
             completed = await transcribeUploadedWindow(req.uid, recordingId, index, req.dek);
           } catch (cause) {
@@ -226,6 +236,7 @@ export function recordingRoutes(): Router {
   // -------------------------------------------------------------------------
   router.post(
     '/recordings/:recordingId/highlights',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const recordingId = String(req.params.recordingId);
       const body = highlightBody.safeParse(req.body);
@@ -257,6 +268,7 @@ export function recordingRoutes(): Router {
   // -------------------------------------------------------------------------
   router.post(
     '/recordings/:recordingId/finalize',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const recordingId = String(req.params.recordingId);
       const body = finalizeBody.safeParse(req.body);
@@ -312,6 +324,7 @@ export function recordingRoutes(): Router {
   // -------------------------------------------------------------------------
   router.get(
     '/recordings/:recordingId/processing',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const recording = await db.getRecording(req.uid, String(req.params.recordingId));
       if (!recording) throw new HttpError(404, 'not_found', 'Unknown recording');
@@ -342,6 +355,7 @@ export function recordingRoutes(): Router {
    */
   router.get(
     '/recordings',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const day = req.query.day ? String(req.query.day) : '';
       if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
@@ -349,7 +363,9 @@ export function recordingRoutes(): Router {
       }
 
       const requested = Number(req.query.limit ?? 50);
-      const limit = Number.isFinite(requested) ? Math.min(Math.max(Math.trunc(requested), 1), 200) : 50;
+      const limit = Number.isFinite(requested)
+        ? Math.min(Math.max(Math.trunc(requested), 1), 200)
+        : 50;
       const withTranscript = String(req.query.include_transcript ?? '') === 'true';
 
       const recordings = day
@@ -384,7 +400,11 @@ export function recordingRoutes(): Router {
             withTranscript && recording.sealedTranscript
               ? openText(req.dek, recording.sealedTranscript, binding(req.uid, scope, 'transcript'))
               : undefined;
-          return { ...base, ...memory, ...speakerTranscriptFields(req.uid, recording, req.dek, transcript) };
+          return {
+            ...base,
+            ...memory,
+            ...speakerTranscriptFields(req.uid, recording, req.dek, transcript),
+          };
         } catch (cause) {
           // One unreadable record must not cost the user the rest of their
           // history. This should be impossible — it would mean the sealed bytes
@@ -404,6 +424,7 @@ export function recordingRoutes(): Router {
 
   router.get(
     '/recordings/:recordingId/memory',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const recordingId = String(req.params.recordingId);
       const recording = await db.getRecording(req.uid, recordingId);
@@ -439,6 +460,7 @@ export function recordingRoutes(): Router {
 
   router.delete(
     '/recordings/:recordingId',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const recordingId = String(req.params.recordingId);
       const { deleteRecordingAudio } = await import('../../store/gcs.js');

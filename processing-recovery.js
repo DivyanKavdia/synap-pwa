@@ -158,25 +158,8 @@
     }
   }
 
-  function install() {
-    var auth = root.SynapAuth;
-    if (!auth || typeof auth.authedFetch !== 'function') return false;
-    if (auth.__synapProcessingRecoveryInstalled) return true;
-
-    var originalFetch = auth.authedFetch;
-    auth.authedFetch = function (path, options) {
-      return originalFetch(path, options).then(function (response) {
-        observeResponse(path, response, originalFetch);
-        return response;
-      });
-    };
-    auth.__synapProcessingRecoveryInstalled = true;
-    return true;
-  }
-
-  install();
   root.SynapProcessingRecovery = {
-    install: install,
+    observeResponse: observeResponse,
     observeStatus: observeStatus,
     observeState: observeState,
     clear: clear,

@@ -142,7 +142,6 @@ async function conversationEvidence(uid: string, dek: Buffer, conversations: Con
 async function transcriptEvidence(
   uid: string,
   dek: Buffer,
-  query: string,
   queryTerms: string[],
   from: string | null | undefined,
   to: string | null | undefined,
@@ -264,7 +263,7 @@ export function askV3Routes(): Router {
     const [semantic, transcript] = await Promise.all([
       conversationEvidence(req.uid, req.dek, conversations, queryTerms),
       transcriptEvidence(
-        req.uid, req.dek, query, queryTerms, retrieval.from, retrieval.to,
+        req.uid, req.dek, queryTerms, retrieval.from, retrieval.to,
         peopleNames, topics, parsed.intent, limit,
       ),
     ]);

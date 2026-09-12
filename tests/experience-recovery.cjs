@@ -48,7 +48,7 @@ assert(app.indexOf("app.use('/v1', askV3Routes())") < app.indexOf("app.use('/v1'
 
 // The recovery runtime must ship in both online and installed-PWA paths. The
 // transcripts1 cache-buster ships visible transcript recovery and preserves the media fallback.
-assert.match(shell, /experience-recovery\.js\?v=1\.0\.0-transcripts1/);
+assert.match(shell, /experience-recovery\.js\?v=1\.0\.0-maintenance1/);
 assert.match(sw, /\.\/experience-recovery\.js/);
 
 console.log('PASS: source recovery keeps playback, media-error fallback, full transcript hydration and Ask on one durable evidence path.');

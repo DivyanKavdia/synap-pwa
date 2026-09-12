@@ -12,7 +12,7 @@ test('timeline assembly preserves missing frame positions as silence',()=>{
 test('timeline can preserve outages spanning an entire 30-second segment',()=>{
   const packets=[...fullFrame(0),...fullFrame(1200)],compact=codec.assemble(packets,{preserveTimeline:true,startSequence:0,endSequence:1200});
   assert.equal(compact.completeFrames,2);assert.equal(compact.frames.length,1201);assert.equal(compact.missing,1199);
-  const source=fs.readFileSync(path.join(root,'audio-store.js'),'utf8');assert.match(source,/lastIndex=Math\.floor\(lastSequence\/SEGMENT_FRAMES\)/);assert.match(source,/for\(let index=0;index<=lastIndex;index\+\+\)/);
+  const source=fs.readFileSync(path.join(root,'audio-store.js'),'utf8');assert.match(source,/lastIndex\s*=\s*Math\.floor\(lastSequence\s*\/\s*SEGMENT_FRAMES\)/);assert.match(source,/for\s*\(let index\s*=\s*0;\s*index\s*<=\s*lastIndex;\s*index\+\+\)/);
 });
 
 test('duplicate chunks do not falsely make a complete frame',()=>{
@@ -32,7 +32,7 @@ test('PWA receives explicit app-owned GATT service for dedicated EVENT telemetry
   const identity=fs.readFileSync(path.join(root,'device-identity.js'),'utf8');
   const memoryFix=fs.readFileSync(path.join(root,'memory-ui-fix.js'),'utf8');
   const compat=fs.readFileSync(path.join(root,'runtime-compat.js'),'utf8');
-  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell70-notifications'/);
+  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell71-maintenance'/);
   assert.match(sw,/\.\/runtime-compat\.js/);
   assert.match(sw,/\.\/processing-recovery\.js/);
   assert.match(sw,/\.\/ask-synap\.js/);

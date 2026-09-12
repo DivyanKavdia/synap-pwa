@@ -1,37 +1,20 @@
 /**
  * The read side of the second brain: the daily brief, people, the follow-up
- * inbox and Ask Synap.
+ * inbox. Ask retrieval lives in ask-v3.ts.
  */
 
 import { Router } from 'express';
 import { z } from 'zod';
-import { config } from '../../config.js';
 import { openJson, sealJson } from '../../crypto/envelope.js';
-import { answerFromEvidence, parseQuery, type Evidence } from '../../gemini/ask.js';
-import { embedContent } from '../../gemini/client.js';
 import { prepareMeeting } from '../../pipeline/meeting-preparation.js';
 import { readDay, rebuildDay } from '../../pipeline/brief.js';
 import { binding } from '../../pipeline/process.js';
 import * as db from '../../store/firestore.js';
-import type { ConversationDoc } from '../../store/types.js';
-import { mergeAliasKeys, nameKey, normalizeName, topicKey } from '../../util/ids.js';
+import { mergeAliasKeys, nameKey, normalizeName } from '../../util/ids.js';
 import { requireAuth, type AuthedRequest } from '../auth.js';
 import { HttpError, handler } from '../errors.js';
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-const askBody = z.object({
-  query: z.string().min(1).max(1000),
-  scope: z
-    .object({
-      from: z.string().regex(DAY_PATTERN).nullable().optional(),
-      to: z.string().regex(DAY_PATTERN).nullable().optional(),
-      people: z.array(z.string()).max(10).optional(),
-      topics: z.array(z.string()).max(10).optional(),
-    })
-    .optional(),
-  max_sources: z.number().int().min(1).max(20).optional(),
-});
 
 const patchFollowUpBody = z.object({
   state: z.enum(['open', 'done', 'dismissed']).optional(),
@@ -45,13 +28,13 @@ const patchPersonBody = z.object({
 
 export function brainRoutes(): Router {
   const router = Router();
-  router.use(requireAuth());
 
   // -------------------------------------------------------------------------
   // Daily brief
   // -------------------------------------------------------------------------
   router.get(
     '/days/:day/brief',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const day = String(req.params.day);
       if (!DAY_PATTERN.test(day)) throw new HttpError(400, 'bad_request', 'Day must be YYYY-MM-DD');
@@ -71,6 +54,7 @@ export function brainRoutes(): Router {
 
   router.post(
     '/days/:day/brief/rebuild',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const day = String(req.params.day);
       if (!DAY_PATTERN.test(day)) throw new HttpError(400, 'bad_request', 'Day must be YYYY-MM-DD');
@@ -83,11 +67,17 @@ export function brainRoutes(): Router {
   // -------------------------------------------------------------------------
   router.get(
     '/people',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const people = await db.listPeople(req.uid);
       res.status(200).json({
         people: people.map((person) => {
-          const profile = openJson<{ name: string; role: string; evidence: string; confidence: number }>(
+          const profile = openJson<{
+            name: string;
+            role: string;
+            evidence: string;
+            confidence: number;
+          }>(
             req.dek,
             person.sealedProfile,
             binding(req.uid, `person/${person.personId}`, 'profile'),
@@ -111,17 +101,32 @@ export function brainRoutes(): Router {
     }),
   );
 
-  router.get('/people/:personId/preparation',handler<AuthedRequest>(async(req,res)=>{
-    const personId=String(req.params.personId);
-    const person=await db.getPerson(req.uid,personId);
-    if(!person)throw new HttpError(404,'not_found','Unknown person.');
-    const profile=openJson<{name:string}>(req.dek,person.sealedProfile,binding(req.uid,`person/${personId}`,'profile'));
-    const [conversations,followUps]=await Promise.all([db.conversationsForPerson(req.uid,personId),db.listFollowUps(req.uid,'open','all')]);
-    res.json({person:{id:personId,name:profile.name},...prepareMeeting(req.uid,req.dek,personId,conversations,followUps)});
-  }));
+  router.get(
+    '/people/:personId/preparation',
+    requireAuth(),
+    handler<AuthedRequest>(async (req, res) => {
+      const personId = String(req.params.personId);
+      const person = await db.getPerson(req.uid, personId);
+      if (!person) throw new HttpError(404, 'not_found', 'Unknown person.');
+      const profile = openJson<{ name: string }>(
+        req.dek,
+        person.sealedProfile,
+        binding(req.uid, `person/${personId}`, 'profile'),
+      );
+      const [conversations, followUps] = await Promise.all([
+        db.conversationsForPerson(req.uid, personId),
+        db.listFollowUps(req.uid, 'open', 'all'),
+      ]);
+      res.json({
+        person: { id: personId, name: profile.name },
+        ...prepareMeeting(req.uid, req.dek, personId, conversations, followUps),
+      });
+    }),
+  );
 
   router.patch(
     '/people/:personId',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const personId = String(req.params.personId);
       const body = patchPersonBody.safeParse(req.body);
@@ -130,15 +135,20 @@ export function brainRoutes(): Router {
       const person = await db.getPerson(req.uid, personId);
       if (!person) throw new HttpError(404, 'not_found', 'Unknown person');
 
-      const profile = openJson<{ name: string; role: string; evidence: string; confidence: number }>(
-        req.dek,
-        person.sealedProfile,
-        binding(req.uid, `person/${personId}`, 'profile'),
-      );
+      const profile = openJson<{
+        name: string;
+        role: string;
+        evidence: string;
+        confidence: number;
+      }>(req.dek, person.sealedProfile, binding(req.uid, `person/${personId}`, 'profile'));
 
       const renamed = body.data.name !== undefined && body.data.name !== profile.name;
       if (renamed && !normalizeName(body.data.name ?? '')) {
-        throw new HttpError(400, 'bad_request', 'A person needs a name with letters or digits in it');
+        throw new HttpError(
+          400,
+          'bad_request',
+          'A person needs a name with letters or digits in it',
+        );
       }
 
       const name = renamed ? (body.data.name as string) : profile.name;
@@ -177,8 +187,9 @@ export function brainRoutes(): Router {
   // -------------------------------------------------------------------------
   router.get(
     '/follow-ups',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
-      const state = (String(req.query.state ?? 'open') as 'open' | 'done' | 'dismissed' | 'all');
+      const state = String(req.query.state ?? 'open') as 'open' | 'done' | 'dismissed' | 'all';
       const owner = String(req.query.owner ?? 'all') as 'self' | 'other' | 'all';
       const items = await db.listFollowUps(req.uid, state, owner);
 
@@ -192,7 +203,7 @@ export function brainRoutes(): Router {
           return {
             id: item.followUpId,
             task: task.task,
-            kind: task.kind || "commitment",
+            kind: task.kind || 'commitment',
             owner: {
               type: item.ownerType,
               person_id: item.counterpartyPersonId,
@@ -213,6 +224,7 @@ export function brainRoutes(): Router {
 
   router.patch(
     '/follow-ups/:followUpId',
+    requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const body = patchFollowUpBody.safeParse(req.body);
       if (!body.success) throw new HttpError(400, 'bad_request', 'Invalid follow-up patch');
@@ -222,78 +234,6 @@ export function brainRoutes(): Router {
         ...(body.data.due_date !== undefined ? { dueDate: body.data.due_date } : {}),
       });
       res.status(200).json({ id: followUpId, ...body.data });
-    }),
-  );
-
-  // -------------------------------------------------------------------------
-  // Ask Synap
-  // -------------------------------------------------------------------------
-  router.post(
-    '/ask',
-    handler<AuthedRequest>(async (req, res) => {
-      const body = askBody.safeParse(req.body);
-      if (!body.success) throw new HttpError(400, 'bad_request', 'query is required');
-
-      const { query, scope = {}, max_sources } = body.data;
-      const limit = Math.min(max_sources ?? config.limits.maxAskSources, 20);
-      const today = new Date().toISOString().slice(0, 10);
-
-      // Structured filters first, semantic search second. Filtering before the
-      // KNN stage is what keeps "what did Ankit say last week" from scanning a
-      // year of vectors.
-      const parsed = await parseQuery(query, today);
-      const peopleNames = [...(scope.people ?? []), ...parsed.people];
-      const personIds: string[] = [];
-      for (const name of peopleNames) {
-        const person = await db.findPersonByNameKey(req.uid, nameKey(req.dek, name));
-        if (person) personIds.push(person.personId);
-      }
-
-      const retrieval = {
-        from: scope.from ?? parsed.from,
-        to: scope.to ?? parsed.to,
-        personIds,
-        topicKeys: [...(scope.topics ?? []), ...parsed.topics].map(topicKey).filter(Boolean),
-      };
-
-      let conversations: ConversationDoc[] = [];
-      try {
-        const vector = await embedContent(query, 'RETRIEVAL_QUERY');
-        // Over-fetch so post-filtering still leaves enough evidence to answer.
-        conversations = await db.findNearestConversations(req.uid, vector, limit * 2, retrieval);
-      } catch {
-        conversations = await db.recentConversations(req.uid, limit * 2, retrieval);
-      }
-
-      const evidence: Evidence[] = conversations.slice(0, limit * 2).map((conversation) => {
-        const content = openJson<{ title: string; summary: string; topics: string[] }>(
-          req.dek,
-          conversation.sealedContent,
-          binding(req.uid, `conversation/${conversation.conversationId}`, 'content'),
-        );
-        return {
-          recordingId: conversation.recordingId,
-          conversationId: conversation.conversationId,
-          startMs: conversation.startMs,
-          endMs: conversation.endMs,
-          day: conversation.day,
-          title: content.title,
-          summary: content.summary,
-        };
-      });
-
-      const answer = await answerFromEvidence(query, evidence);
-      res.status(200).json({
-        ...answer,
-        // Surfacing what was searched makes an unhelpful answer debuggable
-        // rather than mysterious.
-        searched: {
-          conversations: evidence.length,
-          from: retrieval.from,
-          to: retrieval.to,
-          people: peopleNames.map(normalizeName),
-        },
-      });
     }),
   );
 

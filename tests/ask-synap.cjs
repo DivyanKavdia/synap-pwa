@@ -8,7 +8,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
 test('Ask Synap uses authenticated grounded backend retrieval when signed in', () => {
   const client = read('ask-synap.js');
-  const route = read('backend/src/http/routes/brain.ts');
+  const route = read('backend/src/http/routes/ask-v3.ts');
   const answerer = read('backend/src/gemini/ask.ts');
 
   assert.match(client, /const ASK_ENDPOINT = '\/v1\/ask'/);
@@ -27,7 +27,7 @@ test('Ask Synap uses authenticated grounded backend retrieval when signed in', (
   assert.match(route, /router\.post\(\s*'\/ask'/s);
   assert.match(route, /embedContent\(query, 'RETRIEVAL_QUERY'\)/);
   assert.match(route, /findNearestConversations/);
-  assert.match(route, /answerFromEvidence\(query, evidence\)/);
+  assert.match(route, /answerFromEvidence\(query,\s*evidence/);
   assert.match(route, /searched:/);
 
   assert.match(answerer, /Use only the evidence/);

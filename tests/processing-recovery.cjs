@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'processing-recovery.js'), 'utf8');
-const accountSource = fs.readFileSync(path.join(root, 'synap-account-ui.js'), 'utf8');
+const shell = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const taskSource = fs.readFileSync(path.join(root, 'backend/src/http/routes/tasks.ts'), 'utf8');
 
 function load(fetcher) {
@@ -121,7 +121,7 @@ test('a recovery is rate limited, stage changes reset the clock, and ready clear
   assert.equal(recovery._entries.has('rec-2'), false);
 });
 
-test('the installed wrapper observes state and progress only on processing status responses', async () => {
+test('the response observer reads processing status without consuming the response or replacing auth', async () => {
   const calls = [];
   const fetcher = async (url, init = {}) => {
     calls.push({ url, init });
@@ -129,10 +129,13 @@ test('the installed wrapper observes state and progress only on processing statu
     return response({ ok: true });
   };
   const context = load(fetcher);
-  assert.notEqual(context.SynapAuth.authedFetch, fetcher);
+  assert.equal(context.SynapAuth.authedFetch, fetcher);
 
-  await context.SynapAuth.authedFetch('/v1/auth/me');
-  await context.SynapAuth.authedFetch('/v1/recordings/rec-3/processing');
+  for (const path of ['/v1/auth/me', '/v1/recordings/rec-3/processing']) {
+    const result = await fetcher(path);
+    context.SynapProcessingRecovery.observeResponse(path, result, fetcher);
+    assert.ok(await result.text(), 'the caller still owns the response body');
+  }
   await flush();
 
   assert.equal(calls.length, 2);
@@ -153,7 +156,7 @@ test('the PWA watches every recoverable cloud stage', () => {
 });
 
 test('the production shell and stale-active backend recovery remain wired', () => {
-  assert.match(accountSource, /processing-recovery\.js\?v=/);
+  assert.match(shell, /processing-recovery\.js\?v=/);
   assert.match(taskSource, /\/recordings\/:recordingId\/process-now/);
   assert.match(taskSource, /requireAuth\(\)/);
   assert.match(taskSource, /ACTIVE_STALE_MS\s*=\s*10\s*\*\s*60_000/);

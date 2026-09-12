@@ -39,9 +39,8 @@ import type {
   SegmentDoc,
   StructuredMemory,
   TranscriptWord,
-  UserProfile,
 } from '../store/types.js';
-import { localDay, mergeAliasKeys, nameKey, newId, normalizeName, topicKey, sha256 } from '../util/ids.js';
+import { mergeAliasKeys, nameKey, newId, normalizeName, topicKey, sha256 } from '../util/ids.js';
 import { log } from '../util/log.js';
 import { rebuildDay } from './brief.js';
 import { chooseTranscript } from './source-materialize.js';

@@ -8,18 +8,19 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
-    "dev": "tsc -p tsconfig.json --watch & node --watch dist/index.js",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "start": "node --env-file-if-exists=.env dist/src/index.js",
+    "dev": "node --watch --import tsx --env-file-if-exists=.env src/index.ts",
     "test": "npm run build && node --env-file-if-exists=test/test.env --test dist/test/*.test.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "node -e \"require('node:fs').rmSync('dist', {recursive: true, force: true})\""
   },
   "dependencies": {
+    "@google-cloud/firestore": "^7.11.0",
     "@google-cloud/kms": "^4.5.0",
     "@google-cloud/secret-manager": "^5.6.0",
     "@google-cloud/storage": "^7.14.0",
     "@google-cloud/tasks": "^5.5.0",
-    "@google-cloud/firestore": "^7.11.0",
     "express": "^4.21.2",
     "google-auth-library": "^9.15.0",
     "jose": "^5.9.6",
@@ -28,6 +29,7 @@
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.2",
+    "tsx": "4.20.5",
     "typescript": "^5.7.2"
   }
 }
