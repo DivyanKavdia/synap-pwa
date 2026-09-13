@@ -366,6 +366,14 @@
     node.innerHTML =
       '<div class="synap-weekly-head"><strong>Week in memory</strong><span id="synapWeekRange" class="sr-only"></span><button id="synapRefreshWeek" type="button" aria-label="Refresh weekly review">Refresh</button></div><p id="synapWeekNarrative" class="synap-weekly-copy"></p><div id="synapWeekMetrics" class="synap-weekly-metrics"></div><div id="synapWeekDetail" class="synap-week-detail"></div><div class="synap-week-pagination"><span id="synapWeekCount"></span><button id="synapWeekMore" type="button" hidden>Show more</button></div><p id="synapWeekStatus" class="synap-week-status" role="status" hidden></p><details class="memory-week-exports"><summary>Export &amp; calendar</summary><div class="synap-weekly-actions"><button id="synapCopyDay" type="button">Copy selected day for AI</button><button id="synapCopyWeek" type="button">Copy week for AI</button><button id="synapCalendarAll" type="button">Add due items to calendar</button></div><div id="synapDueList" class="synap-due"></div></details>';
     brief.appendChild(node);
+    const navigation = $('.memory-week-navigation');
+    if (navigation) {
+      const refresh = $('#synapRefreshWeek');
+      refresh.innerHTML = '<svg aria-hidden="true"><use href="#i-refresh"/></svg>';
+      refresh.title = 'Refresh weekly review';
+      navigation.appendChild(refresh);
+      node.querySelector('.synap-weekly-head').classList.add('sr-only');
+    }
     $('#synapCopyDay')?.addEventListener('click', (e) =>
       copy(
         buildContext(

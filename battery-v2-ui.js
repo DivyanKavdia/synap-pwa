@@ -40,7 +40,7 @@ function renderDisconnected(){
     const fill=button.querySelector('.synap-battery-fill');
     button.dataset.state='disconnected';
     if(value)value.textContent='';
-    if(fill)fill.style.width='0px';
+    if(fill)fill.style.width='0%';
     button.setAttribute('aria-label','Pendant disconnected');
   }
   const pop=document.getElementById('synapBatteryPopover');
@@ -76,12 +76,12 @@ function render(detail,notify=true){
     if(detail.available){
       button.dataset.state=detail.critical?'critical':detail.low?'low':'good';
       if(value)value.textContent=percent+'%';
-      if(fill)fill.style.width=Math.max(1,Math.round(percent*.17))+'px';
+      if(fill)fill.style.width=percent+'%';
       button.setAttribute('aria-label','Pendant battery '+percent+' percent');
     }else{
       button.dataset.state='unknown';
       if(value)value.textContent='—';
-      if(fill)fill.style.width='0px';
+      if(fill)fill.style.width='0%';
       button.setAttribute('aria-label','Pendant battery percentage unavailable');
     }
   }

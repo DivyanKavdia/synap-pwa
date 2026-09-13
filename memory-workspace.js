@@ -30,12 +30,16 @@
     const api = root.SynapProductivity;
     if (!api || !$('memoryWeekLabel')) return;
     const range = api.weekRange($('datePicker')?.value || root.SynapActionState.day(new Date()));
-    const format = (day) =>
-      new Date(day + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' });
-    $('memoryWeekLabel').textContent = format(range.start) + ' – ' + format(range.end);
+    const format = (day, sameMonth = false) =>
+      new Date(day + 'T12:00:00').toLocaleDateString([], {
+        ...(sameMonth ? {} : { month: 'short' }),
+        day: 'numeric',
+      });
+    const sameMonth = range.start.slice(0, 7) === range.end.slice(0, 7);
+    $('memoryWeekLabel').textContent = format(range.start) + ' – ' + format(range.end, sameMonth);
     const current = api.weekRange(root.SynapActionState.day(new Date()));
     $('nextMemoryWeek').disabled = range.start >= current.start;
-    $('currentMemoryWeek').hidden = range.start === current.start;
+    $('currentMemoryWeek').disabled = range.start === current.start;
   }
 
   function moveWeek(offset) {

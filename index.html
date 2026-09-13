@@ -10,17 +10,17 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg?v=1.0.0-brand2" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png?v=1.0.0-brand2">
-  <script src="touch-event-bridge.js?v=1.0.0-moments1"></script>
+  <script src="touch-event-bridge.js?v=1.0.0-compact2"></script>
   <script src="audio-codec-v3.js?v=1.0.0-cleanup1"></script>
-  <script src="battery-v2-ui.js?v=1.0.0-battery4"></script>
+  <script src="battery-v2-ui.js?v=1.0.0-battery5"></script>
   <script>globalThis.SYNAP_STATIC_BOOTSTRAP=true;</script>
   <link rel="stylesheet" href="styles.css?v=1.0.0-controls1">
   <link rel="stylesheet" href="brand.css?v=1.0.0-brain1" data-synap-brand="brain1">
   <link rel="stylesheet" href="polish.css?v=1.0.0-settings2">
   <link rel="stylesheet" href="brain.css?v=1.0.0-actions1">
-  <link rel="stylesheet" href="compact.css?v=1.0.0-workspace1" data-synap-compact="refresh1">
+  <link rel="stylesheet" href="compact.css?v=1.0.0-compact2" data-synap-compact="refresh1">
   <link rel="stylesheet" href="settings.css?v=1.0.0-settings2">
-  <link rel="stylesheet" href="library-tools.css?v=1.0.0-library1">
+  <link rel="stylesheet" href="library-tools.css?v=1.0.0-compact2">
   <script src="theme.js?v=1.0.0-cleanup1"></script>
 <link rel="stylesheet" href="meeting-tools.css?v=1.0.0-meetings2"></head>
 <body data-startup="loading" data-state="disconnected" class="synap-refresh">
@@ -84,26 +84,30 @@
   <div id="memoryWeekPanel" role="tabpanel" aria-labelledby="memoryTab-week" tabindex="0" hidden>
     <div class="memory-week-navigation" role="group" aria-label="Browse weekly memories">
       <button id="previousMemoryWeek" type="button" aria-label="Previous review week"><svg aria-hidden="true"><use href="#i-chevron-left"/></svg></button>
-      <span id="memoryWeekLabel"></span>
+      <span id="memoryWeekLabel" aria-live="polite" aria-atomic="true"></span>
       <button id="nextMemoryWeek" type="button" aria-label="Next review week"><svg aria-hidden="true"><use href="#i-chevron"/></svg></button>
-      <button id="currentMemoryWeek" type="button" hidden>This week</button>
+      <button id="currentMemoryWeek" type="button">This week</button>
     </div>
   </div>
 </section>
 <section id="library" class="section-card recordings-section" aria-labelledby="libraryTitle">
   <div class="section-heading"><div><p class="section-eyebrow">THE ORIGINALS</p><h2 id="libraryTitle">Your recordings <span id="recordingsCount" class="count-badge">0</span></h2></div><button id="selectRecordingsButton" class="text-button" type="button" aria-pressed="false">Select</button></div>
-  <div class="library-search"><svg aria-hidden="true"><use href="#i-search"/></svg><input id="librarySearch" type="search" aria-label="Search recordings" placeholder="Find a name, topic or phrase…" autocomplete="off"><button id="clearLibrarySearch" type="button" hidden>Clear search</button></div>
+  <div class="library-controls">
+  <div class="library-search"><svg aria-hidden="true"><use href="#i-search"/></svg><input id="librarySearch" type="search" aria-label="Search recordings" placeholder="Search recordings…" autocomplete="off"><button id="clearLibrarySearch" type="button" aria-label="Clear search" hidden>Clear</button></div>
   <div class="library-toolbar">
-    <div class="library-scope" role="group" aria-label="Recording date filter"><button type="button" data-library-scope="all" aria-pressed="true">All dates</button><button type="button" data-library-scope="day" aria-pressed="false">Selected day</button></div>
-    <label class="library-status-control"><span>Processing status</span><select id="libraryStatusFilter" aria-label="Filter recordings by processing status"></select></label>
-    <button id="clearRecordingFilters" type="button" hidden>Reset status</button>
-    <p id="libraryScopeHint">All recordings saved in this browser</p>
+    <div class="library-scope" role="group" aria-label="Recording date filter"><button type="button" data-library-scope="all" aria-pressed="true">All dates</button><button type="button" data-library-scope="day" aria-pressed="false" aria-label="Selected day" title="Selected day">Day</button></div>
+    <label class="library-status-control"><span class="sr-only">Processing status</span><select id="libraryStatusFilter" aria-label="Filter recordings by processing status"></select></label>
   </div>
-  <p id="librarySearchStatus" class="library-search-status" role="status" hidden></p>
+  </div>
+  <div class="library-context">
+    <p id="libraryScopeHint" hidden></p>
+    <p id="librarySearchStatus" class="library-search-status" role="status" hidden></p>
+    <button id="clearRecordingFilters" type="button" hidden>Reset status</button>
+  </div>
   <div id="librarySelectionBar" class="library-selection-bar" aria-label="Selected recording actions" hidden>
-    <div class="library-selection-summary"><label><input id="selectAllRecordings" type="checkbox"><span id="selectAllRecordingsLabel">Select all</span></label><strong id="librarySelectedCount" role="status">0 selected</strong></div>
-    <button id="processSelectedRecordings" type="button" disabled>Process selected</button><button id="deleteSelectedRecordings" type="button" disabled>Delete selected</button>
-    <p>Select all includes every matching recording across pages.</p>
+    <div class="library-selection-summary"><label><input id="selectAllRecordings" type="checkbox" aria-describedby="librarySelectionHint"><span id="selectAllRecordingsLabel">Select all</span></label><strong id="librarySelectedCount" role="status">0 selected</strong></div>
+    <button id="processSelectedRecordings" type="button" aria-label="Process selected recordings" disabled>Process</button><button id="deleteSelectedRecordings" type="button" aria-label="Delete selected recordings" disabled>Delete</button>
+    <p id="librarySelectionHint" class="sr-only">Select all includes every matching recording across pages.</p>
   </div>
   <p id="libraryActionStatus" class="library-action-status" role="status" hidden></p>
   <div id="emptyRecordings" class="empty-state"><span class="empty-state-icon" aria-hidden="true"><svg><use href="#i-wave"/></svg></span><h3>No recordings</h3><p>Use the microphone above to start recording.</p></div>
@@ -218,9 +222,9 @@
 <script src="processing-recovery.js?v=1.0.0-maintenance1"></script>
 <script src="ai-providers.js?v=1.0.0-maintenance1"></script>
 <script src="synap-backend.js?v=1.0.0-workspace1"></script>
-<script src="app.js?v=1.0.0-workspace1"></script>
+<script src="app.js?v=1.0.0-compact2"></script>
 <script src="recording-notifications.js?v=1.0.0-notifications1"></script>
-<script src="enhancements.js?v=1.0.0-workspace1"></script>
+<script src="enhancements.js?v=1.0.0-compact2"></script>
 <script src="processing-pipeline-ui.js?v=1.0.0-pipeline1"></script>
 <script src="memory-ui-fix.js?v=1.0.0-moments1"></script>
 <script src="synap-account-ui.js?v=1.0.0-maintenance1"></script>
@@ -233,7 +237,7 @@
 <script src="ask-synap.js?v=1.0.0-actions3"></script>
 <script src="brain-ui.js?v=1.0.0-workspace1"></script>
 <script src="action-state.js?v=1.0.0-workspace1"></script>
-<script src="memory-workspace.js?v=1.0.0-workspace1"></script>
+<script src="memory-workspace.js?v=1.0.0-compact2"></script>
 <script src="my-actions.js?v=1.0.0-workspace1"></script>
 <script src="dashboard-ui.js?v=1.0.0-workspace1"></script>
 <script src="compact-layout.js?v=1.0.0-workspace1"></script>
@@ -241,7 +245,7 @@
 <script src="capture-ui.js?v=1.0.0-storage2"></script>
 <script src="product-ui.js?v=1.0.0-actions1"></script>
 <script src="provenance-links.js?v=1.0.0-actions3"></script>
-<script src="productivity-tools.js?v=1.0.0-workspace1"></script>
+<script src="productivity-tools.js?v=1.0.0-compact2"></script>
 <script src="desktop-capture.js?v=1.0.0-notifications1"></script>
 <script src="interaction-surfaces.js?v=1.0.0-workspace1"></script>
 </body></html>

@@ -1,37 +1,273 @@
-/* Status filtering and batch actions use the Library's existing card layout. */
-#library .library-toolbar{gap:12px;margin-top:14px}
-#library .library-status-control{display:grid;gap:5px;flex:1 1 210px;min-width:0;font-size:11px;color:var(--muted)}
-#libraryStatusFilter{width:100%;min-width:0;min-height:46px;padding:10px 34px 10px 12px;border:1px solid var(--control-border);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;font-size:16px}
-#libraryScopeHint{flex-basis:100%}
-#library :is(#selectRecordingsButton,#clearRecordingFilters){min-height:44px;padding:8px 12px;border:1px solid var(--border);border-radius:11px;background:var(--surface);color:var(--accent);font:inherit;font-size:12px;cursor:pointer}
-#selectRecordingsButton[aria-pressed="true"]{background:var(--accent-soft)!important}
-#library .library-selection-bar{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px;margin:14px 0;border:1px solid var(--border);border-radius:15px;background:var(--surface-2)}
-.library-selection-summary{grid-column:1/-1;display:flex;justify-content:space-between;gap:10px;align-items:center;font-size:12px}
-.library-selection-summary label{display:flex;align-items:center;gap:9px;min-height:44px;cursor:pointer}
-.library-selection-summary strong{color:var(--accent);font-weight:650}
-#librarySelectionBar>p{grid-column:1/-1;margin:0;font-size:11px;line-height:1.5;color:var(--muted)}
-#librarySelectionBar>button{min-height:44px;padding:10px 8px;border:1px solid var(--border);border-radius:11px;font:inherit;font-size:12px;font-weight:600;cursor:pointer}
-#processSelectedRecordings{background:var(--action);color:var(--on-action)}
-#deleteSelectedRecordings{background:var(--surface);color:var(--rose)}
-#library button:disabled{opacity:.45;cursor:default}
-.library-action-status{padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--accent-soft);font-size:12px;line-height:1.6;overflow-wrap:anywhere}
-.library-action-status[data-error="true"]{color:var(--rose);background:var(--rose-soft)}
-#library .recording-select{display:flex;align-items:center;justify-content:center;min-width:30px;min-height:44px;cursor:pointer}
-#library input[type="checkbox"],.library-cloud-delete input{width:20px;height:20px;flex:0 0 20px;margin:0;accent-color:var(--action);cursor:pointer}
-#library .is-selecting .recording-row-icon{display:none}
-#library .recording-card.is-selected{border-color:var(--accent);background:var(--accent-soft)}
-.library-delete-dialog{box-sizing:border-box;width:min(440px,calc(100vw - 32px));height:fit-content;max-height:calc(100dvh - 40px);margin:auto;padding:24px;border:1px solid var(--border);border-radius:22px;background:var(--surface);color:var(--ink);overflow:auto}
-.library-delete-dialog::backdrop{background:rgb(0 0 0 / .5)}
-.library-delete-dialog h2{margin:0 0 14px;font-size:23px;line-height:1.25;letter-spacing:-.5px}
-.library-delete-dialog p{font-size:13px;line-height:1.65}
-.library-cloud-delete{display:flex;gap:12px;align-items:flex-start;padding:14px;margin:20px 0 10px;border:1px solid var(--border);border-radius:12px;background:var(--bg);cursor:pointer}
-.library-cloud-delete input{margin-top:2px}
-.library-cloud-delete span{display:grid;gap:6px}.library-cloud-delete strong{font-size:13px}.library-cloud-delete small{font-size:12px;line-height:1.5;color:var(--muted)}
-.library-delete-dialog .library-delete-note{font-size:11px;color:var(--muted)}
-#deleteRecordingsStatus{color:var(--rose);overflow-wrap:anywhere}
-.library-delete-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}
-.library-delete-actions button{min-height:44px;padding:10px 18px;border:1px solid var(--border);border-radius:11px;font:inherit;font-size:13px;background:var(--surface);color:var(--ink);cursor:pointer}
-.library-delete-actions #confirmDeleteRecordings{background:var(--rose);color:var(--on-rose)}
-.library-delete-dialog button:disabled{opacity:.45;cursor:default}
-#library :is(input,select,button):focus-visible,.library-delete-dialog :is(input,button):focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-@media(min-width:900px){#library .library-selection-bar{grid-template-columns:minmax(0,1fr) auto auto;align-items:center}.library-selection-summary{grid-column:auto}#librarySelectionBar>p{grid-column:1/-1}}
+/* Search, scope and processing filters form one compact Library control group. */
+#library .library-controls {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+}
+#library .library-search {
+  margin: 0;
+  padding: 0 8px 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 14px 14px 0 0;
+  background: transparent;
+}
+#library .library-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px;
+}
+#library .library-scope {
+  gap: 0;
+  padding: 0;
+  background: transparent;
+}
+#library .library-scope button {
+  min-width: 44px;
+  padding: 6px 8px;
+}
+#library .library-status-control {
+  min-width: 0;
+}
+#libraryStatusFilter {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 4px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  text-overflow: ellipsis;
+}
+#library .library-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  flex-wrap: wrap;
+}
+#library .library-context:not(:has(> :not([hidden]))) {
+  display: none;
+}
+#library .library-search-status {
+  margin: 0;
+  font-size: 12px;
+  flex: 1;
+}
+#libraryScopeHint {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.5;
+}
+#library :is(#selectRecordingsButton, #clearRecordingFilters) {
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+#library #clearRecordingFilters {
+  border: 0;
+  padding: 4px;
+  white-space: nowrap;
+}
+#selectRecordingsButton[aria-pressed='true'] {
+  background: var(--accent-soft) !important;
+}
+#library .library-selection-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  padding: 0 0 10px;
+  margin: 0 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+.library-selection-summary {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+.library-selection-summary label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.library-selection-summary strong {
+  color: var(--accent);
+  font-weight: 650;
+}
+#librarySelectionBar > button {
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+#processSelectedRecordings {
+  background: var(--action);
+  color: var(--on-action);
+}
+#deleteSelectedRecordings {
+  background: var(--surface);
+  color: var(--rose);
+}
+#library button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.library-action-status {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--accent-soft);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.library-action-status[data-error='true'] {
+  color: var(--rose);
+  background: var(--rose-soft);
+}
+#library .recording-select {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  min-height: 44px;
+  cursor: pointer;
+}
+#library input[type='checkbox'],
+.library-cloud-delete input {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  margin: 0;
+  accent-color: var(--action);
+  cursor: pointer;
+}
+#library .is-selecting .recording-row-icon {
+  display: none;
+}
+#library .recording-card.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.library-delete-dialog {
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 32px));
+  height: fit-content;
+  max-height: calc(100dvh - 40px);
+  margin: auto;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  color: var(--ink);
+  overflow: auto;
+}
+.library-delete-dialog::backdrop {
+  background: rgb(0 0 0 / 0.5);
+}
+.library-delete-dialog h2 {
+  margin: 0 0 14px;
+  font-size: 23px;
+  line-height: 1.25;
+  letter-spacing: -0.5px;
+}
+.library-delete-dialog p {
+  font-size: 13px;
+  line-height: 1.65;
+}
+.library-cloud-delete {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  margin: 20px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  cursor: pointer;
+}
+.library-cloud-delete input {
+  margin-top: 2px;
+}
+.library-cloud-delete span {
+  display: grid;
+  gap: 6px;
+}
+.library-cloud-delete strong {
+  font-size: 13px;
+}
+.library-cloud-delete small {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.library-delete-dialog .library-delete-note {
+  font-size: 11px;
+  color: var(--muted);
+}
+#deleteRecordingsStatus {
+  color: var(--rose);
+  overflow-wrap: anywhere;
+}
+.library-delete-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 22px;
+}
+.library-delete-actions button {
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.library-delete-actions #confirmDeleteRecordings {
+  background: var(--rose);
+  color: var(--on-rose);
+}
+.library-delete-dialog button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+#library :is(input, select, button):focus-visible,
+.library-delete-dialog :is(input, button):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+@media (min-width: 900px) {
+  #library .library-selection-bar {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+  }
+  .library-selection-summary {
+    grid-column: auto;
+  }
+}

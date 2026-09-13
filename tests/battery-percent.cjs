@@ -20,9 +20,11 @@ function send(percent,flags){
 send(100,1);
 assert.equal(parts['.synap-battery-value'].textContent,'100%');
 assert.equal(parts['.synap-battery-big'].textContent,'100%');
+assert.equal(parts['.synap-battery-fill'].style.width,'100%');
 assert.equal(parts['.synap-battery-meter>span'].style.width,'100%');
 assert.equal(context.SynapBatteryV2.status.adcMillivolts,2750,'diagnostics retain ADC data');
 send(14,3);assert.equal(button.dataset.state,'low');assert.equal(parts['.synap-battery-big'].textContent,'14%');
+send(0,1);assert.equal(parts['.synap-battery-value'].textContent,'0%');assert.equal(parts['.synap-battery-fill'].style.width,'0%');
 send(0,0);assert.equal(parts['.synap-battery-value'].textContent,'—');assert.equal(parts['.synap-battery-big'].textContent,'—');
 assert.equal(parts['.synap-battery-state'].textContent,'Percentage unavailable');
 body.dataset.deviceState='0';send(100,1);

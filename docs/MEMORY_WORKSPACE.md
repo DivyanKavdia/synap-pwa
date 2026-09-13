@@ -4,7 +4,10 @@ Today and Weekly review are two tabs in one card. Today contains the selected
 day's brief, optional conversation detail, and existing memory cards with their
 summary, transcript, notes and merge controls. Weekly review groups source-linked
 conversations, decisions and commitments by day. Its week arrows and This week
-shortcut use the same selected date as the day calendar.
+shortcut use the same selected date as the day calendar. Week navigation, This
+week and Refresh share one row, with 44px touch targets. This week stays visible
+and is disabled when the current week is selected. The date range may wrap
+inside its label on narrow screens; the controls remain on one row.
 
 `index.html` owns the two tab panels. `memory-workspace.js` selects them and
 handles Arrow keys, Home and End. Source cards stay mounted, retaining open
@@ -24,5 +27,14 @@ current date; browsing older memories does not hide tasks due now. See
 
 Browser coverage includes day/week keyboard navigation, week/date changes,
 source playback, memory-node identity, light/dark mobile layouts, and existing
-merge and transcript workflows. The two new controller files are cached in the
-offline shell. Shell revisions advance without changing BLE compatibility.
+merge and transcript workflows. The workspace controllers are cached in the offline shell. Shell revisions advance without changing BLE compatibility.
+
+Library keeps search and date/status filters in one control group. The Day
+filter follows the selected date, shown below the controls. Selection actions
+keep the existing mounted recording cards and cross-page selection rules; the
+Select all checkbox describes that scope to assistive technology.
+
+Header controls share `--header-control-radius` in `compact.css` and a 44px
+height. `touch-event-bridge.js` owns the battery markup, with the percentage
+inside its outline; both telemetry versions use a proportional fill. Battery
+details and disconnected/unavailable states retain their existing behavior.

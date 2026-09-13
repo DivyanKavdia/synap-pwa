@@ -28,6 +28,7 @@
 :root[data-palette="lavender"]{--bg:#f7f5fc;--surface:#ffffff;--surface-2:#efeaf8;--chrome:#f7f5fcf5;--ink:#3d315b;--muted:#6b607e;--border:#e5dff1;--control-border:#8c7baa;--accent:#65489b;--action:#65489b;--action-hover:#4d347c;--on-action:#ffffff;--accent-soft:#efe7fc;--hero:#3c2c5b;--hero-end:#59417c;--hero-ink:#f7f1ff;--hero-muted:#d2c5e5;--brand-indigo:#aa93cc;--brand-cyan:#d3c5eb;--switch-off:#8c7baa;--console:#302345;--console-text:#f6f0ff;--wave-grid:#6b607e22;--glow:#65489b22;}
 :root[data-palette="lavender"][data-theme="dark"]{--bg:#1c1829;--surface:#292238;--surface-2:#372d4b;--chrome:#1c1829f5;--ink:#f5f0ff;--muted:#c6bbdc;--border:#4a3e61;--control-border:#a899c2;--accent:#c9b3f4;--action:#c9b3f4;--action-hover:#dfceff;--on-action:#302046;--accent-soft:#483664;--hero:#42305e;--hero-end:#59417c;--hero-ink:#f7f1ff;--hero-muted:#d2c5e5;--switch-off:#a899c2;--console:#1c1329;--wave-grid:#c6bbdc22;--glow:#c9b3f422;}
 html{scroll-padding-top:100px;scrollbar-gutter:stable}
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip-path:inset(50%);white-space:nowrap!important;border:0!important}
 body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:-.15px}
 .synap-refresh .app-shell{max-width:900px;margin:0 auto;padding:0 max(22px,env(safe-area-inset-right)) calc(120px + env(safe-area-inset-bottom)) max(22px,env(safe-area-inset-left));background:none;box-shadow:none;border-radius:0}
 .synap-refresh .topbar{min-height:88px;gap:20px;background:var(--chrome);border-bottom:1px solid var(--border)}
@@ -35,8 +36,8 @@ body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-syste
 .synap-brand-image{display:block!important;object-fit:contain;object-position:center;visibility:visible!important;opacity:1!important;filter:none!important}
 .synap-refresh .brand-logo.synap-brand-image{filter:none!important}
 .workspace-label{margin-right:auto;padding-left:20px;border-left:1px solid var(--border);font-size:12px;color:var(--muted)}
-.synap-refresh .top-actions{display:flex;align-items:center;gap:10px}
-.synap-refresh .icon-button{width:44px;height:44px;border:1px solid var(--border);background:var(--surface);border-radius:14px}
+.synap-refresh .top-actions{--header-control-radius:12px;display:flex;align-items:center;gap:10px}
+.synap-refresh .icon-button{width:44px;height:44px;border:1px solid var(--border);background:var(--surface);border-radius:var(--header-control-radius)}
 .synap-refresh main{padding-top:30px}
 .synap-refresh main>section{min-width:0}
 .synap-refresh .brain-home{padding:0}
@@ -87,7 +88,6 @@ body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-syste
 .synap-refresh .synap-week-pagination{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:10px 0 14px}
 .synap-refresh #synapWeekCount,.synap-refresh .synap-week-status{color:var(--muted);font-size:12px;line-height:1.6}
 .synap-refresh :is(#synapWeekMore,#synapRefreshWeek){min-height:44px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;font-size:12px;cursor:pointer}
-.synap-refresh #synapRefreshWeek{margin-left:auto}
 .synap-refresh .section-card{margin-top:24px!important;padding:26px!important;border:1px solid var(--border)!important;border-radius:22px!important;background:var(--surface)!important;box-shadow:none!important}
 .synap-refresh .section-heading{align-items:flex-start;gap:16px;margin-bottom:18px}
 .synap-refresh .section-heading h2{font-size:24px!important;font-weight:600!important;line-height:1.2;letter-spacing:-.75px}
@@ -212,7 +212,7 @@ body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-syste
 .synap-refresh .library-scope button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:650}
 .synap-refresh #libraryScopeHint{margin:0;font-size:12px;color:var(--muted)}
 .synap-refresh .synap-follow-done{min-height:44px;font-size:12px}
-.header-pendant-status{display:flex;align-items:center;gap:8px;height:40px;max-width:136px;padding:0 12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--muted);font:inherit}
+.header-pendant-status{display:flex;align-items:center;gap:8px;height:44px;max-width:136px;padding:0 12px;border:1px solid var(--border);border-radius:var(--header-control-radius);background:var(--surface);color:var(--muted);font:inherit}
 .header-status-dot{width:6px;height:6px;flex:0 0 6px;border-radius:50%;background:var(--muted)}
 .header-status-text{font-size:12px;font-weight:600;white-space:nowrap}
 .synap-refresh .header-pendant-status{height:44px!important;max-width:140px!important}
@@ -220,7 +220,7 @@ body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-syste
 .header-pendant-status.is-connected .header-status-dot{background:var(--accent)}
 .header-pendant-status.is-recording{color:var(--rose);background:var(--rose-soft)}
 .header-pendant-status.is-recording .header-status-dot{background:var(--rose)}
-.header-capture-toggle{display:grid;place-items:center;width:44px;height:44px;flex:0 0 44px;padding:0;border:0;border-radius:14px;background:var(--action);color:var(--on-action)}
+.header-capture-toggle{display:grid;place-items:center;width:44px;height:44px;flex:0 0 44px;padding:0;border:1px solid transparent;border-radius:var(--header-control-radius);background:var(--action);color:var(--on-action)}
 .header-capture-toggle svg{width:19px;height:19px}
 .header-stop{display:none;width:12px;height:12px;border-radius:3px;background:currentColor}
 .header-capture-toggle.is-recording{background:var(--rose);color:var(--on-rose)}
@@ -417,7 +417,8 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
 @media(max-width:359px){
  .synap-refresh .brand-logo.synap-brand-image{width:76px!important}
  .synap-refresh .topbar{gap:8px}
- .synap-refresh .header-pendant-status{max-width:96px!important;padding:0 8px}
+ .synap-refresh .header-pendant-status{max-width:96px!important;padding:0 6px}
+ .synap-refresh .header-pendant-status .header-status-dot{display:none}
  .synap-refresh .top-actions{gap:4px}
  .synap-refresh .section-card,.synap-refresh #capture{padding:18px!important}
  .synap-refresh .gesture-guide{gap:8px}
@@ -919,13 +920,11 @@ body.synap-refresh #recordingSessionBar #timer{display:block!important;font-size
 .connection-settings .capture-help-content{position:static;display:block;padding:12px 0;font-size:13px}
 .connection-settings .recorder-details{border:0}
 
-@media(min-width:361px){
  body.synap-refresh .topbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
  body.synap-refresh .topbar>.brand{min-width:0;max-width:100%}
  body.synap-refresh .topbar .brand-logo{max-width:100%;height:auto}
  body.synap-refresh .topbar>.top-actions{width:auto;min-width:0}
  body.synap-refresh #recordingSessionBar{grid-column:1/-1}
-}
 
 /* One memory card, two periods. Day and week retain their original source nodes. */
 body.synap-refresh #memoryWorkspace {
@@ -1001,16 +1000,19 @@ body.synap-refresh #memoryWorkspace {
 .synap-refresh .memory-week-navigation {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 2px;
 }
 .synap-refresh .memory-week-navigation > span {
   flex: 1;
+  min-width: 0;
   text-align: center;
+  text-wrap: balance;
   font-weight: 650;
-  font-size: 14px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 .synap-refresh .memory-week-navigation button {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1036,8 +1038,21 @@ body.synap-refresh #memoryWorkspace {
   stroke-width: 1.8;
 }
 .synap-refresh #currentMemoryWeek {
-  font-size: 12px;
-  padding: 6px 10px;
+  max-width: 64px;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.25;
+  padding: 6px 4px;
+}
+.synap-refresh .memory-week-navigation #synapRefreshWeek {
+  width: 44px;
+  padding: 6px;
+}
+@media (max-width: 359px) {
+  .synap-refresh #currentMemoryWeek {
+    max-width: 52px;
+    white-space: normal;
+  }
 }
 .synap-refresh #memoryWorkspace .synap-weekly-copy {
   font-size: 13px;
