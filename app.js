@@ -3167,14 +3167,26 @@
       return info.deviceId;
     };
     let discoveryBusy=false, discoveryTask=null, updateRequested=false;
-    firmwareUpdater = new globalThis.SynapOTA.Client({
-      connected:isGattConnected, queue:queueGattOperation,
-      getService:()=>queueGattOperation(()=>gattServer.getPrimaryService(SERVICE_UUID),"Find pendant service"),
-      progress:showProgress
-    });
     const eligible = ()=>appLockHeld && isGattConnected() && !connectInProgress && !recordingConfirmed &&
       !finalizing && !currentRecordingId && !openingCapture && !unsavedAudio &&
       !["starting","stopping","saving"].includes(appState);
+    function firmwareGattOperation(action, label) {
+      return queueGattOperation(() => {
+        // Recording may start while an earlier discovery request owns the queue.
+        // Allow explicit OTA transfers, but defer every remaining idle check.
+        if (!firmwareBusy && !eligible()) {
+          const error = new Error("Firmware check deferred until recording stops.");
+          error.name = "AbortError";
+          throw error;
+        }
+        return action();
+      }, label);
+    }
+    firmwareUpdater = new globalThis.SynapOTA.Client({
+      connected:isGattConnected, queue:firmwareGattOperation,
+      getService:()=>firmwareGattOperation(()=>gattServer.getPrimaryService(SERVICE_UUID),"Find pendant service"),
+      progress:showProgress
+    });
     const lock = value=>{
       if (value) clearReconnectTimer(true);
       firmwareBusy=value;cancel.disabled=true;cancel.hidden=!value;progress.hidden=!value;
@@ -3202,9 +3214,9 @@
     async function identity() {
       const epoch=connectionEpoch;
       try {
-        const service=await queueGattOperation(()=>gattServer.getPrimaryService(SERVICE_UUID),"Find firmware identity service");
-        const characteristic=await queueGattOperation(()=>service.getCharacteristic(releases.IDENTITY_UUID),"Find firmware identity");
-        const value=await queueGattOperation(()=>characteristic.readValue(),"Read firmware identity");
+        const service=await firmwareGattOperation(()=>gattServer.getPrimaryService(SERVICE_UUID),"Find firmware identity service");
+        const characteristic=await firmwareGattOperation(()=>service.getCharacteristic(releases.IDENTITY_UUID),"Find firmware identity");
+        const value=await firmwareGattOperation(()=>characteristic.readValue(),"Read firmware identity");
         if(epoch!==connectionEpoch)throw Error("Pendant connection changed.");
         return new TextDecoder().decode(value);
       } catch(error){if(error.name==='NotFoundError')return null;throw error;}
@@ -3250,7 +3262,9 @@
           if(!pending&&!verified)status.textContent=`Up to date · ${info.build}`;
           if(!pending)notice.hidden=true;
         }
-      }catch(error){if(firmwareBusy)return;offered=null;bannerButton.hidden=true;latestButton.hidden=true;
+      }catch(error){if(firmwareBusy)return;
+        if(error.name==='AbortError' || !eligible()){lastCheck=0;status.textContent='Check available after recording stops';return;}
+        offered=null;bannerButton.hidden=true;latestButton.hidden=true;
         announce("Update check: "+friendlyError(error));
       }finally{discoveryBusy=false;checkButton.textContent="Check for update";if(!firmwareBusy)discoveryControls.forEach(control=>control.disabled=false);}
     }

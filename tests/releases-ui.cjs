@@ -17,7 +17,12 @@ function setup(options={}){
   if(options.pending)storage.set('synap-ota-pending-device:'+ID,JSON.stringify({...m,size:1000}));
   class Client {
     constructor(io){this.io=io;this.committing=false;}reset(){}cancel(){calls.push('cancel');}
-    async check(){calls.push('check');if(c.firmwareBusy&&!calls.includes('download'))progressMatches('Preparing update…',null);return{protocol:options.legacy?2:3,deviceId:options.wrongIdentity?OTHER:c.deviceAssociation?.deviceId,state:options.resumeState?3:1,session:options.resumeState?55:0,offset:options.resumeState?500:0,build,capacity:2048,maxData:503};}
+    async check(){calls.push('check');if(c.firmwareBusy&&!calls.includes('download'))progressMatches('Preparing update…',null);
+      if(options.startDuringCheck){
+        await this.io.queue(async()=>{calls.push('first-firmware-read');c.recordingConfirmed=true;},'Read firmware status');
+        await this.io.queue(()=>calls.push('late-firmware-read'),'Read update device ID');
+      }
+      return{protocol:options.legacy?2:3,deviceId:options.wrongIdentity?OTHER:c.deviceAssociation?.deviceId,state:options.resumeState?3:1,session:options.resumeState?55:0,offset:options.resumeState?500:0,build,capacity:2048,maxData:503};}
     async update(blob,id){assert.equal(id,ID);assert(c.firmwareBusy);calls.push('flash');
       if(options.pause){connected=false;const e=Error('paused');e.resumable=true;throw e;}
       this.io.progress('Updating · 50%',0.5,false);progressMatches('Updating · 50%',0.5);assert.equal(node('otaCancel').disabled,false);
@@ -40,8 +45,12 @@ function setup(options={}){
     ui:{chooseDeviceButton:node('choose'),runQueueButton:node('queue'),queueStatus:node('queueStatus'),settingsDialog:node('settingsDialog')},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     firmwareUpdater:null,firmwareBusy:false,checkFirmwareRelease:null,connectionEpoch:0,bluetoothDevice:{id:'device',gatt:{disconnect:()=>connected=false}},
     isGattConnected:()=>connected,connectInProgress:false,recordingConfirmed:false,finalizing:false,currentRecordingId:null,openingCapture:null,unsavedAudio:false,
-    appState:'idle',deviceStatus:{error:0},SERVICE_UUID:'service',queueGattOperation:f=>f(),
+    appState:'idle',deviceStatus:{error:0},SERVICE_UUID:'service',queueGattOperation:f=>{
+      if(options.startBeforeQueuedRead)c.recordingConfirmed=true;
+      return f();
+    },
     gattServer:{getPrimaryService:async()=>({getCharacteristic:async()=>{
+      if(options.startDuringIdentity){c.recordingConfirmed=true;return{readValue:async()=>{calls.push('late-identity-read');return new TextEncoder().encode(m.identity);}};}
       if(build===503)throw Object.assign(Error('missing'),{name:'NotFoundError'});
       return{readValue:async()=>new TextEncoder().encode(m.identity)};
     }})},
@@ -58,6 +67,13 @@ function setup(options={}){
   return {c,node,calls,storage,click:async id=>{for(const fn of node(id).events.click||[])await fn();},tick:()=>events.timer()};
 }
 (async()=>{
+  for(const options of [{startDuringCheck:true},{startDuringIdentity:true},{startBeforeQueuedRead:true}]){
+    const t=setup(options);await t.click('otaReleaseCheck');
+    assert(!t.calls.includes('late-firmware-read')&&!t.calls.includes('late-identity-read')&&!t.calls.includes('manifest'),JSON.stringify(options));
+    assert(t.c.recordingConfirmed,'recording remains active');
+    assert(!t.c.firmwareBusy,'deferred discovery does not take the transfer lock');
+    assert.match(t.node('otaStatus').textContent,/after recording stops/);
+  }
   let t=setup();await t.click('otaReleaseCheck');assert.match(t.node('firmwareNoticeText').textContent,/1001.*available/);
   await t.click('firmwareUpdateButton');
   assert(t.calls.includes('flash'));assert(t.calls.includes('reconnect'));assert.match(t.node('otaStatus').textContent,/Update complete/);assert.equal(t.storage.size,0);assert(!t.c.firmwareBusy);
