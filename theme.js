@@ -3,7 +3,6 @@
   'use strict';
 
   if(typeof history!=='undefined'&&'scrollRestoration'in history)history.scrollRestoration='manual';
-  try{if(typeof location!=='undefined'&&location.hash&&typeof history?.replaceState==='function')history.replaceState(history.state,'',location.pathname+location.search)}catch(_){}
 
   const key='synap-appearance';
   const paletteKey='synap-palette';

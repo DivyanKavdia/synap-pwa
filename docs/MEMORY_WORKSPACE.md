@@ -20,7 +20,8 @@ before scrolling to this shared card. Switching the tabs inside the card also
 updates the bottom highlight through `synap-memory-period-changed`. Scroll and
 resize updates use the selected period, including at the top of the page.
 `#memoryWeekPanel` and the older `#synapWeeklyReview` link open Weekly;
-`#insights` still opens the memories inside Today.
+`#insights` still opens the memories inside Today. The appearance bootstrap
+leaves URL fragments for the dashboard to handle.
 `SynapCompactLayout.reveal(target)` selects the containing period before opening
 any conversation disclosure. Weekly review itself no longer needs a second
 expand/collapse control. Library remains the home for original recordings.

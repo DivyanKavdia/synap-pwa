@@ -7,10 +7,9 @@ const runtime=fs.readFileSync(path.join(root,'runtime-ui.js'),'utf8');
 const theme=fs.readFileSync(path.join(root,'theme.js'),'utf8');
 const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
 
-test('startup reset remains isolated while explicit tab navigation is controlled',()=>{
+test('startup preserves explicit section links for the navigation owner',()=>{
   assert.match(theme,/scrollRestoration='manual'/);
-  assert.match(theme,/location\.hash/);
-  assert.match(theme,/history\.replaceState\(history\.state,'',location\.pathname\+location\.search\)/);
+  assert.doesNotMatch(theme,/location\.hash|history\.replaceState/);
   assert.doesNotMatch(runtime,/enforceStartupPosition/);
   assert.doesNotMatch(runtime,/stripFragment/);
   assert.match(runtime,/event\.preventDefault\(\)/);
@@ -27,4 +26,4 @@ test('Settings keeps the single self-theming header wordmark',()=>{
   assert(html.includes('settings-panel.js'));
 });
 
-console.log('PASS: startup reset stays isolated and tab navigation is controlled');
+console.log('PASS: startup preserves section links and tab navigation is controlled');
