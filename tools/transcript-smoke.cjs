@@ -156,6 +156,8 @@ async function run() {
       const memory = page.locator('#insightsList [data-recording-id="missing"].insight-card');
       await memory.locator('summary.insight-top').tap();
       const tab = memory.getByRole('tab', { name: 'Transcript', exact: true });
+      // Provenance tabs render in a scheduled refresh; the source stays blocked below.
+      await tab.waitFor({ state: 'visible' });
       assert(await tab.isVisible(), 'Transcript remains reachable before its text is downloaded');
       await tab.tap();
       await page.waitForFunction(() => qa.releaseSource);
