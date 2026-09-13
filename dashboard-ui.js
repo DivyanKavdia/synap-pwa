@@ -6,6 +6,7 @@
   const STYLE_ID = 'synapDashboardStyle';
   const VIEW_IDS = {
     today: '#memoryWorkspace',
+    weekly: '#memoryWorkspace',
     memories: '#insights',
     actions: '#myActions',
     library: '#library',
@@ -28,6 +29,7 @@
   }
   function viewForHref(href) {
     const panel = href?.slice(1);
+    if (panel === 'memoryWeekPanel' || panel === 'synapWeeklyReview') return 'weekly';
     return ACTION_VIEWS[panel]
       ? panel
       : href === '#insights'
@@ -69,6 +71,8 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
 
   function syncNav(view) {
     activeView = normalizeView(view);
+    // Legacy memory links still open the memories inside Today.
+    if (activeView === 'memories') activeView = 'today';
     document.body.dataset.synapView = activeView;
     $$('.brain-tabs a[href^="#"]').forEach((a) => {
       const active = normalizeView(viewForHref(a.getAttribute('href'))) === activeView;
@@ -81,7 +85,8 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
   function setView(view, scroll = true) {
     const next = normalizeView(view);
     if (ACTION_VIEWS[view]) root.SynapMyActions?.select(ACTION_VIEWS[view]);
-    if (next === 'today' || next === 'memories') root.SynapMemoryWorkspace?.select('day');
+    if (next === 'today' || next === 'memories' || next === 'weekly')
+      root.SynapMemoryWorkspace?.select(next === 'weekly' ? 'week' : 'day');
     syncNav(next);
     root.SynapCompactLayout?.reveal(sectionFor(next));
     if (!scroll) return true;
@@ -102,15 +107,21 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
     return false;
   }
 
+  function memoryView() {
+    return root.SynapMemoryWorkspace?.period === 'week' ? 'weekly' : 'today';
+  }
+
   function currentVisibleView() {
-    if (window.scrollY < 4) return 'today';
+    if (window.scrollY < 4) return memoryView();
     const header = $('.topbar');
     const top = (header?.getBoundingClientRect().bottom || 64) + 18;
     // A desktop side rail does not obscure the bottom of the viewport.
     const nav = $('.brain-tabs')?.getBoundingClientRect();
     const bottom = nav && nav.top > window.innerHeight / 2 ? nav.top - 12 : window.innerHeight;
-    let best = { view: 'today', score: -1 };
+    let best = { view: memoryView(), score: -1 };
     for (const [view, selector] of Object.entries(VIEW_IDS)) {
+      // Score the shared memory card once, using its currently selected period.
+      if (view === 'weekly') continue;
       const node = $(selector);
       if (!node || !node.getClientRects().length) continue;
       const rect = node.getBoundingClientRect();
@@ -119,7 +130,7 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
         Math.abs((rect.top + rect.bottom) / 2 - (top + bottom) / 2) /
         Math.max(1, window.innerHeight);
       const score = visible - centerPenalty * 20;
-      if (score > best.score) best = { view, score };
+      if (score > best.score) best = { view: view === 'today' ? memoryView() : view, score };
     }
     return best.view;
   }
@@ -160,6 +171,7 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
     });
     addEventListener('scroll', () => requestAnimationFrame(updateFromViewport), { passive: true });
     addEventListener('resize', () => requestAnimationFrame(updateFromViewport), { passive: true });
+    addEventListener('synap-memory-period-changed', () => syncNav(memoryView()));
     addEventListener('hashchange', () => {
       if (location.hash) {
         setView(viewForHref(location.hash), true);
@@ -197,7 +209,7 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
         if (!target) return;
         event.preventDefault();
         root.SynapCompactLayout?.reveal(target);
-        syncNav(target.id === 'synapWeeklyReview' ? 'today' : 'memories');
+        syncNav(target.id === 'synapWeeklyReview' ? 'weekly' : 'memories');
         navLockUntil = Date.now() + 900;
         if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
         target.focus({ preventScroll: true });

@@ -44,14 +44,14 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   assert.match(sleepGuard, /synap-gatt-service-ready/);
 
   assert.doesNotMatch(events, /script\.src=['"]audio-codec-v3/);
-  assert.match(sw, /1\.0\.0-shell74-compact/);
-  assert.match(sw, /1\.0\.0-compact2/);
+  assert.match(sw, /1\.0\.0-shell75-navigation/);
+  assert.match(sw, /1\.0\.0-navigation1/);
   assert.match(sw, /\.\/dashboard-ui\.js/);
   assert.match(sw, /\.\/ask-synap\.js/);
   assert.match(sw, /\.\/sleep-state-guard\.js/);
   assert.match(sw, /\.\/runtime-compat\.js/);
   assert.match(sw, /\.\/processing-recovery\.js/);
-  assert.match(html, /dashboard-ui\.js\?v=1\.0\.0-workspace1/);
+  assert.match(html, /dashboard-ui\.js\?v=1\.0\.0-navigation1/);
   assert.match(sw, /\.\/my-actions\.js/);
   assert.match(html, /my-actions\.js\?v=1\.0\.0-workspace1/);
   assert.match(html, /ask-synap\.js\?v=1\.0\.0-actions3/);

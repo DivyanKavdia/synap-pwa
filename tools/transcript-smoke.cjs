@@ -152,7 +152,7 @@ async function run() {
         bytes: 32044,
       });
 
-      await page.locator('.brain-tabs a[href="#insights"]').tap();
+      await page.locator('.brain-tabs a[href="#today"]').tap();
       const memory = page.locator('#insightsList [data-recording-id="missing"].insight-card');
       await memory.locator('summary.insight-top').tap();
       const tab = memory.getByRole('tab', { name: 'Transcript', exact: true });

@@ -459,19 +459,14 @@ async function run() {
             .locator('.brand-logo')
             .screenshot({ path: path.join(output, `brand-${mode}-${width}.png`) });
         }
-        for (const href of ['#insights', '#myActions', '#library', '#today']) {
+        for (const href of ['#memoryWeekPanel', '#myActions', '#library', '#today']) {
           await page.locator(`.brain-tabs a[href="${href}"]`).click();
           assert.equal(await page.locator('.brain-tabs a[aria-current="page"]').count(), 1);
           assert.equal(
             await page.locator('.brain-tabs a[aria-current="page"]').getAttribute('href'),
             href,
           );
-          const target =
-            href === '#insights' &&
-            (await page.locator('#insights').getAttribute('data-empty')) === 'true'
-              ? '#today'
-              : href;
-          assert(await page.locator(target).isVisible());
+          assert(await page.locator(href).isVisible());
         }
         // Focus tabs keep their selection through memory refresh and work by keyboard.
         await page.evaluate(() => SynapCompactLayout.reveal('dailyFocus'));
@@ -626,7 +621,7 @@ async function run() {
           await page.locator('#todayMemoryPipeline>summary').click();
           await assertWeeklyReview(page, mode, width);
           await assertDayReading(page, mode, width);
-          await page.locator('.brain-tabs a[href="#insights"]').click();
+          await page.locator('.brain-tabs a[href="#today"]').click();
           await page.locator('.brain-tabs a[href="#library"]').click();
           await page.locator('[data-library-scope="all"]').click();
           await page.locator('#librarySearch').fill('prototype');

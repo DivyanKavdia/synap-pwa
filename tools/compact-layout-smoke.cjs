@@ -158,7 +158,7 @@ async function run() {
             .evaluate((node) => node === window.savedPlayer),
         );
         assert.equal(await notes.inputValue(), 'An edit that must survive collapse.');
-        await page.locator('.brain-tabs a[href="#insights"]').click();
+        await page.locator('.brain-tabs a[href="#today"]').click();
         const memory = page.locator('#insightsList .insight-card').first();
         await memory.locator('summary.insight-top').click();
         assert(await memory.evaluate((node) => node.open));
