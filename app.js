@@ -1178,6 +1178,7 @@
       reason: requestedByApp ? request.reason : "No app disconnect request",
       manual: manualDisconnect,
       state: appState,
+      firmwareBuild: globalThis.SynapPowerLifecycle?.firmwareBuild || null,
       recordingId: currentRecordingId,
       visibility: document.visibilityState,
       lastAudioMs: lastAudioAt ? Math.round(performance.now() - lastAudioAt) : null

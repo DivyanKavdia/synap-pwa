@@ -584,7 +584,7 @@ const server = createStaticServer(root);
     await page.waitForFunction(() =>
       document
         .querySelector('#diagnosticsLog')
-        .textContent.includes('Recording stop was not acknowledged'),
+        .textContent.includes('GATT timeout: Control command'),
     );
     await page.evaluate(() => bleFixture.finishStopCommand());
     const stopped = await records();
