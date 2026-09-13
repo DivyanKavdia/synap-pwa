@@ -6,7 +6,6 @@ body{font-size:var(--synap-body);-webkit-text-size-adjust:100%;text-size-adjust:
 .brain-calendar{font-size:13px!important;min-height:42px!important;padding:0 12px!important}
 .date-chip span{font-size:11px!important}.date-chip strong{font-size:17px!important}
 .day-brief-head h2{font-size:21px!important}.day-brief-text{font-size:16px!important;line-height:1.55!important}
-.glance-grid strong{font-size:18px!important}.glance-grid span{font-size:11px!important}
 .section-heading h2,.queue-panel h2{font-size:20px!important}.section-copy{font-size:13px!important;line-height:1.45!important}.count-badge{font-size:11px!important}
 .memory-search input{font-size:14px!important}.insight-top h3{font-size:15px!important}.insight-top time{font-size:12px!important}.insight-label{font-size:11px!important}.insight-summary{font-size:14px!important;line-height:1.55!important}.transcript-preview summary,.insight-open{font-size:12px!important}.empty-state h3{font-size:15px!important}.empty-state p{font-size:13px!important;line-height:1.5!important}
 .header-status-text{font-size:12px!important}.header-pendant-status{height:34px!important;max-width:112px!important}.memory-processing-status{font-size:11px!important}

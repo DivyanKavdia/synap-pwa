@@ -212,14 +212,6 @@
               : 'No recordings on this day.';
       text.classList.toggle('is-expanded', briefExpanded);
     }
-    const date = $('#brainDateLine');
-    if (date)
-      date.textContent = new Date(selected() + 'T12:00:00').toLocaleDateString([], {
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-        ...(selected().slice(0, 4) !== today().slice(0, 4) ? { year: 'numeric' } : {}),
-      });
     const toggle = $('#dayBriefReadMore');
     if (toggle) {
       toggle.hidden = !summaries.length;
@@ -464,6 +456,22 @@
 
   function install() {
     ensureSections();
+    $('#dayGlanceRecordings')?.addEventListener('click', () => {
+      // Reuse the Library filter so the shortcut keeps the selected day in view.
+      $('#clearLibrarySearch')?.click();
+      root.SynapLibraryTools?.reset();
+      $('[data-library-scope="day"]')?.click();
+      root.SynapDashboardUI?.setView('library');
+    });
+    $('#dayGlanceConversations')?.addEventListener('click', () => {
+      root.SynapCompactLayout?.reveal('dayConversations');
+      const conversations = $('#dayConversations');
+      conversations?.scrollIntoView({ block: 'start', behavior: 'instant' });
+      conversations?.querySelector('button')?.focus({ preventScroll: true });
+    });
+    $('#dayGlanceNextSteps')?.addEventListener('click', () => {
+      root.SynapDashboardUI?.setView('dailyFocus');
+    });
     $('#dayBriefReadMore')?.addEventListener('click', () => {
       briefExpanded = !briefExpanded;
       render();
@@ -554,6 +562,12 @@
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
       d = derive(list);
     renderBrief(list);
+    const metrics = $('#dayGlanceMetrics');
+    if (metrics) metrics.hidden = !list.length;
+    if ($('#glanceConversations')) $('#glanceConversations').textContent = d.conversations.length;
+    if ($('#glanceDecisions')) $('#glanceDecisions').textContent = d.decisions.length;
+    if ($('#dayGlanceConversations'))
+      $('#dayGlanceConversations').disabled = !d.conversations.length;
     // The Actions workspace owns its independent date range and completion state.
     if (!root.SynapInteractionSurfaces) {
       if ($('#decisionCount')) $('#decisionCount').textContent = d.decisions.length;

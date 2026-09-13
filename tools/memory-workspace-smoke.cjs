@@ -146,6 +146,57 @@ async function run() {
         await SynapInteractionSurfaces.refresh();
       });
       await page.locator('#memoryDayPanel #insights .insight-card').waitFor();
+      assert.equal(await page.locator('#dayLensTitle').innerText(), 'My day at a glance');
+      const selectedDay = await page.locator('#datePicker').inputValue();
+      assert.equal(await page.locator('#brainDateLine').getAttribute('datetime'), selectedDay);
+      assert.equal(await page.locator('#glanceRecordings').innerText(), '1');
+      assert.equal(await page.locator('#glanceDuration').innerText(), '<1m');
+      assert.equal(await page.locator('#glanceConversations').innerText(), '1');
+      assert.equal(await page.locator('#glanceDecisions').innerText(), '1');
+      const dayControls = await page
+        .locator('.day-navigation button')
+        .evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().toJSON()));
+      assert(dayControls.every((rect) => rect.width >= 44 && rect.height >= 44));
+      assert(dayControls.every((rect) => Math.abs(rect.y - dayControls[0].y) < 1));
+      const metrics = await page
+        .locator('#dayGlanceMetrics > * > strong')
+        .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON()));
+      assert.equal(metrics.length, 3);
+      assert(
+        metrics.every((rect) => Math.abs(rect.y - metrics[0].y) < 1),
+        'activity totals align',
+      );
+      const labels = await page.locator('#dayGlanceMetrics > * > span').evaluateAll((nodes) =>
+        nodes.map((node) => ({
+          height: node.getBoundingClientRect().height,
+          line: parseFloat(getComputedStyle(node).lineHeight),
+        })),
+      );
+      await page.screenshot({ path: path.join(output, `glance-${theme}-${width}.png`) });
+      assert(
+        labels.every((label) => label.height <= label.line + 1),
+        'activity labels fit on mobile: ' + JSON.stringify(labels),
+      );
+      await page.locator('#dayGlanceConversations').click();
+      assert.equal(
+        await page.locator('#dayConversations .tile-toggle').getAttribute('aria-expanded'),
+        'true',
+      );
+      assert(await page.locator('#conversationList').isVisible());
+      await page.locator('#dayGlanceRecordings').click();
+      await page.waitForFunction(
+        () => document.querySelectorAll('#recordingsList .recording-card').length === 1,
+      );
+      assert.equal(
+        await page.locator('[data-library-scope="day"]').getAttribute('aria-pressed'),
+        'true',
+      );
+      assert.equal(
+        await page.locator('#recordingsList .recording-card').getAttribute('id'),
+        'recording-workspace-today',
+      );
+      assert.equal(await page.locator('#datePicker').inputValue(), selectedDay);
+      await page.getByRole('link', { name: 'Today', exact: true }).click();
       assert.equal(await page.locator('main > #insights, main > #synapWeeklyReview').count(), 0);
       await page.evaluate(() => {
         window.memoryCard = document.querySelector('#insights .insight-card');
@@ -214,14 +265,24 @@ async function run() {
         );
       }
       await page.locator('#actionsTimeline').selectOption('next-week');
+      await page.getByRole('link', { name: 'Today', exact: true }).click();
+      await page.locator('#dayGlanceNextSteps').click();
+      assert.equal(
+        await page.locator('#actionsTab-dailyFocus').getAttribute('aria-selected'),
+        'true',
+      );
+      assert.equal(await page.locator('#actionsTimeline').inputValue(), 'next-week');
       await page.evaluate(() => {
         const picker = document.getElementById('datePicker');
         picker.value = SynapActionState.range('last-week')[0];
         picker.dispatchEvent(new Event('change', { bubbles: true }));
       });
       await page.waitForFunction(
-        () => document.getElementById('dayLensTitle').textContent !== 'Today',
+        () =>
+          document.getElementById('brainDateLine').dateTime ===
+          document.getElementById('datePicker').value,
       );
+      assert.equal(await page.locator('#glanceDecisions').textContent(), '0');
       assert.match(
         await page.locator('#commitmentList').innerText(),
         /Prepare next review/,
