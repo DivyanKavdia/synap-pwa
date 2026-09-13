@@ -44,6 +44,7 @@ function setup(initial=[]){
     rejectRead:index=>{const item=reads[index];item.query.error=new Error('Temporary storage failure');item.query.onerror()},
     init:()=>documentEvents.DOMContentLoaded(),emit:name=>context.dispatchEvent({type:name})};
 }
+const sources = detail => detail.children.filter(node => node.dataset.recordingId);
 function openConversations(h){const metric=h.nodes.get('synapWeekMetrics').children.find(node=>node.dataset.weekView==='conversations');if(metric?.attributes['aria-pressed']!=='true')metric.click();}
 
 test('Weekly Review shows the newest conversation first and paginates older evidence',async()=>{
@@ -53,18 +54,18 @@ test('Weekly Review shows the newest conversation first and paginates older evid
   assert.equal(h.nodes.get('synapWeekDetail').hidden,false,'conversations are visible by default');
   openConversations(h);
   const detail=h.nodes.get('synapWeekDetail');
-  assert.equal(detail.children[0].dataset.recordingId,'today','today is not lost after an unsorted 30-item cutoff');
-  assert.equal(detail.children.length,5,'compact first page');
+  assert.equal(sources(detail)[0].dataset.recordingId,'today','today is not lost after an unsorted 30-item cutoff');
+  assert.equal(sources(detail).length,5,'compact first page');
   while(!h.nodes.get('synapWeekMore').hidden)h.nodes.get('synapWeekMore').click();
-  assert.equal(detail.children.length,36,'every older source remains reachable');
-  detail.children[0].click();assert.deepEqual(h.opened[0],['today',1200]);
+  assert.equal(sources(detail).length,36,'every older source remains reachable');
+  sources(detail)[0].click();assert.deepEqual(h.opened[0],['today',1200]);
 });
 
 test('same-day cloud refresh keeps the weekly conversation list open',async()=>{
   const h=setup([record('today','2026-09-10T12:00:00')]);h.init();await tick();await tick();openConversations(h);
   h.nodes.get('datePicker').dispatch('change',{__synapCloudInternal:true});await tick();await tick();
   assert.equal(h.nodes.get('synapWeekDetail').hidden,false);
-  assert.equal(h.nodes.get('synapWeekDetail').children[0].dataset.recordingId,'today');
+  assert.equal(sources(h.nodes.get('synapWeekDetail'))[0].dataset.recordingId,'today');
 });
 
 test('a newly processed weekly source refreshes the same-day Library before navigation',async()=>{
@@ -80,21 +81,21 @@ test('an older asynchronous read cannot erase a freshly processed conversation',
   const old=h.api.refresh(false);await tick();
   h.setRows([record('today','2026-09-10T12:00:00')]);
   const fresh=h.api.refresh(false);await tick();h.resolveRead(1);await fresh;
-  assert.match(h.nodes.get('synapWeekNarrative').textContent,/1 conversation/);
+  assert.match(h.nodes.get('synapWeekMetrics').textContent,/1 conversation/);
   h.resolveRead(0);await old;
-  assert.match(h.nodes.get('synapWeekNarrative').textContent,/1 conversation/,'late stale read must be ignored');
+  assert.match(h.nodes.get('synapWeekMetrics').textContent,/1 conversation/,'late stale read must be ignored');
 });
 
 test('processing completion refreshes weekly evidence without a reload',async()=>{
   const h=setup([]);h.init();await tick();await tick();
   h.setRows([record('today','2026-09-10T12:00:00')]);h.emit('synap-processing-complete');await waitRefresh();
-  assert.match(h.nodes.get('synapWeekNarrative').textContent,/1 conversation/);
+  assert.match(h.nodes.get('synapWeekMetrics').textContent,/1 conversation/);
 });
 
 test('a failed local reload preserves already visible conversations and shows an error',async()=>{
   const h=setup([record('today','2026-09-10T12:00:00')]);await h.api.refresh(false);
   h.setManual(true);const pending=h.api.refresh(false);await tick();h.rejectRead(1);await pending;
-  assert.match(h.nodes.get('synapWeekNarrative').textContent,/1 conversation/);
+  assert.match(h.nodes.get('synapWeekMetrics').textContent,/1 conversation/);
   assert.equal(h.nodes.get('synapWeekStatus').hidden,false);
   assert.match(h.nodes.get('synapWeekStatus').textContent,/Could not refresh/);
   h.setManual(false);await h.api.refresh(false);
@@ -145,6 +146,6 @@ test('UTC timestamps on either side of local midnight use the correct weekly win
     record('after',new Date(2026,8,14,0,1).toISOString())
   ]);
   await h.api.refresh(false);
-  assert.match(h.nodes.get('synapWeekNarrative').textContent,/2 conversations/);
-  assert.deepEqual(h.nodes.get('synapWeekDetail').children.map(node=>node.dataset.recordingId),['sunday','monday']);
+  assert.match(h.nodes.get('synapWeekMetrics').textContent,/2 conversations/);
+  assert.deepEqual(sources(h.nodes.get('synapWeekDetail')).map(node=>node.dataset.recordingId),['sunday','monday']);
 });

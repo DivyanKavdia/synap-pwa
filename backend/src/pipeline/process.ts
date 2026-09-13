@@ -574,6 +574,7 @@ async function upsertFollowUps(
       recordingId: recording.recordingId,
       conversationId,
       startMs: item.startMs,
+      recordedAt: recording.startedAt,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

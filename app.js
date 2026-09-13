@@ -2548,6 +2548,8 @@
         (recording.transcript && recording.transcript.trim()));
     });
     ui.insightsCount.textContent = String(processed.length);
+    const memoryFeed = document.getElementById("insights");
+    if (memoryFeed) memoryFeed.dataset.empty = String(!processed.length);
     ui.emptyInsights.classList.toggle("hidden", processed.length > 0);
     const retained = new Set();
     processed.forEach(function (recording, index) {

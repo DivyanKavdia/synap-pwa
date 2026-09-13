@@ -19,6 +19,7 @@ const suites = [
   ['library-selection', { SYNAP_LIBRARY_OUTPUT: 'artifacts/workflows/library' }],
   ['actions', { SYNAP_ACTIONS_OUTPUT: 'artifacts/workflows/actions' }],
   ['actions-functional'],
+  ['memory-workspace'],
   ['speaker-names', { SYNAP_SPEAKERS_OUTPUT: 'artifacts/workflows/speakers' }],
 ];
 const selected = process.argv.slice(2);

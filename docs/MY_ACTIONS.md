@@ -2,13 +2,15 @@
 
 Ask Synap, Next steps, Follow-ups and People share one collapsible card. The
 primary Actions navigation link opens the card and keeps its selected tab.
-Ask is the initial tab. Next steps follows the date chosen in Today and shows
-that date above its existing To do, Decisions and Waiting filters.
+Ask is the initial tab. Next steps and Follow-ups share Timeline and Status
+dropdowns. The timeline is relative to the current local date, independent of
+the day being browsed in Memories. The existing To do, Decisions and Waiting
+filters remain inside Next steps.
 
 The tab strip is attached to one shared content area, without nested section
 cards or separate pill buttons. Its viewport scales from 220 to 300 pixels,
-keeping the card and tabs stationary when switching between short and long
-content. Long lists and answers scroll inside that area; each tab retains its
+keeping long content inside the card. Timeline controls appear above the
+scroller for Next steps and Follow-ups. Long lists and answers scroll inside that area; each tab retains its
 reading position. People uses the shared scroll area instead of a second list
 scrollbar, and suggested Ask questions fit on one horizontal row.
 
@@ -37,11 +39,35 @@ in the offline shell and the browser checks run in CI.
 
 ## Data and request boundaries
 
-Cloud Follow-ups supports Open/Done/Dismissed and You/Others filters using
-canonical task IDs. Done appears for cloud tasks; locally extracted actions keep
-an unsynced label. Canonical People supports search, confirmation, rename and
-Prepare. Editing errors retain the draft, and same-account token refresh does
-not cancel pending work. Switching accounts invalidates older responses.
+Actions supports Open, Completed and All statuses. Complete and Reopen work in
+both Next steps and Follow-ups, using the same task state. Dismissed cloud tasks
+are available under All statuses and can be reopened. Cloud tasks are fetched
+with `state=all` and saved by canonical ID; unsynced and direct-provider local
+tasks remain visible alongside them. Cloud state owns synced sources; a response started before a mutation
+cannot undo it. Local completion is written atomically to
+`recording.actionStates[accountScope][sourceKey]`, preserving the audio and other
+metadata. Local completion stays on this device and does not claim cloud sync.
+`interaction-surfaces.js` owns task lists; `brain-ui.js` keeps the day summary
+and pure extraction helpers. `action-state.js` owns date and identity rules.
+
+Timeline options are All time (default), Last week, Today, This week, Next week,
+Next 30 days, Overdue and No due date. Weeks run Monday through Sunday in local
+time. Next 30 days includes today and the following 29 days. Tasks use their
+due date; undated tasks use their recording date for historical/current ranges.
+Undated tasks never appear as overdue or due in a future period. Decisions are
+facts, so only the timeline applies to them, using their recording date. Older
+cloud tasks with no locally available source and no recorded timestamp remain
+available in All time and No due date.
+
+People supports search, Prepare, and deletion. Cloud profiles additionally
+support confirmation and rename. The management menu asks for confirmation
+before deletion. `DELETE /v1/people/:personId` removes only the authenticated
+account's profile; recordings, transcripts and extracted evidence remain intact.
+Local profiles are hidden by name and latest mention time in an account-scoped
+browser preference. A new conversation may rediscover a removed name. Cloud
+deletions suppress stale list responses for the active session. Editing errors
+retain the draft, and same-account token refresh does not cancel pending work.
+Switching accounts invalidates older responses.
 
 Cloud Ask has a 20-second deadline covering authentication and response reading,
 Cancel, Retry search and an explicit Search this device fallback. Local recall
@@ -57,3 +83,5 @@ New summary fields require new processing or an explicit memory rebuild.
 `tools/actions-functional-smoke.cjs` covers populated lists, failed edits, hung
 requests, cancellation, stale responses, account changes and source seeking.
 It uses the real adapter with simulated API responses and real IndexedDB.
+`tools/memory-workspace-smoke.cjs` checks period tabs, timeline boundaries, local
+completion after reload, and local People deletion without losing recordings.

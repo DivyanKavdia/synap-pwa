@@ -344,6 +344,10 @@ export async function getPerson(uid: string, personId: string): Promise<PersonDo
   return snapshot.exists ? (snapshot.data() as PersonDoc) : null;
 }
 
+export async function deletePerson(uid: string, personId: string): Promise<void> {
+  await paths.people(uid).doc(personId).delete();
+}
+
 export async function putFollowUp(uid: string, doc: FollowUpDoc): Promise<void> {
   await paths.followUps(uid).doc(doc.followUpId).set(doc, { merge: true });
 }
@@ -361,15 +365,22 @@ export async function listFollowUps(
   return snapshot.docs.map((doc) => doc.data() as FollowUpDoc);
 }
 
+/** Updates an existing task; a stale completion button must not create a phantom task. */
 export async function patchFollowUp(
   uid: string,
   followUpId: string,
   fields: Partial<FollowUpDoc>,
-): Promise<void> {
-  await paths
-    .followUps(uid)
-    .doc(followUpId)
-    .set({ ...fields, updatedAt: new Date().toISOString() }, { merge: true });
+): Promise<boolean> {
+  try {
+    await paths
+      .followUps(uid)
+      .doc(followUpId)
+      .update({ ...fields, updatedAt: new Date().toISOString() });
+    return true;
+  } catch (error) {
+    if ((error as { code?: number }).code === 5) return false;
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------

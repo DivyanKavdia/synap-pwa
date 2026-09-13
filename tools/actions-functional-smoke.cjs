@@ -16,7 +16,7 @@ async function seed(page) {
     const actions = Array.from({ length: 9 }, (_, i) => ({
       task: 'Review item ' + i,
       owner: 'self',
-      due_date: '2026-09-13',
+      due_date: SynapActionState.day(new Date()),
       start_ms: 1000 + i * 1000,
     }));
     const recording = {
@@ -107,11 +107,13 @@ async function seed(page) {
                 ? 'preparation'
                 : method === 'PATCH' && url.startsWith('/v1/follow-ups/')
                   ? 'done'
-                  : method === 'PATCH' && url.startsWith('/v1/people/')
-                    ? 'person-save'
-                    : url.endsWith('/source')
-                      ? 'source'
-                      : 'other';
+                  : method === 'DELETE' && url.startsWith('/v1/people/')
+                    ? 'person-delete'
+                    : method === 'PATCH' && url.startsWith('/v1/people/')
+                      ? 'person-save'
+                      : url.endsWith('/source')
+                        ? 'source'
+                        : 'other';
       const reply = (body, status = 200) => new Response(JSON.stringify(body), { status });
       const data =
         kind === 'people'
@@ -125,8 +127,15 @@ async function seed(page) {
         return reply({ error: { message: 'Temporary ' + kind + ' outage' } }, 503);
       if (data) return reply(data);
       if (kind === 'done') {
-        qa.followups = qa.followups.filter((item) => item.id !== url.split('/').pop());
-        return reply({ id: url.split('/').pop(), state: 'done' });
+        const id = url.split('/').pop(),
+          state = JSON.parse(options.body).state;
+        qa.followups = qa.followups.map((item) => (item.id === id ? { ...item, state } : item));
+        return reply({ id, state });
+      }
+      if (kind === 'person-delete') {
+        const id = url.split('/').pop();
+        qa.people = qa.people.filter((person) => person.person_id !== id);
+        return reply({ person_id: id, deleted: true });
       }
       if (method === 'PATCH' && url.startsWith('/v1/people/')) {
         const person = qa.people.find((person) => person.person_id === url.split('/').pop()),
@@ -266,10 +275,10 @@ async function run() {
       await page.locator('#actionsTab-dailyFocus').tap();
       assert.equal(
         await page.locator('#commitmentList .source-jump').count(),
-        9,
+        10,
         'Next steps does not silently truncate after six items',
       );
-      await page.locator('#commitmentList .source-jump').last().tap();
+      await page.locator('#commitmentList .source-jump').filter({ hasText: 'Review item 8' }).tap();
       await page.waitForFunction(() => document.querySelector('#recording-action-source')?.open);
       await page.waitForFunction(
         () =>
@@ -292,17 +301,17 @@ async function run() {
       });
       await page.getByRole('button', { name: 'Retry Follow-ups', exact: true }).tap();
       await page.waitForFunction(
-        () => document.querySelectorAll('.synap-follow-done').length === 34,
+        () => document.querySelectorAll('#followupList .synap-follow-done').length === 35,
       );
       assert.equal(
-        await page.locator('.synap-follow-done').count(),
-        34,
+        await page.locator('#followupList .synap-follow-done').count(),
+        35,
         'Follow-ups can retry independently while People is stalled and include all items',
       );
       await page.locator('[data-follow="mine"]').tap();
-      assert.equal(await page.locator('.synap-follow-done').count(), 17);
+      assert.equal(await page.locator('#followupList .synap-follow-done').count(), 18);
       await page.locator('[data-follow="waiting"]').tap();
-      assert.equal(await page.locator('.synap-follow-done').count(), 17);
+      assert.equal(await page.locator('#followupList .synap-follow-done').count(), 17);
       await page.locator('[data-follow="all"]').tap();
       await page.clock.runFor(16000);
       await page.locator('#actionsTab-peopleMemory').tap();
@@ -377,29 +386,40 @@ async function run() {
       await page.evaluate(() => {
         qa.fail = 'done';
       });
-      await page.locator('[data-followup-id="follow-0"]').tap();
+      await page.locator('#followupList [data-followup-id="follow-0"]').tap();
       await page.waitForFunction(() =>
-        document.querySelector('#followupError')?.textContent.includes('outage'),
+        document.querySelector('#actionUpdateStatus')?.textContent.includes('outage'),
       );
-      assert(await page.locator('[data-followup-id="follow-0"]').isEnabled());
+      assert(await page.locator('#followupList [data-followup-id="follow-0"]').isEnabled());
       await page.evaluate(() => {
         qa.fail = '';
         qa.hold = 'followups';
         qa.refresh = SynapInteractionSurfaces.refresh(true);
       });
       await page.waitForFunction(() => qa.held.some((item) => item.kind === 'followups'));
-      await page.locator('[data-followup-id="follow-0"]').tap();
-      await page.waitForFunction(() => !document.querySelector('[data-followup-id="follow-0"]'));
+      await page.locator('#followupList [data-followup-id="follow-0"]').tap();
+      await page.waitForFunction(
+        () => !document.querySelector('#followupList [data-followup-id="follow-0"]'),
+      );
       await page.evaluate(async () => {
         qa.hold = '';
         qa.held.filter((item) => item.kind === 'followups').forEach((item) => item.resolve());
         await qa.refresh;
       });
       assert.equal(
-        await page.locator('[data-followup-id="follow-0"]').count(),
+        await page.locator('#followupList [data-followup-id="follow-0"]').count(),
         0,
         'a stale read cannot restore a completed follow-up',
       );
+      await page.locator('#actionsState').selectOption('done');
+      await page.locator('#followupList [data-followup-id="follow-0"]').waitFor();
+      assert.equal(await page.locator('#followupList .synap-follow-done').count(), 1);
+      await page.locator('#followupList [data-followup-id="follow-0"]').tap();
+      await page.waitForFunction(
+        () => !document.querySelector('#followupList [data-followup-id="follow-0"]'),
+      );
+      await page.locator('#actionsState').selectOption('open');
+      await page.locator('#followupList [data-followup-id="follow-0"]').waitFor();
       await page.locator('#actionsTab-ask').tap();
       await page.locator('#askInput').fill('What did we decide?');
       await page.evaluate(() => {
@@ -503,6 +523,45 @@ async function run() {
       await blair.locator('.person-management summary').tap();
       await blair.getByRole('button', { name: '✓ That’s right', exact: true }).tap();
       await blair.getByText('✓ Confirmed', { exact: true }).waitFor();
+      await blair.getByRole('button', { name: 'Delete person', exact: true }).tap();
+      await blair.getByRole('button', { name: 'Keep person', exact: true }).tap();
+      assert(await blair.isVisible(), 'cancel keeps the profile');
+      await blair.getByRole('button', { name: 'Delete person', exact: true }).tap();
+      await page.evaluate(() => {
+        qa.fail = 'person-delete';
+      });
+      await blair.getByRole('button', { name: 'Delete person', exact: true }).tap();
+      await blair.getByText('Temporary person-delete outage').waitFor();
+      await page.evaluate(() => {
+        qa.fail = '';
+        qa.hold = 'people';
+        qa.refresh = SynapInteractionSurfaces.refresh(true, 'people');
+      });
+      await page.waitForFunction(() =>
+        qa.held.some((item) => item.kind === 'people' && !item.signal.aborted),
+      );
+      await blair.getByRole('button', { name: 'Delete person', exact: true }).tap();
+      await page.waitForFunction(
+        () => !document.querySelector('#peopleList .person-card[data-person-id="person-1"]'),
+      );
+      await page.evaluate(async () => {
+        qa.hold = '';
+        qa.held.filter((item) => item.kind === 'people').forEach((item) => item.resolve());
+        await qa.refresh;
+      });
+      assert.equal(
+        await page.locator('#peopleList .person-card[data-person-id="person-1"]').count(),
+        0,
+        'late reads cannot restore a deleted profile',
+      );
+      assert.match(
+        await page.evaluate(
+          async () => (await new DKAudioStore().get('recordings', 'action-source')).transcript,
+        ),
+        /Asha/,
+        'deleting a profile keeps source recordings',
+      );
+
       await page.locator('#actionsTab-ask').tap();
       await page.locator('#askInput').fill('Budget');
       await page.evaluate(() => {

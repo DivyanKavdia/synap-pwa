@@ -105,7 +105,14 @@ async function assertWeeklyReview(page, mode, width) {
     'ui-sample',
     'today is before all older weekly records',
   );
-  assert.match(await rows.first().locator('time').innerText(), /^Today/);
+  assert(
+    await rows.first().locator('time').getAttribute('datetime'),
+    'source time retains its absolute timestamp',
+  );
+  assert(
+    await page.locator('.memory-timeline-day').first().innerText(),
+    'weekly sources have a day heading',
+  );
   await page.evaluate(() =>
     SynapCloudHistory.refreshUiInPlace({ source: 'isolated-weekly-fixture' }),
   );
@@ -459,7 +466,12 @@ async function run() {
             await page.locator('.brain-tabs a[aria-current="page"]').getAttribute('href'),
             href,
           );
-          assert(await page.locator(href).isVisible());
+          const target =
+            href === '#insights' &&
+            (await page.locator('#insights').getAttribute('data-empty')) === 'true'
+              ? '#today'
+              : href;
+          assert(await page.locator(target).isVisible());
         }
         // Focus tabs keep their selection through memory refresh and work by keyboard.
         await page.evaluate(() => SynapCompactLayout.reveal('dailyFocus'));
@@ -475,9 +487,7 @@ async function run() {
         for (const target of ['synapWeeklyReview', 'peopleMemory', 'followupInbox']) {
           await page.evaluate((id) => SynapCompactLayout.reveal(id), target);
           assert(
-            await page
-              .locator('#' + (target === 'synapWeeklyReview' ? target + 'Body' : target))
-              .isVisible(),
+            await page.locator('#' + target).isVisible(),
             'secondary surface opens without recreating content',
           );
           await page.locator('.brain-tabs a[href="#today"]').click();
@@ -581,6 +591,7 @@ async function run() {
           await page.waitForTimeout(900);
           assert.equal(await page.locator('#glanceRecordings').innerText(), '1');
           assert.equal(await page.locator('#commitmentCount').innerText(), '1');
+          await page.evaluate(() => SynapCompactLayout.reveal('dayConversations'));
           await page.locator('#conversationList .conversation-card').first().click();
           assert(await page.locator('#conversationList .digest-summary').innerText());
           assert.match(
