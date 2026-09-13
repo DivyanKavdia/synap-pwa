@@ -5,51 +5,27 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const root = path.join(__dirname, '..');
 
-function loadCaptureStability() {
-  const appended = [];
-  class Store {
-    append(recordingId, packet) { appended.push({ recordingId, packet }); }
-    async close() { return true; }
-    async remove() { return true; }
-  }
-  const listeners = {};
-  const ctx = {
-    console, Map, Number, String, Object, Date, Promise,
-    DKAudioStore: Store,
-    document: { readyState: 'loading', addEventListener(type, fn) { listeners[type] = fn; } },
-    setInterval() { throw new Error('journal patch should be immediate'); },
-    clearInterval() {},
-    globalThis: null
-  };
-  ctx.globalThis = ctx;
-  vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(root, 'capture-stability.js'), 'utf8'), ctx);
-  return { ctx, Store, appended };
-}
-
 async function captureTests() {
-  const { ctx, Store, appended } = loadCaptureStability();
-  const api = ctx.SynapCaptureStability;
-  assert(api, 'capture stability API should be exposed');
-
+  require('../recording/timeline.js');
+  require('../audio-store.js');
+  const api = new SynapRecordingTimeline();
   assert.equal(api.relativeSequence('a', 1200), 0);
   assert.equal(api.relativeSequence('a', 1201), 1);
   assert.equal(api.relativeSequence('b', 65534), 0);
   assert.equal(api.relativeSequence('b', 65535), 1);
-  assert.equal(api.relativeSequence('b', 0), 2, '16-bit wrap must remain recording-relative');
-
-  assert.equal(api.timelineOffsetMs('b'),100,'bookmark clock unwraps the firmware counter');
-  api.beginTransportEpoch('b',20);api.relativeSequence('b',0);
-  assert.equal(api.timelineOffsetMs('b'),1150,'bookmark clock includes the saved reconnect gap');
-  const store = new Store();
-  store.append('take', { sequence: 32000, chunk: 0, total: 1, payload: new Uint8Array([1]) });
-  store.append('take', { sequence: 32001, chunk: 0, total: 1, payload: new Uint8Array([2]) });
-  assert.deepEqual(appended.map(x => x.packet.sequence), [0, 1], 'journal must never persist transport-global offsets');
-
-  await store.close('take');
-  store.append('take', { sequence: 500, chunk: 0, total: 1, payload: new Uint8Array([3]) });
-  assert.equal(appended[2].packet.sequence, 0, 'a closed recording must get a fresh relative origin');
-  assert.equal(Store.prototype.__synapRelativeSequencePatched, true);
+  assert.equal(api.relativeSequence('b', 0), 2);
+  assert.equal(api.timelineOffsetMs('b'), 100);
+  api.beginTransportEpoch('b', 20);
+  assert.equal(api.relativeSequence('b', 0), 23);
+  assert.equal(api.timelineOffsetMs('b'), 1150);
+  const first = new DKAudioStore({timeline:new SynapRecordingTimeline()});
+  const second = new DKAudioStore({timeline:new SynapRecordingTimeline()});
+  for (const [store, sequence] of [[first,32000],[first,32001],[second,500]]) {
+    store.append('same-id', {sequence,chunk:0,total:1,payload:new Uint8Array(1600)});
+    clearTimeout(store.timer);
+  }
+  assert.deepEqual(first.buffer.map(p=>p.sequence), [0,1]);
+  assert.deepEqual(second.buffer.map(p=>p.sequence), [0], 'separate store clocks cannot contaminate each other');
 }
 
 function costTests() {
@@ -100,14 +76,14 @@ function costTests() {
 
 function bootstrapTests() {
   const history = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  for (const file of ['capture-stability.js', 'recording-bridge.js', 'memory-tools.js', 'cost-ui.js']) {
+  for (const file of ['recording/timeline.js', 'recording-bridge.js', 'memory-tools.js', 'cost-ui.js']) {
     assert(history.includes(file), `production shell must load ${file}`);
   }
   assert(!fs.readFileSync(path.join(root, 'product-ui.js'), 'utf8').includes('Advanced & recovery'), 'the removed recovery wrapper must not be reintroduced');
 
-  const capture = fs.readFileSync(path.join(root, 'capture-stability.js'), 'utf8');
-  assert(capture.includes('#advancedSettings,.product-advanced'));
-  assert(capture.includes('#retrySaveButton,#recoveryButton,#runQueueButton,#pauseQueueButton'));
+  const styles = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
+  assert(styles.includes('#advancedSettings,.product-advanced'));
+  assert(styles.includes('#retrySaveButton,#recoveryButton,#runQueueButton,#pauseQueueButton'));
 }
 
 (async () => {

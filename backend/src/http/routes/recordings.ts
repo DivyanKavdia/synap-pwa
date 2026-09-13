@@ -5,6 +5,7 @@ import { openJson, openText, sealBytes } from '../../crypto/envelope.js';
 import { enqueueProcessing } from '../../pipeline/queue.js';
 import { binding } from '../../pipeline/process.js';
 import { transcribeUploadedWindow } from '../../pipeline/rolling-transcription.js';
+import { requireCompleteSegments } from '../../pipeline/recording-segments.js';
 import * as db from '../../store/firestore.js';
 import { segmentPath, writeSealedSegment } from '../../store/gcs.js';
 import type {
@@ -35,7 +36,7 @@ const createBody = z.object({
 const finalizeBody = z.object({
   ended_at: z.string().datetime(),
   duration_ms: z.number().int().nonnegative(),
-  segment_count: z.number().int().nonnegative(),
+  segment_count: z.number().int().positive().safe(),
 });
 
 const highlightBody = z.object({
@@ -121,7 +122,7 @@ export function recordingRoutes(): Router {
     handler<AuthedRequest>(async (req, res) => {
       const recordingId = String(req.params.recordingId);
       const index = Number(req.params.index);
-      if (!Number.isInteger(index) || index < 0) {
+      if (!Number.isSafeInteger(index) || index < 0) {
         throw new HttpError(400, 'bad_request', 'Segment index must be a non-negative integer');
       }
 
@@ -171,6 +172,9 @@ export function recordingRoutes(): Router {
 
       const startMs = Number(req.header('x-synap-start-ms') ?? index * 30_000);
       const endMs = Number(req.header('x-synap-end-ms') ?? startMs + 30_000);
+      if (!Number.isSafeInteger(startMs) || !Number.isSafeInteger(endMs) || startMs < 0 || endMs <= startMs) {
+        throw new HttpError(400, 'bad_segment_timing', 'Audio window timing must be finite milliseconds with end after start');
+      }
 
       const path = segmentPath(req.uid, recordingId, index);
       const sealed = sealBytes(
@@ -288,10 +292,12 @@ export function recordingRoutes(): Router {
       const recording = await db.getRecording(req.uid, recordingId);
       if (!recording) throw new HttpError(404, 'not_found', 'Unknown recording');
 
-      const uploaded = await db.countSegments(req.uid, recordingId);
-      if (uploaded === 0) {
-        throw new HttpError(409, 'no_segments', 'No audio segments were uploaded', false);
+      const segments = await db.listSegments(req.uid, recordingId);
+      try { requireCompleteSegments(segments, body.data.segment_count); }
+      catch (error) {
+        throw new HttpError(409, 'incomplete_upload', (error as Error).message, true);
       }
+      const uploaded = segments.length;
 
       await db.patchRecording(req.uid, recordingId, {
         endedAt: body.data.ended_at,

@@ -15,6 +15,8 @@
   var STATUS_REQUEST_TIMEOUT_MS = 30000;
   var PROCESSING_TIMEOUT_MS = 900000;
   var POLL_INTERVAL_MS = 5000;
+  const accountScopes = new WeakMap();
+  const accountUid = () => String(root.SynapAuth?.session?.()?.profile?.uid || '');
 
   function prefs() {
     try { return JSON.parse(root.localStorage.getItem(PREF_KEY) || '{}') || {}; }
@@ -66,6 +68,11 @@
 
   function request(path, options) {
     var init = Object.assign({}, options || {});
+    var expectedUid = init.signal && accountScopes.get(init.signal);
+    if (expectedUid) {
+      if (accountUid() !== expectedUid || init.signal.aborted) return Promise.reject(permanent('Google account changed. Retry under the recording owner.'));
+      init.expectedUid = expectedUid;
+    }
     var Controller = root.AbortController;
     if (typeof Controller !== 'function') return auth().authedFetch(path, init).then(parseResponse);
 
@@ -178,10 +185,11 @@
   var createdRecordings = Object.create(null);
 
   function ensureRecording(processor, recordingId, signal) {
-    if (createdRecordings[recordingId]) return createdRecordings[recordingId];
+    const key = accountUid() + ':' + recordingId;
+    if (createdRecordings[key]) return createdRecordings[key];
     var pending = createRecording(processor, recordingId, signal);
-    createdRecordings[recordingId] = pending;
-    pending.catch(function () { delete createdRecordings[recordingId]; });
+    createdRecordings[key] = pending;
+    pending.catch(function () { delete createdRecordings[key]; });
     return pending;
   }
 
@@ -442,14 +450,46 @@
         await recoverLegacyFinalizeFailures(processor);
         recoveredProcessors.add(processor);
       }
-      return Object.assign({}, config, { endpoint: endpoint, llmEndpoint: endpoint });
+      return Object.assign({}, config, { endpoint: endpoint, llmEndpoint: endpoint, accountUid: accountUid() });
     },
     timeout(job) { return job.kind === 'consolidate' ? PROCESSING_TIMEOUT_MS : UPLOAD_TIMEOUT_MS; },
-    process(processor, job, _config, signal) {
+    async process(processor, job, config, signal) {
       if (!root.SynapAuth || !root.SynapAuth.isSignedIn()) {
         return Promise.reject(permanent('Sign in with Google in Settings to sync your memories.'));
       }
-      return handle(processor, job, signal);
+      const uid = config.accountUid || accountUid();
+      if (!uid || uid !== accountUid()) throw permanent('Sign in with the recording owner to sync this recording.');
+      const controller = new root.AbortController();
+      const cancel = () => controller.abort();
+      if (signal?.aborted) cancel();
+      else signal?.addEventListener('abort', cancel, { once: true });
+      const unsubscribe = root.SynapAuth.onChange?.(() => { if (uid !== accountUid()) cancel(); });
+      accountScopes.set(controller.signal, uid);
+      try {
+        const check = record => {
+          if (!record) throw permanent('Recording is no longer in local storage.');
+          if (record.ownerUid && record.ownerUid !== uid) throw permanent('This recording belongs to another Google account. Sign in with that account to sync it.');
+        };
+        const record = await processor.store.get('recordings', job.recordingId);
+        check(record);
+        // Recordings made offline or before ownership metadata was introduced
+        // are bound once, before their first managed request.
+        if (!record.ownerUid && processor.store.atomic) await processor.store.atomic(['recordings'], stores => {
+          const get = stores.recordings.get(job.recordingId);
+          get.onsuccess = () => {
+            // Throwing inside an IDB event does not reliably reject atomic().
+            // A concurrent owner change is checked again after this transaction.
+            if (get.result && !get.result.ownerUid) stores.recordings.put({ ...get.result, ownerUid: uid });
+          };
+        });
+        check(await processor.store.get('recordings', job.recordingId));
+        if (controller.signal.aborted || uid !== accountUid()) throw Object.assign(new Error('Google account changed during processing.'), { name: 'AbortError' });
+        return await handle(processor, job, controller.signal);
+      } finally {
+        unsubscribe?.();
+        signal?.removeEventListener('abort', cancel);
+        accountScopes.delete(controller.signal);
+      }
     }
   };
   root.DKFIFOProcessor?.registerProvider('synap', processingProvider);

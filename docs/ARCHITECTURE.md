@@ -10,12 +10,12 @@ questions using retrieved evidence. Firmware is a separate repository.
 | Responsibility                                                       | Source                                                                         |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | Startup graph and offline shell                                      | `index.html`, `sw.js`                                                          |
-| BLE connection, serialized GATT, recording state, library controller | `app.js`                                                                       |
+| Connection/recording policy and library controller                    | `app.js`                                                                       |
 | Audio transport decoding                                             | `audio-codec-v3.js`                                                            |
 | IndexedDB journal, recovery, segments and job persistence            | `audio-store.js`                                                               |
 | Processing locks, dispatch, concurrency, pause and retry             | `processing-queue.js`                                                          |
-| Closing 30-second processing windows during a take                   | `rolling-transcription.js`                                                     |
-| Same-take sequence continuity                                        | `capture-stability.js`                                                         |
+| Native GATT queue and connection-generation ownership                | `recording/bluetooth-session.js`                                                     |
+| Per-store pendant timeline and explicit capture options              | `recording/timeline.js`, `recording/journal.js`                                                         |
 | Adopting hardware-started recording                                  | `recording-bridge.js`                                                          |
 | Intentional sleep/reconnect preference                               | `sleep-state-guard.js`                                                         |
 | Battery popover and idle standby control                             | `battery-popover-fix.js`                                                       |
@@ -63,9 +63,9 @@ attempts; retries can recover them, so it is separate from lost audio frames.
 ## Durable processing
 
 `DKAudioStore` owns database version 3: recordings, packets, segments and jobs.
-Packets are journaled before compaction. Each 30-second segment feeds ordered
+Packets are journaled before compaction. The store also owns rolling windows, close coalescing and deletion barriers. `recording/journal.js` supplies explicit constructor options; importing it never patches a prototype. Pendant clocks use a per-store `RecordingTimeline`; desktop PCM counters stay logical. Each 30-second segment feeds ordered
 transcribe and summarize jobs; consolidation produces the recording memory.
-Managed transcribe jobs upload a window and let the backend perform ASR.
+Managed transcribe jobs upload a window and let the backend perform ASR. Capture owner metadata is committed with the recording. Managed jobs check that owner, pin requests to the selected account and abort on account changes. Older unowned recordings are assigned to the account used for their first managed sync. Cloud restore retains account ownership.
 
 `DKFIFOProcessor` runs at most two jobs from different recordings under a Web
 Lock. Jobs for the same recording remain ordered. Failed/recovering recordings
@@ -120,6 +120,8 @@ their own rules. Unmatched resources return 404.
 and semantic retrieval, then validates grounded answers and citations. Older Ask
 implementations were unmounted or shadowed and have been removed.
 
+`pipeline/rolling-transcription.ts` owns transcription of a stored window for both PUT retries and final processing. `pipeline/recording-segments.ts` validates the exact window sequence and joins all workers before failure. Finalize refuses missing windows before queuing understanding; timing headers must contain finite, ordered millisecond values.
+
 Keep request validation at HTTP boundaries, encryption binding in the crypto
 layer, and restart/idempotency logic in persistence and pipeline code. The
 speaker service is a separate private service for embeddings. Browser-facing
@@ -128,17 +130,21 @@ Secret Manager values pass through the same signing-key validation.
 
 ## Remaining maintenance work
 
-`app.js` still combines connection, recording and library controllers. The next
-useful extraction is its GATT/session controller, backed by the existing
-connection and OTA browser workflows. Do not split it by arbitrary line count.
+`app.js` remains the connection/recording policy and library coordinator. The
+native GATT queue has been extracted into `recording/bluetooth-session.js` and
+storage no longer depends on prototype patches. Future extractions should move
+recording transitions and Library rendering behind explicit interfaces while
+preserving the real browser workflow checks.
 
-Rolling windows and sequence normalization still wrap storage methods. They are
-now separate modules with an explicit load order; moving these into storage
-lifecycle methods needs transaction/recovery tests. Several older UI files and
-CSS layers remain compressed, and some tests still match source strings. Migrate
-those incrementally alongside behavior coverage instead of introducing another
-format-sensitive assertion.
+Older presentation modules and CSS layers still overlap; several modules have
+names inherited from earlier repairs. Some tests still inspect source strings.
+Prefer behavior tests for each boundary as it changes. Do not introduce another
+module that wraps existing methods at startup.
 
-Review included PWA/backend source, deployment entry points, the speaker service
-boundary, and firmware contracts at `346b819caf89d3ed3ac2d401dce939237f9c5390`.
-Firmware source and public BLE protocol versions were not changed in this pass.
+Backend indexing still needs revision-based publication: conversation replacement,
+people counters and follow-up creation do not form one transaction. A worker
+failure during indexing can repeat derived side effects. Source audio and sealed
+transcripts are independent of that remaining risk.
+
+See [recording architecture audit](RECORDING_AUDIT.md) for findings, changes,
+validation evidence and the physical-device acceptance boundary.

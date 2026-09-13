@@ -3,6 +3,7 @@ import { transcribeSegment } from '../gemini/transcribe.js';
 import * as db from '../store/firestore.js';
 import { readSealedSegment } from '../store/gcs.js';
 import type { RecordingDoc, SegmentDoc } from '../store/types.js';
+import { hasTranscription } from './recording-segments.js';
 
 function binding(uid: string, scope: string, field: string): Binding {
   return { uid, scope, field };
@@ -24,7 +25,7 @@ export async function transcribeUploadedWindow(
 
   const segment = await db.getSegment(uid, recordingId, segmentIndex);
   if (!segment) throw new Error(`Unknown segment ${segmentIndex}`);
-  if (segment.sealedTranscript && segment.sealedWords && segment.state === 'transcribed') return segment;
+  if (hasTranscription(segment)) return segment;
 
   const completed = await transcribeOne(uid, recordingId, dek, recording, segment);
   return completed;

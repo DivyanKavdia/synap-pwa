@@ -56,6 +56,7 @@
   }
 
   function merge(local, restored) {
+    if (local?.ownerUid && restored?.ownerUid && local.ownerUid !== restored.ownerUid) return Object.assign({}, local);
     var merged = Object.assign({}, restored, local);
     if (!local) return merged;
 
@@ -91,6 +92,7 @@
     var startedAt = item.started_at || new Date().toISOString();
     var record = {
       id: item.recording_id,
+      ownerUid: String(root.SynapAuth?.session?.()?.profile?.uid || '') || null,
       createdAt: startedAt,
       durationMs: Math.max(0, Math.round(Number(item.duration_ms) || 0)),
       notes: '',

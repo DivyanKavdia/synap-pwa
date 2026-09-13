@@ -6,7 +6,7 @@ const vm=require('node:vm');
 
 const root=path.join(__dirname,'..');
 const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
-const stability=fs.readFileSync(path.join(root,'capture-stability.js'),'utf8');
+const stability=fs.readFileSync(path.join(root,'recording/timeline.js'),'utf8');
 
 assert.doesNotMatch(app,/MAX_RECORDING_MS/,'a user recording must not be force-stopped at an arbitrary duration');
 assert.doesNotMatch(app,/Maximum recording duration reached/,'the old 50-minute forced-stop path must be removed');
@@ -28,8 +28,8 @@ assert.equal((app.match(/journal\.begin\(/g)||[]).length,1,'transport recovery m
 const context={console,Map,Number,String,Math,Object,Promise,setInterval(){return 1},clearInterval(){},sessionStorage:{removeItem(){}},document:{readyState:'loading',addEventListener(){}},globalThis:null};
 context.globalThis=context;
 vm.createContext(context);
-vm.runInContext(stability,context,{filename:'capture-stability.js'});
-const api=context.SynapCaptureStability;
+vm.runInContext(stability,context,{filename:'recording/timeline.js'});
+const api=new context.SynapRecordingTimeline();
 assert.equal(api.relativeSequence('r1',42),0);
 assert.equal(api.relativeSequence('r1',43),1);
 assert.equal(api.beginTransportEpoch('r1',0),true);

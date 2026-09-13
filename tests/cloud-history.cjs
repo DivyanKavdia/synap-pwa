@@ -37,6 +37,14 @@ function load(overrides) {
 
 const api = load().SynapCloudHistory;
 assert.ok(api, 'the module exports its testable surface');
+{
+  const local = {id:'same-id',ownerUid:'alice',transcript:'Alice recording'};
+  const kept = api.merge(local,{id:'same-id',ownerUid:'bob',transcript:'Bob recording',restoredFromCloud:true,processingState:'done'});
+  assert.equal(kept.ownerUid,'alice');
+  assert.equal(kept.transcript,local.transcript);
+  const history = load({SynapAuth:{session:()=>({profile:{uid:'alice'}})}}).SynapCloudHistory;
+  assert.equal(history.toLocal({recording_id:'restored'}).ownerUid,'alice');
+}
 
 // Day lists deliberately omit transcripts. Omitted evidence is not an empty
 // replacement for text already downloaded or just produced in this browser.

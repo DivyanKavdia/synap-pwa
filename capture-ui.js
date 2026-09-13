@@ -16,6 +16,11 @@
 
   function init(){
     syncBrand();
+    try { sessionStorage.removeItem('synap-continuous-capture'); } catch (_) {}
+    document.querySelectorAll('#retrySaveButton,#recoveryButton,#runQueueButton,#pauseQueueButton').forEach(node => {
+      node.hidden = true;
+      node.setAttribute('aria-hidden', 'true');
+    });
     const header=document.querySelector('.topbar');
     const actions=document.querySelector('.top-actions');
     const section=document.getElementById('capture');

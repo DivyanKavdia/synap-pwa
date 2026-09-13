@@ -135,3 +135,7 @@ npm run test:browser
 Browser fixtures cover simulated BLE, recovery, OTA, notifications and memory
 workflows. Physical recording, gestures, RF interruptions, OS notification
 controls, wake/sleep and firmware transfer still require device validation.
+
+The [recording architecture audit](docs/RECORDING_AUDIT.md) documents the Bluetooth,
+recording/storage and cloud-processing boundaries, confirmed fixes, and remaining
+firmware/UI maintenance work.

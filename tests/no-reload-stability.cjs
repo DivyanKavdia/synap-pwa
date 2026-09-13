@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const root = path.join(__dirname, '..');
 const historySource = fs.readFileSync(path.join(root, 'cloud-history.js'), 'utf8');
-const captureSource = fs.readFileSync(path.join(root, 'capture-stability.js'), 'utf8');
+const captureSource = fs.readFileSync(path.join(root, 'recording/timeline.js'), 'utf8');
 const pipelineSource = fs.readFileSync(path.join(root, 'processing-pipeline-ui.js'), 'utf8');
 const transcriptRepairSource = fs.readFileSync(path.join(root, 'transcript-repair.js'), 'utf8');
 const memoryReadySource = fs.readFileSync(path.join(root, 'memory-ready-events.js'), 'utf8');

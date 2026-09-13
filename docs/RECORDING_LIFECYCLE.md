@@ -4,7 +4,7 @@
 
 `app.js` owns connection and recording state. GATT discovery, reads, writes,
 event subscriptions, standby and OTA share one serialized queue. Every queued
-operation belongs to a connection/session; stale work is discarded. A caller's
+operation belongs to a connection/session in `recording/bluetooth-session.js`; stale work is discarded. A START waiting behind older work rechecks the recording session and Stop intent immediately before writing. A caller's
 timeout does not free an underlying native operation that is still running.
 
 Startup acquires the app lock, opens the journal and recovers interrupted
@@ -15,8 +15,8 @@ targeted Retry while unaffected recordings remain usable.
 
 `recording-bridge.js` alone adopts a pendant-started stream. Incoming audio is
 decoded and journaled with sequence continuity; missing frames keep their time
-positions as silence. `rolling-transcription.js` closes completed 30-second
-processing windows and wakes `SynapProcessingQueue` without replacing its class.
+positions as silence. `audio-store.js` closes completed 30-second processing
+windows; explicit callbacks from `recording/journal.js` wake `SynapProcessingQueue`.
 These windows are not separate user recordings.
 
 Rolling compaction requires all 600 frames. A window with absent or incomplete
@@ -105,3 +105,16 @@ Automatic firmware discovery checks recording eligibility again when each queued
 ## Passive Bluetooth work during recovery
 
 The app-owned shared service gates optional work before enqueueing and again before the native call starts. Battery/power setup, passive diagnostics and other consumers of that service cannot start requests during capture, startup, Stop/save, firmware transfer or recording reconnect. Required identity, control and recovery operations retain the recorder queue. Existing notifications remain attached. Event setup defers without a retry loop and resumes when capture has been saved and the connection becomes eligible. This removes optional traffic from the reconnect handshake; it does not prove a physical link-loss cause or replace device diagnostics.
+
+## Journal lifecycle ownership
+
+`DKAudioStore` receives capture features through explicit constructor options.
+Each pendant journal owns its own `RecordingTimeline`; desktop capture uses
+logical sequences without uint16 normalization. An old transport packet preceding
+the journal origin is ignored instead of overwriting frame zero.
+
+Close marks the journal unavailable to new appends synchronously, waits for
+rolling work, then seals. Concurrent close callers share one operation. A failed
+close retains its timeline and packets for retry; successful close releases the
+timeline. Deletion waits for rolling work and queued writes before removing rows,
+so those writes cannot recreate deleted audio afterward.

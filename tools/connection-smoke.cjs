@@ -626,6 +626,23 @@ const server = createStaticServer(root);
     console.log(
       'PASS: foreground preserves an idle link; reload adopts a retained native connection without disconnect/connect churn',
     );
+    // A user can cancel Start while an earlier idle read still owns native ATT.
+    // Releasing that read must run STOP without sending the cancelled START.
+    const startsBeforeCancellation = await page.evaluate(() => {
+      bleFixture.delayStatusRead();
+      return bleFixture.starts;
+    });
+    await page.waitForFunction(() => bleFixture.readPending);
+    await page.locator('#headerCaptureToggle').click();
+    await page.waitForFunction(() => document.body.dataset.state === 'starting');
+    await page.locator('#headerCaptureToggle').click();
+    await page.waitForFunction(() => document.body.dataset.state === 'stopping');
+    await page.evaluate(() => bleFixture.finishRead());
+    await page.waitForFunction(() => document.body.dataset.state === 'idle');
+    assert.equal(await page.evaluate(() => bleFixture.starts), startsBeforeCancellation);
+    assert.equal(await page.evaluate(() => bleFixture.maximum), 1);
+    assert.deepEqual(errors, []);
+    console.log('PASS: Stop cancels a queued START before native execution without disconnecting the idle link');
     await context.close();
   } finally {
     await browser.close();

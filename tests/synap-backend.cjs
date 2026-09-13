@@ -27,6 +27,47 @@ function storage(initial) {
   };
 }
 
+test('a late token refresh cannot restore a signed-out account or overwrite a new account', async () => {
+  for (const status of [200, 401]) {
+    let reply;
+    const local = storage({ 'synap-auth-session-v1': JSON.stringify({refreshToken:'old',profile:{uid:'alice'},expiresAt:0}) });
+    const context = load(authSource, {localStorage:local,fetch:()=>new Promise(resolve=>{reply=resolve})});
+    const pending = context.SynapAuth.refresh();
+    const failed = assert.rejects(pending);
+    await new Promise(resolve=>setImmediate(resolve));
+    local.setItem('synap-auth-session-v1',JSON.stringify({refreshToken:'new',profile:{uid:'bob'},expiresAt:Date.now()+10000}));
+    reply(new Response(JSON.stringify(status === 200 ? {access_token:'old-access',refresh_token:'rotated-old',expires_in:3600} : {error:{message:'Revoked'}}),{status}));
+    await failed;
+    assert.equal(context.SynapAuth.session().profile.uid,'bob');
+    assert.equal(context.SynapAuth.session().refreshToken,'new');
+  }
+});
+
+test('recording jobs reject a different account before any cloud request or mutation', async () => {
+  let requests=0,writes=0;
+  const context=load(backendSource,{SynapAuth:{isSignedIn:()=>true,session:()=>({profile:{uid:'bob'}}),authedFetch:async()=>{requests++;throw Error('must not send')}}});
+  const processor={store:{get:async()=>({id:'take',ownerUid:'alice'}),atomic:async()=>{writes++}}};
+  await assert.rejects(context.DKFIFOProcessor.provider('synap').process(processor,{recordingId:'take',kind:'transcribe'},{accountUid:'bob'},new AbortController().signal),/another Google account/);
+  assert.equal(requests,0);assert.equal(writes,0);
+});
+
+test('account changes during local preparation cannot start a cloud request', async () => {
+  let uid='alice',release,requests=0;
+  const context=load(backendSource,{SynapAuth:{isSignedIn:()=>true,session:()=>({profile:{uid}}),authedFetch:async()=>{requests++;throw Error('must not send')}}});
+  const processor={store:{get:()=>new Promise(resolve=>{release=()=>resolve({id:'take',ownerUid:'alice'})})}};
+  const pending=context.DKFIFOProcessor.provider('synap').process(processor,{recordingId:'take',kind:'transcribe'},{accountUid:'alice'},new AbortController().signal);
+  uid='bob';release();await new Promise(resolve=>setImmediate(resolve));release();
+  await assert.rejects(pending,{name:'AbortError'});assert.equal(requests,0);
+});
+
+test('authenticated upload checks its expected account after awaiting a token', async () => {
+  let requests=0;
+  const local=storage({'synap-auth-session-v1':JSON.stringify({profile:{uid:'bob'},refreshToken:'b',accessToken:'b-access',expiresAt:Date.now()+10000})});
+  const context=load(authSource,{localStorage:local,fetch:async()=>{requests++;throw Error('must not send')}});
+  await assert.rejects(context.SynapAuth.authedFetch('/v1/recordings/take/segments/0',{method:'PUT',body:'audio',expectedUid:'alice'}),{name:'AbortError'});
+  assert.equal(requests,0);
+});
+
 /** Minimal browser context: no document, so the DOM-binding paths stay inert. */
 function load(source, overrides) {
   const context = Object.assign(
@@ -53,6 +94,9 @@ function load(source, overrides) {
     },
     overrides || {},
   );
+  if (context.SynapAuth && !context.SynapAuth.session) {
+    context.SynapAuth.session = () => ({profile:{uid:'fixture-owner'}});
+  }
   context.globalThis = context;
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(root, 'processing-queue.js'), 'utf8'), context);
@@ -71,7 +115,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell82-recording-gatt'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell83-recording-core'/);
 });
 
 test('the settings form offers the encrypted cloud provider and a sign-in control', () => {
@@ -373,14 +417,14 @@ test('a recording is created once, not once per segment', () => {
   assert.match(backendSource, /var createdRecordings = Object\.create\(null\)/);
   assert.match(
     backendSource,
-    /if \(createdRecordings\[recordingId\]\) return createdRecordings\[recordingId\]/,
+    /if \(createdRecordings\[key\]\) return createdRecordings\[key\]/,
   );
 });
 
 test('a failed create is evicted so the recording is not stuck for the session', () => {
   assert.match(
     backendSource,
-    /pending\.catch\(function \(\) \{ delete createdRecordings\[recordingId\]; \}\)/,
+    /pending\.catch\(function \(\) \{ delete createdRecordings\[key\]; \}\)/,
   );
 });
 

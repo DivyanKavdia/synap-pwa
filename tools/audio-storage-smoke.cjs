@@ -12,7 +12,7 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
     const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
     await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
     await context.route('**/__storage', route => route.fulfill({ contentType: 'text/html', body:
-      '<!doctype html><title>Audio storage fixture</title><header></header><script src="/audio-store.js"></script><script src="/rolling-transcription.js"></script><script src="/capture-stability.js"></script><script src="/audio-quality.js"></script>' }));
+      '<!doctype html><title>Audio storage fixture</title><header></header><script src="/audio-store.js"></script><script src="/recording/journal.js"></script><script src="/recording/timeline.js"></script><script src="/audio-quality.js"></script>' }));
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -28,10 +28,10 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
       }
       async function settle(store) {
         await store.flush();
-        await (store.__synapRollingSeal || Promise.resolve());
+        await store.flushWindows();
         await store.flush();
       }
-      const store = new DKAudioStore({ name: 'replayed-frames' });
+      const store = new DKAudioStore({ ...SynapRecordingJournal.options({transport:true}), name: 'replayed-frames' });
       const id = await store.begin('Recovered window');
       append(store, id, 0, 97);
       append(store, id, 820, 980);
@@ -45,7 +45,7 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
       await settle(store);
       const after = {
         compacted: Boolean((await store.get('segments', [id, 0]))?.pcmBlob),
-        liveWindow: store.__synapRollingIndex.get(id),
+        liveWindow: store.rollingIndex.get(id),
       };
       append(store, id, 600, 819);
       const recovered = await store.close(id);
@@ -58,7 +58,7 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
       }
 
       // The same gap without recovered packets stays visible in duration and UI.
-      const gaps = new DKAudioStore();
+      const gaps = new DKAudioStore(SynapRecordingJournal.options({transport:true}));
       const gapId = await gaps.begin('Audio gap fixture');
       append(gaps, gapId, 0, 97);
       append(gaps, gapId, 820, 980);
@@ -74,7 +74,7 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
         if (zero) zeroFrames++;
       }
 
-      const emptyWindow = new DKAudioStore({ name: 'entire-missing-window' });
+      const emptyWindow = new DKAudioStore({ ...SynapRecordingJournal.options({transport:true}), name: 'entire-missing-window' });
       const emptyId = await emptyWindow.begin('Missing whole window');
       append(emptyWindow, emptyId, 0, 10);
       append(emptyWindow, emptyId, 1200, 1209);
@@ -82,7 +82,7 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
       await emptyWindow.close(emptyId);
       const uploadWindows = (await emptyWindow.all('jobs')).filter(job => job.kind === 'transcribe').map(job => job.segmentIndex).sort();
 
-      const partial = new DKAudioStore({ name: 'partial-audio-evidence' });
+      const partial = new DKAudioStore({ ...SynapRecordingJournal.options({transport:true}), name: 'partial-audio-evidence' });
       const partialId = await partial.begin('Partial frame');
       partial.append(partialId, { sequence: 0, chunk: 0, total: 2, payload: new Uint8Array(800).fill(17) });
       const partialRecording = await partial.close(partialId);

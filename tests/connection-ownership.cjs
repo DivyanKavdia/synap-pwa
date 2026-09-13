@@ -18,6 +18,7 @@ function harness(){
     bluetoothDevice:{gatt:{disconnect(){calls.push('disconnect')}}}
   };
   c.globalThis=c;c.window=c;vm.createContext(c);
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'..','recording/bluetooth-session.js'),'utf8'),c);
   vm.runInContext(slice('  function optionalGattAllowed(', '  async function writeCommand('),c);
   vm.runInContext(read('device-identity.js'),c);
   vm.runInContext(read('event-channel.js'),c);

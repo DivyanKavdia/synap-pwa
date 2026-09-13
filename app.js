@@ -175,7 +175,6 @@
   const recordingControlOwnerId = globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
   let finalizedSessionId = 0;
   let connectionEpoch = 0;
-  let gattQueue = Promise.resolve();
 
   let reconnectTimer = null;
   let reconnectAttempts = 0;
@@ -219,7 +218,7 @@
   let currentRecordingId = null;
   let openingCapture = null;
   let persistenceRequested = false;
-  const journal = globalThis.DKAudioStore ? new globalThis.DKAudioStore({onError: handleStorageError}) : null;
+  const journal = globalThis.DKAudioStore ? new globalThis.DKAudioStore({...globalThis.SynapRecordingJournal.options({transport:true}), onError: handleStorageError}) : null;
   let processor = null;
 
   let settings = {
@@ -743,7 +742,7 @@
     completedSequences.clear();
     lastObservedSequence = null;
     lastFrameCleanupAt = 0;
-    if(!preserveSequence)globalThis.SynapCaptureStability?.beginTransportEpoch(currentRecordingId, 0);
+    if(!preserveSequence)journal?.beginTransportEpoch(currentRecordingId, 0);
     setAppState(recordingStopRequested ? "stopping" : "starting");
     return true;
   }
@@ -1242,7 +1241,7 @@
     deviceIdentityMessage = "Not connected";
     firmwareUpdater?.reset();
     connectionEpoch += 1;
-    gattQueue = Promise.resolve();
+    bluetoothSession.reset();
     clearStartTimeout();
     clearFinalizeTimer();
     if (audioCharacteristic) {
@@ -1300,42 +1299,29 @@
       !["starting", "recording", "stopping", "saving", "updating"].includes(appState);
   }
 
+  const bluetoothSession = new globalThis.SynapBluetoothSession({
+    connection: () => ({ epoch: connectionEpoch, device: bluetoothDevice }),
+    connected: isGattConnected,
+    withTimeout,
+    timeoutMs: COMMAND_TIMEOUT_MS,
+    onFailure: handleGattFailure
+  });
+
   function queueGattOperation(action, label = "Bluetooth operation") {
-    const epoch = connectionEpoch;
-    const device = bluetoothDevice;
-    let expired = false;
-    let started = false;
-    const operation = gattQueue.then(async function () {
-      if (expired) return; // A timed-out queued command must never run later.
-      if (epoch !== connectionEpoch || device !== bluetoothDevice || !isGattConnected()) {
-        throw new Error("Bluetooth connection changed.");
-      }
-      started = true;
-      const result = await action();
-      if (epoch !== connectionEpoch || device !== bluetoothDevice || !isGattConnected()) {
-        throw new Error("Bluetooth connection changed.");
-      }
-      return result;
-    });
-    // The native promise owns the queue even after its caller times out. A
-    // Promise.race timeout does not cancel an ATT request in the browser.
-    gattQueue = operation.catch(function () {});
-    return withTimeout(operation, COMMAND_TIMEOUT_MS, label).catch(function (error) {
-      expired = true;
-      log("GATT operation failed", { operation: label, name: error.name, message: error.message,
-        connected: isGattConnected(), queued: !started, session: recordingSessionId });
-      if (error.name === "TimeoutError" && epoch === connectionEpoch &&
-          device === bluetoothDevice && isGattConnected()) {
-        const captureAlive = recordingConfirmed && appState === "recording" &&
-          (document.visibilityState === "hidden" || performance.now() - lastAudioAt < AUDIO_STALL_TIMEOUT_MS);
-        if (captureAlive) {
-          log("GATT reply delayed; preserving recording transport", { operation: label });
-        } else if (started) {
-          disconnectGatt("GATT timeout: " + label, device);
-        }
-      }
-      throw error;
-    });
+    return bluetoothSession.run(action, label);
+  }
+
+  function handleGattFailure(error, { label, owner, started, current }) {
+    log("GATT operation failed", { operation: label, name: error.name, message: error.message,
+      connected: isGattConnected(), queued: !started, session: recordingSessionId });
+    if (error.name !== "TimeoutError" || !current) return;
+    const captureAlive = recordingConfirmed && appState === "recording" &&
+      (document.visibilityState === "hidden" || performance.now() - lastAudioAt < AUDIO_STALL_TIMEOUT_MS);
+    if (captureAlive) {
+      log("GATT reply delayed; preserving recording transport", { operation: label });
+    } else if (started) {
+      disconnectGatt("GATT timeout: " + label, owner.device);
+    }
   }
 
   async function writeCommand(command, beforeWrite) {
@@ -1555,13 +1541,23 @@
         toast("Start was not acknowledged. Stopping safely.", "error");
         await stopRecording();
       }, START_TIMEOUT_MS);
-      await writeCommand(CMD_START);
+      await writeCommand(CMD_START, () => {
+        if (!isCurrentSession(sessionId) || !["starting", "recording"].includes(appState) || recordingStopRequested) {
+          const error = new Error("Recording start was cancelled.");
+          error.name = "AbortError";
+          throw error;
+        }
+      });
       await delay(140);
       if (isCurrentSession(sessionId) && appState === "starting") {
         await readControlStatus();
       }
     } catch (error) {
       if (!isCurrentSession(sessionId)) return;
+      if (error.name === "AbortError" && recordingStopRequested) {
+        log("Queued recording start cancelled by Stop", { session: sessionId });
+        return;
+      }
       log("Start failed", friendlyError(error));
       toast(friendlyError(error), "error");
       if (appState === "starting" || appState === "recording") {
@@ -3504,7 +3500,7 @@
       }
       manualDisconnect = true;
       clearReconnectTimer(true);
-      const previousGatt = gattQueue;
+      const previousGatt = bluetoothSession.pending;
       if (isGattConnected()) disconnectGatt("User selected another pendant");
       cleanupCharacteristics();
       attachBluetoothDevice(null);
@@ -3877,7 +3873,7 @@
       }).catch(reject);
     });
     await journal.open();
-    globalThis.SynapMoments?.configure({store:journal,context:()=>({active:recordingConfirmed&&appState==='recording'&&!recordingReconnectPending,recordingId:currentRecordingId,offsetMs:globalThis.SynapCaptureStability.timelineOffsetMs(currentRecordingId)})});
+    globalThis.SynapMoments?.configure({store:journal,context:()=>({active:recordingConfirmed&&appState==='recording'&&!recordingReconnectPending,recordingId:currentRecordingId,offsetMs:journal.timelineOffsetMs(currentRecordingId)})});
     const recovered = await journal.recover();
     ui.appVersion.textContent = APP_VERSION;
     processor = new globalThis.DKFIFOProcessor(journal, {settings:()=>settings,canRun:()=>!firmwareBusy&&!libraryMutationActive,onChange:function (message) {

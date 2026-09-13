@@ -113,6 +113,16 @@
       this.dbPromise = null;
       this.bufferedCount = 0;
       this.recoveryFailures = new Map();
+      this.timeline = options.timeline || null;
+      this.metadata = options.metadata || (() => ({}));
+      this.rolling = Boolean(options.rolling);
+      this.onWindowReady = options.onWindowReady || (() => {});
+      this.onClosed = options.onClosed || (() => {});
+      this.rollingIndex = new Map();
+      this.rollingPending = new Set();
+      this.rollingWork = Promise.resolve();
+      this.closing = new Map();
+      this.closed = new Set();
     }
     async open() {
       if (this.dbPromise) return this.dbPromise;
@@ -245,6 +255,7 @@
       const id = root.crypto.randomUUID();
       await this.atomic(['recordings'], (s) =>
         s.recordings.add({
+          ...this.metadata(),
           id,
           name,
           createdAt: new Date().toISOString(),
@@ -265,16 +276,22 @@
     }
     append(recordingId, packet) {
       if (this.failed) throw this.failed;
+      if (this.closed.has(recordingId)) throw new Error('Recording is already closing or saved.');
       if (this.bufferedCount >= MAX_BUFFER_PACKETS)
         throw new Error(
           'Browser storage cannot keep up with BLE; stopping to preserve buffered audio.',
         );
+      const sequence = this.timeline
+        ? this.timeline.relativeSequence(recordingId, packet.sequence)
+        : packet.sequence;
+      // An old notification before this journal's origin cannot replace frame 0.
+      if (sequence < 0) return;
       this.buffer.push({
         recordingId,
-        sequence: packet.sequence,
+        sequence,
         chunk: packet.chunk,
         total: packet.total,
-        segmentIndex: Math.floor(packet.sequence / SEGMENT_FRAMES),
+        segmentIndex: Math.floor(sequence / SEGMENT_FRAMES),
         payload: packet.payload.slice(),
       });
       this.bufferedCount++;
@@ -283,6 +300,60 @@
           this.timer = null;
           this.flush().catch(this.onError);
         }, 100);
+      if (this.rolling) {
+        const index = Math.floor(sequence / SEGMENT_FRAMES),
+          previous = this.rollingIndex.get(recordingId);
+        if (Number.isInteger(previous) && index > previous) this.sealWindow(recordingId, previous);
+        if (Number.isInteger(previous) && index < previous && packet.chunk === packet.total - 1)
+          this.sealWindow(recordingId, index);
+        this.rollingIndex.set(recordingId, Math.max(previous ?? index, index));
+      }
+    }
+
+    beginTransportEpoch(recordingId, gapFrames = 0) {
+      return this.timeline?.beginTransportEpoch(recordingId, gapFrames) || false;
+    }
+    timelineOffsetMs(recordingId) {
+      return this.timeline?.timelineOffsetMs(recordingId) || 0;
+    }
+    flushWindows() {
+      return this.rollingWork;
+    }
+    sealWindow(recordingId, index) {
+      const key = recordingId + ':' + index;
+      if (this.rollingPending.has(key)) return;
+      this.rollingPending.add(key);
+      this.rollingWork = this.rollingWork
+        .then(async () => {
+          await this.flush();
+          const meta = await this.get('segments', [recordingId, index]);
+          if (meta?.pcmBlob) return;
+          const packets = await this.all('packets', 'segment', [recordingId, index]);
+          const start = index * SEGMENT_FRAMES;
+          const data = assemble(packets, {
+            preserveTimeline: true,
+            startSequence: start,
+            endSequence: start + SEGMENT_FRAMES - 1,
+          });
+          if (data.completeFrames !== SEGMENT_FRAMES || data.missing || data.incomplete) return;
+          if ((await this.compactSegment(recordingId, index, data)) === false) return;
+          try {
+            this.onWindowReady({
+              recordingId,
+              segmentIndex: index,
+              startMs: index * 30000,
+              endMs: (index + 1) * 30000,
+            });
+          } catch (_) {
+            /* A display/queue callback cannot undo durable PCM. */
+          }
+        })
+        .catch((error) => {
+          try {
+            this.onError(error);
+          } catch (_) {}
+        })
+        .finally(() => this.rollingPending.delete(key));
     }
     async flush() {
       clearTimeout(this.timer);
@@ -412,7 +483,12 @@
         };
       });
     }
-    async compactSegment(recordingId, index, data, { final = false, hasAudio = data.completeFrames > 0 } = {}) {
+    async compactSegment(
+      recordingId,
+      index,
+      data,
+      { final = false, hasAudio = data.completeFrames > 0 } = {},
+    ) {
       // Until Stop, missing frames may still arrive from pendant recovery.
       // A PCM snapshot must not permanently replace those recoverable holes.
       if (!final && (data.missing || data.incomplete)) return false;
@@ -461,6 +537,22 @@
       return true;
     }
     async close(recordingId, reason = 'normal') {
+      if (this.closing.has(recordingId)) return this.closing.get(recordingId);
+      this.closed.add(recordingId);
+      const work = (async () => {
+        await this.flushWindows();
+        const saved = await this.sealRecording(recordingId, reason);
+        this.timeline?.forgetSequence(recordingId);
+        this.rollingIndex.delete(recordingId);
+        try {
+          this.onClosed(saved);
+        } catch (_) {}
+        return saved;
+      })().finally(() => this.closing.delete(recordingId));
+      this.closing.set(recordingId, work);
+      return work;
+    }
+    async sealRecording(recordingId, reason) {
       await this.flush();
       const record = await this.get('recordings', recordingId);
       if (!record || !record.journal) return;
@@ -514,7 +606,10 @@
           timelineFrames += data.frames.length;
           // Entirely missing windows still need an upload job so finalization
           // sees every timeline segment. Purely empty captures stay unqueued.
-          await this.compactSegment(recordingId, index, data, { final: true, hasAudio: capturedFrames > 0 });
+          await this.compactSegment(recordingId, index, data, {
+            final: true,
+            hasAudio: capturedFrames > 0,
+          });
         }
       }
       await this.atomic(['recordings', 'jobs'], (s) => {
@@ -615,6 +710,10 @@
       return wav(pcm);
     }
     async remove(id) {
+      this.closed.add(id);
+      await this.flushWindows();
+      await this.closing.get(id);
+      await this.flush();
       await this.atomic(['recordings', 'packets', 'segments', 'jobs'], (s) => {
         s.recordings.delete(id);
         for (const name of ['packets', 'segments', 'jobs']) {
@@ -627,6 +726,8 @@
           };
         }
       });
+      this.timeline?.forgetSequence(id);
+      this.rollingIndex.delete(id);
     }
     async clear() {
       await this.atomic(['recordings', 'packets', 'segments', 'jobs'], (s) =>

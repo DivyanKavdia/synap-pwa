@@ -48,7 +48,7 @@ async function start(options={}){
     micSource=context.createMediaStreamSource(mic);
     const systemGain=context.createGain(),micGain=context.createGain();systemGain.gain.value=.7;micGain.gain.value=.65;
     systemSource.connect(systemGain).connect(processor);micSource.connect(micGain).connect(processor);processor.connect(destination);
-    journal=new root.DKAudioStore({onError:error=>{emitError(error);if(session?.journal===journal)stop('storage-error').catch(()=>{})}});
+    journal=new root.DKAudioStore({...root.SynapRecordingJournal.options(),onError:error=>{emitError(error);if(session?.journal===journal)stop('storage-error').catch(()=>{})}});
     await journal.open();
     const name=options.name||('Online meeting · '+new Date().toLocaleString([],{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}));
     recordingId=await journal.begin(name,{deviceId:'desktop-browser',associationId:'desktop-browser',installationId:null});

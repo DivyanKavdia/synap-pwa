@@ -30,6 +30,7 @@
   var listeners = [];
   var gisPromise = null;
   var refreshPromise = null;
+  var refreshOwner = null;
   var pairingPromise = null;
 
   function config() {
@@ -402,20 +403,27 @@
     }
     /* Collapse concurrent refreshes: the processor runs several jobs at once
        and a burst of refreshes would rotate tokens under each other. */
-    if (refreshPromise) return refreshPromise;
+    if (refreshPromise && refreshOwner === session.refreshToken) return refreshPromise;
 
-    refreshPromise = api('/v1/auth/refresh', {
+    var pending = api('/v1/auth/refresh', {
       body: JSON.stringify({ refresh_token: session.refreshToken })
     }).then(function (tokens) {
-      refreshPromise = null;
+      if (readSession()?.refreshToken !== session.refreshToken) {
+        var changed = new Error('Google account changed during token refresh.');
+        changed.name = 'AbortError';
+        throw changed;
+      }
       return storeTokens(tokens, session.profile);
     }).catch(function (error) {
-      refreshPromise = null;
       /* A revoked or expired refresh token is terminal: clear it so the UI
          asks for sign-in instead of retrying forever. */
-      if (error.status === 401) writeSession(null);
+      if (error.status === 401 && readSession()?.refreshToken === session.refreshToken) writeSession(null);
       throw error;
+    }).finally(function () {
+      if (refreshPromise === pending) { refreshPromise = null; refreshOwner = null; }
     });
+    refreshPromise = pending;
+    refreshOwner = session.refreshToken;
     return refreshPromise;
   }
 
@@ -432,7 +440,14 @@
   /* Authenticated fetch against the backend, retrying once after a refresh. */
   function authedFetch(path, options) {
     var init = options || {};
+    function assertAccount() {
+      if (init.signal?.aborted) throw Object.assign(new Error('Request cancelled.'), { name: 'AbortError' });
+      if (init.expectedUid && readSession()?.profile?.uid !== init.expectedUid) {
+        throw Object.assign(new Error('Google account changed. Retry under the recording owner.'), { name: 'AbortError' });
+      }
+    }
     return accessToken().then(function (token) {
+      assertAccount();
       var settings = config();
       return root.fetch(settings.backendUrl + path, {
         method: init.method || 'GET',
@@ -445,6 +460,7 @@
         signal: init.signal
       });
     }).then(function (response) {
+      assertAccount();
       if (response.status !== 401 || init.__retried) {
         root.SynapProcessingRecovery?.observeResponse(path, response, authedFetch);
         return response;

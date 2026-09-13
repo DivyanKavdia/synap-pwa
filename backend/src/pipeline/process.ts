@@ -22,7 +22,7 @@ import {
 } from '../crypto/envelope.js';
 import { extractMemory } from '../gemini/memory.js';
 import { embedContent } from '../gemini/client.js';
-import { formatMs, toSpeakerLines, transcribeSegment } from '../gemini/transcribe.js';
+import { formatMs, toSpeakerLines } from '../gemini/transcribe.js';
 import { tagSelfSpeaker } from '../speaker/enrich.js';
 import { RecordingSpeakers, labelWords } from '../speaker/diarization.js';
 import { extractSpeakerSample } from '../speaker/audio.js';
@@ -44,9 +44,9 @@ import { mergeAliasKeys, nameKey, newId, normalizeName, topicKey, sha256 } from 
 import { log } from '../util/log.js';
 import { rebuildDay } from './brief.js';
 import { chooseTranscript } from './source-materialize.js';
+import { transcribeUploadedWindow } from './rolling-transcription.js';
+import { requireCompleteSegments, transcribeRecordingSegments } from './recording-segments.js';
 
-/** Concurrent Gemini transcription calls per recording. */
-const TRANSCRIBE_CONCURRENCY = 4;
 const SEGMENT_MS = 30_000;
 
 export interface ProcessRecordingOptions {
@@ -94,7 +94,7 @@ export async function processRecording(
     let segments: SegmentDoc[];
     if (options.skipTranscription) {
       segments = await db.listSegments(uid, recordingId);
-      if (segments.length === 0) throw new Error('Recording has no segments');
+      segments = requireCompleteSegments(segments, recording.segmentCount || segments.length);
       const missing = segments.filter((segment) => !segment.sealedTranscript);
       if (missing.length > 0) {
         throw new Error(
@@ -160,76 +160,12 @@ async function transcribeAll(
   recording: RecordingDoc,
 ): Promise<SegmentDoc[]> {
   const segments = await db.listSegments(uid, recordingId);
-  if (segments.length === 0) throw new Error('Recording has no segments');
-
-  const pending = segments.filter((segment) => !segment.sealedTranscript && segment.storagePath);
-  let done = segments.length - pending.length;
-
-  const queue = [...pending];
-  const workers = Array.from({ length: Math.min(TRANSCRIBE_CONCURRENCY, queue.length) }, async () => {
-    for (;;) {
-      const segment = queue.shift();
-      if (!segment) return;
-      await transcribeOne(uid, recordingId, dek, recording, segment);
-      done += 1;
-      // Transcription is over half the wall-clock time, so its progress is what
-      // the PWA's spinner should actually track.
-      await db.patchRecording(uid, recordingId, {
-        progress: 0.05 + 0.5 * (done / segments.length),
-      });
-    }
-  });
-
-  await Promise.all(workers);
-  return db.listSegments(uid, recordingId);
-}
-
-async function transcribeOne(
-  uid: string,
-  recordingId: string,
-  dek: Buffer,
-  recording: RecordingDoc,
-  segment: SegmentDoc,
-): Promise<void> {
-  const sealed = segment.storagePath ? await readSealedSegment(segment.storagePath) : null;
-  if (!sealed) {
-    log.warn('Segment audio missing at transcription time', {
-      uid,
-      recordingId,
-      index: segment.index,
-    });
-    await db.putSegment(uid, recordingId, { ...segment, state: 'failed' });
-    return;
-  }
-
-  const audio = openBytes(
-    dek,
-    sealed,
-    binding(uid, `recording/${recordingId}/segment/${segment.index}`, 'audio'),
+  return transcribeRecordingSegments(
+    segments,
+    recording.segmentCount || segments.length,
+    segment => transcribeUploadedWindow(uid, recordingId, segment.index, dek),
+    (done, total) => db.patchRecording(uid, recordingId, { progress: 0.05 + 0.5 * (done / total) }),
   );
-
-  const result = await transcribeSegment(audio, 'audio/wav', {
-    baseOffsetMs: segment.startMs,
-    language: recording.language,
-  });
-
-  await db.putSegment(uid, recordingId, {
-    ...segment,
-    state: 'transcribed',
-    language: recording.language,
-    transcribedAt: new Date().toISOString(),
-    transcriptionReview:result.review,
-    sealedTranscript: sealText(
-      dek,
-      result.text,
-      binding(uid, `recording/${recordingId}/segment/${segment.index}`, 'transcript'),
-    ),
-    sealedWords: sealJson(
-      dek,
-      result.words,
-      binding(uid, `recording/${recordingId}/segment/${segment.index}`, 'words'),
-    ),
-  });
 }
 
 // ---------------------------------------------------------------------------

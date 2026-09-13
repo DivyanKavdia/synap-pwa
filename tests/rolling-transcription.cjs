@@ -6,34 +6,33 @@ const root = path.join(__dirname, '..');
 
 function source(file) { return fs.readFileSync(path.join(root, file), 'utf8'); }
 
-test('one logical recording uses 30-second processing windows', () => {
-  const audio = source('audio-store.js');
-  const rolling = source('rolling-transcription.js');
-  assert.match(audio, /const SEGMENT_FRAMES = 600/);
-  assert.match(audio, /async blob\(record\)/);
-  assert.match(audio, /const segments\s*=\s*\(await this\.all\('segments',\s*'recording',\s*record\.id\)\)/);
-  assert.match(rolling, /WINDOW_FRAMES\s*=\s*600/);
-  assert.match(rolling, /originalClose\.call\(this,\s*recordingId,\s*reason\)/);
-  assert.doesNotMatch(rolling, /sourceFileSeconds|sourceFileCount|ONE_MINUTE_FRAMES/);
+require('../audio-store.js');
+
+test('rolling windows seal only complete audio and publish readiness after persistence', async () => {
+  const calls = [], store = new DKAudioStore({rolling:true,onWindowReady:()=>calls.push('ready')});
+  let packets = Array.from({length:599},(_,sequence)=>({sequence,chunk:0,total:1,payload:new Uint8Array(1600)}));
+  store.flush = async () => {};
+  store.get = async () => null;
+  store.all = async () => packets;
+  store.compactSegment = async () => { await Promise.resolve(); calls.push('committed'); return true; };
+  store.sealWindow('take',0); await store.flushWindows();
+  assert.deepEqual(calls, [], 'a missing frame remains recoverable');
+  packets.push({sequence:599,chunk:0,total:1,payload:new Uint8Array(1600)});
+  store.sealWindow('take',0); await store.flushWindows();
+  assert.deepEqual(calls, ['committed','ready']);
 });
 
-test('completed processing windows are sealed and the real processor is woken during capture', () => {
-  const rolling = source('rolling-transcription.js');
-  assert.match(rolling, /sealWindow\(this,\s*recordingId,\s*previous\)/);
-  assert.match(rolling, /compactSegment\(recordingId,\s*index,\s*data\)/);
-  assert.match(rolling, /SynapProcessingQueue/);
-  assert.match(rolling, /processor\.resume\(\)/);
-  assert.match(rolling, /synap-transcription-window-ready/);
-  assert.doesNotMatch(rolling, /class .* extends|Object\.defineProperty/, 'rolling windows use the public queue without replacing its class');
-});
-
-test('rolling transcription does not depend on the UI processing button', () => {
-  const rolling = source('rolling-transcription.js');
-  const app = source('app.js');
-  assert.match(app, /recordingConfirmed \|\| finalizing/,
-    'the manual processing control remains intentionally blocked while recording');
-  assert.match(rolling, /const processor\s*=\s*root\.SynapProcessingQueue/);
-  assert.match(rolling, /processor\s*&&\s*typeof processor\.resume\s*===\s*'function'/);
+test('capture configuration starts the public processing queue only when authenticated', async () => {
+  const vm = require('node:vm'), events = []; let resumes = 0, signedIn = false;
+  const context = {localStorage:{getItem:()=>null},SynapAuth:{isSignedIn:()=>signedIn},
+    SynapProcessingQueue:{resume:()=>{resumes++;return Promise.resolve()}},
+    CustomEvent:class {constructor(type,{detail}){this.type=type;this.detail=detail}},dispatchEvent:e=>events.push(e)};
+  vm.createContext(context);vm.runInContext(source('recording/journal.js'),context);
+  const options = context.SynapRecordingJournal.options();
+  options.onWindowReady({recordingId:'take',segmentIndex:0});
+  assert.equal(resumes,0); signedIn=true;
+  options.onWindowReady({recordingId:'take',segmentIndex:1});
+  assert.equal(resumes,1); assert.equal(events.length,2);
 });
 
 test('backend upload performs idempotent rolling transcription', () => {
@@ -42,7 +41,7 @@ test('backend upload performs idempotent rolling transcription', () => {
   assert.match(route, /transcribeUploadedWindow/);
   assert.match(route, /transcript_ready/);
   assert.match(route, /existing\.sealedTranscript/);
-  assert.match(worker, /if \(segment\.sealedTranscript && segment\.sealedWords && segment\.state === 'transcribed'\) return segment/);
+  assert.match(worker, /hasTranscription\(segment\)/);
   assert.match(worker, /diarize: true/);
   assert.match(worker, /wordTimestamps: true/);
 });

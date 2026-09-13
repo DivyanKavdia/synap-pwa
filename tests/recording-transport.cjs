@@ -16,6 +16,7 @@ function harness(){
     isGattConnected:()=>c.bluetoothDevice.gatt.connected
   };
   c.window=c;vm.createContext(c);
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'..','recording/bluetooth-session.js'),'utf8'),c);
   vm.runInContext(source.slice(source.indexOf('  function withTimeout('),source.indexOf('  async function writeCommand(')),c);
   async function expire(ms=3500){clock+=ms;for(const [key,timer] of [...timers]){if(timer.ms<=ms){timers.delete(key);timer.fn()}}await tick()}
   return {c,logs,expire,get disconnects(){return disconnects},set clock(value){clock=value}};
