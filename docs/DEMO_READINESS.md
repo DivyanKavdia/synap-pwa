@@ -18,9 +18,12 @@ Do not describe this release as bug-free or hardware-certified.
 | Meeting capture | Ownership begins before permission prompts. Stop keeps the journal until saving succeeds; failed saves can be retried. Media permissions are released promptly; the main header shows the meeting timer, stop/save control and save-retry state. |
 | Account changes | Local sign-out ends immediately. A delayed revoke or profile response cannot clear/restore a different sign-in session. |
 
-The C3/S3 gesture release remains firmware build **1192**: double-tap to start or
-stop; hold four seconds and release to sleep or wake. This readiness pass changes
-the PWA/backend; it does not supply new evidence about physical touch sensitivity.
+The C3/S3 gestures introduced in firmware build **1192** remain: double-tap to
+start or stop; hold four seconds and release to sleep or wake. Subsequent firmware
+uses **synap-os1-build#** names while keeping the OTA counter increasing. The PWA
+accepts both the earlier `1.0.0` identity and the new name, and shows the full
+version during discovery and after reboot verification. This naming change does
+not supply new evidence about physical touch sensitivity.
 
 ## Evidence and limits
 

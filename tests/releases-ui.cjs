@@ -1,8 +1,9 @@
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict');
 const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
+const {versionLabel,targetFromIdentity}=require('../releases.js');
 const source=app.slice(app.indexOf('  function openDeviceSettings()'),app.indexOf('  async function registerServiceWorker()'));
 function setup(options={}){
-  const nodes=new Map(),events={},calls=[],storage=new Map();let connected=true,clock=100000,build=503;
+  const nodes=new Map(),events={},calls=[],storage=new Map();let connected=true,clock=100000,build=options.installed?1001:503;
   const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',files:[],disabled:false,checked:false,hidden:false,textContent:'',events:{},
     removeAttribute(name){delete this[name];},hasAttribute(name){return Object.hasOwn(this,name);},
     addEventListener(t,f){(this.events[t]??=[]).push(f);}});return nodes.get(id);};
@@ -12,7 +13,8 @@ function setup(options={}){
     for(const id of ['otaLatest','firmwareUpdateButton'])assert.equal(node(id).hidden,true,'no update offer while a transfer is active');
     for(const id of ['otaProgress','firmwareNoticeProgress']){assert.equal(node(id).hidden,false);if(value===null)assert.equal(node(id).hasAttribute('value'),false);else assert.equal(node(id).value,value);}
   }
-  const m={version:'1.0.0',build:1001,identity:'SYNAP-FW:esp32s3-fh4r2-qspi-4m:1.0.0:1001'};
+  const version=options.legacyVersion?'1.0.0':'synap-os1-build1001';
+  const m={version,build:1001,identity:`SYNAP-FW:esp32s3-fh4r2-qspi-4m:${version}:1001`};
   const ID='SYNAP-AABBCCDDEEFF',OTHER='SYNAP-112233445566';
   if(options.pending)storage.set('synap-ota-pending-device:'+ID,JSON.stringify({...m,size:1000}));
   class Client {
@@ -32,7 +34,7 @@ function setup(options={}){
       this.committing=true;connected=false;
       if(options.commitDrop)throw Error('Lost acknowledgement');return{committed:true};}
   }
-  const releases={IDENTITY_UUID:'identity',validateManifest:m=>m,
+  const releases={IDENTITY_UUID:'identity',validateManifest:m=>m,versionLabel,targetFromIdentity,
     latest:async()=>{assert(!c.firmwareBusy,'release discovery must not interrupt recording or FIFO processing');calls.push('manifest');if(options.offline)throw Error('Offline');return m;},
     compatible:(m,info)=>m.build>info.build,
     download:async(_manifest,_capacity,_fetcher,signal)=>{calls.push('download');progressMatches('Downloading update…',null);
@@ -74,11 +76,15 @@ function setup(options={}){
     assert(!t.c.firmwareBusy,'deferred discovery does not take the transfer lock');
     assert.match(t.node('otaStatus').textContent,/after recording stops/);
   }
-  let t=setup();await t.click('otaReleaseCheck');assert.match(t.node('firmwareNoticeText').textContent,/1001.*available/);
+  let t=setup();await t.click('otaReleaseCheck');assert.equal(t.node('firmwareNoticeText').textContent,'Update synap-os1-build1001 available');
   await t.click('firmwareUpdateButton');
   assert(t.calls.includes('flash'));assert(t.calls.includes('reconnect'));assert.match(t.node('otaStatus').textContent,/Update complete/);assert.equal(t.storage.size,0);assert(!t.c.firmwareBusy);
   assert(t.node('firmwareUpdateSpinner').hidden);assert(t.node('firmwareNoticeProgress').hidden);assert(t.node('firmwareUpdateButton').hidden);assert(t.node('settingsDialog').open);
   assert.equal(t.node('settingsDialog').section,'device');
+  assert.equal(t.node('otaStatus').textContent,'Update complete · synap-os1-build1001');
+  await t.click('otaReleaseCheck');assert.equal(t.node('otaStatus').textContent,'Up to date · synap-os1-build1001');
+  t=setup({legacyVersion:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert.equal(t.node('otaStatus').textContent,'Update complete · 1.0.0 · build 1001');
+  t=setup({pending:true,installed:true});await t.click('otaReleaseCheck');assert.equal(t.node('otaStatus').textContent,'Update complete · synap-os1-build1001');assert.equal(t.storage.size,0);
   t=setup({settingsOpen:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert(t.node('settingsDialog').open,'starting inside Settings keeps it open');assert(!t.calls.includes('settings'),'the update must not toggle Settings closed');
   t=setup({commitDrop:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert.match(t.node('otaStatus').textContent,/Update complete/);
   t=setup({flashFail:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert.match(t.node('otaStatus').textContent,/Flash failed/);assert(!t.c.firmwareBusy);assert(t.node('otaCancel').hidden);assert(t.node('otaProgress').hidden);assert(t.node('firmwareNoticeProgress').hidden);assert(t.node('firmwareUpdateSpinner').hidden);assert.equal(t.node('firmwareUpdateButton').hidden,false);assert(t.calls.includes('release'));

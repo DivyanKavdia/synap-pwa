@@ -1,16 +1,44 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),cryptoNode=require('node:crypto');
 const ota=require('../ota.js'),r=require('../releases.js');
 
-function fixture(targetId=r.TARGET,build=1001,schema=1){
+function fixture(targetId=r.TARGET,build=1001,schema=1,version='1.0.0'){
   const config=r.TARGETS[targetId],bytes=Buffer.alloc(512);bytes[0]=0xe9;bytes.writeUInt16LE(config.chip,12);bytes.writeUInt32LE(0xabcd5432,32);
   bytes.write(config.marker,80);
-  const identity=`SYNAP-FW:${targetId}:1.0.0:${build}`;bytes.write(identity+'\0',160);
+  const identity=`SYNAP-FW:${targetId}:${version}:${build}`;bytes.write(identity+'\0',160);
   const sha256=cryptoNode.createHash('sha256').update(bytes).digest('hex');
   const m={schema,target:targetId,protocol:3,chip:config.chip,partition:config.partition,flashBytes:config.flashBytes,psramBytes:config.psramBytes,
-    build,version:'1.0.0',size:bytes.length,sha256,identity,commit:'a'.repeat(40),url:r.BASE+config.releasePrefix+`builds/${build}-${sha256}.bin`};
+    build,version,size:bytes.length,sha256,identity,commit:'a'.repeat(40),url:r.BASE+config.releasePrefix+`builds/${build}-${sha256}.bin`};
   if(schema===3){m.channel='production';m.provenance={provider:'github-actions',repository:r.REPOSITORY,workflow:r.WORKFLOW};}
   return {bytes,m};
 }
+
+test('both targets migrate from legacy firmware to OS1 and retain monotonic OTA eligibility',async()=>{
+  const manifests=Object.fromEntries(Object.keys(r.TARGETS).map(target=>[target,fixture(target,1194,3,'synap-os1-build1194').m]));
+  for(const target of Object.keys(r.TARGETS)){
+    const {bytes,m}=fixture(target,1194,3,'synap-os1-build1194');
+    const info={protocol:3,state:1,capacity:2048,maxData:173,build:1192};
+    const catalog={__synapTargetCatalog:true,manifests};
+    assert(r.compatible(catalog,info,`SYNAP-FW:${target}:1.0.0:1192`));
+    assert.equal(catalog.target,target);
+    assert.equal((await r.download(m,2048,async()=>new Response(bytes))).size,bytes.length);
+    assert.deepEqual(r.targetFromIdentity(m.identity),{target,version:m.version,build:m.build});
+    assert.equal(r.compatible(m,{...info,build:1194},m.identity),false,'rebooted firmware is recognized without reinstalling');
+    const next=fixture(target,1195,3,'synap-os1-build1195').m;
+    assert(r.compatible(next,{...info,build:1194},m.identity));
+    assert.equal(r.compatible(m,{...info,build:1195},next.identity),false,'an older counter stays ineligible');
+    assert.equal(r.versionLabel(m),'synap-os1-build1194');
+  }
+  assert.equal(r.versionLabel({version:'1.0.0',build:1192}),'1.0.0 · build 1192');
+});
+
+test('OS1 versions cannot disagree with their manifest or BLE counter',()=>{
+  for(const version of ['synap-os1-build1193','synap-os1-build01194','synap-os1-build#','synap-os2-build1194','synap-os1-build1194\n']){
+    const {m}=fixture(r.TARGET,1194,3,version);
+    assert.throws(()=>r.validateManifest(m),/manifest/);
+    assert.equal(r.targetFromIdentity(m.identity),null);
+  }
+  assert.equal(r.targetFromIdentity(`SYNAP-FW:${r.TARGET}:synap-os1-build1194:01194`),null);
+});
 
 test('release manifests validate hardware-specific S3 and C3 constraints',()=>{
   const {m}=fixture();assert.equal(r.validateManifest(m).build,1001);

@@ -19,6 +19,13 @@
   const b64bytes=value=>Uint8Array.from(atob(value),c=>c.charCodeAt(0));
   const configFor=target=>TARGETS[target]||null;
   const expectedUrl=(config,build,sha256)=>`${BASE}${config.releasePrefix}builds/${build}-${sha256}.bin`;
+  // Keep deployed semantic versions readable while binding OS1 names to the OTA counter.
+  const validVersion=(version,build)=>typeof version==='string'&&(/^\d+\.\d+\.\d+$/.test(version)||version===`synap-os1-build${build}`);
+  function versionLabel(firmware){
+    const {version,build}=firmware||{};
+    if(!validVersion(version,build))return `build ${build}`;
+    return version.startsWith('synap-os1-build')?version:`${version} · build ${build}`;
+  }
 
   function canonicalManifest(m){return JSON.stringify({schema:m.schema,version:m.version,build:m.build,target:m.target,protocol:m.protocol,chip:m.chip,flashBytes:m.flashBytes,psramBytes:m.psramBytes,partition:m.partition,size:m.size,sha256:m.sha256,commit:m.commit,identity:m.identity,url:m.url,channel:m.channel});}
 
@@ -27,7 +34,7 @@
     const legacy=m?.schema===1&&m?.target===TARGET&&m.build<=LEGACY_UNSIGNED_MAX_BUILD&&m.channel===undefined;
     const signed=m?.schema===2&&m.channel==='production';
     const github=m?.schema===3&&m.channel==='production';
-    if(!config||(!legacy&&!signed&&!github)||m.protocol!==3||m.chip!==config.chip||m.partition!==config.partition||m.flashBytes!==config.flashBytes||m.psramBytes!==config.psramBytes||!integer(m.build,504,65535)||!integer(m.size,288,config.maxSize)||!/^\d+\.\d+\.\d+$/.test(m.version)||!/^[a-f0-9]{64}$/.test(m.sha256)||!/^[a-f0-9]{40}$/.test(m.commit)||m.identity!==`SYNAP-FW:${config.target}:${m.version}:${m.build}`||m.url!==expectedUrl(config,m.build,m.sha256)) throw Error('Invalid or incompatible firmware release manifest.');
+    if(!config||(!legacy&&!signed&&!github)||m.protocol!==3||m.chip!==config.chip||m.partition!==config.partition||m.flashBytes!==config.flashBytes||m.psramBytes!==config.psramBytes||!integer(m.build,504,65535)||!integer(m.size,288,config.maxSize)||!validVersion(m.version,m.build)||!/^[a-f0-9]{64}$/.test(m.sha256)||!/^[a-f0-9]{40}$/.test(m.commit)||m.identity!==`SYNAP-FW:${config.target}:${m.version}:${m.build}`||m.url!==expectedUrl(config,m.build,m.sha256)) throw Error('Invalid or incompatible firmware release manifest.');
     if(signed&&(!m.signing||m.signing.alg!=='ES256'||m.signing.keyId!==SIGNING_KEY_ID||!/^[A-Za-z0-9+/]{86}==$/.test(m.signing.value))) throw Error('Production firmware manifest is not signed by synap.');
     if(github&&(m.signing||m.provenance?.provider!=='github-actions'||m.provenance?.repository!==REPOSITORY||m.provenance?.workflow!==WORKFLOW)) throw Error('Production firmware manifest has invalid GitHub provenance metadata.');
     if(legacy&&(m.signing||m.provenance)) throw Error('Legacy firmware manifest must not contain trust metadata.');
@@ -82,7 +89,7 @@
 
   function targetFromIdentity(identity){
     if(typeof identity!=='string')return null;const parts=identity.split(':');
-    if(parts.length!==4||parts[0]!=='SYNAP-FW'||!configFor(parts[1])||!/^\d+\.\d+\.\d+$/.test(parts[2])||!integer(Number(parts[3]),504,65535))return null;
+    if(parts.length!==4||parts[0]!=='SYNAP-FW'||!configFor(parts[1])||!validVersion(parts[2],Number(parts[3]))||!integer(Number(parts[3]),504,65535)||String(Number(parts[3]))!==parts[3])return null;
     return {target:parts[1],version:parts[2],build:Number(parts[3])};
   }
   function isCatalog(value){return Boolean(value&&value.__synapTargetCatalog===true&&value.manifests);}
@@ -120,6 +127,6 @@
     if(!found)throw Error('Firmware image target/build does not match the release.');if(!config)throw Error('Unknown firmware hardware target.');return new Blob([bytes],{type:'application/octet-stream'});
   }
 
-  root.SynapReleases={TARGET,TARGETS,REPOSITORY,RELEASE_BRANCH,WORKFLOW,BASE,API,IDENTITY_UUID,LEGACY_UNSIGNED_MAX_BUILD,SIGNING_KEY_ID,SIGNING_PUBLIC_KEY_SPKI,canonicalManifest,validateManifest,verifyManifest,verifyGitHubProvenance,targetFromIdentity,compatible,latest,download,isCatalog,selectCatalogManifest};
+  root.SynapReleases={TARGET,TARGETS,REPOSITORY,RELEASE_BRANCH,WORKFLOW,BASE,API,IDENTITY_UUID,LEGACY_UNSIGNED_MAX_BUILD,SIGNING_KEY_ID,SIGNING_PUBLIC_KEY_SPKI,canonicalManifest,validateManifest,verifyManifest,verifyGitHubProvenance,targetFromIdentity,versionLabel,compatible,latest,download,isCatalog,selectCatalogManifest};
   if(typeof module!=='undefined')module.exports=root.SynapReleases;
 })(globalThis);

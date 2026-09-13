@@ -3246,7 +3246,7 @@
         let verified=false;
         if(pending) {
           verified=info.build===pending.build&&board===pending.identity;
-          if(verified){savePending(id,null);bannerButton.hidden=true;latestButton.hidden=true;announce(`Update complete · ${info.build}`);}
+          if(verified){savePending(id,null);bannerButton.hidden=true;latestButton.hidden=true;announce(`Update complete · ${releases.versionLabel(pending)}`);}
           else if([3,4].includes(info.state)&&info.session) {
             offered=pending;offeredDevice=id;bannerButton.hidden=false;latestButton.hidden=false;offerLabel(true);
             announce(`Paused at ${Math.floor(info.offset*100/pending.size)}% · Continue within 2 minutes`);
@@ -3260,10 +3260,10 @@
         if(releases.compatible(m,info,board)) {
           offered=m;offeredDevice=id;bannerButton.hidden=false;latestButton.hidden=false;
           offerLabel(false);
-          announce(`Update ${m.build} available`);
+          announce(`Update ${releases.versionLabel(m)} available`);
         } else {
           offered=null;bannerButton.hidden=true;latestButton.hidden=true;
-          if(!pending&&!verified)status.textContent=`Up to date · ${info.build}`;
+          if(!pending&&!verified)status.textContent=`Up to date · ${releases.versionLabel(releases.targetFromIdentity(board)||info)}`;
           if(!pending)notice.hidden=true;
         }
       }catch(error){if(firmwareBusy)return;
@@ -3338,7 +3338,7 @@
         }
         if(!verified)throw Error(`Update not confirmed. Reconnect to check.`);
         savePending(id,null);offered=null;bannerButton.hidden=true;latestButton.hidden=true;
-        announce(`Update complete · ${m.build}`);
+        announce(`Update complete · ${releases.versionLabel(m)}`);
       }catch(error){if(error.resumable)offerLabel(true);announce(error.resumable?'Update paused · Reconnect to continue':friendlyError(error));}
       finally{
         downloadController=null;firmwareUpdater.reset();

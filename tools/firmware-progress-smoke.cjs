@@ -59,7 +59,11 @@ async function run() {
         let connected = true,
           build = 503;
         const id = 'SYNAP-AABBCCDDEEFF',
-          manifest = { build: 1001, identity: 'SYNAP-FW:fixture:1001' };
+          manifest = {
+            build: 1001,
+            version: 'synap-os1-build1001',
+            identity: 'SYNAP-FW:esp32s3-fh4r2-qspi-4m:synap-os1-build1001:1001',
+          };
         class Client {
           constructor(io) {
             this.io = io;
@@ -88,6 +92,8 @@ async function run() {
         }
         const releases = {
           IDENTITY_UUID: 'identity',
+          versionLabel: window.SynapReleases.versionLabel,
+          targetFromIdentity: window.SynapReleases.targetFromIdentity,
           validateManifest: (value) => value,
           latest: async () => manifest,
           compatible: (m, info) => m.build > info.build,
@@ -170,6 +176,16 @@ async function run() {
       await page.waitForFunction(() =>
         document.querySelector('#otaStatus').textContent.includes('available'),
       );
+      assert.equal(
+        await page.locator('#otaStatus').textContent(),
+        'Update synap-os1-build1001 available',
+      );
+      assert(
+        await page
+          .locator('#firmwareNotice')
+          .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+        'version offer fits the mobile banner',
+      );
       await page.evaluate(() => (otaUiFixture.holdCheck = true));
       await page.locator('#otaLatest').click();
       assert(
@@ -223,7 +239,14 @@ async function run() {
       await page.evaluate(() => otaUiFixture.reconnect.resolve());
       await page.waitForFunction(
         () =>
-          document.querySelector('#firmwareNoticeText').textContent === 'Update complete · 1001',
+          document.querySelector('#firmwareNoticeText').textContent ===
+          'Update complete · synap-os1-build1001',
+      );
+      assert(
+        await page
+          .locator('#firmwareNotice')
+          .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+        'installed version fits the mobile banner',
       );
       assert(!(await page.locator('#firmwareNoticeProgress').isVisible()));
       assert(!(await page.locator('#firmwareUpdateSpinner').isVisible()));
