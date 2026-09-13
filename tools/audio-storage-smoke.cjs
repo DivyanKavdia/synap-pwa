@@ -12,7 +12,7 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
     const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
     await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
     await context.route('**/__storage', route => route.fulfill({ contentType: 'text/html', body:
-      '<!doctype html><title>Audio storage fixture</title><script src="/audio-store.js"></script><script src="/rolling-transcription.js"></script><script src="/capture-stability.js"></script><script src="/audio-quality.js"></script>' }));
+      '<!doctype html><title>Audio storage fixture</title><header></header><script src="/audio-store.js"></script><script src="/rolling-transcription.js"></script><script src="/capture-stability.js"></script><script src="/audio-quality.js"></script>' }));
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -86,7 +86,30 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
       const partialId = await partial.begin('Partial frame');
       partial.append(partialId, { sequence: 0, chunk: 0, total: 2, payload: new Uint8Array(800).fill(17) });
       const partialRecording = await partial.close(partialId);
+
+      const signalId = await gaps.begin('Near-silent signal fixture');
+      const signalEvents = [];
+      addEventListener('synap-audio-signal', event => signalEvents.push(event.detail.nearSilent));
+      SynapAudioQuality.reset();
+      const realNow = Date.now;
+      let clock = realNow();
+      Date.now = () => clock;
+      let liveSignal;
+      try {
+        for (let sequence = 0; sequence < 124; sequence++) {
+          const pcm = new Int16Array(800);
+          for (let i = 0; i < 800; i++) pcm[i] = sequence < 4 ? (i % 2 ? -32768 : 32767) : (i % 5 < 2 ? -1 : 0);
+          const payload = new Uint8Array(pcm.buffer);
+          clock += 50;
+          SynapAudioQuality.observe(payload);
+          gaps.append(signalId, { sequence, chunk: 0, total: 1, payload });
+        }
+        liveSignal = document.getElementById('recordingQuality').textContent;
+      } finally { Date.now = realNow; }
+      const signalRecording = await gaps.close(signalId);
+      await gaps.atomic(['recordings'], s => s.recordings.put({ ...signalRecording, audioQuality: SynapAudioQuality.snapshot() }));
       return {
+        signalId, liveSignal, signalEvents,
         before, after, recovered: { stats: recovered.stats, durationMs: recovered.durationMs, exact },
         gap: { id: gapId, stats: gapRecording.stats, durationMs: gapRecording.durationMs, zeroFrames,
           notice: SynapAudioQuality.gaps(gapRecording.stats, gapRecording.durationMs) },
@@ -106,6 +129,8 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
     assert.equal(result.gap.notice.label, '36.1 s missing (74%)');
     assert.deepEqual(result.uploadWindows, [0, 1, 2], 'silent timeline windows must not strand backend finalization');
     assert.deepEqual(result.partial, { status: 'empty', packets: 1, jobs: 0 });
+    assert.match(result.liveSignal, /Almost no microphone signal/);
+    assert.deepEqual(result.signalEvents, [true], 'the diagnostic event is emitted once for the sustained flat signal');
 
     await page.goto(origin + '/');
     await page.waitForFunction(() => document.querySelector('#diagnosticsLog')?.textContent.includes('Application started'));
@@ -116,6 +141,10 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
     await card.locator('summary').first().click();
     await card.locator('.recording-audio-gap').waitFor({ state: 'visible' });
     assert.match(await card.locator('.recording-audio-gap').textContent(), /cannot restore missing speech/);
+    const signalCard = page.locator('#recording-' + result.signalId);
+    assert.match(await signalCard.locator('.recording-row-meta').textContent(), /Microphone signal was nearly silent/);
+    await signalCard.locator('summary').first().click();
+    assert.match(await signalCard.locator('.recording-signal-warning').textContent(), /Almost no microphone signal for 6 s during/);
     assert.deepEqual(errors, []);
     console.log('PASS audio integrity: late replay restores exact PCM; missing windows stay visible and uploadable; partial packets remain stored');
   } finally {

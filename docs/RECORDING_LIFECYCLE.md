@@ -93,3 +93,9 @@ linked from the project README.
 The audio-storage suite uses generated PCM and real IndexedDB to reproduce a
 gap across a 30-second boundary, replay missing frames, verify every exported
 sample, and check the unrecovered-gap warning and silent-window upload jobs.
+
+## Captured signal health
+
+Quality checks preserve every PCM sample. Live volume and clipping warnings use the most recent three seconds, so a loud startup transient cannot hide later quiet capture. Three continuous seconds at the digital floor (absolute PCM16 value at most 2) produces a conditional microphone warning; it does not imply lost BLE packets, stop recording, or gate speech. The longest interval is retained in recording metadata, the saved recording, and the bounded diagnostic log. Live warnings clear when the signal returns. Packet-gap warnings still depend only on absent/incomplete frames.
+
+For repeated S3 or C3 disconnects, retain the Settings → Support → Diagnostics log after reconnecting and stopping, plus the installed firmware build. The log distinguishes app-requested disconnects, peripheral link reasons and reboot evidence. A WAV cannot establish a radio, power, wiring or microphone-driver root cause.

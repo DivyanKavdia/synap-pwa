@@ -275,6 +275,11 @@
   window.addEventListener("synap-pendant-diagnostics", function (event) {
     log("Pendant diagnostics", event.detail);
   });
+  window.addEventListener("synap-audio-signal", function (event) {
+    log(event.detail.nearSilent ? "Audio signal nearly silent" : "Audio signal returned", {
+      ...event.detail, recordingId: currentRecordingId, visibility: document.visibilityState
+    });
+  });
 
   function toast(message, type) {
     const element = document.createElement("div");
@@ -1653,10 +1658,12 @@
         }catch(error){log("Audio-quality details could not be saved; preserving the recording",friendlyError(error));}
         globalThis.SynapAudioQuality?.clear();
         const saved = currentRecordingId ? await journal.close(currentRecordingId, reason) : null;
-        log("Chunk journal sealed", { id: currentRecordingId, reason, stats: saved?.stats });
+        log("Chunk journal sealed", { id: currentRecordingId, reason, stats: saved?.stats, audioQuality: saved?.audioQuality });
         const gaps = globalThis.SynapAudioQuality?.gaps(saved?.stats, saved?.durationMs);
+        const qualityWarning = globalThis.SynapAudioQuality?.describe(saved?.audioQuality)[0];
         toast(gaps ? "Recording saved with " + gaps.label + ". Some audio was not received."
-          : saved?.durationMs ? "Recording saved; processing jobs queued" : "No complete frames received; partial chunks retained", gaps ? "error" : undefined);
+          : qualityWarning ? "Recording saved. " + qualityWarning
+          : saved?.durationMs ? "Recording saved; processing jobs queued" : "No complete frames received; partial chunks retained", gaps || qualityWarning ? "error" : undefined);
         currentRecordingId = null;unsavedAudio = false;
         resetCollector();await renderRecordings();
         ui.queueStatus.textContent = "Ready to process";
@@ -2708,7 +2715,8 @@
     const label = date.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
     const gaps = globalThis.SynapAudioQuality?.gaps(recording.stats, recording.durationMs);
     return label + " · " + date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " · " + formatDuration(recording.durationMs)
-      + (gaps ? " · Audio incomplete: " + gaps.label : "");
+      + (gaps ? " · Audio incomplete: " + gaps.label : "")
+      + (recording.audioQuality?.longestNearSilentMs >= 3000 ? " · Microphone signal was nearly silent" : "");
   }
 
   function resetLibrarySearch() {
@@ -2901,6 +2909,13 @@
       const notice = document.createElement("p");
       notice.className = "recording-audio-gap";
       notice.textContent = "Audio incomplete: " + gaps.label + ". The silent gaps contain no received audio; transcription and enhancement cannot restore missing speech.";
+      card.appendChild(notice);
+    }
+    const qualityWarnings = globalThis.SynapAudioQuality?.describe(recording.audioQuality) || [];
+    if (qualityWarnings.length) {
+      const notice = document.createElement("p");
+      notice.className = "recording-audio-gap recording-signal-warning";
+      notice.textContent = qualityWarnings.join(" ");
       card.appendChild(notice);
     }
     card.appendChild(actions);

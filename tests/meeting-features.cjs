@@ -13,7 +13,7 @@ test('recording quality flags actual clipping and quiet audio without changing P
   const api=load('audio-quality.js').SynapAudioQuality;
   const pcm=new Uint8Array(96000),v=new DataView(pcm.buffer);for(let i=0;i<pcm.length;i+=2)v.setInt16(i,32767,true);
   api.observe(pcm);assert(api.describe(api.snapshot()).some(s=>s.includes('clipping')));assert.equal(v.getInt16(0,true),32767);
-  api.reset();api.observe(new Uint8Array(96000));assert(api.describe(api.snapshot()).some(s=>s.includes('quiet')));
+  api.reset();api.observe(new Uint8Array(96000));assert(api.describe(api.snapshot()).some(s=>s.includes('Almost no microphone signal')));
 });
 test('meeting preparation matches exact people and includes source offsets across days',()=>{
   const api=load('meeting-tools.js').SynapMeetingTools;
