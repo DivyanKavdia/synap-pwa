@@ -9,6 +9,7 @@
 
 import { FieldValue, Firestore, type Query } from '@google-cloud/firestore';
 import { config } from '../config.js';
+import { requireCompleteSegments } from '../pipeline/recording-segments.js';
 import type {
   ConversationDoc,
   DayDoc,
@@ -94,8 +95,16 @@ export async function getRecording(uid: string, recordingId: string): Promise<Re
   return snapshot.exists ? (snapshot.data() as RecordingDoc) : null;
 }
 
-export async function putRecording(uid: string, doc: RecordingDoc): Promise<void> {
-  await paths.recording(uid, doc.recordingId).set(doc, { merge: true });
+/** An idempotent create must not write an old snapshot over a live recording. */
+export async function createRecording(uid: string, doc: RecordingDoc): Promise<{ doc: RecordingDoc; created: boolean }> {
+  const ref = paths.recording(uid, doc.recordingId);
+  return firestore().runTransaction(async tx => {
+    const current = (await tx.get(ref)).data() as RecordingDoc | undefined;
+    if (current?.deleting) throw new SegmentWriteError(404, 'Recording is being deleted');
+    if (current) return { doc: current, created: false };
+    tx.create(ref, doc);
+    return { doc, created: true };
+  });
 }
 
 export async function patchRecording(
@@ -175,8 +184,84 @@ export async function listRecentRecordings(uid: string, limit: number): Promise<
   return snapshot.docs.map((doc) => doc.data() as RecordingDoc);
 }
 
-export async function putSegment(uid: string, recordingId: string, doc: SegmentDoc): Promise<void> {
-  await paths.segments(uid, recordingId).doc(String(doc.index)).set(doc, { merge: true });
+export class SegmentWriteError extends Error {
+  constructor(readonly status: 404 | 409, message: string, readonly retryable = false) { super(message); }
+}
+
+/** Freeze complete upload metadata once; retries never reset processing. */
+export async function finalizeRecording(uid: string, recordingId: string, fields: Pick<RecordingDoc, 'endedAt' | 'durationMs' | 'segmentCount'>): Promise<RecordingDoc> {
+  const ref = paths.recording(uid, recordingId);
+  return firestore().runTransaction(async tx => {
+    const current = (await tx.get(ref)).data() as RecordingDoc | undefined;
+    if (!current || current.deleting) throw new SegmentWriteError(404, 'Unknown recording');
+    if (current.endedAt) {
+      if (current.endedAt !== fields.endedAt || current.durationMs !== fields.durationMs || current.segmentCount !== fields.segmentCount) {
+        throw new SegmentWriteError(409, 'Finalization conflicts with the saved recording');
+      }
+      return current;
+    }
+    if (!['created', 'uploading'].includes(current.state)) throw new SegmentWriteError(409, 'Recording is already finalized');
+    const segments = (await tx.get(paths.segments(uid, recordingId))).docs.map(doc => doc.data() as SegmentDoc);
+    try { requireCompleteSegments(segments, fields.segmentCount); }
+    catch (cause) { throw new SegmentWriteError(409, (cause as Error).message, true); }
+    const completed: RecordingDoc = { ...current, ...fields, state: 'uploaded', progress: 0, uploadedSegments: segments.length, updatedAt: new Date().toISOString() };
+    tx.update(ref, { ...completed });
+    return completed;
+  });
+}
+
+export function sameSegmentSource(a: SegmentDoc, b: Pick<SegmentDoc, 'index' | 'sha256' | 'bytes' | 'startMs' | 'endMs'>): boolean {
+  return a.index === b.index && a.sha256 === b.sha256 && a.bytes === b.bytes &&
+    a.startMs === b.startMs && a.endMs === b.endMs;
+}
+
+/** Accept one immutable source per index, together with its parent counter. */
+export async function acceptSegment(uid: string, recordingId: string, doc: SegmentDoc, createdAt: string): Promise<SegmentDoc> {
+  const parent = paths.recording(uid, recordingId), ref = paths.segments(uid, recordingId).doc(String(doc.index));
+  return firestore().runTransaction(async tx => {
+    const recording = (await tx.get(parent)).data() as RecordingDoc | undefined;
+    const current = (await tx.get(ref)).data() as SegmentDoc | undefined;
+    if (!recording || recording.deleting) throw new SegmentWriteError(404, 'Unknown recording');
+    if (recording.createdAt !== createdAt) throw new SegmentWriteError(409, 'Recording source changed');
+    if (current) {
+      if (!sameSegmentSource(current, doc)) throw new SegmentWriteError(409, 'Segment source conflicts with the accepted audio');
+      return current;
+    }
+    if (recording.endedAt || !['created', 'uploading'].includes(recording.state)) {
+      throw new SegmentWriteError(409, 'Recording is already finalized');
+    }
+    tx.create(ref, doc);
+    tx.update(parent, { state: 'uploading', uploadedSegments: (recording.uploadedSegments || 0) + 1, updatedAt: new Date().toISOString() });
+    return doc;
+  });
+}
+
+/** Commit only to the exact live source. The first complete result wins. */
+export async function completeSegmentTranscription(uid: string, recordingId: string, doc: SegmentDoc): Promise<SegmentDoc> {
+  const parent = paths.recording(uid, recordingId), ref = paths.segments(uid, recordingId).doc(String(doc.index));
+  return firestore().runTransaction(async tx => {
+    const recording = (await tx.get(parent)).data() as RecordingDoc | undefined;
+    const current = (await tx.get(ref)).data() as SegmentDoc | undefined;
+    if (!recording || recording.deleting || !current) throw new SegmentWriteError(404, 'Unknown recording or segment');
+    if (!sameSegmentSource(current, doc) || current.storagePath !== doc.storagePath) throw new SegmentWriteError(409, 'Segment source changed');
+    if (current.state === 'transcribed' && current.sealedTranscript && current.sealedWords) return current;
+    const fields = { state: doc.state, language: doc.language, transcribedAt: doc.transcribedAt,
+      transcriptionReview: doc.transcriptionReview, sealedTranscript: doc.sealedTranscript, sealedWords: doc.sealedWords };
+    tx.update(ref, fields);
+    return { ...current, ...fields };
+  });
+}
+
+export async function saveSegmentSpeakerMap(uid: string, recordingId: string, source: SegmentDoc, lease: string, sealedSpeakerMap: SegmentDoc['sealedSpeakerMap']): Promise<void> {
+  const parent = paths.recording(uid, recordingId), ref = paths.segments(uid, recordingId).doc(String(source.index));
+  await firestore().runTransaction(async tx => {
+    const recording = (await tx.get(parent)).data() as RecordingDoc | undefined;
+    const current = (await tx.get(ref)).data() as SegmentDoc | undefined;
+    if (!recording || recording.deleting || !current) throw new SegmentWriteError(404, 'Unknown recording or segment');
+    if (recording.processingLease !== lease) throw new SegmentWriteError(409, 'Processing attempt was superseded');
+    if (!sameSegmentSource(current, source) || current.storagePath !== source.storagePath) throw new SegmentWriteError(409, 'Segment source changed');
+    tx.update(ref, { sealedSpeakerMap });
+  });
 }
 
 export async function getSegment(
@@ -496,12 +581,16 @@ export async function completeIdempotencyKey(
 // Deletion
 // ---------------------------------------------------------------------------
 
-/** Recursively delete a recording and everything derived from it. */
-export async function deleteRecording(uid: string, recordingId: string): Promise<void> {
+export async function beginRecordingDeletion(uid: string, recordingId: string): Promise<void> {
   // Fence publishers before removing derived rows. Repeated deletion can resume
   // cleanup, but no in-flight worker can recreate the index while it is erased.
   try { await paths.recording(uid, recordingId).update({ deleting: true, processingLease: null }); }
   catch (cause) { if ((cause as { code?: number }).code !== 5) throw cause; }
+}
+
+/** Recursively delete a recording and everything derived from it. */
+export async function deleteRecording(uid: string, recordingId: string): Promise<void> {
+  await beginRecordingDeletion(uid, recordingId);
   await deleteConversationsForRecording(uid, recordingId);
   const followUps = await paths.followUps(uid).where('recordingId', '==', recordingId).get();
   const batch = firestore().batch();

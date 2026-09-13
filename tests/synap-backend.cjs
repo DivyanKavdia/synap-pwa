@@ -142,7 +142,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell86-os1-firmware'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell87-production-guards'/);
 });
 
 test('the settings form offers the encrypted cloud provider and a sign-in control', () => {
@@ -775,4 +775,12 @@ test('Actions request deadlines include a stalled response body', async () => {
   await Promise.resolve();
   deadline();
   await assert.rejects(pending, /timed out/);
+});
+
+
+test('cloud failures honor explicit retry decisions while older servers retain HTTP fallback', async () => {
+  for (const [status, flag, expected] of [[502,false,false],[503,false,false],[409,false,false],[429,true,true],[400,true,true],[503,undefined,true],[400,undefined,false]]) {
+    const context=load(backendSource,{SynapAuth:{isSignedIn:()=>true,authedFetch:async()=>new Response(JSON.stringify({error:{message:'Model unavailable',retryable:flag}}),{status})}});
+    await assert.rejects(context.SynapBackend.recordingMemory('take'),error=>error.status===status&&error.retryable===expected);
+  }
 });

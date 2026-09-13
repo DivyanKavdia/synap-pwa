@@ -134,3 +134,39 @@ test(
     assert.equal((await paths.followUps(uid).where('recordingId', '==', id).get()).size, 0);
   },
 );
+
+test('concurrent upload retries accept one immutable source and count it once', {timeout:90000}, async()=>{
+  const db=await import('../../src/store/firestore.js');
+  const id='immutable';
+  const recording={...(await seed(id)),state:'created',createdAt:'first',endedAt:null,uploadedSegments:0} as RecordingDoc;
+  await paths.recording(uid,id).set(recording);
+  const source={index:0,startMs:0,endMs:1000,sha256:'first',bytes:32044,storagePath:'attempt-one',state:'accepted',sealedTranscript:null,sealedWords:null,language:null,uploadedAt:'now',transcribedAt:null} as import('../../src/store/types.js').SegmentDoc;
+  const results=await Promise.allSettled([
+    db.acceptSegment(uid,id,source,'first'),
+    db.acceptSegment(uid,id,{...source,storagePath:'retry'},'first'),
+    db.acceptSegment(uid,id,{...source,sha256:'different',storagePath:'conflict'},'first'),
+  ]);
+  const accepted=(await db.getSegment(uid,id,0))!;
+  assert.equal((await db.getRecording(uid,id))!.uploadedSegments,1);
+  const fulfilled=results.filter(result=>result.status==='fulfilled');
+  assert(fulfilled.length>=1&&fulfilled.length<=2);
+  for(const result of fulfilled)if(result.status==='fulfilled')assert.deepEqual(result.value,accepted);
+  for(const result of results)if(result.status==='rejected')assert.equal(result.reason.status,409);
+  const completed={...accepted,state:'transcribed',sealedTranscript:sealText(dek,'Saved',{uid,scope:`recording/${id}/segment/0`,field:'transcript'}),sealedWords:sealJson(dek,[],{uid,scope:`recording/${id}/segment/0`,field:'words'}),transcribedAt:'done'} as typeof source;
+  await db.completeSegmentTranscription(uid,id,completed);
+  const finalization={endedAt:'done',durationMs:1000,segmentCount:1};
+  await Promise.all([db.finalizeRecording(uid,id,finalization),db.finalizeRecording(uid,id,finalization)]);
+  await paths.recording(uid,id).update({state:'ready',processingLease:'current'});
+  assert.equal((await db.finalizeRecording(uid,id,finalization)).state,'ready');
+  assert.equal((await db.getRecording(uid,id))!.processingLease,'current');
+  assert.equal((await db.acceptSegment(uid,id,accepted,'first')).state,'transcribed');
+  assert.equal((await db.getRecording(uid,id))!.state,'ready');
+  const late={...completed,sealedTranscript:sealText(dek,'Late',{uid,scope:`recording/${id}/segment/0`,field:'transcript'})};
+  assert.deepEqual((await db.completeSegmentTranscription(uid,id,late)).sealedTranscript,completed.sealedTranscript);
+  await db.beginRecordingDeletion(uid,id);
+  await assert.rejects(db.completeSegmentTranscription(uid,id,late),{status:404});
+  await db.deleteRecording(uid,id);
+  await assert.rejects(db.acceptSegment(uid,id,accepted,'first'),{status:404});
+  await assert.rejects(db.completeSegmentTranscription(uid,id,late),{status:404});
+  assert.equal((await paths.segments(uid,id).get()).size,0);
+});

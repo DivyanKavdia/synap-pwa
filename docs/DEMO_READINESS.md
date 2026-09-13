@@ -25,11 +25,41 @@ accepts both the earlier `1.0.0` identity and the new name, and shows the full
 version during discovery and after reboot verification. This naming change does
 not supply new evidence about physical touch sensitivity.
 
+## Production failure boundaries
+
+- App reload and OTA eligibility include pendant startup, interrupted capture,
+  unsaved audio, and desktop capture through permission prompts and failed-save
+  recovery. Reload rechecks at the click boundary and updates an existing offer.
+- Firmware capture/transmit faults use a generation-bound latch independent of
+  the command queue and connection epoch. Queue pressure and reconnects cannot
+  discard a fatal error or apply it to a later take.
+- Upload attempts write separate encrypted objects. A Firestore transaction
+  accepts one immutable hash/timing/byte-count source per index and updates the
+  counter once. A duplicate preserves completed transcription and parent state;
+  conflicting bytes or timing return a permanent conflict.
+- Late transcription and speaker-map commits check the live parent, exact source,
+  and (for speaker maps) processing lease. Deletion fences writers before object
+  cleanup. Retried create/finalize calls return the current recording without resetting
+  processing. Finalization checks complete segment metadata in the same transaction.
+- Permanent model rejections retain their retry flag through HTTP and the PWA.
+  Audio remains saved; invalid requests stop automatic retries. Temporary failures
+  retain the existing bounded retry behavior. Background workers persist permanent
+  failures before acknowledging the delivery; Cloud Tasks requires a 2xx
+  acknowledgement to stop retries, as documented in its
+  [HTTP task contract](https://docs.cloud.google.com/tasks/docs/reference/rest/v2/projects.locations.queues.tasks#HttpRequest).
+
+Firestore transactions protect metadata; they do not span Cloud Storage. Rejected
+or redundant attempt objects are deleted when the outcome is definitive. If a
+process crashes or a commit result is ambiguous, encrypted objects may remain
+until the bucket's retention policy removes them. Never delete a possibly
+committed audio object merely because the database response timed out. See the
+[Firestore transaction contract](https://docs.cloud.google.com/firestore/native/docs/manage-data/transactions).
+
 ## Evidence and limits
 
-- `npm test`: 275 app checks, including permission/start races, save retry,
+- `npm test`: 280 app checks, including permission/start races, save retry,
   account changes, recording transport, audio storage and recovery contracts.
-- `npm test --prefix backend`: 170 backend checks, including atomic rollback,
+- `npm test --prefix backend`: 175 backend checks, including atomic rollback,
   concurrent task-completion replay, worker fencing, deleted recordings, legacy
   duplicate tasks and daily-summary recovery.
 - The production validation workflow runs the full browser suite, including the

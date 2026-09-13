@@ -1,13 +1,13 @@
 import { Router, raw } from 'express';
 import { z } from 'zod';
 import { config } from '../../config.js';
+import { GeminiError } from '../../gemini/client.js';
 import { openJson, openText, sealBytes } from '../../crypto/envelope.js';
 import { enqueueProcessing } from '../../pipeline/queue.js';
 import { binding } from '../../pipeline/process.js';
 import { transcribeUploadedWindow } from '../../pipeline/rolling-transcription.js';
-import { requireCompleteSegments } from '../../pipeline/recording-segments.js';
 import * as db from '../../store/firestore.js';
-import { segmentPath, writeSealedSegment } from '../../store/gcs.js';
+import { deleteSegment, segmentPath, writeSealedSegment } from '../../store/gcs.js';
 import type {
   HighlightDoc,
   RecordingDoc,
@@ -56,6 +56,11 @@ function idempotencyKey(req: AuthedRequest): string {
   return key;
 }
 
+async function discardUnusedUpload(path: string): Promise<void> {
+  try { await deleteSegment(path); }
+  catch { log.warn('Unused upload cleanup deferred to audio retention'); }
+}
+
 export function recordingRoutes(): Router {
   const router = Router();
 
@@ -74,9 +79,7 @@ export function recordingRoutes(): Router {
       // recording_id: an existing recording is returned rather than duplicated.
       const input = body.data;
       const now = new Date().toISOString();
-      const existing = await db.getRecording(req.uid, input.recording_id);
-
-      const doc: RecordingDoc = existing ?? {
+      const proposed: RecordingDoc = {
         recordingId: input.recording_id,
         deviceId: input.device_id,
         startedAt: input.started_at,
@@ -102,8 +105,8 @@ export function recordingRoutes(): Router {
         updatedAt: now,
       };
 
-      await db.putRecording(req.uid, doc);
-      res.status(existing ? 200 : 201).json({
+      const { doc, created } = await db.createRecording(req.uid, proposed);
+      res.status(created ? 201 : 200).json({
         recording_id: doc.recordingId,
         state: doc.state,
         day: doc.day,
@@ -127,7 +130,7 @@ export function recordingRoutes(): Router {
       }
 
       const recording = await db.getRecording(req.uid, recordingId);
-      if (!recording) throw new HttpError(404, 'not_found', 'Unknown recording');
+      if (!recording || recording.deleting) throw new HttpError(404, 'not_found', 'Unknown recording');
 
       const audio = req.body as Buffer;
       if (!Buffer.isBuffer(audio) || audio.length === 0) {
@@ -140,8 +143,17 @@ export function recordingRoutes(): Router {
         throw new HttpError(400, 'digest_mismatch', 'Segment SHA-256 does not match the body');
       }
 
+      const startMs = Number(req.header('x-synap-start-ms') ?? index * 30_000);
+      const endMs = Number(req.header('x-synap-end-ms') ?? startMs + 30_000);
+      if (!Number.isSafeInteger(startMs) || !Number.isSafeInteger(endMs) || startMs < 0 || endMs <= startMs) {
+        throw new HttpError(400, 'bad_segment_timing', 'Audio window timing must be finite milliseconds with end after start');
+      }
+
       const existing = await db.getSegment(req.uid, recordingId, index);
-      if (existing?.sha256 === digest && existing.storagePath) {
+      if (existing && !db.sameSegmentSource(existing, { index, sha256: digest, bytes: audio.length, startMs, endMs })) {
+        throw new db.SegmentWriteError(409, 'Segment source conflicts with the accepted audio');
+      }
+      if (existing?.storagePath) {
         // A retry after upload but before/while ASR completed must continue the
         // missing transcription rather than returning early and leaving a hole.
         let completed = existing;
@@ -153,10 +165,11 @@ export function recordingRoutes(): Router {
           try {
             completed = await transcribeUploadedWindow(req.uid, recordingId, index, req.dek);
           } catch (cause) {
+            if (cause instanceof GeminiError || cause instanceof db.SegmentWriteError) throw cause;
             throw new HttpError(
               503,
               'transcription_failed',
-              (cause as Error).message || 'Rolling transcription failed',
+              'Rolling transcription is temporarily unavailable. Saved audio is retained.',
               true,
             );
           }
@@ -168,12 +181,6 @@ export function recordingRoutes(): Router {
           transcript_ready: completed.state === 'transcribed',
         });
         return;
-      }
-
-      const startMs = Number(req.header('x-synap-start-ms') ?? index * 30_000);
-      const endMs = Number(req.header('x-synap-end-ms') ?? startMs + 30_000);
-      if (!Number.isSafeInteger(startMs) || !Number.isSafeInteger(endMs) || startMs < 0 || endMs <= startMs) {
-        throw new HttpError(400, 'bad_segment_timing', 'Audio window timing must be finite milliseconds with end after start');
       }
 
       const path = segmentPath(req.uid, recordingId, index);
@@ -203,13 +210,15 @@ export function recordingRoutes(): Router {
         uploadedAt: new Date().toISOString(),
         transcribedAt: null,
       };
-      await db.putSegment(req.uid, recordingId, doc);
-
-      const uploaded = await db.countSegments(req.uid, recordingId);
-      await db.patchRecording(req.uid, recordingId, {
-        state: recording.state === 'created' ? 'uploading' : recording.state,
-        uploadedSegments: uploaded,
-      });
+      try {
+        const accepted = await db.acceptSegment(req.uid, recordingId, doc, recording.createdAt);
+        if (accepted.storagePath !== path) await discardUnusedUpload(path);
+      } catch (cause) {
+        // Only a definitive rejection permits cleanup. An ambiguous database
+        // failure may have committed this path; retaining it protects the audio.
+        if (cause instanceof db.SegmentWriteError) await discardUnusedUpload(path);
+        throw cause;
+      }
 
       // The audio is safely persisted before ASR starts. If ASR fails, the PWA's
       // existing retry resends the same PUT; the idempotent path above then
@@ -218,10 +227,11 @@ export function recordingRoutes(): Router {
       try {
         completed = await transcribeUploadedWindow(req.uid, recordingId, index, req.dek);
       } catch (cause) {
+        if (cause instanceof GeminiError || cause instanceof db.SegmentWriteError) throw cause;
         throw new HttpError(
           503,
           'transcription_failed',
-          (cause as Error).message || 'Rolling transcription failed',
+          'Rolling transcription is temporarily unavailable. Saved audio is retained.',
           true,
         );
       }
@@ -247,7 +257,7 @@ export function recordingRoutes(): Router {
       if (!body.success) throw new HttpError(400, 'bad_request', 'Invalid highlight');
 
       const recording = await db.getRecording(req.uid, recordingId);
-      if (!recording) throw new HttpError(404, 'not_found', 'Unknown recording');
+      if (!recording || recording.deleting) throw new HttpError(404, 'not_found', 'Unknown recording');
 
       const doc: HighlightDoc = {
         highlightId: body.data.highlight_id,
@@ -289,24 +299,18 @@ export function recordingRoutes(): Router {
         return;
       }
 
-      const recording = await db.getRecording(req.uid, recordingId);
-      if (!recording) throw new HttpError(404, 'not_found', 'Unknown recording');
-
-      const segments = await db.listSegments(req.uid, recordingId);
-      try { requireCompleteSegments(segments, body.data.segment_count); }
-      catch (error) {
-        throw new HttpError(409, 'incomplete_upload', (error as Error).message, true);
+      let recording: RecordingDoc;
+      try {
+        recording = await db.finalizeRecording(req.uid, recordingId, {
+          endedAt: body.data.ended_at, durationMs: body.data.duration_ms, segmentCount: body.data.segment_count,
+        });
+      } catch (cause) {
+        if (cause instanceof db.SegmentWriteError && cause.retryable) {
+          throw new HttpError(409, 'incomplete_upload', cause.message, true);
+        }
+        throw cause;
       }
-      const uploaded = segments.length;
-
-      await db.patchRecording(req.uid, recordingId, {
-        endedAt: body.data.ended_at,
-        durationMs: body.data.duration_ms,
-        segmentCount: body.data.segment_count,
-        uploadedSegments: uploaded,
-        state: 'uploaded',
-        progress: 0,
-      });
+      const uploaded = recording.uploadedSegments;
 
       // Most/all 30-second windows are already transcribed by this point.
       // processRecording skips sealed transcripts, transcribes only any final
@@ -316,7 +320,7 @@ export function recordingRoutes(): Router {
 
       const response = {
         recording_id: recordingId,
-        state: 'uploaded',
+        state: recording.state,
         uploaded_segments: uploaded,
         missing_segments: Math.max(0, body.data.segment_count - uploaded),
       };
@@ -333,7 +337,7 @@ export function recordingRoutes(): Router {
     requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const recording = await db.getRecording(req.uid, String(req.params.recordingId));
-      if (!recording) throw new HttpError(404, 'not_found', 'Unknown recording');
+      if (!recording || recording.deleting) throw new HttpError(404, 'not_found', 'Unknown recording');
       res.status(200).json({
         state: recording.state,
         progress: recording.progress,
@@ -434,7 +438,7 @@ export function recordingRoutes(): Router {
     handler<AuthedRequest>(async (req, res) => {
       const recordingId = String(req.params.recordingId);
       const recording = await db.getRecording(req.uid, recordingId);
-      if (!recording) throw new HttpError(404, 'not_found', 'Unknown recording');
+      if (!recording || recording.deleting) throw new HttpError(404, 'not_found', 'Unknown recording');
       if (!recording.sealedMemory) {
         throw new HttpError(409, 'not_ready', `Recording is ${recording.state}`, true);
       }
@@ -470,6 +474,7 @@ export function recordingRoutes(): Router {
     handler<AuthedRequest>(async (req, res) => {
       const recordingId = String(req.params.recordingId);
       const { deleteRecordingAudio } = await import('../../store/gcs.js');
+      await db.beginRecordingDeletion(req.uid, recordingId);
       await deleteRecordingAudio(req.uid, recordingId);
       await db.deleteRecording(req.uid, recordingId);
       res.status(204).end();

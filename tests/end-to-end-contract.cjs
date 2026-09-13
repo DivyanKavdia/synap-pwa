@@ -44,7 +44,7 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   assert.match(sleepGuard, /synap-gatt-service-ready/);
 
   assert.doesNotMatch(events, /script\.src=['"]audio-codec-v3/);
-  assert.match(sw, /1\.0\.0-shell86-os1-firmware/);
+  assert.match(sw, /1\.0\.0-shell87-production-guards/);
   assert.match(sw, /1\.0\.0-readiness1/);
   assert.match(sw, /\.\/dashboard-ui\.js/);
   assert.match(sw, /\.\/ask-synap\.js/);
@@ -72,5 +72,5 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   assert(html.indexOf('runtime-compat.js') < html.indexOf('app.js'), 'runtime compatibility must load before app initialization');
   assert.match(compat, /settingsButton\.addEventListener\('click'/);
   assert.match(compat, /if \(dialog\.open\) return/);
-  assert.match(enhancements, /e\.data\.shellRevision===SHELL_REVISION/);
+  assert.match(enhancements, /e\.data\.shellRevision\s*===\s*SHELL_REVISION/);
 });

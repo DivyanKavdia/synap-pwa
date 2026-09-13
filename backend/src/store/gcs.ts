@@ -13,6 +13,7 @@
  */
 
 import { Storage, type Bucket } from '@google-cloud/storage';
+import { randomUUID } from 'node:crypto';
 import { config } from '../config.js';
 import type { Sealed } from '../crypto/envelope.js';
 
@@ -24,7 +25,9 @@ function bucket(): Bucket {
 }
 
 export function segmentPath(uid: string, recordingId: string, index: number): string {
-  return `audio/${uid}/${recordingId}/${String(index).padStart(6, '0')}.seg`;
+  // Every attempt has a separate object. An unaccepted retry cannot overwrite
+  // the bytes already referenced by Firestore. Old stored paths remain readable.
+  return `audio/${uid}/${recordingId}/${String(index).padStart(6, '0')}-${randomUUID()}.seg`;
 }
 
 /**

@@ -15,7 +15,7 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
-import { processRecording } from '../../pipeline/process.js';
+import { processRecording, processingFailure } from '../../pipeline/process.js';
 import * as db from '../../store/firestore.js';
 import type { RecordingDoc } from '../../store/types.js';
 import { log } from '../../util/log.js';
@@ -51,17 +51,25 @@ export function taskRoutes(): Router {
 
       const { uid, recordingId } = body.data;
       try {
+        const existing = await db.getRecording(uid, recordingId);
+        if (!existing || existing.deleting || (existing.state === 'failed' && !existing.retryable)) {
+          res.status(200).json({ state: 'failed', error: { code: 'permanent', retryable: false } });
+          return;
+        }
         await processRecording(uid, recordingId);
         res.status(200).json({ state: 'ready' });
       } catch (cause) {
-        const message = (cause as Error).message ?? '';
-        // A 4xx tells Cloud Tasks to stop retrying. Reserve it for failures that
-        // will never succeed — a missing recording, no audio at all. Everything
-        // else gets a 5xx so the queue's backoff can do its job.
-        const permanent = /unknown (user|recording)|no segments|no audio/i.test(message);
+        const { message, retryable } = processingFailure(cause);
+        // Cloud Tasks retries every non-2xx. A permanent failure is acknowledged
+        // only after its durable state is visible (or the recording is gone).
+        // If saving the failure itself failed, retain the task for recovery.
+        const current = !retryable ? await db.getRecording(uid, recordingId) : null;
+        const permanent = !retryable && (!current || current.deleting || current.state === 'ready' ||
+          (current.state === 'failed' && !current.retryable));
         log.error('Task processing failed', { uid, recordingId, permanent, error: message });
-        res.status(permanent ? 400 : 500).json({
-          error: { code: permanent ? 'permanent' : 'transient', message },
+        res.status(permanent ? 200 : 500).json({
+          state: permanent ? 'failed' : 'retrying',
+          error: { code: permanent ? 'permanent' : 'transient', message, retryable: !permanent },
         });
       }
     }),

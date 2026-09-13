@@ -3173,6 +3173,7 @@
     let discoveryBusy=false, discoveryTask=null, updateRequested=false;
     const eligible = ()=>appLockHeld && isGattConnected() && !connectInProgress && !recordingConfirmed &&
       !finalizing && !currentRecordingId && !openingCapture && !unsavedAudio &&
+      !globalThis.SynapDesktopCapture?.state()?.active &&
       !["starting","stopping","saving"].includes(appState);
     function firmwareGattOperation(action, label) {
       return queueGattOperation(() => {
@@ -3692,7 +3693,7 @@
     });
 
     window.addEventListener("beforeunload", function (event) {
-      if (firmwareBusy || recordingConfirmed || finalizing || unsavedAudio || recordingReconnectPending) {
+      if (!canReload()) {
         event.preventDefault();
         event.returnValue = "";
       }
@@ -3810,7 +3811,14 @@
     return true;
   }
 
-  globalThis.SynapAppControls = Object.freeze({toggleCapture,toggleConnection,recordingState,stopCapture});
+  function canReload() {
+    return !(firmwareBusy || recordingConfirmed || finalizing || openingCapture ||
+      currentRecordingId || unsavedAudio || recordingReconnectPending ||
+      globalThis.SynapDesktopCapture?.state()?.active ||
+      ['starting', 'stopping', 'saving', 'updating'].includes(appState));
+  }
+
+  globalThis.SynapAppControls = Object.freeze({toggleCapture,toggleConnection,recordingState,stopCapture,canReload});
 
   function setStartup(state, message) {
     document.body.dataset.startup = state;

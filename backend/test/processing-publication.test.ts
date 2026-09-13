@@ -392,3 +392,19 @@ test('a brief failure leaves the recording ready and the retry only rebuilds the
   assert.equal(f.list('people')[0]!.conversationCount, 1);
   assert(f.rows.has(`users/${uid}/days/2026-09-13`));
 });
+
+test('permanent model failures persist a non-retryable state without provider response details',async()=>{
+  const f=fixture();
+  f.rows.set(recordingPath,{...f.recording,state:'uploaded',sealedMemory:null,sealedTranscript:null});
+  f.rows.set(recordingPath+'/segments/0',{index:0,startMs:0,endMs:10000,state:'transcribed',
+    sealedTranscript:sealText(f.dek,'[00:02] S1: Alex will send the brief.',binding(`recording/${recordingId}/segment/0`,'transcript')),
+    sealedWords:sealJson(f.dek,[],binding(`recording/${recordingId}/segment/0`,'words'))});
+  mock.method(keyring,'unwrap',async()=>f.dek);
+  let calls=0;
+  mock.method(globalThis,'fetch',async()=>{calls++;return new Response(JSON.stringify({error:{message:'Invalid argument PRIVATE DETAIL'}}),{status:400});});
+  await assert.rejects(processRecording(uid,recordingId),{name:'GeminiError',status:400});
+  assert.equal(calls,1);
+  const current=f.rows.get(recordingPath)!;
+  assert.equal(current.state,'failed');assert.equal(current.retryable,false);assert.equal(current.processingLease,null);
+  assert(!current.errorCode.includes('PRIVATE DETAIL'));
+});

@@ -21,10 +21,10 @@ export async function transcribeUploadedWindow(
   dek: Buffer,
 ): Promise<SegmentDoc> {
   const recording = await db.getRecording(uid, recordingId);
-  if (!recording) throw new Error(`Unknown recording ${recordingId}`);
+  if (!recording || recording.deleting) throw new db.SegmentWriteError(404, 'Unknown recording');
 
   const segment = await db.getSegment(uid, recordingId, segmentIndex);
-  if (!segment) throw new Error(`Unknown segment ${segmentIndex}`);
+  if (!segment) throw new db.SegmentWriteError(404, 'Unknown segment');
   if (hasTranscription(segment)) return segment;
 
   const completed = await transcribeOne(uid, recordingId, dek, recording, segment);
@@ -72,6 +72,5 @@ async function transcribeOne(
     ),
   };
 
-  await db.putSegment(uid, recordingId, completed);
-  return completed;
+  return db.completeSegmentTranscription(uid, recordingId, completed);
 }

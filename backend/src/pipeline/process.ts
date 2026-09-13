@@ -21,6 +21,7 @@ import {
   type Binding,
 } from '../crypto/envelope.js';
 import { extractMemory } from '../gemini/memory.js';
+import { GeminiError } from '../gemini/client.js';
 import { formatMs, toSpeakerLines } from '../gemini/transcribe.js';
 import { tagSelfSpeaker } from '../speaker/enrich.js';
 import { RecordingSpeakers, labelWords } from '../speaker/diarization.js';
@@ -55,6 +56,13 @@ export interface ProcessRecordingOptions {
 
 export function binding(uid: string, scope: string, field: string): Binding {
   return { uid, scope, field };
+}
+
+export function processingFailure(cause: unknown): { message: string; retryable: boolean } {
+  if (cause instanceof GeminiError) return { message: 'The language model could not complete this request.', retryable: cause.retryable };
+  const message = (cause as Error)?.message || 'Processing failed';
+  const explicit = (cause as { retryable?: boolean })?.retryable;
+  return { message, retryable: typeof explicit === 'boolean' ? explicit : !/unknown (user|recording)|not found|no segments|no audio/i.test(message) };
 }
 
 /**
@@ -104,7 +112,7 @@ export async function processRecording(
         segments = await transcribeAll(uid, recordingId, dek, recording, patch);
       }
       await patch({ state: 'understanding', progress: 0.55 });
-      memory = await understand(uid, recordingId, dek, recording, segments, patch);
+      memory = await understand(uid, recordingId, dek, recording, segments, patch, lease);
     }
     if (options.memoryOnly) {
       await patch({ state: 'ready', progress: 1, errorCode: null, retryable: false, processingLease: null });
@@ -117,14 +125,14 @@ export async function processRecording(
     }
     log.info('Recording processed', { uid, recordingId, conversations: memory.conversations.length, memoryOnly: Boolean(options.memoryOnly) });
   } catch (cause) {
-    const message = (cause as Error).message ?? 'processing failed';
-    log.error('Processing failed', { uid, recordingId, error: message });
+    const { message, retryable } = processingFailure(cause);
+    log.error('Processing failed', { uid, recordingId, error: message, retryable });
     try {
       // The fence also prevents a delayed failure from undoing another worker's
       // success or resurrecting a recording the user deleted.
       await patch(options.memoryOnly && recording.state === 'ready'
         ? { state: 'ready', progress: 1, errorCode: null, retryable: false, processingLease: null }
-        : { state: 'failed', errorCode: message.slice(0, 200), retryable: !/unknown|not found|no segments/i.test(message), processingLease: null });
+        : { state: 'failed', errorCode: message.slice(0, 200), retryable, processingLease: null });
     } catch { /* A deleted recording or superseded attempt belongs to its current owner. */ }
     throw cause;
   }
@@ -168,6 +176,7 @@ async function enrichSegmentWords(
   knownVoices: KnownSpeaker[],
   identified: Record<string,string>,
   conflicts: Set<string>,
+  lease: string,
 ): Promise<TranscriptWord[]> {
   if (segmentWords.length === 0) return segmentWords;
   if (preserveNames) {
@@ -218,7 +227,7 @@ async function enrichSegmentWords(
   mergeSpeakerIdentifications(mapping,voices.keys(),identifyKnownSpeakers(voices,knownVoices),identified,conflicts);
   // Include an enrolled-self match so later user naming stays stable as well.
   for(let i=0;i<segmentWords.length;i++) if(segmentWords[i]!.speaker && enriched[i]!.speaker==='YOU') mapping[segmentWords[i]!.speaker!]='YOU';
-  await db.putSegment(uid, recordingId, {...segment, sealedSpeakerMap:sealJson(dek,mapping,binding(uid,`recording/${recordingId}/segment/${segment.index}`,'speaker-map'))});
+  await db.saveSegmentSpeakerMap(uid, recordingId, segment, lease, sealJson(dek,mapping,binding(uid,`recording/${recordingId}/segment/${segment.index}`,'speaker-map')));
   return labelWords(enriched,mapping);
 }
 
@@ -229,6 +238,7 @@ async function understand(
   recording: RecordingDoc,
   segments: SegmentDoc[],
   patch: (fields: Partial<RecordingDoc>) => Promise<void>,
+  lease: string,
 ): Promise<StructuredMemory> {
   const flat: string[] = [];
   const diarizer = new RecordingSpeakers();
@@ -245,7 +255,7 @@ async function understand(
     }
     if (segment.sealedWords) {
       const segmentWords = openJson<TranscriptWord[]>(dek, segment.sealedWords, binding(uid, scope, 'words'));
-      const words = await enrichSegmentWords(uid, recordingId, dek, segment, segmentWords, diarizer, Boolean(recording.sealedSpeakerNames),knownVoices,identified,conflicts);
+      const words = await enrichSegmentWords(uid, recordingId, dek, segment, segmentWords, diarizer, Boolean(recording.sealedSpeakerNames),knownVoices,identified,conflicts,lease);
       // Validate completeness per window: one partial annotation set must not
       // erase valid speaker labels in every other window of the recording.
       grounded = toSpeakerLines(words, grounded);

@@ -44,7 +44,9 @@
     var message = (data && data.error && data.error.message) || ('HTTP ' + response.status);
     var error = new Error(message);
     error.status = response.status;
-    error.retryable = response.status >= 500 || [408, 409, 425, 429].indexOf(response.status) !== -1;
+    error.retryable = typeof data?.error?.retryable === 'boolean'
+      ? data.error.retryable
+      : response.status >= 500 || [408, 409, 425, 429].indexOf(response.status) !== -1;
     return error;
   }
 

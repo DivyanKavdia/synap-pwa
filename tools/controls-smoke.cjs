@@ -133,6 +133,31 @@ const waitState = (page, state) =>
     }
 
     {
+      const t = await setup(), {page} = t;
+      await waitReady(page);
+      await page.evaluate(() => {
+        const notice = document.getElementById('updateNotice');
+        notice.textContent = 'App update ready'; notice.hidden = false;
+        window.qaReloadSentinel = 'same document';
+      });
+      const reload = page.locator('.update-reload');
+      await page.waitForFunction(() => document.querySelector('.update-reload')?.disabled === false);
+      await page.locator('#headerCaptureToggle').tap();
+      await waitState(page, 'recording');
+      await page.waitForFunction(() => document.querySelector('.update-reload')?.disabled === true);
+      await reload.dispatchEvent('click');
+      assert.equal(await page.evaluate(() => qaReloadSentinel), 'same document');
+      assert.equal(await page.evaluate(() => SynapAppControls.canReload()), false);
+      await page.locator('#headerCaptureToggle').tap();
+      await waitState(page, 'idle');
+      await page.waitForFunction(() => document.querySelector('.update-reload')?.disabled === false);
+      assert.equal(await page.evaluate(() => SynapAppControls.canReload()), true);
+      assert.deepEqual(t.errors, []);
+      await t.context.close();
+      console.log('PASS an existing app update cannot reload over recording and enables after saving');
+    }
+
+    {
       const t = await setup('/', null, async () => {
           const store = new DKAudioStore(),
             createdAt = new Date().toISOString();

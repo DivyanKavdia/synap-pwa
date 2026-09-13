@@ -49,6 +49,7 @@ function setup(options={}){
     isGattConnected:()=>connected,connectInProgress:false,recordingConfirmed:false,finalizing:false,currentRecordingId:null,openingCapture:null,unsavedAudio:false,
     appState:'idle',deviceStatus:{error:0},SERVICE_UUID:'service',queueGattOperation:f=>{
       if(options.startBeforeQueuedRead)c.recordingConfirmed=true;
+      if(options.desktopBeforeQueuedRead)c.globalThis.SynapDesktopCapture.state=()=>({active:true,phase:'starting'});
       return f();
     },
     gattServer:{getPrimaryService:async()=>({getCharacteristic:async()=>{
@@ -64,6 +65,7 @@ function setup(options={}){
       if(options.switchedPendant)c.deviceAssociation={deviceId:OTHER};}},
     recoverRememberedConnection:()=>calls.push('recover')};
   c.globalThis.SynapSettingsPanel={select:section=>{node('settingsDialog').section=section;}};
+  c.globalThis.SynapDesktopCapture={state:()=>({active:false})};
   vm.createContext(c);vm.runInContext(source,c);c.bindFirmwareUpdate();
   node('settingsDialog').open=!!options.settingsOpen;
   return {c,node,calls,storage,click:async id=>{for(const fn of node(id).events.click||[])await fn();},tick:()=>events.timer()};
@@ -76,6 +78,13 @@ function setup(options={}){
     assert(!t.c.firmwareBusy,'deferred discovery does not take the transfer lock');
     assert.match(t.node('otaStatus').textContent,/after recording stops/);
   }
+  for(const phase of ['starting','recording','saving','save-failed']){
+    const t=setup();t.c.globalThis.SynapDesktopCapture.state=()=>({active:true,phase});
+    await t.click('otaReleaseCheck');assert(!t.calls.includes('check')&&!t.calls.includes('manifest'),phase);
+    t.c.globalThis.SynapDesktopCapture.state=()=>({active:false});await t.click('otaReleaseCheck');
+    t.c.globalThis.SynapDesktopCapture.state=()=>({active:true,phase});await t.click('otaLatest');assert(!t.calls.includes('flash'),phase);
+  }
+  const desktopRace=setup({desktopBeforeQueuedRead:true});await desktopRace.click('otaReleaseCheck');assert(!desktopRace.calls.includes('manifest'));
   let t=setup();await t.click('otaReleaseCheck');assert.equal(t.node('firmwareNoticeText').textContent,'Update synap-os1-build1001 available');
   await t.click('firmwareUpdateButton');
   assert(t.calls.includes('flash'));assert(t.calls.includes('reconnect'));assert.match(t.node('otaStatus').textContent,/Update complete/);assert.equal(t.storage.size,0);assert(!t.c.firmwareBusy);
