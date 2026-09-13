@@ -216,10 +216,12 @@ body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-syste
 .header-pendant-status.is-connected .header-status-dot{background:var(--accent)}
 .header-pendant-status.is-recording{color:var(--rose);background:var(--rose-soft)}
 .header-pendant-status.is-recording .header-status-dot{background:var(--rose)}
-.header-capture-toggle{display:grid;place-items:center;width:44px;height:44px;flex:0 0 44px;padding:0;border:1px solid transparent;border-radius:var(--header-control-radius);background:var(--action);color:var(--on-action)}
+.header-capture-toggle{display:grid;place-items:center;width:44px;height:44px;flex:0 0 44px;padding:0;border:1px solid var(--border);border-radius:var(--header-control-radius);background:var(--surface);color:var(--ink)}
+.header-capture-toggle.is-connected{border-color:transparent;background:var(--action);color:var(--on-action)}
+.header-capture-toggle:not(.is-connected):not(.is-recording){opacity:1}
 .header-capture-toggle svg{width:19px;height:19px}
 .header-stop{display:none;width:12px;height:12px;border-radius:3px;background:currentColor}
-.header-capture-toggle.is-recording{background:var(--rose);color:var(--on-rose)}
+.header-capture-toggle.is-recording{border-color:transparent;background:var(--rose);color:var(--on-rose)}
 .header-capture-toggle.is-recording svg{display:none}
 .header-capture-toggle.is-recording .header-stop{display:block}
 .synap-refresh .brain-tabs{width:min(calc(100% - 28px),520px);bottom:calc(12px + env(safe-area-inset-bottom));padding:6px;border:1px solid var(--border);border-radius:21px;background:var(--chrome);box-shadow:0 8px 32px var(--shadow-strong);gap:3px}

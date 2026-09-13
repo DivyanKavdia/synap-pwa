@@ -94,6 +94,7 @@
       if(label)label.textContent=state==='updating'?'Updating':interrupted?'Paused':recording?'Listening':connected?'Connected':state==='connecting'?'Connecting':'Connect';
       status.disabled=connect.disabled;
       status.setAttribute('aria-label',connected?'Disconnect pendant':'Connect pendant');
+      toggle.classList.toggle('is-connected',connected||state==='updating');
       toggle.classList.toggle('is-recording',recording||canStop);
       toggle.disabled=!ready||(!canStop&&(busy||state==='unsupported'||(connected&&start.disabled)));
       const action=canStop?(interrupted?'Save received recording':'Stop listening'):!connected?'Connect and start listening':'Start listening';
