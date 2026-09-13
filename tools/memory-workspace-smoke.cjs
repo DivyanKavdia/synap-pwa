@@ -7,6 +7,42 @@ const { createStaticServer, launchChromium } = require('./support/browser-fixtur
 const server = createStaticServer(path.resolve(__dirname, '..'));
 const output = path.resolve(__dirname, '../artifacts/workflows/memory-workspace');
 
+async function assertPeriod(page, period) {
+  const week = period === 'week';
+  assert.equal(await page.locator('#memoryDayPanel').isVisible(), !week);
+  assert.equal(await page.locator('#memoryWeekPanel').isVisible(), week);
+  assert.equal(await page.locator('#memoryTab-' + period).getAttribute('aria-selected'), 'true');
+  assert.equal(await page.locator('.brain-tabs a[aria-current="page"]').count(), 1);
+  assert.equal(
+    await page.locator('.brain-tabs a[aria-current="page"]').getAttribute('href'),
+    week ? '#memoryWeekPanel' : '#today',
+  );
+}
+
+async function checkPeriodNavigation(page) {
+  const selectedDate = await page.locator('#datePicker').inputValue();
+  await page.getByRole('link', { name: 'Weekly', exact: true }).click();
+  await assertPeriod(page, 'week');
+  // Let the navigation lock expire, then reproduce viewport and background updates.
+  await page.waitForTimeout(950);
+  await page.evaluate(async () => {
+    scrollTo(0, 0);
+    dispatchEvent(new Event('scroll'));
+    dispatchEvent(new Event('resize'));
+    dispatchEvent(new Event('synap-processing-state'));
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+  });
+  await assertPeriod(page, 'week');
+  await page.getByRole('link', { name: 'Today', exact: true }).click();
+  await assertPeriod(page, 'day');
+  await page.locator('#memoryTab-week').click();
+  await assertPeriod(page, 'week');
+  await page.locator('#memoryTab-day').click();
+  await assertPeriod(page, 'day');
+  assert.equal(await page.locator('#datePicker').inputValue(), selectedDate);
+}
+
 async function run() {
   fs.mkdirSync(output, { recursive: true });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -36,6 +72,17 @@ async function run() {
       page.setDefaultTimeout(10000);
       await page.goto(origin);
       await page.waitForFunction(() => document.body.dataset.startup === 'ready');
+      await checkPeriodNavigation(page);
+      for (const [fragment, period] of [
+        ['memoryWeekPanel', 'week'],
+        ['synapWeeklyReview', 'week'],
+        ['insights', 'day'],
+      ]) {
+        await page.goto(origin + '/?navigation=' + fragment + '#' + fragment);
+        await page.waitForFunction(() => document.body.dataset.startup === 'ready');
+        await page.waitForFunction((period) => SynapMemoryWorkspace.period === period, period);
+        await assertPeriod(page, period);
+      }
       await page.evaluate(async () => {
         const api = SynapActionState,
           now = new Date(),
@@ -104,11 +151,13 @@ async function run() {
         window.memoryCard = document.querySelector('#insights .insight-card');
         memoryCard.open = true;
       });
+      await checkPeriodNavigation(page);
       await page.locator('#memoryTab-day').focus();
       await page.keyboard.press('ArrowRight');
-      assert.equal(await page.locator('#memoryTab-week').getAttribute('aria-selected'), 'true');
+      await assertPeriod(page, 'week');
       assert(!(await page.locator('#today').isVisible()));
       await page.keyboard.press('Home');
+      await assertPeriod(page, 'day');
       assert(
         await page.evaluate(
           () => memoryCard === document.querySelector('#insights .insight-card') && memoryCard.open,
@@ -138,11 +187,12 @@ async function run() {
       await page.locator('#memoryTab-week').focus();
       await page.keyboard.press('Home');
       await page.evaluate(() => SynapCompactLayout.reveal('synapWeeklyReview'));
+      await assertPeriod(page, 'week');
       assert(
         await page.locator('#memoryWeekPanel').isVisible(),
         'source reveal selects its period',
       );
-      await page.locator('.brain-tabs a[href="#insights"]').click();
+      await page.locator('.brain-tabs a[href="#today"]').click();
       assert(await page.locator('#memoryDayPanel').isVisible());
       await page.screenshot({ path: path.join(output, `daily-${theme}-${width}.png`) });
       await page.locator('.brain-tabs a[href="#myActions"]').click();

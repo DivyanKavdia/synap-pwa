@@ -335,7 +335,7 @@ async function run() {
       await page.waitForFunction(() => window.SynapMemoryTools);
       await page.waitForTimeout(500);
       await installApi(page);
-      await page.locator('.brain-tabs a[href="#insights"]').click();
+      await page.locator('.brain-tabs a[href="#today"]').click();
       await page.waitForFunction(
         () => document.querySelectorAll('.synap-merged-card').length === 1,
       );
@@ -422,7 +422,7 @@ async function run() {
       assert.equal(await page.locator('#followupCount').innerText(), '5');
 
       // Leaving a day during an in-flight merge must not insert its result on the new day.
-      await page.locator('.brain-tabs a[href="#insights"]').click();
+      await page.locator('.brain-tabs a[href="#today"]').click();
       await page.evaluate(() => SynapMemoryTools.refresh());
       await page.locator('#synapMergeMemories').click();
       await checks.nth(0).click();

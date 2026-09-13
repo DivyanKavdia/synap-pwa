@@ -3,6 +3,7 @@
   'use strict';
   const periods = ['day', 'week'];
   const $ = (id) => document.getElementById(id);
+  let selectedPeriod = 'day';
 
   function select(period, { focus = false } = {}) {
     if (!periods.includes(period)) return false;
@@ -15,8 +16,12 @@
       tab.tabIndex = active ? 0 : -1;
       panel.hidden = !active;
     }
+    const changed = selectedPeriod !== period;
+    selectedPeriod = period;
     if (focus) $('memoryTab-' + period).focus({ preventScroll: true });
     updateWeek();
+    if (changed)
+      root.dispatchEvent(new CustomEvent('synap-memory-period-changed', { detail: { period } }));
     return true;
   }
 
@@ -75,7 +80,13 @@
     select('day');
   }
 
-  root.SynapMemoryWorkspace = Object.freeze({ select, reveal });
+  root.SynapMemoryWorkspace = Object.freeze({
+    select,
+    reveal,
+    get period() {
+      return selectedPeriod;
+    },
+  });
   if (document.readyState === 'loading')
     document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();

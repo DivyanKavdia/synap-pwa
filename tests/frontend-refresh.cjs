@@ -26,14 +26,14 @@ test('desktop navigation accounts for side rail and keyboard focus', () => {
   const dashboard=read('dashboard-ui.js');
   assert.match(dashboard,/nav\.top\s*>\s*window\.innerHeight\s*\/\s*2\s*\?\s*nav\.top\s*-\s*12\s*:\s*window\.innerHeight/);
   assert.match(dashboard,/target\.focus\(\{\s*preventScroll:\s*true\s*\}\)/);
-  assert.match(dashboard,/if\s*\(window\.scrollY\s*<\s*4\)\s*return 'today'/);
+  assert.match(dashboard,/if\s*\(window\.scrollY\s*<\s*4\)\s*return memoryView\(\)/);
   assert.match(read('brain-ui.js'),/aria-label="Ask a question about your memories"/);
 });
 
 test('fresh and cached shells share the refresh generation without changing BLE compatibility', () => {
   const sw=read('sw.js');
   const revision=sw.match(/const CACHE_REVISION='([^']+)'/)[1];
-  assert.equal(revision,'1.0.0-shell74-compact');
+  assert.equal(revision,'1.0.0-shell75-navigation');
   assert(read('enhancements.js').includes(`SHELL_REVISION='${revision}'`));
   assert.match(sw,/CLIENT_REVISION='1\.0\.0-audio2'/);
   assert.match(sw,/'\.\/compact\.css'/);
