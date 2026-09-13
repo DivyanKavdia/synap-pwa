@@ -26,6 +26,28 @@ retry/reload, including original-audio fallbacks. Successful uploads discard the
 temporary copy and retain an acknowledgement marker, avoiding duplicate uploads.
 Existing cloud audio is not automatically retranscribed.
 
+## Rejected transcription requests
+
+Saved language preferences are normalized to supported Gemini language hints;
+unknown or mixed-language values use automatic detection. A transcription HTTP
+400 gets at most two alternate requests: first automatic language detection
+with the requested annotations, then plain verbatim transcription if annotation
+options are still rejected. Requests without a language hint skip the first
+alternative. Each attempt uses the same audio bytes and `store: false`.
+
+Plain transcription retains the complete text with the original window offset,
+marks missing speaker/word annotations as incomplete, and does not start another
+annotation repair attempt. Authentication, billing, and non-400 failures do not
+trigger option recovery. A persistent rejection still fails honestly; changing
+options cannot repair an invalid audio file or unavailable model.
+
+Gemini errors identify the stage and model, and logs record only routing, HTTP
+status, fallback choice, audio byte count, and MIME type. Audio is persisted
+before rolling ASR begins. **Retry processing** reuses the saved recording and
+the existing idempotent upload path; deleting or recording it again is unnecessary.
+Provider request tests simulate the reported 400; they do not establish which
+argument failed in a particular production recording.
+
 ## Speaker attribution
 
 Each ASR request has its own anonymous labels. `spk_1` in one window is not proof

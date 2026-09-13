@@ -18,12 +18,16 @@
 import { speechWindow } from './speech-window.js';
 import { config } from '../config.js';
 import { offsetToMs } from '../util/retry.js';
+import { log } from '../util/log.js';
+import { transcriptionLanguageCodes } from './languages.js';
 import type { TranscriptWord } from '../store/types.js';
 import {
   createInteraction,
   interactionText,
   interactionWords,
+  GeminiError,
   type InteractionPart,
+  type InteractionResponse,
 } from './client.js';
 
 export interface TranscriptionResult {
@@ -71,20 +75,53 @@ export async function transcribeSegment(
   if (diarize) mode.diarization_mode = 'speaker';
   if (wordTimestamps) mode.timestamp_granularities = ['word'];
 
-  const transcriptionConfig: Record<string, unknown> = { mode };
-  if (language && language !== 'auto') transcriptionConfig.language_codes = [language];
+  const transcriptionConfig: Record<string, unknown> = {
+    mode: diarize || wordTimestamps ? mode : 'verbatim',
+  };
+  const languageCodes = transcriptionLanguageCodes(language);
+  if (languageCodes) transcriptionConfig.language_codes = languageCodes;
 
-  const run = (requestSignal=signal) => createInteraction(
+  const run = (settings: Record<string, unknown>, requestSignal=signal) => createInteraction(
     {
       model: config.gemini.transcribeModel,
       input,
-      generation_config: { transcription_config: transcriptionConfig },
+      generation_config: { transcription_config: settings },
       usage_label: 'transcription',
     },
     requestSignal,
   );
 
-  const response=await run();
+  // A 400 is not a transient failure: repeating the same body cannot fix it.
+  // First remove the language hint while keeping full annotations. Only if the
+  // provider still rejects the request, fall back to plain verbatim ASR. Keep
+  // the exact audio and store:false on every attempt; never invent lost timing.
+  const variants = [{ settings: transcriptionConfig, label: 'requested', annotations: true }];
+  if (languageCodes) variants.push({
+    settings: { mode: transcriptionConfig.mode }, label: 'automatic_language', annotations: true,
+  });
+  if (diarize || wordTimestamps) variants.push({
+    settings: { mode: 'verbatim' }, label: 'plain_transcription', annotations: false,
+  });
+
+  let response: InteractionResponse | undefined;
+  let selected = variants[0]!;
+  for (let index = 0; index < variants.length; index++) {
+    selected = variants[index]!;
+    try {
+      response = await run(selected.settings);
+      break;
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (!(error instanceof GeminiError) || error.status !== 400 ||
+          /api[_ -]?key|credential|permission|billing|quota/i.test(error.message) ||
+          index === variants.length - 1) throw error;
+      log.warn('Retrying rejected transcription with fewer optional settings', {
+        model: config.gemini.transcribeModel, stage: 'transcription', http_status: error.status,
+        fallback: variants[index + 1]!.label, audio_bytes: prepared.audio.length, mime_type: mimeType,
+      });
+    }
+  }
+  if (!response) throw new GeminiError('Transcription returned no response', 0, true);
   let rawText=interactionText(response).trim();
   const convert = (value: typeof response):TranscriptWord[] => interactionWords(value).map((word) => ({
     text: word.text,
@@ -93,11 +130,11 @@ export async function transcribeSegment(
     end_ms: sourceOffsetMs + offsetToMs(word.end_offset),
   }));
   let words=convert(response),attempted=false;
-  if(diarize && wordTimestamps && (rawText || words.length) && !annotationsComplete(rawText,words)) {
+  if(selected.annotations && diarize && wordTimestamps && (rawText || words.length) && !annotationsComplete(rawText,words)) {
     attempted=true;
     try {
       const budget=AbortSignal.timeout(15000);
-      const retry=await run(signal ? AbortSignal.any([signal,budget]) : budget),candidate=interactionText(retry).trim(),candidateWords=convert(retry);
+      const retry=await run(selected.settings,signal ? AbortSignal.any([signal,budget]) : budget),candidate=interactionText(retry).trim(),candidateWords=convert(retry);
       // A second pass may repair annotations, but must not silently rewrite
       // already-recognized words. Disagreement keeps the first complete text.
       if((!rawText || reviewText(rawText)===reviewText(candidate)) && annotationsComplete(candidate,candidateWords)) {

@@ -82,7 +82,12 @@ export class GeminiError extends Error {
 const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS = 4;
 
-async function call<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+async function call<T>(
+  path: string,
+  body: unknown,
+  context: { model: string; stage: string },
+  signal?: AbortSignal,
+): Promise<T> {
   signal?.throwIfAborted();
   const { geminiApiKey } = await loadSecrets();
   const url = `${config.gemini.endpoint}${path}`;
@@ -110,7 +115,7 @@ async function call<T>(path: string, body: unknown, signal?: AbortSignal): Promi
 
       const detail = await response.text().catch(() => '');
       const error = new GeminiError(
-        `Gemini HTTP ${response.status}: ${detail.slice(0, 400)}`,
+        `Gemini ${context.stage} (${context.model}) HTTP ${response.status}: ${detail.slice(0, 400)}`,
         response.status,
         RETRYABLE_STATUS.has(response.status),
       );
@@ -119,11 +124,16 @@ async function call<T>(path: string, body: unknown, signal?: AbortSignal): Promi
     } catch (cause) {
       signal?.throwIfAborted();
       if (cause instanceof GeminiError) {
-        if (!cause.retryable || attempt === MAX_ATTEMPTS) throw cause;
+        if (!cause.retryable || attempt === MAX_ATTEMPTS) {
+          // Provider errors may echo content. Log only routing and status, never
+          // request/response bodies, audio, language preferences or API keys.
+          log.warn('Gemini request rejected', { ...context, http_status: cause.status, retryable: cause.retryable });
+          throw cause;
+        }
         lastError = cause;
       } else {
         // Network-level failure: worth retrying, the request never landed.
-        const error = new GeminiError(`Gemini request failed: ${(cause as Error).message}`, 0, true);
+        const error = new GeminiError(`Gemini ${context.stage} (${context.model}) request failed: ${(cause as Error).message}`, 0, true);
         if (attempt === MAX_ATTEMPTS) throw error;
         lastError = error;
       }
@@ -164,7 +174,8 @@ export async function createInteraction(
   signal?: AbortSignal,
 ): Promise<InteractionResponse> {
   const { usage_label: usageLabel, ...apiRequest } = request;
-  const response = await call<InteractionResponse>('/interactions', { ...apiRequest, store: false }, signal);
+  const response = await call<InteractionResponse>('/interactions', { ...apiRequest, store: false },
+    { model: request.model, stage: usageLabel || 'generation' }, signal);
   const fields = usageLogFields(request.model, usageLabel, response.usage);
   if (fields) log.info('Gemini usage', fields);
   return response;
@@ -235,6 +246,7 @@ export async function embedContent(
       taskType,
       output_dimensionality: config.gemini.embedDimensions,
     },
+    { model: config.gemini.embedModel, stage: 'embedding' },
     signal,
   );
   const values = response.embedding?.values;

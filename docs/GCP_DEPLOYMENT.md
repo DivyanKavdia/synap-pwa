@@ -229,7 +229,7 @@ with the full `projects/.../indexes/...` name.
 | Sign-in works, `/v1` calls fail with CORS errors | `SYNAP_ALLOWED_ORIGINS` does not include the PWA origin. It is an exact allowlist by design — no wildcards on an API holding someone's recorded life. |
 | `403 access_denied` at sign-in | You are in Testing mode and this account is not a test user. Add it, or publish the consent screen. |
 | Upload succeeds, processing sits at `uploaded` forever | `SYNAP_SERVICE_URL` is unset, so no Cloud Task was enqueued. Re-run step 3. |
-| Processing fails with `Gemini HTTP 400` | Usually a bad or unrestricted-to-wrong-project API key. Check the secret has a version: `gcloud secrets versions list synap-gemini-api-key` |
+| Processing fails with Gemini HTTP 400 | Read the stage and model in the error. Transcription validates language hints and tries bounded option recovery; a persistent 400 needs the provider error and audio/request validation. Check API-key configuration only when the error indicates authentication. Use **Retry processing** to retain the saved audio. |
 | Ask Synap returns nothing but recordings exist | The Firestore vector index is still building. Retrieval falls back to recency meanwhile. Check index status in the Console. |
 
 ## Costs
