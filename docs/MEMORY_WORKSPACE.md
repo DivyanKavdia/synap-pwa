@@ -51,6 +51,9 @@ keep the existing mounted recording cards and cross-page selection rules; the
 Select all checkbox describes that scope to assistive technology.
 
 Header controls share `--header-control-radius` in `compact.css` and a 44px
-height. `touch-event-bridge.js` owns the battery markup, with the percentage
+height. `capture-ui.js` applies the mic's connected state: green when connected,
+and the battery button's neutral surface, border and icon colours otherwise.
+The active recording control retains its red Stop state.
+`touch-event-bridge.js` owns the battery markup, with the percentage
 inside its outline; both telemetry versions use a proportional fill. Battery
 details and disconnected/unavailable states retain their existing behavior.
