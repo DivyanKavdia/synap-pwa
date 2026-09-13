@@ -1654,7 +1654,9 @@
         globalThis.SynapAudioQuality?.clear();
         const saved = currentRecordingId ? await journal.close(currentRecordingId, reason) : null;
         log("Chunk journal sealed", { id: currentRecordingId, reason, stats: saved?.stats });
-        toast(saved?.durationMs ? "Recording saved; processing jobs queued" : "No complete frames received; partial chunks retained");
+        const gaps = globalThis.SynapAudioQuality?.gaps(saved?.stats, saved?.durationMs);
+        toast(gaps ? "Recording saved with " + gaps.label + ". Some audio was not received."
+          : saved?.durationMs ? "Recording saved; processing jobs queued" : "No complete frames received; partial chunks retained", gaps ? "error" : undefined);
         currentRecordingId = null;unsavedAudio = false;
         resetCollector();await renderRecordings();
         ui.queueStatus.textContent = "Ready to process";
@@ -2704,7 +2706,9 @@
   function recordingRowMeta(recording) {
     const date = new Date(recording.createdAt);
     const label = date.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
-    return label + " · " + date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " · " + formatDuration(recording.durationMs);
+    const gaps = globalThis.SynapAudioQuality?.gaps(recording.stats, recording.durationMs);
+    return label + " · " + date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " · " + formatDuration(recording.durationMs)
+      + (gaps ? " · Audio incomplete: " + gaps.label : "");
   }
 
   function resetLibrarySearch() {
@@ -2892,6 +2896,13 @@
     });
 
     card.appendChild(audio);
+    const gaps = globalThis.SynapAudioQuality?.gaps(recording.stats, recording.durationMs);
+    if (gaps) {
+      const notice = document.createElement("p");
+      notice.className = "recording-audio-gap";
+      notice.textContent = "Audio incomplete: " + gaps.label + ". The silent gaps contain no received audio; transcription and enhancement cannot restore missing speech.";
+      card.appendChild(notice);
+    }
     card.appendChild(actions);
     globalThis.SynapSpeechUI?.attach(card, audio,
       () => recording.blob || journal.blob(recording), () => recording.name);

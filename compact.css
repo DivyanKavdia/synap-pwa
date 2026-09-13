@@ -1,4 +1,5 @@
 /* Synap refresh: final presentation layer. Live UI stays mounted; legacy modules own behavior. */
+.recording-audio-gap{margin:8px 0;padding:8px 10px;border-left:3px solid var(--amber);border-radius:4px;background:var(--amber-soft);color:var(--amber);font-size:12px;line-height:1.5;}
 :root{
  --bg:#f4f7f5;--surface:#ffffff;--surface-2:#eaf0ed;--chrome:#f4f7f5f5;
  --ink:#183c34;--text:var(--ink);--muted:#586b63;--faint:var(--muted);--border:#dce6e0;--control-border:#72877b;

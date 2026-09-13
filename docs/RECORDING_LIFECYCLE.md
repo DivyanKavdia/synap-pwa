@@ -19,6 +19,20 @@ positions as silence. `rolling-transcription.js` closes completed 30-second
 processing windows and wakes `SynapProcessingQueue` without replacing its class.
 These windows are not separate user recordings.
 
+Rolling compaction requires all 600 frames. A window with absent or incomplete
+frames stays in the packet journal so late recovery packets can fill it; moving
+into the next window is not proof the earlier window is complete. Late packets
+recheck their own window without moving the live window cursor backwards.
+Compaction deletes only complete frames represented by its PCM snapshot and
+retains partial evidence. Stop is the boundary that seals remaining gaps.
+
+If a take contains audio, entirely missing windows also receive upload jobs so
+the backend sees every timeline segment at finalization. Its digital-silence
+check avoids sending those windows to Gemini. Empty captures keep their partial
+packets without queuing processing. Saved recordings show the missing duration
+and percentage in the Library and beside playback; their silent placeholders
+preserve timestamps but contain no recoverable speech.
+
 Stop ends microphone capture, drains eligible audio and seals the same journal.
 Stop intent survives a transport interruption; reconnect must not issue another
 START for a take that is stopping. Notification controls use the same recording
@@ -70,8 +84,12 @@ target/build, reset reason and capture/notification-drop counters. An origin of
 `browser-or-peripheral` means the app did not request the disconnect; it does not
 identify the radio termination reason.
 
-`npm run test:browser -- controls connection recording-notifications` exercises
+`npm run test:browser -- audio-storage controls connection recording-notifications` exercises
 real page/worker/storage behavior with a simulated pendant. Physical device
 testing is still needed for RF loss, battery/power behavior, OS notifications,
 long capture and OTA. Firmware's S3/C3 gestures differ; the current mapping is
 linked from the project README.
+
+The audio-storage suite uses generated PCM and real IndexedDB to reproduce a
+gap across a 30-second boundary, replay missing frames, verify every exported
+sample, and check the unrecovered-gap warning and silent-window upload jobs.

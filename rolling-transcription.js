@@ -62,6 +62,10 @@
     };
     function sealWindow(store, recordingId, index) {
       if (!Number.isInteger(index) || index < 0) return;
+      const key = recordingId + ':' + index;
+      store.__synapRollingPending = store.__synapRollingPending || new Set();
+      if (store.__synapRollingPending.has(key)) return;
+      store.__synapRollingPending.add(key);
       store.__synapRollingSeal = (store.__synapRollingSeal || Promise.resolve())
         .then(async () => {
           await store.flush();
@@ -79,8 +83,10 @@
             startSequence: start,
             endSequence: end,
           });
-          if (!data.completeFrames) return;
-          await store.compactSegment(recordingId, index, data);
+          // Crossing a window boundary does not prove all earlier audio was
+          // received. Keep its packets until recovery fills it or Stop seals it.
+          if (data.completeFrames !== WINDOW_FRAMES || data.missing || data.incomplete) return;
+          if (await store.compactSegment(recordingId, index, data) === false) return;
           root.dispatchEvent(
             new CustomEvent('synap-transcription-window-ready', {
               detail: {
@@ -97,7 +103,8 @@
           try {
             store.onError(error);
           } catch (_) {}
-        });
+        })
+        .finally(() => store.__synapRollingPending.delete(key));
     }
     Store.prototype.append = function (recordingId, packet) {
       originalAppend.call(this, recordingId, packet);
@@ -105,7 +112,12 @@
       this.__synapRollingIndex = this.__synapRollingIndex || new Map();
       const previous = this.__synapRollingIndex.get(recordingId);
       if (Number.isInteger(previous) && index > previous) sealWindow(this, recordingId, previous);
-      this.__synapRollingIndex.set(recordingId, index);
+      // Recovered packets may go backwards in time. They can finish an older
+      // window without moving the live window cursor backwards.
+      if (Number.isInteger(previous) && index < previous && packet.chunk === packet.total - 1) {
+        sealWindow(this, recordingId, index);
+      }
+      this.__synapRollingIndex.set(recordingId, Math.max(previous ?? index, index));
     };
     Store.prototype.close = async function (recordingId, reason) {
       await (this.__synapRollingSeal || Promise.resolve());

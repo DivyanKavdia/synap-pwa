@@ -92,6 +92,7 @@
       incomplete,
       missing,
       completeFrames: complete.size,
+      completeSequences: [...complete.keys()],
       packets: packets.length,
       frameGroups: groups.size,
       firstSequence,
@@ -411,8 +412,12 @@
         };
       });
     }
-    async compactSegment(recordingId, index, data) {
+    async compactSegment(recordingId, index, data, { final = false, hasAudio = data.completeFrames > 0 } = {}) {
+      // Until Stop, missing frames may still arrive from pendant recovery.
+      // A PCM snapshot must not permanently replace those recoverable holes.
+      if (!final && (data.missing || data.incomplete)) return false;
       const pcmBlob = new Blob(data.frames, { type: 'application/octet-stream' });
+      const consumed = new Set(data.completeSequences || []);
       await this.atomic(['segments', 'packets', 'jobs'], (s) => {
         const req = s.segments.get([recordingId, index]);
         req.onsuccess = () => {
@@ -434,11 +439,13 @@
         const cursor = s.packets.index('segment').openCursor(this.keys.only([recordingId, index]));
         cursor.onsuccess = () => {
           if (cursor.result) {
-            cursor.result.delete();
+            // Keep incomplete frames and packets that arrived after the
+            // snapshot. They are not represented in the compacted PCM.
+            if (consumed.has(cursor.result.value.sequence)) cursor.result.delete();
             cursor.result.continue();
           }
         };
-        if (data.completeFrames)
+        if (hasAudio && data.frames.length)
           for (const kind of ['transcribe', 'summarize']) {
             enqueueJob(s.jobs, {
               recordingId,
@@ -451,6 +458,7 @@
             });
           }
       });
+      return true;
     }
     async close(recordingId, reason = 'normal') {
       await this.flush();
@@ -463,12 +471,14 @@
         raw = new Map();
       let lastSequence = -1,
         packets = 0,
-        incomplete = 0;
+        incomplete = 0,
+        capturedFrames = 0;
       for (const segment of segments) {
         if (segment.pcmBlob) {
           lastSequence = Math.max(lastSequence, segment.lastSequence ?? -1);
           packets += segment.packets || 0;
           incomplete += segment.incomplete || 0;
+          capturedFrames += segment.frameCount || 0;
           continue;
         }
         const list = await this.all('packets', 'segment', [recordingId, segment.index]);
@@ -477,6 +487,7 @@
         lastSequence = Math.max(lastSequence, scan.lastSequence);
         packets += scan.packets;
         incomplete += scan.incomplete;
+        capturedFrames += scan.completeFrames;
       }
       let complete = 0,
         missing = 0,
@@ -501,7 +512,9 @@
           complete += data.completeFrames;
           missing += data.missing;
           timelineFrames += data.frames.length;
-          await this.compactSegment(recordingId, index, data);
+          // Entirely missing windows still need an upload job so finalization
+          // sees every timeline segment. Purely empty captures stay unqueued.
+          await this.compactSegment(recordingId, index, data, { final: true, hasAudio: capturedFrames > 0 });
         }
       }
       await this.atomic(['recordings', 'jobs'], (s) => {
