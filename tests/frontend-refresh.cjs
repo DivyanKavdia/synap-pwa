@@ -18,7 +18,7 @@ test('connection help stays available in Settings and controller nodes stay moun
   assert.match(html,/<div id="capture" hidden>/);
   assert.doesNotMatch(html,/<section id="capture"/);
   assert.match(html,/<strong>Double tap<\/strong>Record on \/ off/);
-  assert.match(html,/<strong>Triple tap<\/strong>Sleep \/ wake/);
+  assert.match(html,/<strong>Hold 4 seconds<\/strong>Release to sleep \/ wake/);
   assert.match(html,/Keep this app open while listening/);
 });
 
@@ -33,7 +33,7 @@ test('desktop navigation accounts for side rail and keyboard focus', () => {
 test('fresh and cached shells share the refresh generation without changing BLE compatibility', () => {
   const sw=read('sw.js');
   const revision=sw.match(/const CACHE_REVISION='([^']+)'/)[1];
-  assert.equal(revision,'1.0.0-shell83-recording-core');
+  assert.equal(revision,'1.0.0-shell84-shared-touch');
   assert(read('enhancements.js').includes(`SHELL_REVISION='${revision}'`));
   assert.match(sw,/CLIENT_REVISION='1\.0\.0-audio2'/);
   assert.match(sw,/'\.\/compact\.css'/);

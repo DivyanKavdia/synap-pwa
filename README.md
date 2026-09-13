@@ -20,25 +20,25 @@ With a compatible pendant, the same open app page can recover buffered audio aft
 
 ## Pendant interaction
 
-The primary ESP32-S3 pendant uses the following touch model:
+Current ESP32-S3 and ESP32-C3 firmware share the same touch model:
 
-| State                          | Gesture         | Action                                         |
-| ------------------------------ | --------------- | ---------------------------------------------- |
-| Connected idle                 | Double tap      | Start recording                                |
-| Recording                      | Double tap      | Stop recording and enter BLE standby           |
-| Idle, recording or BLE standby | Triple tap      | Enter deep sleep; active recording stops first |
-| BLE standby                    | Double tap      | Wake and start recording                       |
-| Deep sleep                     | Triple tap      | Wake and continue normal boot                  |
-| Deep sleep                     | One or two taps | Return to deep sleep without starting BLE      |
+| State | Gesture | Action |
+| --- | --- | --- |
+| Connected idle or BLE standby | Double tap | Start recording immediately on the second valid tap |
+| Recording | Double tap | Stop recording and enter BLE standby |
+| Idle, recording or BLE standby | Hold 4 seconds, then release | Enter deep sleep; active recording stops first |
+| Deep sleep | Hold through 4-second boot validation, then release | Wake and continue normal boot |
+| Awake | Single tap | No action |
+| Deep sleep | Short touch | Return to deep sleep without starting BLE |
 
-Current ESP32-C3 firmware uses double tap for recording and a four-second hold,
-then release, for sleep/wake. Its gesture timing differs from S3. Check the
-[firmware target guide](https://github.com/DivyanKavdia/synap-firmware/blob/346b819caf89d3ed3ac2d401dce939237f9c5390/README.md)
-for the connected board and build.
+Wake validation starts after firmware boots, so allow a little extra time before
+releasing. Wake alone does not start recording. Older S3 firmware uses triple tap
+for sleep/wake; install the current firmware to use the shared gestures. The
+[firmware target guide](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/HARDWARE_PINOUT.md)
+contains wiring and timing details for both boards.
 
-On S3, double-tap Start/Stop is confirmed after a short wait for a possible third tap. This reserves triple tap as the power gesture in both directions.
-
-The first touch electrically wakes the pendant from deep sleep, but BLE stays off until the complete triple-tap sequence is validated. For compatible firmware, the PWA also places an idle connected pendant into BLE standby after about 30 seconds.
+For compatible firmware, the PWA also places an idle connected pendant into BLE
+standby after about 30 seconds.
 
 ## BLE service
 
