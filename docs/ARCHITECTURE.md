@@ -53,6 +53,13 @@ The service worker uses network-first code with an offline shell fallback. Cache
 generation and script URLs must advance together. Normal updates preserve
 IndexedDB. Reload is gated while recording, saving or updating firmware.
 
+Pendant diagnostics in `enhancements.js` accept the legacy 32-byte v1 packet and
+48-byte v2 packet. V2 adds the retained disconnect reason/count/time and last
+notification error. Reads use the existing GATT queue only while idle. Results
+flow through `app.js`'s bounded log, so Copy and Download preserve the same data
+after later app messages. A rejection count measures failed local notification
+attempts; retries can recover them, so it is separate from lost audio frames.
+
 ## Durable processing
 
 `DKAudioStore` owns database version 3: recordings, packets, segments and jobs.

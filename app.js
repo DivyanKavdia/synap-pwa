@@ -272,6 +272,10 @@
     console.log(line);
   }
 
+  window.addEventListener("synap-pendant-diagnostics", function (event) {
+    log("Pendant diagnostics", event.detail);
+  });
+
   function toast(message, type) {
     const element = document.createElement("div");
     element.className =
