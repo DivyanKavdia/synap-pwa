@@ -89,6 +89,8 @@ The managed backend pipeline is:
 
 Current capabilities include rolling transcription, conservative silence handling, speaker diarization, optional owner voice profile, consented named voices with additional confirmed samples, people confirmation/rename, daily briefs, local search, grounded Ask Synap retrieval and cloud history restore.
 
+Today and Weekly review share one card with source-linked memories in each view. Actions includes an independent timeline, Complete and Reopen. People profiles can be deleted while keeping recordings. See [memory workspace](docs/MEMORY_WORKSPACE.md) and [My actions](docs/MY_ACTIONS.md).
+
 New summaries include topic chapters, grounded reminder suggestions and unanswered questions. Library recording details link those items to their source times. People → Prepare shows recent related conversations, open actions and questions inside My actions. Original recordings are retained during local enhancement, with short-window checks that fall back to the original if the enhanced copy is unsafe. See [meeting features](docs/MEETING_FEATURES.md) for usage and limits.
 
 Local recording data always wins during cloud history restoration. Cloud-restored memories do not claim playable audio when the original audio is no longer available.

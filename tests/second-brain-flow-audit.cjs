@@ -12,8 +12,8 @@ const repair=read('transcript-repair.js');
 
 assert.match(interactions,/SynapBackend/,'People/follow-ups must have a canonical backend path');
 assert.match(interactions,/\.people\?\.\(\)|api\.people\?\.\(\)/,'People must use account-wide canonical identity when signed in');
-assert.match(interactions,/followUps\?\.\('open','all'\)/,'follow-up inbox must load persistent open items, not only the selected day');
-assert.match(interactions,/resolveFollowUp\(id,'done'\)/,'follow-ups must be closable from the inbox');
+assert.match(interactions,/followUps\?\.\('all',\s*'all'\)/,'follow-up inbox must load open and completed items across dates');
+assert.match(interactions,/resolveFollowUp\(item\.id,\s*state\)/,'follow-ups must be closable from the inbox');
 assert.match(interactions,/source\?\.recording_id/,'canonical follow-ups must retain source recording id');
 assert.match(interactions,/source\?\.start_ms/,'canonical follow-ups must retain exact source time');
 assert.match(interactions,/restoreRecording/,'a source absent on this browser must hydrate from cloud before navigation');
@@ -24,8 +24,8 @@ assert.match(provenance,/restoreRecording/,'provenance must hydrate cloud-only s
 assert.match(provenance,/textarea\.readOnly=true|textarea\.readOnly\s*=\s*true/,'evidence transcript opened from a source link must be immutable');
 
 assert.match(productivity,/function weekDays\(/,'weekly review must enumerate the complete week');
-assert.match(productivity,/for\(const d of weekDays\(range\)\)/,'weekly review must hydrate every day in its week');
-assert.match(productivity,/transcript:false/,'weekly count hydration should not download large transcripts unnecessarily');
+assert.match(productivity,/for\s*\(const d of weekDays\(range\)\)/,'weekly review must hydrate every day in its week');
+assert.match(productivity,/transcript:\s*false/,'weekly count hydration should not download large transcripts unnecessarily');
 assert.match(productivity,/data(?:set)?\.recordingId|dataset\.recordingId/,'weekly details must retain source recording ids');
 assert.match(productivity,/dataset\.offsetMs/,'weekly details must retain source timestamps');
 

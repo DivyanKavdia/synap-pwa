@@ -13,7 +13,7 @@ const vm = require('node:vm');
 
 const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'people-confirm-ui.js'), 'utf8');
-assert.match(source,/if\(!button\|\|button\.type==='submit'\)return;event\.preventDefault\(\)/,'Save clicks must reach the native rename form submit event');
+assert.match(source,/if\s*\(!button\s*\|\|\s*button\.type\s*===\s*'submit'\)\s*return;\s*event\.preventDefault\(\)/,'Save clicks must reach the native rename form submit event');
 const backendClient = fs.readFileSync(path.join(root, 'synap-backend.js'), 'utf8');
 const backendIds = fs.readFileSync(path.join(root, 'backend/src/util/ids.ts'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');

@@ -463,6 +463,7 @@
     ask:function(query,scope){return request('/v1/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:query,scope:scope||{}})});},
     dailyBrief:function(day){return request('/v1/days/'+encodeURIComponent(day)+'/brief');},
     people:function(){return request('/v1/people');},
+    deletePerson:function(personId){var id=String(personId||'');if(!id)return Promise.reject(permanent('Person id is required.'));return request('/v1/people/'+encodeURIComponent(id),{method:'DELETE'});},
     retryRecording:function(recordingId){var id=String(recordingId||'');if(!id)return Promise.reject(permanent('Recording id is required.'));return request('/v1/recordings/'+encodeURIComponent(id)+'/retry',{method:'POST',headers:{'Idempotency-Key':userRetryKey(id)}});},
     deleteRecording:function(recordingId){var id=String(recordingId||'');if(!id)return Promise.reject(permanent('Recording id is required.'));return request('/v1/recordings/'+encodeURIComponent(id),{method:'DELETE'}).catch(function(error){if(error.status!==404)throw error;});},
     recordings:function(options){var opts=options||{},query=[];if(opts.day)query.push('day='+encodeURIComponent(opts.day));if(opts.limit)query.push('limit='+encodeURIComponent(opts.limit));if(opts.transcript)query.push('include_transcript=true');return request('/v1/recordings'+(query.length?'?'+query.join('&'):''));},

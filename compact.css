@@ -926,3 +926,235 @@ body.synap-refresh #recordingSessionBar #timer{display:block!important;font-size
  body.synap-refresh .topbar>.top-actions{width:auto;min-width:0}
  body.synap-refresh #recordingSessionBar{grid-column:1/-1}
 }
+
+/* One memory card, two periods. Day and week retain their original source nodes. */
+body.synap-refresh #memoryWorkspace {
+  margin: 0 0 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  overflow: clip;
+}
+.synap-refresh .memory-workspace-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.synap-refresh .memory-workspace-tabs button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.synap-refresh .memory-workspace-tabs button[aria-selected='true'] {
+  background: var(--accent-soft, rgba(90, 160, 130, 0.16));
+  color: var(--ink);
+}
+.synap-refresh #memoryWorkspace > [role='tabpanel'] {
+  padding: 14px;
+}
+.synap-refresh #memoryWorkspace > [role='tabpanel'][hidden] {
+  display: none !important;
+}
+.synap-refresh #memoryWorkspace #today {
+  padding: 0;
+  margin: 0;
+}
+.synap-refresh #memoryWorkspace #insights {
+  padding: 0;
+  margin: 16px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.synap-refresh #memoryWorkspace #insights[data-empty='true'] {
+  display: none !important;
+}
+.synap-refresh #memoryWorkspace #insights > .section-heading {
+  margin: 0 0 10px;
+  padding: 0;
+  min-height: 0;
+}
+.synap-refresh #memoryWorkspace #insights h2 {
+  font-size: 16px !important;
+}
+.synap-refresh #memoryWorkspace #dayConversations {
+  margin-top: 12px;
+}
+.synap-refresh #memoryWorkspace .insights-list {
+  gap: 10px;
+}
+.synap-refresh #memoryWorkspace #synapWeeklyReview {
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.synap-refresh .memory-week-navigation {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.synap-refresh .memory-week-navigation > span {
+  flex: 1;
+  text-align: center;
+  font-weight: 650;
+  font-size: 14px;
+}
+.synap-refresh .memory-week-navigation button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.synap-refresh .memory-week-navigation button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.synap-refresh .memory-week-navigation svg {
+  height: 18px;
+  width: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+.synap-refresh #currentMemoryWeek {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.synap-refresh #memoryWorkspace .synap-weekly-copy {
+  font-size: 13px;
+  line-height: 1.55;
+}
+.synap-refresh #memoryWorkspace .synap-week-source {
+  position: relative;
+  grid-template-columns: 52px minmax(0, 1fr);
+  border-width: 0 0 0 2px;
+  border-radius: 0 10px 10px 0;
+  padding: 10px;
+}
+.synap-refresh #memoryWorkspace .synap-week-source strong {
+  font-size: 13px;
+  line-height: 1.4;
+}
+.synap-refresh #memoryWorkspace .synap-week-source small {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.synap-refresh #memoryWorkspace .synap-week-source time {
+  font-size: 11px;
+  padding-top: 2px;
+}
+.synap-refresh .memory-timeline-day {
+  margin: 14px 0 2px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.synap-refresh #memoryWorkspace .synap-week-metric {
+  min-height: 36px;
+  font-size: 11px;
+}
+.synap-refresh #memoryWorkspace .synap-weekly-actions {
+  justify-content: flex-start;
+  margin-top: 14px;
+}
+
+/* Filters live outside the existing Actions scroller so they remain within reach. */
+.synap-refresh #myActions .action-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px 0;
+}
+.synap-refresh #myActions .action-filters[hidden] {
+  display: none;
+}
+.synap-refresh #myActions .action-filters label {
+  display: flex;
+  flex: 1;
+  min-width: 100px;
+  gap: 4px;
+  flex-direction: column;
+  font-size: 11px;
+  color: var(--muted);
+}
+.synap-refresh #myActions .action-filters select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+}
+.synap-refresh #actionsDay,
+.synap-refresh #actionUpdateStatus {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.synap-refresh #actionUpdateStatus {
+  color: var(--ink);
+}
+.synap-refresh #myActions .synap-follow-done {
+  min-height: 44px;
+  min-width: 64px;
+  font-size: 11px;
+}
+.synap-refresh #myActions .synap-follow-row[data-state='done'] strong {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.synap-refresh #myActions .person-verify button {
+  min-height: 40px;
+  padding: 6px 10px;
+}
+.synap-refresh #myActions .person-delete-copy {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.synap-refresh #myActions .person-verify [data-action='delete-confirm'] {
+  color: var(--danger, #b34c4c);
+  opacity: 1;
+}
+@media (min-width: 1000px) {
+  .synap-refresh #memoryWorkspace > [role='tabpanel'] {
+    padding: 20px;
+  }
+}
+
+.synap-refresh .memory-week-exports {
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  padding-top: 4px;
+}
+.synap-refresh .memory-week-exports > summary {
+  padding: 12px 0;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}

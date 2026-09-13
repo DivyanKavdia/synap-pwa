@@ -163,6 +163,8 @@ export interface FollowUpDoc {
   startMs: number;
   createdAt: string;
   updatedAt: string;
+  /** Original recording time; absent on older tasks. */
+  recordedAt?: string;
 }
 
 export interface DayDoc {

@@ -7,34 +7,36 @@ questions using retrieved evidence. Firmware is a separate repository.
 
 ## Find the owner
 
-| Responsibility                                                       | Source                                                  |
-| -------------------------------------------------------------------- | ------------------------------------------------------- |
-| Startup graph and offline shell                                      | `index.html`, `sw.js`                                   |
-| BLE connection, serialized GATT, recording state, library controller | `app.js`                                                |
-| Audio transport decoding                                             | `audio-codec-v3.js`                                     |
-| IndexedDB journal, recovery, segments and job persistence            | `audio-store.js`                                        |
-| Processing locks, dispatch, concurrency, pause and retry             | `processing-queue.js`                                   |
-| Closing 30-second processing windows during a take                   | `rolling-transcription.js`                              |
-| Same-take sequence continuity                                        | `capture-stability.js`                                  |
-| Adopting hardware-started recording                                  | `recording-bridge.js`                                   |
-| Intentional sleep/reconnect preference                               | `sleep-state-guard.js`                                  |
-| Battery popover and idle standby control                             | `battery-popover-fix.js`                                |
-| Session-bound recording notifications                                | `recording-notifications.js`, `sw.js`                   |
-| Google session, refresh and authenticated requests                   | `google-auth.js`                                        |
-| Cloud provider and memory/people/follow-up API client                | `synap-backend.js`                                      |
-| Provider preferences and legacy direct OpenAI processing             | `ai-providers.js`                                       |
-| Stalled cloud status recovery                                        | `processing-recovery.js`                                |
-| Cloud history hydration and targeted restore                         | `cloud-history.js`, `experience-recovery.js`            |
-| Legacy memory rebuild UI                                             | `transcript-repair.js`                                  |
-| Deduplicated completion notification                                 | `memory-ready-events.js`                                |
-| Navigation and mounted panels                                        | `dashboard-ui.js`, `my-actions.js`, `compact-layout.js` |
-| Memory cards, merges and source-linked viewing                       | `memory-tools.js`, `provenance-links.js`                |
-| Day, people and action presentation                                  | `brain-ui.js`, `productivity-tools.js`                  |
-| Managed HTTP routes                                                  | `backend/src/http/app.ts`, `backend/src/http/routes/`   |
-| Managed processing orchestration                                     | `backend/src/pipeline/process.ts`                       |
-| Encryption and durable cloud storage                                 | `backend/src/crypto/`, `backend/src/store/`             |
-| Acoustic embeddings                                                  | `speaker-service/app.py`                                |
-| Deployment configuration                                             | `.github/workflows/`, `infra/terraform/`                |
+| Responsibility                                                       | Source                                                                         |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Startup graph and offline shell                                      | `index.html`, `sw.js`                                                          |
+| BLE connection, serialized GATT, recording state, library controller | `app.js`                                                                       |
+| Audio transport decoding                                             | `audio-codec-v3.js`                                                            |
+| IndexedDB journal, recovery, segments and job persistence            | `audio-store.js`                                                               |
+| Processing locks, dispatch, concurrency, pause and retry             | `processing-queue.js`                                                          |
+| Closing 30-second processing windows during a take                   | `rolling-transcription.js`                                                     |
+| Same-take sequence continuity                                        | `capture-stability.js`                                                         |
+| Adopting hardware-started recording                                  | `recording-bridge.js`                                                          |
+| Intentional sleep/reconnect preference                               | `sleep-state-guard.js`                                                         |
+| Battery popover and idle standby control                             | `battery-popover-fix.js`                                                       |
+| Session-bound recording notifications                                | `recording-notifications.js`, `sw.js`                                          |
+| Google session, refresh and authenticated requests                   | `google-auth.js`                                                               |
+| Cloud provider and memory/people/follow-up API client                | `synap-backend.js`                                                             |
+| Provider preferences and legacy direct OpenAI processing             | `ai-providers.js`                                                              |
+| Stalled cloud status recovery                                        | `processing-recovery.js`                                                       |
+| Cloud history hydration and targeted restore                         | `cloud-history.js`, `experience-recovery.js`                                   |
+| Legacy memory rebuild UI                                             | `transcript-repair.js`                                                         |
+| Deduplicated completion notification                                 | `memory-ready-events.js`                                                       |
+| Navigation and mounted panels                                        | `dashboard-ui.js`, `memory-workspace.js`, `my-actions.js`, `compact-layout.js` |
+| Memory cards, merges and source-linked viewing                       | `memory-tools.js`, `provenance-links.js`                                       |
+| Day summaries and weekly memory timeline                             | `brain-ui.js`, `productivity-tools.js`                                         |
+| Action timelines and completion                                      | `interaction-surfaces.js`, `action-state.js`                                   |
+| People identity and deletion                                         | `interaction-surfaces.js`, `people-confirm-ui.js`                              |
+| Managed HTTP routes                                                  | `backend/src/http/app.ts`, `backend/src/http/routes/`                          |
+| Managed processing orchestration                                     | `backend/src/pipeline/process.ts`                                              |
+| Encryption and durable cloud storage                                 | `backend/src/crypto/`, `backend/src/store/`                                    |
+| Acoustic embeddings                                                  | `speaker-service/app.py`                                                       |
+| Deployment configuration                                             | `.github/workflows/`, `infra/terraform/`                                       |
 
 The names of some older UI modules describe the repair that introduced them.
 Consult this table before creating a second owner for the same responsibility.

@@ -140,14 +140,16 @@ async function installApi(page) {
           {
             id: 'follow-1',
             task: 'Review the prototype',
+            state: qa.followState || 'open',
             owner: { type: 'self', display_name: 'You' },
             source: { recording_id: 'journey-0', start_ms: 0 },
           },
         ],
       }),
-      resolveFollowUp: async () => {
+      resolveFollowUp: async (id, state) => {
         if (qa.followFailure) throw new Error('Could not save follow-up. Please retry.');
-        return {};
+        qa.followState = state;
+        return { id, state };
       },
     };
   });
@@ -226,7 +228,10 @@ async function run() {
         }),
         'memory title and actions do not overlap on narrow screens',
       );
-      assert(await page.locator('#insightsBody').evaluate((n) => n.hidden), 'initially collapsed');
+      assert(
+        await page.locator('#memoryDayPanel #insights').isVisible(),
+        'memories belong to the active day view',
+      );
       await page.locator('#synapMergeMemories').click();
       assert(
         await page.locator('.synap-merge-toolbar').isVisible(),
@@ -400,19 +405,21 @@ async function run() {
         SynapCompactLayout.reveal('followupInbox');
         qa.followFailure = true;
       });
-      await page.locator('.synap-follow-done').click();
+      await page.locator('#followupList [data-followup-id="follow-1"]').click();
       await page.waitForFunction(() =>
-        document.querySelector('#followupError')?.textContent.includes('Could not save follow-up'),
+        document
+          .querySelector('#actionUpdateStatus')
+          ?.textContent.includes('Could not save follow-up'),
       );
-      assert(await page.locator('#followupError').isVisible());
+      assert(await page.locator('#actionUpdateStatus').isVisible());
       await page.evaluate(() => {
         qa.followFailure = false;
       });
-      await page.locator('.synap-follow-done').click();
+      await page.locator('#followupList [data-followup-id="follow-1"]').click();
       await page.waitForFunction(
-        () => document.querySelectorAll('.synap-follow-done').length === 0,
+        () => document.querySelectorAll('#followupList [data-followup-id="follow-1"]').length === 0,
       );
-      assert.equal(await page.locator('#followupCount').innerText(), '0');
+      assert.equal(await page.locator('#followupCount').innerText(), '5');
 
       // Leaving a day during an in-flight merge must not insert its result on the new day.
       await page.locator('.brain-tabs a[href="#insights"]').click();

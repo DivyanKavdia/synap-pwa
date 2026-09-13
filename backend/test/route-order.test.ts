@@ -83,6 +83,7 @@ const protectedRoutes = [
   ['GET', '/v1/people'],
   ['GET', '/v1/people/person/preparation'],
   ['PATCH', '/v1/people/person'],
+  ['DELETE', '/v1/people/person'],
   ['GET', '/v1/follow-ups'],
   ['PATCH', '/v1/follow-ups/item'],
   ['GET', '/v1/memory-merges'],

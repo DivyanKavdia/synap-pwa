@@ -182,6 +182,17 @@ export function brainRoutes(): Router {
     }),
   );
 
+  router.delete(
+    '/people/:personId',
+    requireAuth(),
+    handler<AuthedRequest>(async (req, res) => {
+      const personId = String(req.params.personId);
+      // Removing a profile does not remove its conversations or recordings.
+      await db.deletePerson(req.uid, personId);
+      res.status(200).json({ person_id: personId, deleted: true });
+    }),
+  );
+
   // -------------------------------------------------------------------------
   // Follow-up inbox
   // -------------------------------------------------------------------------
@@ -215,6 +226,7 @@ export function brainRoutes(): Router {
               recording_id: item.recordingId,
               conversation_id: item.conversationId,
               start_ms: item.startMs,
+              recorded_at: item.recordedAt || null,
             },
           };
         }),
@@ -229,10 +241,11 @@ export function brainRoutes(): Router {
       const body = patchFollowUpBody.safeParse(req.body);
       if (!body.success) throw new HttpError(400, 'bad_request', 'Invalid follow-up patch');
       const followUpId = String(req.params.followUpId);
-      await db.patchFollowUp(req.uid, followUpId, {
+      const updated = await db.patchFollowUp(req.uid, followUpId, {
         ...(body.data.state ? { state: body.data.state } : {}),
         ...(body.data.due_date !== undefined ? { dueDate: body.data.due_date } : {}),
       });
+      if (!updated) throw new HttpError(404, 'not_found', 'Unknown follow-up');
       res.status(200).json({ id: followUpId, ...body.data });
     }),
   );

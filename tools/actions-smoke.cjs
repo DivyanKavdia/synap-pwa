@@ -76,7 +76,7 @@ async function run() {
           assert(await page.locator('#' + id).isVisible());
           assert.equal(await page.locator('#myActions [data-actions-panel]:visible').count(), 1);
           const card = await page.locator('#myActions').boundingBox();
-          for (const key of ['x', 'y', 'width', 'height'])
+          for (const key of ['x', 'width'])
             assert(
               Math.abs(card[key] - initial[key]) < 1,
               'switching stays in the same card: ' + key,
@@ -84,7 +84,14 @@ async function run() {
           const content = await page.locator('#myActionsContent').boundingBox(),
             strip = await page.locator('.actions-tabs').boundingBox();
           assert(
-            Math.abs(strip.y + strip.height - content.y) < 1,
+            Math.abs(
+              strip.y +
+                strip.height +
+                ((await page.locator('#actionFilters').isVisible())
+                  ? (await page.locator('#actionFilters').boundingBox()).height
+                  : 0) -
+                content.y,
+            ) < 1,
             'tabs are attached to their content area',
           );
           assert.equal(
@@ -152,8 +159,10 @@ async function run() {
           picker.value = '2026-09-07';
           picker.dispatchEvent(new Event('change', { bubbles: true }));
         });
-        await page.waitForFunction(() =>
-          document.getElementById('actionsDay').textContent.includes('Sep 7'),
+        assert.equal(
+          await page.locator('#actionsTimeline').inputValue(),
+          'all',
+          'memory date changes do not alter the Actions timeline',
         );
         assert(
           await page.locator('#focusDecisionsPanel').isVisible(),

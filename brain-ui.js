@@ -554,12 +554,15 @@
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
       d = derive(list);
     renderBrief(list);
-    if ($('#decisionCount')) $('#decisionCount').textContent = d.decisions.length;
-    if ($('#commitmentCount')) $('#commitmentCount').textContent = d.my.length;
-    if ($('#waitingCount')) $('#waitingCount').textContent = d.waiting.length;
-    if ($('#decisionList')) $('#decisionList').innerHTML = rows(d.decisions, 'decision');
-    if ($('#commitmentList')) $('#commitmentList').innerHTML = rows(d.my, 'mine');
-    if ($('#waitingList')) $('#waitingList').innerHTML = rows(d.waiting, 'waiting');
+    // The Actions workspace owns its independent date range and completion state.
+    if (!root.SynapInteractionSurfaces) {
+      if ($('#decisionCount')) $('#decisionCount').textContent = d.decisions.length;
+      if ($('#commitmentCount')) $('#commitmentCount').textContent = d.my.length;
+      if ($('#waitingCount')) $('#waitingCount').textContent = d.waiting.length;
+      if ($('#decisionList')) $('#decisionList').innerHTML = rows(d.decisions, 'decision');
+      if ($('#commitmentList')) $('#commitmentList').innerHTML = rows(d.my, 'mine');
+      if ($('#waitingList')) $('#waitingList').innerHTML = rows(d.waiting, 'waiting');
+    }
     if ($('#conversationCount')) $('#conversationCount').textContent = d.conversations.length;
     renderConversations(d.conversations);
     const bits = [];

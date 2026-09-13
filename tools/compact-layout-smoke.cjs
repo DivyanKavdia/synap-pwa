@@ -119,7 +119,7 @@ async function run() {
       measurements.push({ width, height });
       await page.screenshot({ path: path.join(out, 'overview-' + width + '.png'), fullPage: true });
       if (!baseline) {
-        for (const id of ['insights', 'library', 'synapWeeklyReview'])
+        for (const id of ['library', 'dayConversations'])
           assert.equal(
             await page.locator('#' + id + ' .tile-toggle').getAttribute('aria-expanded'),
             'false',
@@ -132,6 +132,9 @@ async function run() {
         assert(!(await page.locator('#myActionsBody').isVisible()));
         await page.keyboard.press('Space');
         assert(await page.locator('#myActionsBody').isVisible());
+        assert(await page.locator('#memoryDayPanel #insights').isVisible());
+        assert(!(await page.locator('#memoryWeekPanel').isVisible()));
+        await page.evaluate(() => SynapCompactLayout.reveal('dayConversations'));
         await page.locator('.conversation-card').first().click();
         assert(await page.locator('.conversation-source').first().isVisible());
         await page.locator('.conversation-source').first().click();
