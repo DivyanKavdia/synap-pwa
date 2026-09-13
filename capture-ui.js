@@ -75,13 +75,25 @@
       toggle.type='button';
       toggle.setAttribute('aria-label','Start listening');
       toggle.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4m-4 0h8"/></svg><span class="header-stop" aria-hidden="true"></span>';
-      toggle.addEventListener('click',()=>window.SynapAppControls?.toggleCapture());
+      toggle.addEventListener('click',()=>{
+        if(window.SynapDesktopCapture?.state()?.active){
+          window.SynapDesktopCapture.stop('header-stop').catch(error=>{feedback.textContent=error.message||'Could not save. Retry saving.'});
+        }else window.SynapAppControls?.toggleCapture();
+      });
     }
 
     // Keep order deterministic across hot reloads and cached installs.
     if(status.parentNode!==actions)actions.prepend(status);
     if(toggle.parentNode!==actions)actions.insertBefore(toggle,settings);
 
+    let desktopClock=null;
+    function updateDesktopClock(){
+      const desktop=window.SynapDesktopCapture?.state();
+      if(!timer||!desktop?.startedAt)return;
+      const elapsed=Math.max(0,Math.floor(((desktop.stoppedAt||Date.now())-desktop.startedAt)/1000));
+      const hours=Math.floor(elapsed/3600),minutes=Math.floor(elapsed/60)%60,seconds=elapsed%60;
+      timer.textContent=(hours?String(hours).padStart(2,'0')+':':'')+String(minutes).padStart(2,'0')+':'+String(seconds).padStart(2,'0');
+    }
     function sync(){
       const state=document.body.dataset.state||'disconnected';
       const ready=document.body.dataset.startup==='ready';
@@ -105,6 +117,19 @@
       const action=canStop?(interrupted?'Save received recording':'Stop listening'):!connected?'Connect and start listening':'Start listening';
       toggle.setAttribute('aria-label',action);
       toggle.title=action;
+      const desktop=window.SynapDesktopCapture?.state();
+      if(desktop?.active){
+        const pending=desktop.phase==='starting'||desktop.phase==='saving';
+        const action=desktop.phase==='starting'?'Preparing meeting':desktop.phase==='saving'?'Saving meeting':desktop.phase==='save-failed'?'Retry saving meeting':'Stop and save meeting';
+        toggle.classList.toggle('is-recording',Boolean(desktop.recordingId));
+        toggle.disabled=pending;toggle.setAttribute('aria-label',action);toggle.title=action;
+        sessionBar.hidden=false;mark.hidden=true;
+        feedback.textContent=desktop.phase==='starting'?'Choose meeting audio in the sharing window.':desktop.phase==='saving'?'Saving meeting…':desktop.phase==='save-failed'?'Audio is waiting to be saved. Retry saving.':'Meeting audio + microphone';
+        if(timer)timer.hidden=!desktop.recordingId;
+        updateDesktopClock();
+      }else if(timer)timer.hidden=false;
+      if(desktop?.phase==='recording'&&!desktopClock)desktopClock=setInterval(updateDesktopClock,1000);
+      else if(desktop?.phase!=='recording'&&desktopClock){clearInterval(desktopClock);desktopClock=null}
     }
 
     if(document.documentElement.dataset.synapCaptureUiBound!=='1'){
@@ -113,6 +138,7 @@
       new MutationObserver(sync).observe(connect,{attributes:true,attributeFilter:['disabled']});
       new MutationObserver(sync).observe(start,{attributes:true,attributeFilter:['disabled']});
       new MutationObserver(sync).observe(stop,{attributes:true,attributeFilter:['disabled']});
+      for(const event of ['synap-desktop-capture-started','synap-desktop-capture-stopped','synap-desktop-capture-changed'])window.addEventListener(event,sync);
     }
     sync();
   }

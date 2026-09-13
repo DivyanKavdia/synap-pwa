@@ -15,7 +15,7 @@ Do not describe this release as bug-free or hardware-certified.
 | Processing ownership | A transaction claims each attempt. Stale attempts cannot publish, mark a newer attempt failed, or resurrect a deleted recording. |
 | Retry correctness | Sealed understanding is reused; conversations, people contributions, follow-ups and the ready checkpoint commit together. Existing completed/dismissed tasks survive retries. |
 | Daily summary | Failure to refresh a day leaves the recording ready. A task retry rebuilds the day without rerunning transcription/understanding. |
-| Meeting capture | Ownership begins before permission prompts. Stop keeps the journal until saving succeeds; failed saves can be retried. Media permissions are released promptly. |
+| Meeting capture | Ownership begins before permission prompts. Stop keeps the journal until saving succeeds; failed saves can be retried. Media permissions are released promptly; the main header shows the meeting timer, stop/save control and save-retry state. |
 | Account changes | Local sign-out ends immediately. A delayed revoke or profile response cannot clear/restore a different sign-in session. |
 
 The C3/S3 gesture release remains firmware build **1192**: double-tap to start or

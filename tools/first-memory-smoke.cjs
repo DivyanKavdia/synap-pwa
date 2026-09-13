@@ -92,6 +92,57 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
         );
         assert(await page.locator('#synapAccountFields').isVisible());
         await page.locator('#closeSettingsButton').click();
+        await page.evaluate(() => {
+          window.realDesktopCapture = SynapDesktopCapture;
+          let phase = 'recording';
+          window.setHeaderMeetingPhase = (value) => {
+            phase = value;
+            dispatchEvent(new CustomEvent('synap-desktop-capture-changed'));
+          };
+          window.headerMeetingStops = 0;
+          window.SynapDesktopCapture = {
+            supported: () => true,
+            state: () => ({
+              active: phase !== 'idle',
+              phase,
+              recordingId: 'header-meeting',
+              startedAt: Date.now() - 65000,
+            }),
+            stop: async () => {
+              window.headerMeetingStops++;
+              phase = 'idle';
+              dispatchEvent(new CustomEvent('synap-desktop-capture-stopped'));
+            },
+          };
+          dispatchEvent(new CustomEvent('synap-desktop-capture-started'));
+        });
+        assert.equal(
+          await page.locator('#headerCaptureToggle').getAttribute('aria-label'),
+          'Stop and save meeting',
+        );
+        assert(await page.locator('#recordingSessionBar').isVisible());
+        assert.equal(await page.locator('#timer').innerText(), '01:05');
+        await page
+          .locator('.topbar')
+          .screenshot({ path: path.join(output, `meeting-header-${mode}-${width}.png`) });
+        await page.evaluate(() => setHeaderMeetingPhase('saving'));
+        assert(await page.locator('#headerCaptureToggle').isDisabled());
+        assert.equal(
+          await page.locator('#headerCaptureToggle').getAttribute('aria-label'),
+          'Saving meeting',
+        );
+        await page.evaluate(() => setHeaderMeetingPhase('save-failed'));
+        assert(!(await page.locator('#headerCaptureToggle').isDisabled()));
+        assert.equal(
+          await page.locator('#headerCaptureToggle').getAttribute('aria-label'),
+          'Retry saving meeting',
+        );
+        await page.locator('#headerCaptureToggle').click();
+        assert.equal(await page.evaluate(() => window.headerMeetingStops), 1);
+        await page.evaluate(() => {
+          window.SynapDesktopCapture = window.realDesktopCapture;
+          dispatchEvent(new CustomEvent('synap-desktop-capture-changed'));
+        });
         // Exercise first-save guidance against actual IndexedDB and the app's
         // existing Library rendering; only the explicit cloud action is stubbed.
         await page.evaluate(async () => {
