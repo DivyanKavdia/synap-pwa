@@ -90,7 +90,7 @@
     datePicker: document.getElementById("datePicker"),
     dateStrip: document.getElementById("dateStrip"),
     selectedDateLabel: document.getElementById("selectedDateLabel"),
-    dayLensTitle: document.getElementById("dayLensTitle"),
+    brainDateLine: document.getElementById("brainDateLine"),
     glanceRecordings: document.getElementById("glanceRecordings"),
     glanceDuration: document.getElementById("glanceDuration"),
     insightsList: document.getElementById("insightsList"),
@@ -2477,24 +2477,24 @@
 
   function renderDayLens(recordings) {
     const date = dateFromKey(selectedDayKey);
-    const todayKey = localDateKey(new Date());
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const relative = selectedDayKey === todayKey ? "Today" :
-      selectedDayKey === localDateKey(yesterday) ? "Yesterday" :
-        date.toLocaleDateString([], { weekday: "long" });
     const totalDuration = recordings.reduce(function (sum, recording) {
       return sum + (Number(recording.durationMs) || 0);
     }, 0);
-    ui.dayLensTitle.textContent = relative;
     ui.selectedDateLabel.textContent = date.toLocaleDateString([], {
       day: "numeric", month: "short",
       ...(date.getFullYear() !== new Date().getFullYear() ? {year: "numeric"} : {})
     });
+    const weekday = selectedDayKey === localDateKey(yesterday)
+      ? "Yesterday" : date.toLocaleDateString([], { weekday: "short" });
+    ui.brainDateLine.textContent = weekday + " · " + ui.selectedDateLabel.textContent;
+    ui.brainDateLine.dateTime = selectedDayKey;
     ui.glanceRecordings.textContent = String(recordings.length);
     ui.glanceRecordings.nextElementSibling.textContent = recordings.length === 1 ? "recording" : "recordings";
     ui.glanceDuration.textContent = totalDuration >= 3600000
       ? (totalDuration / 3600000).toFixed(1) + "h"
+      : totalDuration > 0 && totalDuration < 60000 ? "<1m"
       : Math.round(totalDuration / 60000) + "m";
   }
 

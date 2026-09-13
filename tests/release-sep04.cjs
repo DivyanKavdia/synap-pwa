@@ -9,7 +9,7 @@ const product=fs.readFileSync(path.join(root,'product-ui.js'),'utf8');
 const runtime=fs.readFileSync(path.join(root,'runtime-ui.js'),'utf8');
 
 test('compact shell presents the day without redundant identity copy',()=>{
-  assert.match(html,/<h1 id="dayLensTitle">Today<\/h1>/);
+  assert.match(html,/<h1 id="dayLensTitle">My day at a glance<\/h1>/);
   assert.doesNotMatch(html,/<p class="brain-kicker">YOUR SECOND BRAIN<\/p>/);
 });
 

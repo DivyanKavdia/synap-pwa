@@ -70,10 +70,6 @@ body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-syste
 .synap-refresh .day-brief .context-chips button{min-height:44px;background:var(--surface);color:var(--muted);border-color:var(--border)}
 .synap-refresh .day-brief .context-chips button span{color:var(--accent)}
 .synap-refresh .context-chips:empty{display:none}
-.synap-refresh .glance-grid{padding:18px 0;border:1px solid var(--border);border-radius:16px;background:var(--surface);opacity:1}
-.synap-refresh .glance-grid strong{color:var(--ink);font-size:24px!important;font-weight:550;letter-spacing:-1px}
-.synap-refresh .glance-grid span{margin-top:6px;font-size:11px!important;color:var(--muted)}
-.synap-refresh .glance-grid div+div{border-left:1px solid var(--border)}
 .synap-refresh .synap-weekly{margin-top:20px;padding-top:20px;border-color:var(--border)}
 .synap-refresh .synap-weekly-head strong{font-size:14px;font-weight:600}
 .synap-refresh .synap-weekly-head span{color:var(--muted)}
@@ -432,32 +428,24 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
  .synap-refresh :is(button,input,select,.brief-intro){border:1px solid ButtonText!important}
 }
 
-/* Today: one date header, an optional calendar, and a summary sized to its content. */
+/* Day overview: one heading, compact date controls, and source-linked activity. */
 .synap-refresh .brain-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
   margin-bottom: 12px;
 }
-.synap-refresh .brain-heading > div:first-child {
-  min-width: 0;
-}
 .synap-refresh .brain-heading h1 {
-  font-size: clamp(20px, 6vw, 24px) !important;
+  margin: 0;
+  font-size: clamp(20px, 5.5vw, 24px) !important;
   font-weight: 650;
   line-height: 1.2;
   letter-spacing: -0.6px;
 }
-.synap-refresh .brain-heading > div > p:last-child {
-  margin: 3px 0 0;
-  font-size: 12px !important;
-  color: var(--muted);
-}
 .synap-refresh .day-navigation {
-  display: flex;
-  flex-shrink: 0;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  gap: 4px;
   margin: 0;
 }
 .synap-refresh :is(.day-navigation, .calendar-week-navigation) button {
@@ -478,8 +466,12 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
   height: 18px;
 }
 .synap-refresh #toggleDayCalendar {
+  width: auto;
+  gap: 8px;
   border: 1px solid var(--border);
   background: var(--surface);
+  font: inherit;
+  font-size: 12px;
 }
 .synap-refresh #toggleDayCalendar[aria-expanded='true'] {
   background: var(--accent-soft);
@@ -561,28 +553,24 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
   font-weight: 600;
 }
 .synap-refresh .brief-intro {
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--surface);
+  padding: 12px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--ink);
   overflow: hidden;
 }
-.synap-refresh .day-brief-head {
+.synap-refresh .brief-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
-.synap-refresh .day-brief-head h2 {
-  margin: 0;
-  font-size: 14px !important;
-  font-weight: 650;
-  letter-spacing: 0;
-  line-height: 1.4;
+.synap-refresh .brief-next-steps {
+  margin-left: auto;
 }
 .synap-refresh .day-brief-text {
-  margin: 6px 0 0 !important;
+  margin: 0 !important;
   color: var(--ink);
   font-size: 14px !important;
   line-height: 1.55 !important;
@@ -598,7 +586,7 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
   display: block;
   -webkit-line-clamp: unset;
 }
-.synap-refresh :is(.brief-read-more, .brief-last-active) {
+.synap-refresh :is(.brief-read-more, .brief-last-active, .brief-next-steps) {
   min-height: 44px;
   padding: 0;
   border: 0;
@@ -636,32 +624,65 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
   font-size: 12px;
   line-height: 1.5;
 }
-.synap-refresh .brief-intro .glance-grid {
-  display: flex !important;
-  flex-wrap: wrap;
-  gap: 4px 14px !important;
-  margin: 8px 0 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-.synap-refresh .brief-intro .glance-grid > div {
-  display: flex;
-  align-items: baseline;
+.synap-refresh #dayGlanceMetrics {
+  display: grid;
+  grid-template-columns: 1.2fr 1.3fr 1fr;
   gap: 4px;
-  padding: 0 !important;
-  border: 0;
-}
-.synap-refresh .brief-intro .glance-grid strong {
-  font-size: 12px !important;
-  font-weight: 600;
-  letter-spacing: 0;
-  color: var(--muted);
-}
-.synap-refresh .brief-intro .glance-grid span {
   margin: 0;
-  font-size: 12px !important;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent-soft);
+}
+.synap-refresh #dayGlanceMetrics > :is(button, div) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: center;
+}
+.synap-refresh #dayGlanceMetrics button {
+  cursor: pointer;
+}
+.synap-refresh #dayGlanceMetrics button:disabled {
+  cursor: default;
+}
+.synap-refresh #dayGlanceMetrics button:not(:disabled):hover {
+  background: var(--surface);
+}
+.synap-refresh #dayGlanceMetrics strong {
+  display: block;
+  font-size: 22px !important;
+  font-weight: 650;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+.synap-refresh #dayGlanceMetrics span {
+  display: block;
+  margin: 2px 0 0;
+  font-size: 11px !important;
+  line-height: 1.4;
   color: var(--muted);
+}
+.synap-refresh #dayGlanceMetrics small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.synap-refresh #dayGlanceMetrics small :is(b, span) {
+  display: inline;
+  font-weight: 400;
 }
 .synap-refresh .brief-intro.is-empty {
   display: flex;
@@ -671,6 +692,7 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
   gap: 4px 12px;
   min-height: 64px;
   padding: 8px 14px;
+  border-radius: 12px;
   background: var(--surface-2);
 }
 .synap-refresh .brief-intro.is-empty .day-brief-text {
@@ -678,14 +700,14 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
   margin: 0 !important;
   color: var(--muted);
 }
-.synap-refresh .brief-intro.is-empty :is(.day-brief-head, .glance-grid) {
+.synap-refresh .brief-intro.is-empty .brief-actions {
   display: none !important;
 }
 .synap-refresh .brief-intro.is-empty .brief-status {
   flex-basis: 100%;
 }
 .synap-refresh
-  :is(.day-calendar, #jumpToToday, .brief-last-active, #dayConversations, .brief-status)[hidden] {
+  :is(.day-calendar, #jumpToToday, .brief-last-active, #dayConversations, .brief-status, #dayGlanceMetrics)[hidden] {
   display: none !important;
 }
 .synap-refresh :is(.day-navigation,.calendar-week-navigation,.date-strip) button:disabled{opacity:.4;cursor:default}

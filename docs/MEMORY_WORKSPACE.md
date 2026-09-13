@@ -1,8 +1,8 @@
 # Memory workspace
 
 Today and Weekly review are two tabs in one card. Today contains the selected
-day's brief, optional conversation detail, and existing memory cards with their
-summary, transcript, notes and merge controls. Weekly review groups source-linked
+day's “My day at a glance” overview, optional conversation detail, and memory
+cards with their summary, transcript, notes and merge controls. Weekly review groups source-linked
 conversations, decisions and commitments by day. Its week arrows and This week
 shortcut use the same selected date as the day calendar. Week navigation, This
 week and Refresh share one row, with 44px touch targets. This week stays visible
@@ -27,8 +27,18 @@ any conversation disclosure. Weekly review itself no longer needs a second
 expand/collapse control. Library remains the home for original recordings.
 
 The date picker remains the single day-change event for brief, memory, cloud
-history and Library consumers. Actions has its own timeline relative to the
-current date; browsing older memories does not hide tasks due now. See
+history and Library consumers. `app.js` owns the compact date label and captured
+audio totals; `brain-ui.js` derives conversation and decision totals from the
+same selected-day records used for the summary. The overview has one visible
+heading and omits zero totals on empty days. The audio shortcut opens Library's
+Day filter, clearing search and status filters; the conversation shortcut expands its existing detail panel.
+Read more retains the full summary and source links. Your next steps opens
+Actions without resetting its timeline or completion filter.
+
+The overview's styling lives in `compact.css`; older duplicate metric rules in
+the base and theme stylesheets have been removed.
+
+Actions has its own timeline relative to the current date; browsing older memories does not hide tasks due now. See
 [My actions](MY_ACTIONS.md) for state and date rules.
 
 Browser coverage includes day/week keyboard navigation, week/date changes,
