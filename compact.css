@@ -433,21 +433,22 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
 /* Day overview: one heading, compact date controls, and source-linked activity. */
 .synap-refresh .brain-heading {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
   margin-bottom: 12px;
 }
 .synap-refresh .brain-heading h1 {
   margin: 0;
-  font-size: clamp(20px, 5.5vw, 24px) !important;
+  font-size: clamp(17px, 4.6vw, 22px) !important;
   font-weight: 650;
   line-height: 1.2;
   letter-spacing: -0.6px;
 }
 .synap-refresh .day-navigation {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 44px;
-  gap: 4px;
+  grid-template-columns: 44px minmax(52px, max-content) 44px;
+  gap: 2px;
   margin: 0;
 }
 .synap-refresh :is(.day-navigation, .calendar-week-navigation) button {
@@ -469,11 +470,23 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
 }
 .synap-refresh #toggleDayCalendar {
   width: auto;
-  gap: 8px;
+  gap: 4px;
+  padding: 0 6px;
   border: 1px solid var(--border);
   background: var(--surface);
   font: inherit;
   font-size: 12px;
+}
+.synap-refresh #brainDateLine {
+  line-height: 1.2;
+}
+@media (max-width: 480px) {
+  .synap-refresh #toggleDayCalendar svg {
+    display: none;
+  }
+  .synap-refresh #brainDateLine {
+    max-width: 56px;
+  }
 }
 .synap-refresh #toggleDayCalendar[aria-expanded='true'] {
   background: var(--accent-soft);

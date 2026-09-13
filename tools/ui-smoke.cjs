@@ -277,7 +277,7 @@ async function assertDayReading(page, mode, width) {
     () => document.querySelector('#conversationCount').textContent === '10',
   );
   assert.equal(await page.locator('#dayLensTitle').innerText(), 'My day at a glance');
-  assert.match(await page.locator('#brainDateLine').innerText(), /^Yesterday · /);
+  assert.match(await page.locator('#brainDateLine').getAttribute('aria-label'), /^Yesterday · /);
   assert.equal(await page.locator('#glanceConversations').innerText(), '10');
   assert.equal(await page.locator('#dateStrip .date-chip').count(), 7);
   assert.match(
