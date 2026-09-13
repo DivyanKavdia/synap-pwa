@@ -341,3 +341,9 @@ body[data-first-memory='true'] #today > .day-brief {
     padding: 16px;
   }
 }
+
+@media (max-width: 420px) {
+  .first-memory-preview dl > div:last-child {
+    display: none;
+  }
+}

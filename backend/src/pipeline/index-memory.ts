@@ -4,7 +4,7 @@ import { createHmac } from 'node:crypto';
 import { FieldValue } from '@google-cloud/firestore';
 import { openJson, sealJson } from '../crypto/envelope.js';
 import { embedContent } from '../gemini/client.js';
-import { firestore, paths } from '../store/firestore.js';
+import { firestore, patchProcessing, paths } from '../store/firestore.js';
 import type {
   ConversationDoc,
   FollowUpDoc,
@@ -22,8 +22,18 @@ const clean = (text: string | null | undefined) =>
     .replace(/\s+/gu, ' ')
     .trim()
     .toLowerCase();
-const taskKey = (task: { task: string; owner?: string | null; kind?: string }, startMs: number) =>
-  JSON.stringify([clean(task.task), clean(task.owner), task.kind || 'commitment', startMs]);
+const taskKey = (
+  task: { task: string; owner?: string | null; kind?: string },
+  startMs: number,
+  dueDate?: string | null,
+) =>
+  JSON.stringify([
+    clean(task.task),
+    clean(task.owner),
+    task.kind || 'commitment',
+    startMs,
+    dueDate || null,
+  ]);
 export const memoryRevision = (recording: RecordingDoc) =>
   sha256(JSON.stringify(recording.sealedMemory));
 
@@ -46,6 +56,11 @@ export async function indexMemory(
   // vector must never make an otherwise usable memory disappear.
   if (recording.indexedMemoryRevision !== revision)
     for (const [i, conversation] of memory.conversations.entries()) {
+      // Keep long indexes alive between bounded provider calls, and stop a
+      // superseded attempt before it pays for another optional embedding.
+      await patchProcessing(uid, recordingId, lease, {
+        progress: 0.8 + 0.15 * (i / memory.conversations.length),
+      });
       let embedding: number[] | null = null;
       if (process.env.SYNAP_DISABLE_VECTOR_INDEX !== '1') {
         try {
@@ -118,7 +133,7 @@ export async function indexMemory(
       retryable: false,
       processingLease: null,
       indexedMemoryRevision: revision,
-      updatedAt: now,
+      updatedAt: new Date().toISOString(),
     };
     if (current.indexedMemoryRevision === revision) {
       tx.update(ref, ready);
@@ -206,7 +221,7 @@ export async function indexMemory(
         task.sealedTask,
         binding(uid, `followUp/${task.followUpId}`, 'task'),
       );
-      const key = taskKey(content, task.startMs);
+      const key = taskKey(content, task.startMs, task.dueDate);
       const previous = oldByKey.get(key);
       // Reconcile legacy duplicates without reopening completed/dismissed work.
       if (
@@ -245,7 +260,7 @@ export async function indexMemory(
         })),
       ];
       for (const item of items) {
-        const key = taskKey(item, item.startMs);
+        const key = taskKey(item, item.startMs, item.dueDate);
         const existing = oldByKey.get(key);
         const followUpId = existing?.followUpId || id('task', key);
         if (tasks.has(followUpId)) continue;

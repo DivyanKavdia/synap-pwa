@@ -201,7 +201,7 @@
           <p id="sampleSource-46" tabindex="-1"><small>0:46 · Maya</small>I’ll share the feedback checklist.</p>
           <p id="sampleSource-63" tabindex="-1"><small>1:03 · You</small>We haven’t agreed on a start date yet.</p>
         </section>
-        <footer class="sample-footer"><span>Your conversations make this yours.</span><button type="button" id="sampleBack">Back to synap</button></footer>`;
+        <div class="sample-footer"><span>Your conversations make this yours.</span><button type="button" id="sampleBack">Back to synap</button></div>`;
       document.body.appendChild(dialog);
       $('closeSampleMemory').addEventListener('click', () => dialog.close());
       $('sampleBack').addEventListener('click', () => dialog.close());

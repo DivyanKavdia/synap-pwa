@@ -75,7 +75,8 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
         assert.equal(await page.evaluate(() => document.activeElement.id), 'firstMemorySample');
         await page.locator('#firstMemorySample').click();
         assert(!(await page.locator('#sampleTaskDone').isChecked()));
-        await page.locator('#closeSampleMemory').click();
+        assert(await page.locator('#sampleBack').isVisible());
+        await page.locator('#sampleBack').click();
         const count = await page.evaluate(async () => {
           const store = new DKAudioStore();
           return (await store.all('recordings')).length;

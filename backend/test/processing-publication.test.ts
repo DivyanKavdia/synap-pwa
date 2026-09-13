@@ -68,13 +68,11 @@ function database() {
         values = values.sort((a, b) =>
           String(a[1][this.sorting]).localeCompare(String(b[1][this.sorting])),
         );
-      const docs = values
-        .slice(0, this.maximum)
-        .map(([path, row]) => ({
-          id: path.split('/').at(-1)!,
-          ref: new Ref(path),
-          data: () => structuredClone(row),
-        }));
+      const docs = values.slice(0, this.maximum).map(([path, row]) => ({
+        id: path.split('/').at(-1)!,
+        ref: new Ref(path),
+        data: () => structuredClone(row),
+      }));
       return { docs, empty: !docs.length };
     }
     async set(data: Row, options?: { merge?: boolean }) {
@@ -93,6 +91,7 @@ function database() {
     collection: (key: string) => new Ref(key),
     async runTransaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
       const writes: (() => Promise<unknown>)[] = [];
+      let publication = false;
       const tx = {
         get: (ref: Ref) => {
           assert.equal(writes.length, 0, 'transaction reads precede every write');
@@ -100,17 +99,20 @@ function database() {
         },
         set: (ref: Ref, data: Row, options?: { merge?: boolean }) =>
           writes.push(() => ref.set(data, options)),
-        update: (ref: Ref, data: Row) => writes.push(() => ref.update(data)),
+        update: (ref: Ref, data: Row) => {
+          if (data.state === 'ready') publication = true;
+          return writes.push(() => ref.update(data));
+        },
         delete: (ref: Ref) => writes.push(async () => rows.delete(ref.path)),
       };
       const result = await fn(tx);
-      if (replay) {
+      if (replay && publication) {
         const change = replay;
         replay = null;
         change();
         return store.runTransaction(fn);
       }
-      if (failCommit) {
+      if (failCommit && publication) {
         failCommit = false;
         throw Error('Commit unavailable');
       }
@@ -307,6 +309,29 @@ test('a transaction replay observes a concurrent task completion', async () => {
   await indexMemory(uid, f.dek, source, memory, 'next');
   assert.equal(f.list('followUps')[0]!.state, 'dismissed');
   assert.equal(f.list('people')[0]!.conversationCount, 1);
+});
+
+test('identical commitments with distinct agreed dates remain separate tasks', async () => {
+  const f = fixture(),
+    dated = structuredClone(memory);
+  const action = dated.conversations[0]!.action_items[0]!;
+  dated.conversations[0]!.action_items = [
+    { ...action, due_date: '2026-09-14' },
+    { ...action, due_date: '2026-09-21' },
+  ];
+  const source = {
+    ...f.recording,
+    sealedMemory: sealJson(f.dek, dated, binding(`recording/${recordingId}`, 'memory')),
+  };
+  f.rows.set(recordingPath, source);
+  await indexMemory(uid, f.dek, source, dated, 'lease');
+  assert.deepEqual(
+    f
+      .list('followUps')
+      .map((task) => task.dueDate)
+      .sort(),
+    ['2026-09-14', '2026-09-21'],
+  );
 });
 
 test('claims reject overlapping workers and stale workers cannot change or publish the result', async () => {

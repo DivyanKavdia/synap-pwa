@@ -26,7 +26,7 @@ the PWA/backend; it does not supply new evidence about physical touch sensitivit
 
 - `npm test`: 275 app checks, including permission/start races, save retry,
   account changes, recording transport, audio storage and recovery contracts.
-- `npm test --prefix backend`: 169 backend checks, including atomic rollback,
+- `npm test --prefix backend`: 170 backend checks, including atomic rollback,
   concurrent task-completion replay, worker fencing, deleted recordings, legacy
   duplicate tasks and daily-summary recovery.
 - The production validation workflow runs the full browser suite, including the
