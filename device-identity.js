@@ -16,12 +16,19 @@
     connection = null;
     root.dispatchEvent?.(new CustomEvent('synap-gatt-disconnected'));
   }
-  function publishService(service, queue, assertConnection) {
+  function publishService(service, queue, assertConnection, canUse = () => true) {
     if (!service) return;
-    const context = { service, queue(action, label) {
+    function deferred() {
+      const error = new Error('Optional Bluetooth setup deferred until recording stops.');
+      error.name = 'AbortError'; error.code = 'OPTIONAL_GATT_DEFERRED'; return error;
+    }
+    const context = { service, canUse, queue(action, label) {
+      // Passive consumers must not occupy the queue during capture or recovery.
+      if (!canUse()) return Promise.reject(deferred());
       return queue(async () => {
         assertConnection();
         if (connection !== context) throw Error('Pendant connection changed.');
+        if (!canUse()) throw deferred();
         const value = await action();
         assertConnection();
         if (connection !== context) throw Error('Pendant connection changed.');
@@ -32,8 +39,8 @@
     try { root.dispatchEvent(new CustomEvent('synap-gatt-service-ready', { detail: context })); }
     catch (_) {}
   }
-  async function read(service, queue, assertConnection) {
-    publishService(service, queue, assertConnection);
+  async function read(service, queue, assertConnection, canUse) {
+    publishService(service, queue, assertConnection, canUse);
     let characteristic;
     try { characteristic = await queue(() => service.getCharacteristic(UUID), 'Find device identifier'); }
     catch (error) {

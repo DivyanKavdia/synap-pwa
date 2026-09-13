@@ -4,20 +4,21 @@ const read=p=>fs.readFileSync(path.join(__dirname,'..',p),'utf8'),app=read('app.
 const slice=(a,b)=>app.slice(app.indexOf(a),app.indexOf(b,app.indexOf(a)));
 const tick=()=>new Promise(setImmediate);
 function harness(){
-  const listeners=new Map(),timers=new Map(),calls=[];let timerId=0,active=0,maximum=0;
+  const listeners=new Map(),timers=new Map(),calls=[],observers=[];let timerId=0,active=0,maximum=0;
   const c={console:{warn(){},info(){}},Promise,Error,TextDecoder,Uint8Array,DataView,Date,Math,
     document:{body:{dataset:{state:'idle',deviceState:'1'}},readyState:'complete',addEventListener(){},getElementById(){return null}},
     CustomEvent:class{constructor(type,options={}){this.type=type;this.detail=options.detail}},
     addEventListener(type,fn){const list=listeners.get(type)||[];list.push(fn);listeners.set(type,list)},
     dispatchEvent(event){for(const fn of listeners.get(event.type)||[])fn(event)},
     setTimeout(fn,ms){timers.set(++timerId,{fn,ms});return timerId},clearTimeout(id){timers.delete(id)},
-    MutationObserver:class{observe(){}},
+    MutationObserver:class{constructor(fn){observers.push(fn)}observe(){}},
+    appState:'idle',firmwareBusy:false,recordingConfirmed:false,recordingReconnectPending:false,finalizing:false,currentRecordingId:null,openingCapture:null,unsavedAudio:false,
     gattQueue:Promise.resolve(),connectionEpoch:0,recordingSessionId:1,COMMAND_TIMEOUT_MS:3500,
     isGattConnected:()=>true,withTimeout:p=>p,log(){},SynapRecordingBridge:{},
     bluetoothDevice:{gatt:{disconnect(){calls.push('disconnect')}}}
   };
   c.globalThis=c;c.window=c;vm.createContext(c);
-  vm.runInContext(slice('  function queueGattOperation(', '  async function writeCommand('),c);
+  vm.runInContext(slice('  function optionalGattAllowed(', '  async function writeCommand('),c);
   vm.runInContext(read('device-identity.js'),c);
   vm.runInContext(read('event-channel.js'),c);
   const battery=read('battery-popover-fix.js');vm.runInContext(battery.slice(battery.indexOf('/* Standby requires')),c);
@@ -26,9 +27,41 @@ function harness(){
   const eventCharacteristic={addEventListener(t,f){events.add(f)},removeEventListener(t,f){events.delete(f)},startNotifications:()=>io('notify'),readValue:()=>io('event-read',new DataView(new ArrayBuffer(0)))};
   const control={properties:{write:true},writeValueWithResponse:value=>io('standby:'+Array.from(value).join(','))};
   const service={getCharacteristic:uuid=>io('find:'+uuid,uuid.includes('1234e')?eventCharacteristic:control)};
-  function publish(next=service){const epoch=c.connectionEpoch;c.SynapDevices.publishService(next,c.queueGattOperation,()=>{if(epoch!==c.connectionEpoch)throw Error('stale')})}
-  return {c,calls,timers,events,io,publish,eventCharacteristic,get maximum(){return maximum}};
+  function publish(next=service){const epoch=c.connectionEpoch;c.SynapDevices.publishService(next,c.queueGattOperation,()=>{if(epoch!==c.connectionEpoch)throw Error('stale')},c.optionalGattAllowed)}
+  function state(next,flags={}){c.appState=next;c.document.body.dataset.state=next;Object.assign(c,flags);for(const fn of observers)fn()}
+  return {c,calls,timers,events,io,publish,state,eventCharacteristic,get maximum(){return maximum}};
 }
+
+test('optional event setup stays deferred throughout recording and reconnect, then resumes at idle',async()=>{
+  const h=harness();h.state('recording',{recordingConfirmed:true,currentRecordingId:'take'});h.publish();
+  for(const phase of ['recording','connecting','starting','stopping','saving']){
+    h.state(phase,{recordingReconnectPending:phase==='connecting'});
+    await h.c.SynapEventChannel.attach();
+    h.c.dispatchEvent(new h.c.CustomEvent('synap-recording-foreground'));
+    assert.equal(h.calls.length,0,phase+' must not perform optional Bluetooth work');
+    assert.equal(h.c.SynapEventChannel.mode,'deferred');
+  }
+  h.state('idle',{recordingConfirmed:false,currentRecordingId:null,recordingReconnectPending:false});
+  const retry=[...h.timers.values()].find(t=>t.ms===150);assert(retry,'returning to idle retries deferred setup');
+  retry.fn();await h.c.SynapEventChannel.attach();
+  assert.equal(h.c.SynapEventChannel.mode,'event');assert.equal(h.calls.filter(x=>x==='notify').length,1);
+});
+test('optional work already in the queue rechecks capture ownership before touching GATT',async()=>{
+  const h=harness();h.publish();let finish;
+  const required=h.c.queueGattOperation(()=>new Promise(resolve=>finish=resolve));await tick();
+  const optional=h.c.SynapDevices.connection.queue(()=>h.io('optional-read'),'Passive read');
+  const rejected=assert.rejects(optional,{name:'AbortError',code:'OPTIONAL_GATT_DEFERRED'});
+  h.state('starting',{openingCapture:Promise.resolve('take')});finish();await required;await rejected;
+  assert(!h.calls.includes('optional-read'));
+  await h.c.queueGattOperation(()=>h.io('recording-command'));
+  assert(h.calls.includes('recording-command'),'required recording commands keep the queue');
+});
+test('recording that starts during event discovery prevents the later subscription',async()=>{
+  const h=harness();h.publish({getCharacteristic:async()=>{h.state('recording',{recordingConfirmed:true});return h.eventCharacteristic}});
+  await h.c.SynapEventChannel.attach();
+  assert.equal(h.c.SynapEventChannel.mode,'deferred');assert.equal(h.events.size,0);
+  assert(!h.calls.includes('notify')&&!h.calls.includes('event-read'));
+});
 test('events, power and recorder commands serialize on one GATT queue',async()=>{
   const h=harness();h.publish();
   h.c.dispatchEvent(new h.c.CustomEvent('synap-event-packet',{detail:{hex:'e2 01 01 00 82 04'}}));

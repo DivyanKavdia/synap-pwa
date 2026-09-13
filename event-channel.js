@@ -24,6 +24,7 @@ function attachDedicatedEvent(){
   if(attaching)return attaching;
   if(!connection?.queue||mode==='event'||mode==='legacy-control')return Promise.resolve(mode==='event');
   const current=connection,epoch=attachEpoch;
+  if(current.canUse&&!current.canUse()){setMode('deferred');return Promise.resolve(false)}
   attempts+=1;
   const job=(async()=>{
     try{
@@ -44,7 +45,7 @@ function attachDedicatedEvent(){
       if(epoch!==attachEpoch)return false;
       if(characteristic)characteristic.removeEventListener('characteristicvaluechanged',handleEvent);
       characteristic=null;
-      setMode(error?.name==='NotFoundError'?'legacy-control':'unavailable');
+      setMode(error?.code==='OPTIONAL_GATT_DEFERRED'?'deferred':error?.name==='NotFoundError'?'legacy-control':'unavailable');
       if(mode==='unavailable'&&attempts<3)schedule(1600);
       return false;
     }
@@ -61,8 +62,13 @@ root.addEventListener('synap-gatt-service-ready',event=>{
   clear();connection=event.detail;setMode('service-ready');schedule();
 });
 root.addEventListener('synap-gatt-disconnected',clear);
-root.addEventListener('synap-recording-foreground',()=>{
-  if(connection&&mode!=='event'&&mode!=='legacy-control'){attempts=0;schedule(150)}
-});
+function retryWhenAllowed(){
+  if(connection&&mode!=='event'&&mode!=='legacy-control'&&(!connection.canUse||connection.canUse())){attempts=0;schedule(150)}
+}
+root.addEventListener('synap-recording-foreground',retryWhenAllowed);
+function observeState(){
+  if(document.body&&root.MutationObserver)new MutationObserver(retryWhenAllowed).observe(document.body,{attributes:true,attributeFilter:['data-state']});
+}
+if(document.body)observeState();else document.addEventListener('DOMContentLoaded',observeState,{once:true});
 root.SynapEventChannel={EVENT_UUID,CONTROL_UUID,get mode(){return mode},get lastPacket(){return lastPacket},attach:attachDedicatedEvent,reset:clear};
 })(globalThis);

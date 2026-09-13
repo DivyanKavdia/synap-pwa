@@ -45,6 +45,15 @@ const server = createStaticServer(root);
       await page.waitForFunction(
         () => document.body.dataset.state === 'recording' && !bleFixture.recoveryWaiting,
       );
+      await page.evaluate(() => bleFixture.delayStatusRead());
+      await page.waitForFunction(() => bleFixture.readError === 'AbortError');
+      assert.equal(await page.evaluate(() => bleFixture.readPending), false);
+      // Another real link-loss event still recovers the same take, while passive
+      // setup is deferred instead of sharing the recovery command queue.
+      await page.evaluate(() => bleFixture.disconnect());
+      await page.waitForFunction(() => document.body.dataset.recordingInterrupted === 'true');
+      await page.waitForFunction(() => document.body.dataset.state === 'recording' && !bleFixture.recoveryWaiting);
+      assert.equal(await page.evaluate(() => bleFixture.appDisconnects), 0);
       // Stop before replay catches up; received frames must still be drained and sealed.
       await page.locator('#headerCaptureToggle').click();
       await page.waitForFunction(() => document.body.dataset.state === 'idle');
@@ -323,12 +332,12 @@ const server = createStaticServer(root);
       'foreground does not poll a live capture',
     );
     await page.evaluate(() => bleFixture.delayStatusRead());
-    await page.waitForFunction(() => bleFixture.readPending);
-    await page.waitForFunction(() => bleFixture.readError === 'TimeoutError');
+    await page.waitForFunction(() => bleFixture.readError === 'AbortError');
+    assert.equal(await page.evaluate(() => bleFixture.readPending), false);
     assert.equal(
       await page.evaluate(() => bleFixture.appDisconnects),
       0,
-      'a delayed diagnostic read must not terminate arriving audio',
+      'a passive diagnostic read must be deferred without touching the recording link',
     );
     assert.equal(await page.evaluate(() => document.body.dataset.state), 'recording');
     await page.evaluate(() => bleFixture.finishRead());
@@ -405,7 +414,7 @@ const server = createStaticServer(root);
     });
     await page.locator('.recording-content audio').evaluate((a) => a.pause());
     console.log(
-      'PASS: recording survives native UI visibility changes, a slow GATT reply, navigation and reconnect; header Stop saves from Settings with one journal and no overlapping GATT requests',
+      'PASS: recording survives native UI visibility changes, deferred passive GATT, navigation and reconnect; header Stop saves from Settings with one journal and no overlapping GATT requests',
       saved[0],
     );
 
@@ -569,8 +578,7 @@ const server = createStaticServer(root);
     await page.locator('#headerCaptureToggle').click();
     await page.waitForFunction(() => document.body.dataset.state === 'recording');
     await page.waitForTimeout(400);
-    await page.evaluate(() => bleFixture.delayStatusRead());
-    await page.waitForFunction(() => bleFixture.readError === 'TimeoutError');
+    await page.evaluate(() => bleFixture.delayStopCommand());
     await page.locator('#headerCaptureToggle').click();
     await page.waitForFunction(() => document.body.dataset.state === 'disconnected');
     await page.waitForFunction(() =>
@@ -578,14 +586,14 @@ const server = createStaticServer(root);
         .querySelector('#diagnosticsLog')
         .textContent.includes('Recording stop was not acknowledged'),
     );
-    await page.evaluate(() => bleFixture.finishRead());
+    await page.evaluate(() => bleFixture.finishStopCommand());
     const stopped = await records();
     assert.equal(stopped.length, 2);
     assert(stopped.every((r) => r.status === 'saved' && r.durationMs > 0));
     assert.equal(await page.evaluate(() => bleFixture.maximum), 1);
     assert.deepEqual(errors, []);
     console.log(
-      'PASS: Stop remains bounded when a native read never replies; the app disconnects deliberately and saves received audio',
+      'PASS: Stop remains bounded when its native write never replies; the app disconnects deliberately and saves received audio',
     );
     await page.locator('#headerPendantStatus').click();
     await page.waitForFunction(

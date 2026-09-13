@@ -101,3 +101,7 @@ Quality checks preserve every PCM sample. Live volume and clipping warnings use 
 For repeated S3 or C3 disconnects, retain the Settings → Support → Diagnostics log after reconnecting and stopping, plus the installed firmware build. The log distinguishes app-requested disconnects, peripheral link reasons and reboot evidence. A WAV cannot establish a radio, power, wiring or microphone-driver root cause.
 
 Automatic firmware discovery checks recording eligibility again when each queued Bluetooth operation is about to start. Starting capture during a pending check defers the remaining service, characteristic, subscription and value reads until idle. An already-running native request must finish; it is never cancelled by disconnecting the recording. Explicit firmware transfers retain their existing Stop/save flow and transfer lock.
+
+## Passive Bluetooth work during recovery
+
+The app-owned shared service gates optional work before enqueueing and again before the native call starts. Battery/power setup, passive diagnostics and other consumers of that service cannot start requests during capture, startup, Stop/save, firmware transfer or recording reconnect. Required identity, control and recovery operations retain the recorder queue. Existing notifications remain attached. Event setup defers without a retry loop and resumes when capture has been saved and the connection becomes eligible. This removes optional traffic from the reconnect handshake; it does not prove a physical link-loss cause or replace device diagnostics.

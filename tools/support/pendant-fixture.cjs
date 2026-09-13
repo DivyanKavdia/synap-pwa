@@ -62,7 +62,9 @@ module.exports = function pendantFixture() {
     statusReads = 0,
     holdRead = false,
     releaseRead = null,
-    readError = null;
+    readError = null,
+    holdStop = false,
+    releaseStop = null;
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
   function setVisibility(value) {
     visibility = value;
@@ -137,6 +139,10 @@ module.exports = function pendantFixture() {
     }
     writeValueWithResponse(value) {
       return operation(async () => {
+        if (this.id === uuid('47') && value[0] === 0 && holdStop) {
+          holdStop = false;
+          await new Promise(resolve => { releaseStop = resolve; });
+        }
         if (this.id === uuid('48')) {
           const v = new DataView(value.buffer, value.byteOffset, value.byteLength),
             command = value[0];
@@ -420,18 +426,20 @@ module.exports = function pendantFixture() {
     show: () => setVisibility('visible'),
     hide: () => setVisibility('hidden'),
     delayStatusRead() {
-      holdRead = true;
       readError = null;
       SynapDevices.connection
-        .queue(() => control.readValue(), 'Delayed diagnostic read')
+        .queue(() => { holdRead = true; return control.readValue(); }, 'Delayed diagnostic read')
         .catch((error) => {
           readError = error.name;
         });
     },
     finishRead() {
+      holdRead = false;
       releaseRead?.();
       releaseRead = null;
     },
+    delayStopCommand() { holdStop = true; },
+    finishStopCommand() { releaseStop?.(); releaseStop = null; },
     get connects() {
       return count('qa-connects');
     },

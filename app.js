@@ -983,7 +983,7 @@
       let connectedDeviceId = null;
       let identityMessage = "This firmware has no permanent device ID. Recording is available; install identity-enabled firmware to remember this device.";
       try {
-        connectedDeviceId = await globalThis.SynapDevices.read(service, queueGattOperation, assertConnection);
+        connectedDeviceId = await globalThis.SynapDevices.read(service, queueGattOperation, assertConnection, optionalGattAllowed);
       } catch (error) {
         assertConnection();
         identityMessage = "Device ID could not be read. Reconnect to retry setup. Recording is still available.";
@@ -1291,6 +1291,12 @@
         }, milliseconds);
       })
     ]).finally(function () { clearTimeout(timeout); });
+  }
+
+  function optionalGattAllowed() {
+    return !firmwareBusy && !recordingConfirmed && !recordingReconnectPending &&
+      !finalizing && !currentRecordingId && !openingCapture && !unsavedAudio &&
+      !["starting", "recording", "stopping", "saving", "updating"].includes(appState);
   }
 
   function queueGattOperation(action, label = "Bluetooth operation") {
