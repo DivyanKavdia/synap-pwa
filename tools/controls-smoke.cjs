@@ -621,7 +621,7 @@ const waitState = (page, state) =>
       await page.evaluate(() => bleFixture.holdFirmware(false));
       await page.waitForFunction(
         () =>
-          document.getElementById('firmwareNoticeText').textContent === 'Update complete · 1201',
+          document.getElementById('firmwareNoticeText').textContent === 'Update complete · 1.0.0 · build 1201',
       );
       await waitState(page, 'idle');
       assert.deepEqual(
@@ -737,7 +737,7 @@ const waitState = (page, state) =>
       await page.waitForFunction(() => !document.getElementById('otaLatest').hidden);
       await page.locator('#otaLatest').tap();
       await page.waitForFunction(
-        () => document.getElementById('otaStatus').textContent === 'Update complete · 1201',
+        () => document.getElementById('otaStatus').textContent === 'Update complete · 1.0.0 · build 1201',
       );
       await waitState(page, 'idle');
       assert.equal(
