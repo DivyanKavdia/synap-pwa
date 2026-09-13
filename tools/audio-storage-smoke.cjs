@@ -108,6 +108,8 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
     assert.deepEqual(result.partial, { status: 'empty', packets: 1, jobs: 0 });
 
     await page.goto(origin + '/');
+    await page.waitForFunction(() => document.querySelector('#diagnosticsLog')?.textContent.includes('Application started'));
+    await page.locator('.brain-tabs a[href="#library"]').click();
     const card = page.locator('#recording-' + result.gap.id);
     await card.waitFor({ state: 'visible', timeout: 15000 });
     assert.match(await card.locator('.recording-row-meta').textContent(), /Audio incomplete: 36\.1 s missing \(74%\)/);
