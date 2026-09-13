@@ -159,9 +159,9 @@ test('the production shell and stale-active backend recovery remain wired', () =
   assert.match(shell, /processing-recovery\.js\?v=/);
   assert.match(taskSource, /\/recordings\/:recordingId\/process-now/);
   assert.match(taskSource, /requireAuth\(\)/);
-  assert.match(taskSource, /ACTIVE_STALE_MS\s*=\s*10\s*\*\s*60_000/);
+  assert.match(taskSource, /ACTIVE_STALE_MS\s*=\s*db\.PROCESSING_STALE_MS/);
   assert.match(taskSource, /isStaleActiveRecording/);
   assert.match(taskSource, /ACTIVE_STATES\.has\(recording\.state\)/);
-  assert.match(taskSource, /state:\s*['"]uploaded['"]/);
+  assert.doesNotMatch(taskSource, /db\.patchRecording\(/, 'the pipeline owns the claim; routes cannot clear another worker');
   assert.match(taskSource, /await processRecording\(\s*req\.uid,\s*recordingId,/s);
 });

@@ -31,7 +31,7 @@ const ACTIVE_STATES = new Set(['transcribing', 'understanding', 'indexing']);
 /** Active stages update progress as work advances. Ten quiet minutes is long
  * enough to avoid racing a slow model call, while still recovering a worker
  * that died after persisting an active state. */
-const ACTIVE_STALE_MS = 10 * 60_000;
+const ACTIVE_STALE_MS = db.PROCESSING_STALE_MS;
 
 export function isStaleActiveRecording(recording: RecordingDoc, now = Date.now()): boolean {
   if (!ACTIVE_STATES.has(recording.state)) return false;
@@ -72,7 +72,7 @@ export function taskRoutes(): Router {
     requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const recordingId = String(req.params.recordingId);
-      let recording = await db.getRecording(req.uid, recordingId);
+      const recording = await db.getRecording(req.uid, recordingId);
       if (!recording) throw new HttpError(404, 'not_found', 'Unknown recording');
       const force = String(req.query.force ?? '') === 'true';
       const rebuild = recording.state === 'ready' && force;
@@ -86,7 +86,7 @@ export function taskRoutes(): Router {
       // A fresh active state means Cloud Tasks is doing useful work. A stale
       // active state is different: the worker may have died after persisting its
       // stage. processRecording is restart-safe and skips sealed transcripts, so
-      // return the record to uploaded and resume from durable evidence.
+      // let the transaction claim it and resume from durable evidence.
       if (ACTIVE_STATES.has(recording.state)) {
         if (!isStaleActiveRecording(recording)) {
           res.status(202).json({ recording_id: recordingId, state: recording.state, recovered: false });
@@ -98,14 +98,7 @@ export function taskRoutes(): Router {
           state: recording.state,
           updatedAt: recording.updatedAt,
         });
-        await db.patchRecording(req.uid, recordingId, {
-          state: 'uploaded',
-          progress: 0,
-          errorCode: null,
-          retryable: true,
-        });
-        recording = await db.getRecording(req.uid, recordingId);
-        if (!recording) throw new HttpError(404, 'not_found', 'Unknown recording');
+
       }
 
       if (rebuild) {
@@ -131,42 +124,21 @@ export function taskRoutes(): Router {
           recordingId,
           segments: rebuildSegmentCount,
         });
-        await db.patchRecording(req.uid, recordingId, {
-          state: 'uploaded',
-          progress: 0,
-          errorCode: null,
-          retryable: false,
-        });
       } else {
         if (recording.state === 'failed' && !recording.retryable) {
           throw new HttpError(409, 'not_retryable', recording.errorCode || 'Processing cannot be retried');
         }
-        if (recording.state !== 'uploaded' && recording.state !== 'failed') {
+        if (recording.state !== 'uploaded' && recording.state !== 'failed' && !isStaleActiveRecording(recording)) {
           throw new HttpError(409, 'not_ready', `Recording is ${recording.state}`);
         }
         log.warn('Using authenticated processing recovery', { uid: req.uid, recordingId, state: recording.state });
       }
 
-      try {
-        await processRecording(
-          req.uid,
-          recordingId,
-          rebuild ? { skipTranscription: true, memoryOnly: true } : {},
-        );
-      } catch (cause) {
-        if (rebuild) {
-          // processRecording marks failures as failed. For a best-effort legacy
-          // refresh that would hide a perfectly usable old memory, so restore the
-          // ready status and leave the existing sealed memory available.
-          await db.patchRecording(req.uid, recordingId, {
-            state: 'ready',
-            progress: 1,
-            errorCode: null,
-            retryable: false,
-          });
-        }
-        throw cause;
-      }
+      await processRecording(
+        req.uid,
+        recordingId,
+        rebuild ? { skipTranscription: true, memoryOnly: true } : {},
+      );
 
       const updated = await db.getRecording(req.uid, recordingId);
       const state = updated?.state ?? 'ready';

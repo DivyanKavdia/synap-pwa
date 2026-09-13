@@ -17,8 +17,8 @@
 
   function currentState(){
     const desktop=root.SynapDesktopCapture?.state();
-    if(desktop?.active)return {active:true,sessionId:'desktop:'+desktop.recordingId,
-      source:'desktop',phase:'recording',startedAt:desktop.startedAt,canStop:true,canMark:false};
+    if(desktop?.active && desktop.recordingId)return {active:true,sessionId:'desktop:'+desktop.recordingId,
+      source:'desktop',phase:desktop.phase==='saving'?'saving':desktop.phase==='save-failed'?'interrupted':'recording',startedAt:desktop.startedAt,canStop:desktop.phase!=='saving',canMark:false};
     return root.SynapAppControls?.recordingState()||{active:false};
   }
 
@@ -128,7 +128,7 @@
     }
     new MutationObserver(()=>sync()).observe(document.body,{attributes:true,
       attributeFilter:['data-state','data-recording-interrupted','data-startup']});
-    for(const name of ['synap-desktop-capture-started','synap-desktop-capture-stopped','synap-recording-saved'])
+    for(const name of ['synap-desktop-capture-started','synap-desktop-capture-stopped','synap-desktop-capture-changed','synap-recording-saved'])
       root.addEventListener(name,()=>sync());
     document.addEventListener('visibilitychange',()=>{
       if(document.visibilityState==='visible'){render();sync(true)}

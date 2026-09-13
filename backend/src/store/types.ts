@@ -66,6 +66,12 @@ export interface RecordingDoc {
   retryable: boolean;
   /** Sealed `StructuredMemory`. Present once understanding completes. */
   sealedMemory: Sealed | null;
+  /** Ownership fence for a processing attempt; stale workers cannot publish. */
+  processingLease?: string | null;
+  /** Digest of the sealed source whose derived index was committed atomically. */
+  indexedMemoryRevision?: string | null;
+  indexedPersonIds?: string[];
+  deleting?: boolean;
   /** Sealed full transcript text, joined across segments. */
   sealedTranscript: Sealed | null;
   /** User-confirmed names for this recording's original speaker labels. */

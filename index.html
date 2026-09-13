@@ -14,6 +14,7 @@
   <script src="audio-codec-v3.js?v=1.0.0-cleanup1"></script>
   <script src="battery-v2-ui.js?v=1.0.0-battery5"></script>
   <script>globalThis.SYNAP_STATIC_BOOTSTRAP=true;</script>
+  <link rel="stylesheet" href="first-memory.css?v=1.0.0-readiness1">
   <link rel="stylesheet" href="styles.css?v=1.0.0-recording-core1">
   <link rel="stylesheet" href="brand.css?v=1.0.0-glance1" data-synap-brand="brain1">
   <link rel="stylesheet" href="polish.css?v=1.0.0-glance1">
@@ -53,6 +54,23 @@
     <div id="dateStrip" class="date-strip"></div>
     <div class="calendar-footer"><span>Saved recordings per day</span><button id="jumpToToday" type="button" hidden>Back to today</button></div>
   </div>
+  <section id="firstMemory" class="first-memory" aria-labelledby="firstMemoryTitle" hidden>
+    <div class="first-memory-layout">
+      <div>
+        <h2 id="firstMemoryTitle">Your next conversation, remembered.</h2>
+        <p id="firstMemoryCopy">Stay in the conversation. synap helps you return to what was decided and what happens next.</p>
+        <div class="first-memory-actions"><button id="firstMemoryRecord" type="button">Record with pendant</button><button id="firstMemoryMeeting" type="button" hidden>Record an online meeting</button></div>
+        <p id="firstMemoryHint"></p><p id="firstMemoryError" role="status"></p>
+        <button id="firstMemoryAccount" type="button">Sign in for cloud memories</button>
+      </div>
+      <div class="first-memory-preview">
+        <span class="sample-label">Explore a sample</span><h3>From conversation to a clear next step.</h3>
+        <dl><div><dt>Decided</dt><dd>Start with five design partners.</dd></div><div><dt>Your action</dt><dd>Send pilot invitations.</dd></div><div><dt>Source</dt><dd>The words behind each memory.</dd></div></dl>
+        <button id="firstMemorySample" type="button"><span>Explore sample memory</span><span aria-hidden="true">↗</span></button>
+      </div>
+    </div>
+    <ol class="first-memory-steps"><li>Record a conversation</li><li>Stop &amp; save to Library</li><li>Create your memory</li></ol>
+  </section>
   <section class="day-brief">
     <div id="dayGlanceMetrics" class="glance-grid" role="group" aria-label="Selected day at a glance" hidden>
       <button id="dayGlanceRecordings" type="button" title="Open this day’s recordings">
@@ -190,6 +208,7 @@
   <section id="settingsSupport" class="settings-page" role="tabpanel" aria-labelledby="settingsTab-support" data-settings-panel="support" hidden>
     <div class="settings-section-intro"><h3>A little help, on hand.</h3><p>Connection details and troubleshooting.</p></div>
     <section class="settings-card settings-support-stack">
+      <button type="button" id="supportSampleMemory">Explore a sample memory</button>
       <details class="recording-help settings-disclosure"><summary><svg aria-hidden="true"><use href="#i-mic"/></svg><span>Recording help</span></summary><div class="capture-help-content"><div class="gesture-guide" aria-label="Pendant touch controls"><div><span class="gesture-dots" aria-hidden="true">••</span><span><strong>Double tap</strong>Record on / off</span></div><div><span class="gesture-dots" aria-hidden="true">4s</span><span><strong>Hold 4 seconds</strong>Release to sleep / wake</span></div></div><p class="capture-safety">Current C3 and S3 firmware use the same controls. When waking, allow a little extra time for startup before releasing. Update older S3 firmware to replace triple-tap sleep / wake.</p><p class="capture-safety">Keep this app open while listening. Audio is saved on this device.</p></div></details>
       <details class="recorder-details settings-disclosure"><summary><svg aria-hidden="true"><use href="#i-wave"/></svg><span>Connection health</span></summary><div class="device-panel"><div class="metrics-grid"><div><span>Audio level</span><strong id="signalMetric">—</strong><small id="signalDetail">No stream</small></div><div><span>Frames</span><strong id="framesMetric">0</strong><small id="framesDetail">Complete</small></div><div><span>Transport</span><strong id="transportMetric">—</strong><small id="transportDetail">MTU / chunks</small></div><div><span>Quality</span><strong id="qualityMetric">—</strong><small id="qualityDetail">Waiting</small></div></div><div id="settingsConnectionHealth"></div></div></details>
       <details id="diagnostics" class="settings-disclosure diagnostics-settings"><summary><svg aria-hidden="true"><use href="#i-note"/></svg><span>Diagnostic log</span></summary><div class="settings-row-body"><pre id="diagnosticsLog"></pre><div class="setting-actions"><button id="copyDiagnosticsButton" type="button">Copy log</button><button id="clearDiagnosticsButton" type="button">Clear log</button></div></div></details>
@@ -232,13 +251,14 @@
 <script src="disconnect-protection.js?v=1.0.0-meetings2"></script>
 <script src="experience-recovery.js?v=1.0.0-maintenance1"></script>
 <script src="library-tools.js?v=1.0.0-library1"></script>
-<script src="google-auth.js?v=1.0.0-recording-core1"></script>
+<script src="google-auth.js?v=1.0.0-readiness1"></script>
 <script src="processing-recovery.js?v=1.0.0-maintenance1"></script>
 <script src="ai-providers.js?v=1.0.0-maintenance1"></script>
 <script src="synap-backend.js?v=1.0.0-recording-core1"></script>
-<script src="app.js?v=1.0.0-recording-core1"></script>
-<script src="recording-notifications.js?v=1.0.0-notifications1"></script>
-<script src="enhancements.js?v=1.0.0-touch1"></script>
+<script src="first-memory.js?v=1.0.0-readiness1"></script>
+<script src="app.js?v=1.0.0-readiness1"></script>
+<script src="recording-notifications.js?v=1.0.0-readiness1"></script>
+<script src="enhancements.js?v=1.0.0-readiness1"></script>
 <script src="processing-pipeline-ui.js?v=1.0.0-pipeline1"></script>
 <script src="memory-ui-fix.js?v=1.0.0-moments1"></script>
 <script src="synap-account-ui.js?v=1.0.0-maintenance1"></script>
@@ -260,6 +280,6 @@
 <script src="product-ui.js?v=1.0.0-actions1"></script>
 <script src="provenance-links.js?v=1.0.0-actions3"></script>
 <script src="productivity-tools.js?v=1.0.0-compact2"></script>
-<script src="desktop-capture.js?v=1.0.0-recording-core1"></script>
+<script src="desktop-capture.js?v=1.0.0-readiness1"></script>
 <script src="interaction-surfaces.js?v=1.0.0-workspace1"></script>
 </body></html>

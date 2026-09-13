@@ -21,7 +21,6 @@ import {
   type Binding,
 } from '../crypto/envelope.js';
 import { extractMemory } from '../gemini/memory.js';
-import { embedContent } from '../gemini/client.js';
 import { formatMs, toSpeakerLines } from '../gemini/transcribe.js';
 import { tagSelfSpeaker } from '../speaker/enrich.js';
 import { RecordingSpeakers, labelWords } from '../speaker/diarization.js';
@@ -32,17 +31,15 @@ import { applySpeakerNames, readSpeakerNames } from '../speaker/names.js';
 import * as db from '../store/firestore.js';
 import { readSealedSegment } from '../store/gcs.js';
 import type {
-  ConversationDoc,
-  FollowUpDoc,
-  PersonDoc,
   RecordingDoc,
   SegmentDoc,
   StructuredMemory,
   TranscriptWord,
 } from '../store/types.js';
-import { mergeAliasKeys, nameKey, newId, normalizeName, topicKey, sha256 } from '../util/ids.js';
+import { newId, sha256 } from '../util/ids.js';
 import { log } from '../util/log.js';
 import { rebuildDay } from './brief.js';
+import { indexMemory } from './index-memory.js';
 import { chooseTranscript } from './source-materialize.js';
 import { transcribeUploadedWindow } from './rolling-transcription.js';
 import { requireCompleteSegments, transcribeRecordingSegments } from './recording-segments.js';
@@ -80,73 +77,60 @@ export async function processRecording(
 ): Promise<void> {
   const user = await db.getUser(uid);
   if (!user) throw new Error(`Unknown user ${uid}`);
-
-  const recording = await db.getRecording(uid, recordingId);
-  if (!recording) throw new Error(`Unknown recording ${recordingId}`);
-  if (recording.state === 'ready') {
-    log.info('Recording already processed', { uid, recordingId });
+  const dek = await keyring.unwrap(uid, user.key);
+  const lease = newId();
+  const recording = await db.claimProcessing(uid, recordingId, lease, Boolean(options.memoryOnly));
+  if (recording.state === 'ready' && !options.memoryOnly) {
+    // A previous attempt may have published the memory but failed to refresh
+    // its day. Queue retries repair only this inexpensive derived view.
+    await rebuildDay(uid, recording.day, dek);
     return;
   }
-
-  const dek = await keyring.unwrap(uid, user.key);
-
+  const patch = (fields: Partial<RecordingDoc>) => db.patchProcessing(uid, recordingId, lease, fields);
   try {
-    let segments: SegmentDoc[];
-    if (options.skipTranscription) {
-      segments = await db.listSegments(uid, recordingId);
-      segments = requireCompleteSegments(segments, recording.segmentCount || segments.length);
-      const missing = segments.filter((segment) => !segment.sealedTranscript);
-      if (missing.length > 0) {
-        throw new Error(
-          `Transcript-only rebuild requires every sealed segment transcript; ${missing.length} window(s) are missing`,
-        );
+    let memory: StructuredMemory;
+    if (recording.sealedMemory && recording.sealedTranscript && !options.memoryOnly) {
+      // Understanding completed durably. Reuse it after an index/storage fault,
+      // preserving task identities and avoiding another paid model call.
+      memory = openJson<StructuredMemory>(dek, recording.sealedMemory, binding(uid, `recording/${recordingId}`, 'memory'));
+    } else {
+      let segments: SegmentDoc[];
+      if (options.skipTranscription) {
+        segments = await db.listSegments(uid, recordingId);
+        segments = requireCompleteSegments(segments, recording.segmentCount || segments.length);
+        const missing = segments.filter((segment) => !segment.sealedTranscript);
+        if (missing.length) throw new Error(`Transcript-only rebuild requires every sealed segment transcript; ${missing.length} window(s) are missing`);
+      } else {
+        segments = await transcribeAll(uid, recordingId, dek, recording, patch);
       }
-    } else {
-      await db.patchRecording(uid, recordingId, { state: 'transcribing', progress: 0.05 });
-      segments = await transcribeAll(uid, recordingId, dek, recording);
+      await patch({ state: 'understanding', progress: 0.55 });
+      memory = await understand(uid, recordingId, dek, recording, segments, patch);
     }
-
-    await db.patchRecording(uid, recordingId, { state: 'understanding', progress: 0.55 });
-    const memory = await understand(uid, recordingId, dek, recording, segments);
-
     if (options.memoryOnly) {
-      // A legacy repair should not duplicate people counters or follow-up docs.
-      // Today/Library and the deterministic day brief are sourced from the
-      // recording memory itself, so refreshing that sealed source is sufficient.
-      await db.patchRecording(uid, recordingId, { progress: 0.9 });
+      await patch({ state: 'ready', progress: 1, errorCode: null, retryable: false, processingLease: null });
     } else {
-      await db.patchRecording(uid, recordingId, { state: 'indexing', progress: 0.8 });
-      await index(uid, dek, recording, memory);
+      await patch({ state: 'indexing', progress: 0.8 });
+      const source = await db.getRecording(uid, recordingId);
+      if (!source) throw new Error('Unknown recording');
+      if (source.processingLease !== lease) throw new Error('Processing attempt was superseded');
+      await indexMemory(uid, dek, source, memory, lease);
     }
-
-    await db.patchRecording(uid, recordingId, {
-      state: 'ready',
-      progress: 1,
-      errorCode: null,
-      retryable: false,
-    });
-
-    await rebuildDay(uid, recording.day, dek);
-    log.info('Recording processed', {
-      uid,
-      recordingId,
-      segments: segments.length,
-      conversations: memory.conversations.length,
-      transcriptOnly: Boolean(options.skipTranscription),
-      memoryOnly: Boolean(options.memoryOnly),
-    });
+    log.info('Recording processed', { uid, recordingId, conversations: memory.conversations.length, memoryOnly: Boolean(options.memoryOnly) });
   } catch (cause) {
     const message = (cause as Error).message ?? 'processing failed';
     log.error('Processing failed', { uid, recordingId, error: message });
-    await db.patchRecording(uid, recordingId, {
-      state: 'failed',
-      errorCode: message.slice(0, 200),
-      // Cloud Tasks decides whether to retry; this flag tells the PWA whether
-      // offering a Retry button is honest.
-      retryable: !/unknown|not found|no segments/i.test(message),
-    });
+    try {
+      // The fence also prevents a delayed failure from undoing another worker's
+      // success or resurrecting a recording the user deleted.
+      await patch(options.memoryOnly && recording.state === 'ready'
+        ? { state: 'ready', progress: 1, errorCode: null, retryable: false, processingLease: null }
+        : { state: 'failed', errorCode: message.slice(0, 200), retryable: !/unknown|not found|no segments/i.test(message), processingLease: null });
+    } catch { /* A deleted recording or superseded attempt belongs to its current owner. */ }
     throw cause;
   }
+  // The memory is already ready. A transient brief failure must not change that
+  // result; throwing here asks Cloud Tasks to retry just the day refresh above.
+  await rebuildDay(uid, recording.day, dek);
 }
 
 // ---------------------------------------------------------------------------
@@ -158,13 +142,14 @@ async function transcribeAll(
   recordingId: string,
   dek: Buffer,
   recording: RecordingDoc,
+  patch: (fields: Partial<RecordingDoc>) => Promise<void>,
 ): Promise<SegmentDoc[]> {
   const segments = await db.listSegments(uid, recordingId);
   return transcribeRecordingSegments(
     segments,
     recording.segmentCount || segments.length,
     segment => transcribeUploadedWindow(uid, recordingId, segment.index, dek),
-    (done, total) => db.patchRecording(uid, recordingId, { progress: 0.05 + 0.5 * (done / total) }),
+    (done, total) => patch({ progress: 0.05 + 0.5 * (done / total) }),
   );
 }
 
@@ -243,6 +228,7 @@ async function understand(
   dek: Buffer,
   recording: RecordingDoc,
   segments: SegmentDoc[],
+  patch: (fields: Partial<RecordingDoc>) => Promise<void>,
 ): Promise<StructuredMemory> {
   const flat: string[] = [];
   const diarizer = new RecordingSpeakers();
@@ -310,210 +296,11 @@ async function understand(
     language: recording.language,
   });
 
-  await db.patchRecording(uid, recordingId, {
+  await patch({
     sealedMemory: sealJson(dek, memory, binding(uid, `recording/${recordingId}`, 'memory')),
     sealedTranscript: sealText(dek, transcript, binding(uid, `recording/${recordingId}`, 'transcript')),
     ...(!recording.sealedSpeakerNames ? {sealedIdentifiedSpeakers:sealJson(dek,identified,binding(uid,`recording/${recordingId}`,'identified-speakers'))} : {}),
   });
 
   return memory;
-}
-
-// ---------------------------------------------------------------------------
-// Stage 3 — indexing
-// ---------------------------------------------------------------------------
-
-async function index(
-  uid: string,
-  dek: Buffer,
-  recording: RecordingDoc,
-  memory: StructuredMemory,
-): Promise<void> {
-  // Reprocessing replaces rather than appends, so a retried recording does not
-  // double every conversation in retrieval.
-  await db.deleteConversationsForRecording(uid, recording.recordingId);
-
-  const personIds = await upsertPeople(uid, dek, memory, recording);
-
-  for (const conversation of memory.conversations) {
-    const conversationId = newId();
-    const summaryForEmbedding = [
-      conversation.title,
-      conversation.summary,
-      conversation.topics.join(', '),
-      conversation.decisions.map((decision) => decision.text).join(' '),
-    ]
-      .filter(Boolean)
-      .join('\n');
-
-    let embedding: number[] | null = null;
-    if (process.env.SYNAP_DISABLE_VECTOR_INDEX !== '1') {
-      try {
-        embedding = await embedContent(summaryForEmbedding, 'RETRIEVAL_DOCUMENT');
-      } catch (cause) {
-        // Retrieval degrades to recency + keyword rather than failing the whole
-        // recording; the memory itself is already safely stored.
-        log.warn('Embedding failed; conversation indexed without a vector', {
-          uid,
-          recordingId: recording.recordingId,
-          error: (cause as Error).message,
-        });
-      }
-    }
-
-    const doc: ConversationDoc = {
-      conversationId,
-      recordingId: recording.recordingId,
-      day: recording.day,
-      startMs: conversation.start_ms,
-      endMs: conversation.end_ms,
-      startedAt: new Date(
-        Date.parse(recording.startedAt) + conversation.start_ms,
-      ).toISOString(),
-      sealedContent: sealJson(
-        dek,
-        {
-          title: conversation.title,
-          summary: conversation.summary,
-          topics: conversation.topics,
-          decisions: conversation.decisions,
-          actionItems: conversation.action_items,
-          followUps: conversation.follow_ups,
-          participants: conversation.participants || [],
-          mentionedPeople: conversation.mentioned_people || [],
-          unresolvedQuestions: conversation.unresolved_questions || [],
-          chapters: conversation.chapters || [],
-          people: conversation.people.map((person) => person.name),
-        },
-        binding(uid, `conversation/${conversationId}`, 'content'),
-      ),
-      embedding,
-      personIds: conversation.people
-        .map((person) => personIds.get(normalizeName(person.name)))
-        .filter((id): id is string => Boolean(id)),
-      topicKeys: conversation.topics.map(topicKey).filter(Boolean).slice(0, 20),
-      highlightCount: 0,
-      createdAt: new Date().toISOString(),
-    };
-
-    await db.putConversation(uid, doc);
-    await upsertFollowUps(uid, dek, recording, conversation, conversationId, personIds);
-  }
-}
-
-async function upsertPeople(
-  uid: string,
-  dek: Buffer,
-  memory: StructuredMemory,
-  recording: RecordingDoc,
-): Promise<Map<string, string>> {
-  const ids = new Map<string, string>();
-
-  for (const person of memory.people) {
-    const normalized = normalizeName(person.name);
-    if (!normalized) continue;
-
-    const key = nameKey(dek, person.name);
-    const existing = await db.findPersonByNameKey(uid, key);
-    const personId = existing?.personId ?? newId();
-    const now = new Date().toISOString();
-
-    // A name the user confirmed outranks whatever the model heard this time.
-    // Without this the next recording quietly overwrites the correction, which
-    // is the most annoying possible way to lose one.
-    let name = person.name;
-    if (existing?.confirmedByUser) {
-      try {
-        name = openJson<{ name: string }>(
-          dek,
-          existing.sealedProfile,
-          binding(uid, `person/${existing.personId}`, 'profile'),
-        ).name || person.name;
-      } catch {
-        name = person.name;
-      }
-    }
-
-    const doc: PersonDoc = {
-      personId,
-      // The stored key follows the confirmed name so listings stay consistent,
-      // while aliasKeys keeps every spelling the transcript might use matchable.
-      nameKey: existing?.confirmedByUser ? (existing.nameKey ?? key) : key,
-      aliasKeys: mergeAliasKeys(existing?.aliasKeys, existing?.nameKey, key),
-      sealedProfile: sealJson(
-        dek,
-        {
-          name,
-          role: person.role,
-          evidence: person.evidence,
-          confidence: person.confidence,
-        },
-        binding(uid, `person/${personId}`, 'profile'),
-      ),
-      // Model-derived identity stays unconfirmed until the user says otherwise.
-      confirmedByUser: existing?.confirmedByUser ?? false,
-      firstSeenAt: existing?.firstSeenAt ?? recording.startedAt,
-      lastInteractionAt: recording.startedAt > (existing?.lastInteractionAt ?? '')
-        ? recording.startedAt
-        : (existing?.lastInteractionAt ?? now),
-      conversationCount: (existing?.conversationCount ?? 0) + 1,
-    };
-
-    await db.putPerson(uid, doc);
-    ids.set(normalized, personId);
-  }
-
-  return ids;
-}
-
-async function upsertFollowUps(
-  uid: string,
-  dek: Buffer,
-  recording: RecordingDoc,
-  conversation: StructuredMemory['conversations'][number],
-  conversationId: string,
-  personIds: Map<string, string>,
-): Promise<void> {
-  const items = [
-    ...conversation.action_items.map((action) => ({
-      text: action.task,
-      kind: action.kind || "commitment",
-      owner: action.owner,
-      dueDate: action.due_date,
-      startMs: action.start_ms,
-    })),
-    ...conversation.follow_ups.map((followUp) => ({
-      text: followUp.text,
-      kind: "follow-up",
-      owner: followUp.owner,
-      dueDate: null as string | null,
-      startMs: followUp.start_ms,
-    })),
-  ];
-
-  for (const item of items) {
-    const ownerIsSelf = item.owner?.trim().toLowerCase() === 'self';
-    const followUpId = newId();
-    const doc: FollowUpDoc = {
-      followUpId,
-      sealedTask: sealJson(
-        dek,
-        { task: item.text, owner: item.owner, kind: item.kind },
-        binding(uid, `followUp/${followUpId}`, 'task'),
-      ),
-      ownerType: ownerIsSelf ? 'self' : 'other',
-      counterpartyPersonId: ownerIsSelf
-        ? null
-        : (personIds.get(normalizeName(item.owner ?? '')) ?? null),
-      dueDate: item.dueDate,
-      state: 'open',
-      recordingId: recording.recordingId,
-      conversationId,
-      startMs: item.startMs,
-      recordedAt: recording.startedAt,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    await db.putFollowUp(uid, doc);
-  }
 }

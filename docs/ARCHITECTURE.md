@@ -141,10 +141,18 @@ names inherited from earlier repairs. Some tests still inspect source strings.
 Prefer behavior tests for each boundary as it changes. Do not introduce another
 module that wraps existing methods at startup.
 
-Backend indexing still needs revision-based publication: conversation replacement,
-people counters and follow-up creation do not form one transaction. A worker
-failure during indexing can repeat derived side effects. Source audio and sealed
-transcripts are independent of that remaining risk.
+Backend processing now claims a recording through a transaction and fences each
+attempt with a lease. `pipeline/index-memory.ts` prepares optional embeddings
+outside Firestore, then commits conversations, people contributions, follow-ups
+and the ready checkpoint together. Retries reuse sealed understanding and leave
+completed tasks intact. Daily-brief recovery runs after publication, so a brief
+failure does not hide the memory. `first-memory.js` consumes the existing Library
+snapshot through an explicit callback; its illustrative sample never enters the
+journal, cloud history or personal actions.
+
+The emulator CI job exercises real SDK transactions without cloud credentials.
+The emulator does not reproduce every production contention/size limit; physical
+radio/audio testing and production monitoring remain separate release gates.
 
 See [recording architecture audit](RECORDING_AUDIT.md) for findings, changes,
 validation evidence and the physical-device acceptance boundary.

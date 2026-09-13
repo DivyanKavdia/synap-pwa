@@ -4,6 +4,7 @@ const { spawnSync } = require('node:child_process');
 
 // CI and local development run this same sequence. Individual scripts also run alone.
 const suites = [
+  ['first-memory'],
   ['audio-storage'],
   ['workflow', { SYNAP_WORKFLOW_OUTPUT: 'artifacts/workflows' }],
   ['ui', { SYNAP_UI_OUTPUT: 'artifacts/workflows/ui' }],

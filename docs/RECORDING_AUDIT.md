@@ -119,11 +119,13 @@ context; real provider requests were not made with user audio in this audit.
    reasons, reset/uptime evidence and capture/notification counters. Validate long
    recordings on both boards, including brief interruptions and Stop recovery.
    No claim of RF, battery or microphone reliability follows from simulated tests.
-2. **Derived indexing retry atomicity:** conversation replacement, people counters
-   and new follow-ups remain separate writes. A failure during indexing can repeat
-   counters or derived actions. A recording revision should publish these derived
-   records idempotently and preserve completion state. Source audio/transcripts
-   must remain independent of that publication transaction.
+2. **Derived indexing retry atomicity — addressed in the readiness pass:**
+   processing claims now have ownership fences, completed understanding is reused,
+   and derived rows plus the ready checkpoint publish in one Firestore transaction.
+   Legacy duplicate actions encountered during a retry retain completion state.
+   Existing historical people overcounts cannot be reconstructed reliably from
+   old partial writes; this change prevents new retry inflation.
+
 3. **Firmware source structure:** the 1,906-line shared sketch is still the source
    for both boards. Checked C3 text substitutions fail loudly, but remain brittle
    boundaries. Move board configuration and pure codec/recovery components into

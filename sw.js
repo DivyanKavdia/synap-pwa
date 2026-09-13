@@ -3,8 +3,8 @@ const APP_VERSION='1.0.0';
 /* app.js owns the client compatibility revision used for update signalling. */
 const CLIENT_REVISION='1.0.0-audio2';
 /* Refresh the installed shell without changing audio protocol compatibility. */
-const UI_RECOVERY_REVISION='1.0.0-touch1';
-const CACHE_REVISION='1.0.0-shell84-shared-touch';
+const UI_RECOVERY_REVISION='1.0.0-readiness1';
+const CACHE_REVISION='1.0.0-shell85-first-memory';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings.css','./library-tools.js','./library-tools.css',
@@ -13,7 +13,7 @@ const APP_SHELL=[
   './memory-workspace.js','./action-state.js','./my-actions.js','./compact-layout.js','./audio-enhancement.js','./audio-enhancement-ui.js','./audio-enhancement-worker.js','./vendor/audio-enhancement/rnnoise-sync.js',
   './synap-logo-blue-light.png','./synap-logo-blue-dark.png','./synap-logo-pink-light.png','./synap-logo-pink-dark.png','./synap-logo-lavender-light.png','./synap-logo-lavender-dark.png',
   './ai-providers.js','./sleep-state-guard.js','./recording-bridge.js','./transcript-repair.js','./manifest.webmanifest','./synap-logo-light.png','./synap-logo-dark.png','./icon.svg','./icon-192.png','./icon-512.png',
-  './google-auth.js','./synap-backend.js','./processing-recovery.js','./processing-pipeline-ui.js','./cost-ui.js','./synap-account-ui.js','./people-confirm-ui.js','./cloud-history.js'
+  './first-memory.js','./first-memory.css','./google-auth.js','./synap-backend.js','./processing-recovery.js','./processing-pipeline-ui.js','./cost-ui.js','./synap-account-ui.js','./people-confirm-ui.js','./cloud-history.js'
 ];
 const SCOPE=self.registration?.scope||'https://local.invalid/';
 const ORIGIN=self.location?.origin||new URL(SCOPE).origin;
@@ -56,13 +56,13 @@ async function updateRecordingNotification(client,state){
   if(typeof state.sessionId!=='string' || !state.sessionId || state.sessionId.length>160)
     throw Error('Recording session is unavailable.');
   const phase=['recording','interrupted','stopping','saving'].includes(state.phase)?state.phase:'interrupted';
-  const title={recording:'Synap is recording',interrupted:'Synap · Connection interrupted',
+  const title={recording:'Synap is recording',interrupted:state.source==='desktop'?'Synap · Audio waiting to be saved':'Synap · Connection interrupted',
     stopping:'Synap · Stopping recording',saving:'Synap · Saving recording'}[phase];
   const body={recording:(state.source==='desktop'?'Meeting audio + microphone.':'Pendant audio.')+' Keep Synap open while recording.',
-    interrupted:'Waiting to reconnect. Open Synap to check the recording.',
+    interrupted:state.source==='desktop'?'Open Synap to retry saving the meeting recording.':'Waiting to reconnect. Open Synap to check the recording.',
     stopping:'Finishing the current take. Open Synap for progress.',saving:'Saving the audio received on this device.'}[phase];
   const actions=[];
-  if(state.canStop===true)actions.push({action:'stop',title:phase==='interrupted'?'Save received audio':'Stop & save'});
+  if(state.canStop===true)actions.push({action:'stop',title:phase==='interrupted'?(state.source==='desktop'?'Retry saving':'Save received audio'):'Stop & save'});
   if(state.canMark===true && phase==='recording')actions.push({action:'mark',title:'Mark moment'});
   const options={body,tag:RECORDING_TAG,icon:new URL('./icon-192.png',SCOPE).href,
     silent:true,renotify:false,requireInteraction:true,

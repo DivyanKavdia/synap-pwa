@@ -2608,6 +2608,7 @@
     if (epoch !== libraryRenderEpoch) return;
 
     globalThis.SynapLibraryTools?.setJobs(jobs);
+    globalThis.SynapFirstMemory?.update({ count: recordings.length, recording: recordings.length === 1 ? recordings[0] : null, jobs });
 
     recordings.sort(function (a, b) {
       return new Date(b.createdAt) - new Date(a.createdAt);

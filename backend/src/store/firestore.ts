@@ -105,7 +105,40 @@ export async function patchRecording(
 ): Promise<void> {
   await paths
     .recording(uid, recordingId)
-    .set({ ...fields, updatedAt: new Date().toISOString() }, { merge: true });
+    .update({ ...fields, updatedAt: new Date().toISOString() });
+}
+
+export const PROCESSING_STALE_MS = 10 * 60_000;
+export function isProcessingActive(recording: RecordingDoc, now = Date.now()): boolean {
+  return ['transcribing', 'understanding', 'indexing'].includes(recording.state)
+    && now - Date.parse(recording.updatedAt) < PROCESSING_STALE_MS;
+}
+
+/** Claim and fence one attempt. A timed-out worker can finish its network call,
+ * but only the current lease can change the recording or publish its index. */
+export async function claimProcessing(uid: string, recordingId: string, lease: string, refreshReady = false): Promise<RecordingDoc> {
+  const ref = paths.recording(uid, recordingId);
+  return firestore().runTransaction(async tx => {
+    const current = (await tx.get(ref)).data() as RecordingDoc | undefined;
+    if (!current || current.deleting) throw new Error('Unknown recording');
+    if (current.state === 'ready' && !refreshReady) return current;
+    if (isProcessingActive(current)) throw new Error('Recording is already processing');
+    if (!['uploaded', 'failed', 'ready', 'transcribing', 'understanding', 'indexing'].includes(current.state)) {
+      throw new Error(`Recording is not uploaded: ${current.state}`);
+    }
+    tx.update(ref, { processingLease: lease, state: 'transcribing', progress: 0.05, updatedAt: new Date().toISOString() });
+    return current;
+  });
+}
+
+export async function patchProcessing(uid: string, recordingId: string, lease: string, fields: Partial<RecordingDoc>): Promise<void> {
+  const ref = paths.recording(uid, recordingId);
+  await firestore().runTransaction(async tx => {
+    const current = (await tx.get(ref)).data() as RecordingDoc | undefined;
+    if (!current || current.deleting) throw new Error('Unknown recording');
+    if (current.processingLease !== lease) throw new Error('Processing attempt was superseded');
+    tx.update(ref, { ...fields, updatedAt: new Date().toISOString() });
+  });
 }
 
 export async function listRecordingsByDay(uid: string, day: string): Promise<RecordingDoc[]> {
@@ -465,6 +498,10 @@ export async function completeIdempotencyKey(
 
 /** Recursively delete a recording and everything derived from it. */
 export async function deleteRecording(uid: string, recordingId: string): Promise<void> {
+  // Fence publishers before removing derived rows. Repeated deletion can resume
+  // cleanup, but no in-flight worker can recreate the index while it is erased.
+  try { await paths.recording(uid, recordingId).update({ deleting: true, processingLease: null }); }
+  catch (cause) { if ((cause as { code?: number }).code !== 5) throw cause; }
   await deleteConversationsForRecording(uid, recordingId);
   const followUps = await paths.followUps(uid).where('recordingId', '==', recordingId).get();
   const batch = firestore().batch();

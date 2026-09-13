@@ -145,7 +145,7 @@
       refreshToken: tokens.refresh_token,
       /* Renew a minute early so a request never races its own expiry. */
       expiresAt: Date.now() + Math.max(0, (tokens.expires_in || 3600) - 60) * 1000,
-      profile: profile || (readSession() || {}).profile || null
+      profile: profile || null
     };
     writeSession(session);
     return session;
@@ -153,7 +153,8 @@
 
   function finishSession(result) {
     var session = storeTokens(result, null);
-    return me().then(function (profile) {
+    return me(session.refreshToken).then(function (profile) {
+      if (readSession()?.refreshToken !== session.refreshToken) return readSession();
       session.profile = profile;
       writeSession(session);
       return session;
@@ -445,6 +446,9 @@
       if (init.expectedUid && readSession()?.profile?.uid !== init.expectedUid) {
         throw Object.assign(new Error('Google account changed. Retry under the recording owner.'), { name: 'AbortError' });
       }
+      if (init.expectedRefreshToken && readSession()?.refreshToken !== init.expectedRefreshToken) {
+        throw Object.assign(new Error('Sign-in session changed.'), { name: 'AbortError' });
+      }
     }
     return accessToken().then(function (token) {
       assertAccount();
@@ -471,8 +475,8 @@
     });
   }
 
-  function me() {
-    return authedFetch('/v1/auth/me').then(function (response) {
+  function me(expectedRefreshToken) {
+    return authedFetch('/v1/auth/me', { expectedRefreshToken: expectedRefreshToken }).then(function (response) {
       if (!response.ok) throw new Error('Could not load your profile.');
       return response.json();
     });
@@ -480,15 +484,17 @@
 
   function signOut() {
     var session = readSession();
-    var done = session
-      ? authedFetch('/v1/auth/signout', { method: 'POST' }).catch(function () { /* local sign-out still proceeds */ })
+    // End local ownership immediately. A slow/offline revoke must neither keep
+    // uploads signed in nor later clear a newly selected account.
+    writeSession(null);
+    if (root.google && root.google.accounts && root.google.accounts.id) {
+      try { root.google.accounts.id.disableAutoSelect(); } catch (error) { /* ignore */ }
+    }
+    // This request is bound to the captured token, never the next account. An
+    // expired token or unavailable backend still permits local sign-out.
+    return session?.accessToken
+      ? api('/v1/auth/signout', { headers: { Authorization: 'Bearer ' + session.accessToken } }).catch(function () {})
       : Promise.resolve();
-    return done.then(function () {
-      writeSession(null);
-      if (root.google && root.google.accounts && root.google.accounts.id) {
-        try { root.google.accounts.id.disableAutoSelect(); } catch (error) { /* ignore */ }
-      }
-    });
   }
 
   function isSignedIn() {

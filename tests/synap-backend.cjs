@@ -27,6 +27,33 @@ function storage(initial) {
   };
 }
 
+test('sign-out is immediate and a delayed revoke cannot clear the next account', async () => {
+  for (const fails of [false, true]) {
+    let finish;
+    const local=storage({'synap-auth-session-v1':JSON.stringify({refreshToken:'alice-refresh',accessToken:'alice-token',profile:{uid:'alice'},expiresAt:Date.now()+10000})});
+    const requests=[];
+    const context=load(authSource,{localStorage:local,fetch:(url,init)=>{requests.push({url,init});return new Promise((resolve,reject)=>{finish=()=>fails?reject(Error('offline')):resolve(new Response(null,{status:204}))})}});
+    const pending=context.SynapAuth.signOut();
+    assert.equal(context.SynapAuth.session(),null,'local ownership ends without waiting for the network');
+    local.setItem('synap-auth-session-v1',JSON.stringify({refreshToken:'bob-refresh',accessToken:'bob-token',profile:{uid:'bob'}}));
+    finish();await pending;
+    assert.equal(context.SynapAuth.session().profile.uid,'bob');
+    assert.equal(requests.length,1);
+    assert.equal(requests[0].init.headers.Authorization,'Bearer alice-token');
+  }
+});
+
+test('profile loading rejects a replaced sign-in session even when the account is the same', async () => {
+  let reply;
+  const local=storage({'synap-auth-session-v1':JSON.stringify({refreshToken:'first',accessToken:'first-token',profile:{uid:'alice'},expiresAt:Date.now()+10000})});
+  const context=load(authSource,{localStorage:local,fetch:()=>new Promise(resolve=>{reply=resolve})});
+  const pending=context.SynapAuth.authedFetch('/v1/auth/me',{expectedRefreshToken:'first'});
+  await new Promise(setImmediate);
+  local.setItem('synap-auth-session-v1',JSON.stringify({refreshToken:'second',profile:{uid:'alice'}}));
+  reply(new Response('{}',{status:200}));
+  await assert.rejects(pending,{name:'AbortError'});
+});
+
 test('a late token refresh cannot restore a signed-out account or overwrite a new account', async () => {
   for (const status of [200, 401]) {
     let reply;
@@ -115,7 +142,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell84-shared-touch'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell85-first-memory'/);
 });
 
 test('the settings form offers the encrypted cloud provider and a sign-in control', () => {
