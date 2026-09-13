@@ -3,8 +3,8 @@ const APP_VERSION='1.0.0';
 /* app.js owns the client compatibility revision used for update signalling. */
 const CLIENT_REVISION='1.0.0-audio2';
 /* Refresh the installed shell without changing audio protocol compatibility. */
-const UI_RECOVERY_REVISION='1.0.0-mic1';
-const CACHE_REVISION='1.0.0-shell77-mic';
+const UI_RECOVERY_REVISION='1.0.0-day-header1';
+const CACHE_REVISION='1.0.0-shell78-day-header';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings.css','./library-tools.js','./library-tools.css',

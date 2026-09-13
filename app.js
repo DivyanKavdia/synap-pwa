@@ -2488,7 +2488,8 @@
     });
     const weekday = selectedDayKey === localDateKey(yesterday)
       ? "Yesterday" : date.toLocaleDateString([], { weekday: "short" });
-    ui.brainDateLine.textContent = weekday + " · " + ui.selectedDateLabel.textContent;
+    ui.brainDateLine.textContent = ui.selectedDateLabel.textContent;
+    ui.brainDateLine.setAttribute("aria-label", weekday + " · " + ui.selectedDateLabel.textContent);
     ui.brainDateLine.dateTime = selectedDayKey;
     ui.glanceRecordings.textContent = String(recordings.length);
     ui.glanceRecordings.nextElementSibling.textContent = recordings.length === 1 ? "recording" : "recordings";

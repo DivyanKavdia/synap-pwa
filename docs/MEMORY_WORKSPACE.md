@@ -28,7 +28,9 @@ expand/collapse control. Library remains the home for original recordings.
 
 The date picker remains the single day-change event for brief, memory, cloud
 history and Library consumers. `app.js` owns the compact date label and captured
-audio totals; `brain-ui.js` derives conversation and decision totals from the
+audio totals. The heading, date and day arrows share one row with 44px touch
+targets; the short date keeps weekday context in its accessible label.
+`brain-ui.js` derives conversation and decision totals from the
 same selected-day records used for the summary. The overview has one visible
 heading and omits zero totals on empty days. The audio shortcut opens Library's
 Day filter, clearing search and status filters; the conversation shortcut expands its existing detail panel.
