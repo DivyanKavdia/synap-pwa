@@ -14,6 +14,7 @@ async function run() {
   const browser = await launchChromium();
   try {
     for (const [theme, width] of [
+      ['light', 320],
       ['dark', 390],
       ['light', 1440],
     ]) {
@@ -119,8 +120,20 @@ async function run() {
       assert(await page.locator('.memory-timeline-day').count());
       await page.locator('#previousMemoryWeek').click();
       await page.locator('#currentMemoryWeek').waitFor();
+      const weekControls = await page
+        .locator('.memory-week-navigation button')
+        .evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().toJSON()));
+      assert.equal(weekControls.length, 4);
+      assert(weekControls.every((rect) => rect.width >= 44 && rect.height >= 44));
+      assert(
+        weekControls.every((rect) => Math.abs(rect.y - weekControls[0].y) < 1),
+        'week arrows, This week and Refresh stay on one row',
+      );
       await page.locator('#currentMemoryWeek').click();
       assert(await page.locator('#nextMemoryWeek').isDisabled());
+      assert(await page.locator('#currentMemoryWeek').isDisabled());
+      await page.locator('#synapRefreshWeek').click();
+      await page.locator('#memoryWeekPanel .synap-week-source').first().waitFor();
       await page.screenshot({ path: path.join(output, `weekly-${theme}-${width}.png`) });
       await page.locator('#memoryTab-week').focus();
       await page.keyboard.press('Home');

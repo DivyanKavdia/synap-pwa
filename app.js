@@ -2609,7 +2609,10 @@
     if (libraryScope === "day") recordings = dayRecordings;
     ui.recordingsCount.textContent = String(recordings.length);
     const hint = document.getElementById("libraryScopeHint");
-    if (hint) hint.textContent = libraryScope === "all" ? "All recordings saved in this browser" : "Recordings for " + formatDate(dateFromKey(dayKey));
+    if (hint) {
+      hint.hidden = libraryScope === "all";
+      hint.textContent = "Recordings for " + formatDate(dateFromKey(dayKey));
+    }
     const emptyCopy = document.querySelector("#emptyRecordings p");
     if (emptyCopy) emptyCopy.textContent = libraryScope === "all" ? "No recordings saved in this browser yet. Capture a moment, or sign in to restore your history." : "No recordings for this day. Choose All dates to see your other recordings.";
 
