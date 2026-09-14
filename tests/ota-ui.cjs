@@ -27,11 +27,11 @@ const block=(from,to)=>source.slice(source.indexOf(from),source.indexOf(to));
   assert.equal(stateNode('setupDeviceStatus').textContent,'Recording');assert(card.ui.chooseDeviceButton.disabled);
   // OTA owns a wake lock even without an active recording session.
   let released=0;const lock={release:async()=>released++,addEventListener(){}};
-  const c={navigator:{wakeLock:{request:async()=>lock}},wakeLock:null,bluefyWakeLock:false,firmwareBusy:true,recordingSessionId:0,
-    isCurrentSession:()=>false,appState:'updating',log(){},friendlyError:e=>e.message};vm.createContext(c);
-  vm.runInContext(block('  async function acquireWakeLock()','  async function releaseWakeLock()'),c);
-  await c.acquireWakeLock();assert.equal(c.wakeLock,lock);assert.equal(released,0);
-  c.wakeLock=null;c.firmwareBusy=false;await c.acquireWakeLock();assert.equal(released,1);
+  let scope='firmware';const ScreenWakeLock=require('../recording/screen-wake-lock.js');
+  const c={screenWakeLock:new ScreenWakeLock({navigator:{wakeLock:{request:async()=>lock}},scope:()=>scope})};vm.createContext(c);
+  vm.runInContext(block('  async function acquireWakeLock()','  function drawWaveform()'),c);
+  await c.acquireWakeLock();assert.equal(c.screenWakeLock.owner.lock,lock);assert.equal(released,0);
+  await c.releaseWakeLock();scope=null;await c.acquireWakeLock();assert.equal(released,1);
   // Scheduler cannot launch a job after OTA takes ownership during an awaited selection.
   require('../audio-store.js');require('../processing-queue.js');let allowed=false,processed=0,selections=0;
   const store={nextRunnable:async()=>{selections++;return{job:null,wakeAt:0,blockedCount:0};}};

@@ -51,7 +51,15 @@ async function run() {
           const button = node(id);
           button.replaceWith(button.cloneNode(true));
         }
-        const qa = (window.otaUiFixture = { flashes: 0, holdCheck: false });
+        const qa = (window.otaUiFixture = { flashes: 0, holdCheck: false, screenCalls: [] });
+        const screenWakeLock = new window.SynapScreenWakeLock({
+          navigator: { bluetooth: { setScreenDimEnabled: value => {
+            qa.screenCalls.push(value);
+            return new Promise(() => {}); // Bluefy never acknowledges either request.
+          } } },
+          scope: () => document.body.dataset.state === 'updating' ? 'firmware' : null,
+          timeoutMs: 100,
+        });
         const gate = (name) =>
           new Promise((resolve, reject) => {
             qa[name] = { resolve, reject };
@@ -149,8 +157,8 @@ async function run() {
           log() {},
           processor: { pause() {} },
           setInterval() {},
-          acquireWakeLock: async () => {},
-          releaseWakeLock: async () => {},
+          acquireWakeLock: () => screenWakeLock.acquire(),
+          releaseWakeLock: () => screenWakeLock.release(),
           delay: async (ms) => {
             if (ms === 1500) await gate('reboot');
           },
@@ -193,14 +201,21 @@ async function run() {
         'starting from Settings must not close it',
       );
       assert.equal(await page.locator('#firmwareNoticeText').textContent(), 'Preparing update…');
+      assert(await page.locator('#otaCancel').isEnabled(), 'preparation remains cancellable');
       assert.equal(
         await page.locator('#firmwareNoticeProgress').getAttribute('value'),
         null,
         'preparation has no invented percentage',
       );
+      await page.locator('#otaCancel').click();
       await page.evaluate(() => otaUiFixture.check.resolve());
+      await page.waitForFunction(() => document.body.dataset.state === 'idle');
+      assert.match(await page.locator('#otaStatus').textContent(), /cancelled.*Nothing was flashed/);
+      assert.equal(await page.evaluate(() => otaUiFixture.flashes), 0);
+      await page.locator('#otaLatest').click();
       await page.waitForFunction(() => !!otaUiFixture.download);
       assert.equal(await page.locator('#otaStatus').textContent(), 'Downloading update…');
+      assert(await page.evaluate(() => otaUiFixture.screenCalls.includes(false)), 'hung screen control does not block the download');
       await page.waitForFunction(
         () => document.querySelector('#headerPendantStatus').textContent === 'Updating',
       );
@@ -286,7 +301,7 @@ async function run() {
       );
       assert.deepEqual(errors, []);
       console.log(
-        `PASS firmware/${mode}/${width}: Settings start, shared live percentage, navigation, reboot verification, failure and cancellation`,
+        `PASS firmware/${mode}/${width}: hung Bluefy screen control, preparation cancellation, transfer progress, reboot verification and retry`,
       );
       await context.close();
     }
