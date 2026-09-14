@@ -18,7 +18,7 @@ assert.doesNotMatch(dashboard,/createElement\(['"]details['"]\)/);
 assert.match(dashboard,/scrollIntoView/);
 assert.match(dashboard,/IntersectionObserver/);
 assert.doesNotMatch(dashboard,/capture:'#capture'/);
-assert.match(capture,/section.hidden=true/);
+assert.match(capture,/section.hidden\s*=\s*true/);
 assert.match(capture,/recordingSessionBar/);
 assert.match(capture,/markMoment/);
 

@@ -43,12 +43,15 @@ module.exports = function pendantFixture() {
     if(op===9)payload=new TextEncoder().encode(JSON.stringify({active:offlineRecording,state:offlineRecording?1:2,error:0,progress:20,path:'/synap/abcdef01-00000001.mjpeg'}));
     transferReply=new DataView(new ArrayBuffer(16+payload.length));[0xCB,1,1,0].forEach((n,i)=>transferReply.setUint8(i,n));transferReply.setUint32(4,id,true);transferReply.setUint32(8,total,true);transferReply.setUint32(12,offset,true);new Uint8Array(transferReply.buffer).set(payload,16);
   }
+  let voiceSequence=0, voiceAction=0, voiceEnabled=true, voiceLease=0, voiceResult=0;
+  function voiceStatus(){const v=new DataView(new ArrayBuffer(20));[0xCD,1,voiceEnabled?1:5,voiceEnabled?1:0].forEach((x,i)=>v.setUint8(i,x));v.setUint32(4,voiceSequence,true);v.setUint8(8,voiceAction);v.setUint8(9,voiceResult);return v;}
+  function emitVoice(){const c=chars.get(uuid('57'));c.value=voiceStatus();c.dispatchEvent(new Event('characteristicvaluechanged'));}
   let mediaOperation=0,mediaId=0,mediaState=0,mediaError=0,sdAvailable=true,mediaWrites=0;
   function moduleDescriptor() {
     const v=new DataView(new ArrayBuffer(20));
     [0xC7,1,3,1].forEach((x,i)=>v.setUint8(i,x));
     v.setUint16(4,911,true);v.setUint16(6,sdAvailable?911:651,true);
-    v.setUint16(8,0x3660,true);v.setUint16(10,16000,true);v.setUint8(12,8);v.setUint8(13,8);v.setUint8(14,location.search.includes('chakshu-media')?1:0);return v;
+    v.setUint16(8,0x3660,true);v.setUint16(10,16000,true);v.setUint8(12,8);v.setUint8(13,8);v.setUint8(14,location.search.includes('chakshu-media')?1:0);v.setUint8(15,location.search.includes('voice')?1:0);return v;
   }
   function mediaStatus() {
     const v=new DataView(new ArrayBuffer(20));
@@ -145,6 +148,7 @@ module.exports = function pendantFixture() {
       return operation(async () => {
         if (this.id === uuid('50')) return moduleDescriptor();
         if (this.id === uuid('55')) return transferReply;
+        if (this.id === uuid('56')) return voiceStatus();
         if (this.id === uuid('52')) return mediaStatus();
         if (this.id === uuid('53')) return new DataView(new TextEncoder().encode(mediaPath()).buffer);
         if (this.id === uuid('49')) return otaStatus();
@@ -176,6 +180,7 @@ module.exports = function pendantFixture() {
     }
     writeValueWithResponse(value) {
       return operation(async () => {
+        if (this.id===uuid('56')) { if(value[2]===0||value[2]===1)voiceEnabled=value[2]===1;if(value[2]===2)voiceLease=Date.now();if(value[2]===3)voiceLease=0;return; }
         if (this.id===uuid('54')) { transferCommand(value); return; }
         if (this.id===uuid('51')) {
           mediaWrites++;mediaOperation=value[2];mediaId=value[3];
@@ -288,7 +293,7 @@ module.exports = function pendantFixture() {
     [uuid('4c'), new Characteristic(uuid('4c'))],
     [uuid('4e'), new Characteristic(uuid('4e'))],
   ]);
-  if(chakshu)for(const id of ['50','51','52','53','54','55','4b'])chars.set(uuid(id),new Characteristic(uuid(id)));
+  if(chakshu)for(const id of ['50','51','52','53','54','55','56','57','4b'])chars.set(uuid(id),new Characteristic(uuid(id)));
   if (buffered) chars.set(uuid('4f'), new Characteristic(uuid('4f')));
   if (ota) for (const id of ['48', '49', '4b']) chars.set(uuid(id), new Characteristic(uuid(id)));
   const service = {
@@ -411,6 +416,9 @@ module.exports = function pendantFixture() {
     get: () => (bluetoothAvailable ? bluetooth : undefined),
   });
   window.bleFixture = {
+    voice(action){voiceSequence++;voiceAction=action;voiceResult=voiceEnabled&&Date.now()-voiceLease<6000?2:0;emitVoice();return voiceSequence;},
+    replayVoice:emitVoice,
+    get voiceLease(){return voiceLease;},
     get mediaWrites(){return mediaWrites;},
     setSdAvailable(value){sdAvailable=value;},
     finishMedia(error=0){mediaError=error;mediaState=error?3:2;},

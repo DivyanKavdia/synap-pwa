@@ -1220,3 +1220,20 @@ body.synap-refresh #memoryWorkspace {
  .synap-refresh .memory-workspace-tabs{display:flex;gap:4px;padding:4px 12px}
  .synap-refresh .memory-workspace-tabs button{padding:8px 20px}
 }
+
+/* Three capture modes share one row beneath the brand on small phones. */
+.header-media-button:disabled{color:var(--muted);background:var(--surface);opacity:.55}
+.header-media-notice{flex-basis:100%;margin:0;padding:.4rem 0;font-size:.8rem;color:var(--ink)}
+.header-media-notice{grid-column:1/-1}
+@media(max-width:640px){
+ .synap-refresh #settingsDialog .modal-header{padding:2px 0!important;gap:4px 12px}
+ body.synap-refresh .topbar{grid-template-columns:minmax(0,1fr)}
+ body.synap-refresh .topbar .brand-logo{height:32px;width:auto;max-width:120px}
+ body.synap-refresh .topbar>.top-actions{width:100%;min-width:0;justify-content:space-between;flex-wrap:nowrap;gap:4px;margin-left:0}
+}
+@media(max-width:360px){
+ .first-memory{padding-top:10px}
+ body.synap-refresh .header-pendant-status{width:36px;min-width:36px;padding:0;justify-content:center}
+ body.synap-refresh .header-pendant-status .header-status-text{display:none}
+ body.synap-refresh .header-pendant-status .header-status-dot{display:block}
+}
