@@ -44,7 +44,7 @@ module.exports = function pendantFixture() {
     if(op===9)payload=new TextEncoder().encode(JSON.stringify({active:offlineRecording,state:offlineRecording?1:2,error:0,progress:20,path:'/synap/abcdef01-00000001.mjpeg'}));
     transferReply=new DataView(new ArrayBuffer(16+payload.length));[0xCB,1,1,0].forEach((n,i)=>transferReply.setUint8(i,n));transferReply.setUint32(4,id,true);transferReply.setUint32(8,total,true);transferReply.setUint32(12,offset,true);new Uint8Array(transferReply.buffer).set(payload,16);
   }
-  let voiceSequence=0, voiceAction=0, voiceEnabled=true, voiceLease=0, voiceResult=0;
+  let voiceSequence=0, voiceAction=0, voiceEnabled=true, voiceLease=0, voiceResult=0,emptyVoiceRead=false;
   let modelState=0,modelOffset=0,modelSession=0,modelBegins=0,modelFailure=0;
   function modelStatus(){const embedded=location.search.includes('flash-model'),v=new DataView(new ArrayBuffer(20));[0xCE,1,embedded?3:modelState,0].forEach((n,i)=>v.setUint8(i,n));v.setUint32(4,modelSession,true);v.setUint32(8,embedded?2177224:modelOffset,true);v.setUint32(12,2177224,true);v.setUint16(16,480,true);v.setUint8(18,sdAvailable?1:0);v.setUint8(19,embedded?2:1);return v;}
   function voiceStatus(){const v=new DataView(new ArrayBuffer(20));[0xCD,1,voiceEnabled?1:5,voiceEnabled?1:0].forEach((x,i)=>v.setUint8(i,x));v.setUint32(4,voiceSequence,true);v.setUint8(8,voiceAction);v.setUint8(9,voiceResult);return v;}
@@ -151,7 +151,7 @@ module.exports = function pendantFixture() {
       return operation(async () => {
         if (this.id === uuid('50')) return moduleDescriptor();
         if (this.id === uuid('55')) {if(transferReply.getUint8(0)===0)uninitializedMediaReads++;return transferReply;}
-        if (this.id === uuid('56')) return voiceStatus();
+        if (this.id === uuid('56')) return emptyVoiceRead?new DataView(new ArrayBuffer(0)):voiceStatus();
         if (this.id === uuid('59')) return modelStatus();
         if (this.id === uuid('52')) return mediaStatus();
         if (this.id === uuid('53')) return new DataView(new TextEncoder().encode(mediaPath()).buffer);
@@ -440,6 +440,7 @@ module.exports = function pendantFixture() {
     get: () => (bluetoothAvailable ? bluetooth : undefined),
   });
   window.bleFixture = {
+    emptyVoiceStatus(value){emptyVoiceRead=value;},
     voice(action){voiceSequence++;voiceAction=action;voiceResult=voiceEnabled&&Date.now()-voiceLease<6000?2:0;emitVoice();return voiceSequence;},
     replayVoice:emitVoice,
     get voiceLease(){return voiceLease;},

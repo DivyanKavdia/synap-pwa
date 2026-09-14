@@ -113,7 +113,11 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       );
       await page.waitForFunction(() => document.body.dataset.startup === 'ready');
       assert(await page.locator('#chakshuVoice').isHidden());
-      if (model === 'flash') await page.evaluate(() => bleFixture.setSdAvailable(false));
+      if (model === 'flash')
+        await page.evaluate(() => {
+          bleFixture.setSdAvailable(false);
+          bleFixture.emptyVoiceStatus(true);
+        });
       await page.locator('#headerPendantStatus').click();
       await page.waitForFunction(
         () => SynapChakshu.state.available && document.body.dataset.state === 'idle',
@@ -133,8 +137,54 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
         );
         for (const id of ['Install', 'Cancel', 'Restart', 'Progress', 'Manual'])
           assert(await page.locator('#chakshuModel' + id).isHidden());
+        // An installed model alone must not enable voice when firmware reads are empty.
+        await page.waitForFunction(() =>
+          document
+            .getElementById('chakshuVoiceStatus')
+            .textContent.includes('Could not read voice status'),
+        );
+        assert(await page.locator('#chakshuVoiceEnabled').isDisabled());
+        await page.evaluate(() => bleFixture.emptyVoiceStatus(false));
         // Model storage and recognizer status arrive through separate GATT reads.
         await page.waitForFunction(() => !document.getElementById('chakshuVoiceEnabled').disabled);
+        assert.match(await page.locator('#chakshuVoiceStatus').textContent(), /Listening/);
+        // A later failed read recovers without leaving its error above live state.
+        await page.evaluate(() => bleFixture.emptyVoiceStatus(true));
+        await page.waitForFunction(() =>
+          document
+            .getElementById('chakshuVoiceStatus')
+            .textContent.includes('Could not read voice status'),
+        );
+        await page.evaluate(() => bleFixture.emptyVoiceStatus(false));
+        await page.waitForFunction(() =>
+          document.getElementById('chakshuVoiceStatus').textContent.includes('Listening'),
+        );
+        // A successful status read must still preserve errors from a requested action.
+        await page.evaluate(() => {
+          SynapChakshu.voiceCommand = async () => {
+            throw Error('Camera capture failed.');
+          };
+          bleFixture.voice(1);
+        });
+        await page.waitForFunction(() =>
+          document
+            .getElementById('chakshuVoiceStatus')
+            .textContent.includes('Camera capture failed'),
+        );
+        const lease = await page.evaluate(() => bleFixture.voiceLease);
+        await page.waitForFunction((old) => bleFixture.voiceLease > old, lease);
+        assert.match(
+          await page.locator('#chakshuVoiceStatus').textContent(),
+          /Camera capture failed/,
+        );
+        await page.evaluate(() => bleFixture.disconnect());
+        await page.waitForFunction(() => document.body.dataset.state === 'disconnected');
+        await page.evaluate(() => SynapAppControls.toggleConnection());
+        await page.waitForFunction(
+          () =>
+            document.getElementById('chakshuVoiceStatus').textContent.includes('Listening') &&
+            !document.getElementById('chakshuVoiceEnabled').disabled,
+        );
         await page.locator('#chakshuVoiceEnabled').click();
         await page.waitForFunction(() => SynapChakshuVoice.state?.status === 5);
         await page.locator('#chakshuVoiceEnabled').click();
