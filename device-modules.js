@@ -50,23 +50,23 @@
     }
     get busy() { return this.commandPending || Boolean(this.expected) || this.status?.state===1; }
     close() { this.closed=true;this.characteristics={}; }
-    async characteristic(uuid) {
-      if (!this.characteristics[uuid]) this.characteristics[uuid]=await this.context.queue(
+    async characteristic(uuid,queue=this.context.queue) {
+      if (!this.characteristics[uuid]) this.characteristics[uuid]=await queue(
         ()=>this.context.service.getCharacteristic(uuid),'Find module characteristic');
       this.ensure();return this.characteristics[uuid];
     }
     ensure() { if (this.closed) throw Error('Module connection changed.'); }
-    async read(uuid) {
-      const characteristic=await this.characteristic(uuid);
-      const value=await this.context.queue(()=>characteristic.readValue(),'Read module status');
+    async read(uuid,queue=this.context.queue) {
+      const characteristic=await this.characteristic(uuid,queue);
+      const value=await queue(()=>characteristic.readValue(),'Read module status');
       this.ensure();return value;
     }
-    async identify() {
+    async identify(queue=this.context.queue) {
       let value;
-      try { value=await this.read(UUID); }
+      try { value=await this.read(UUID,queue); }
       catch(error) {
         if(error.name!=='NotFoundError')throw error;
-        this.module=legacy(new TextDecoder('utf-8',{fatal:true}).decode(await this.read(IDENTITY)));
+        this.module=legacy(new TextDecoder('utf-8',{fatal:true}).decode(await this.read(IDENTITY,queue)));
         this.available=true;return;
       }
       this.module=decode(value);this.available=true;
@@ -101,11 +101,16 @@
       } else this.path='';
     }
     async refresh() {
-      if (this.pending || this.closed || this.context.canUse?.()===false) return false;
+      // A resumed audio take may last indefinitely. Read capabilities once on
+      // its new link so the camera can be used alongside audio. SD status and
+      // subsequent passive polling still wait until recording stops.
+      const identifyDuringAudio=this.context.canUse?.()===false && !this.available &&
+        this.context.canUseMedia?.()===true;
+      if (this.pending || this.closed || (this.context.canUse?.()===false && !identifyDuringAudio)) return false;
       this.pending=true;
       try {
-        await this.identify();
-        if(this.module?.id===3)await this.updateStatus();
+        await this.identify(identifyDuringAudio?this.context.mediaQueue:this.context.queue);
+        if(this.module?.id===3 && this.context.canUse?.()!==false)await this.updateStatus();
         this.error='';return true;
       } catch(error) {
         if(this.closed)return false;

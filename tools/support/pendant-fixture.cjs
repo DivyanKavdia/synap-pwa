@@ -6,7 +6,8 @@ module.exports = function pendantFixture() {
     'dk-pendant-settings',
     JSON.stringify({ autoProcess: false, wakeLock: false }),
   );
-  const buffered = location.search.includes('buffered');
+  const orphanTransport = location.search.includes('orphan-transport');
+  const buffered = location.search.includes('buffered') || orphanTransport;
   const connectedReplay = location.search.includes('background');
   const recoveryCapacity = connectedReplay && location.search.includes('c3') ? 25 : 600;
   const chakshu=location.search.includes('chakshu');
@@ -67,8 +68,8 @@ module.exports = function pendantFixture() {
   function mediaPath() {
     return mediaState===2&&mediaOperation!==1?'/synap/12345678-00000001.'+({2:'jpg',3:'wav',4:'mjpeg'}[mediaOperation]):'';
   }
-  let armed = false,
-    waiting = false,
+  let armed = orphanTransport,
+    waiting = orphanTransport,
     finishing = false,
     owner = [],
     buffer = [],
@@ -90,7 +91,7 @@ module.exports = function pendantFixture() {
     v.setUint32(12, hash, true);
     return v;
   };
-  let state = 1,
+  let state = orphanTransport ? 2 : 1,
     sequence = 0,
     audioTimer = null,
     inFlight = 0,
@@ -119,13 +120,15 @@ module.exports = function pendantFixture() {
     v.setUint8(0, 0x5a);
     v.setUint8(1, 2);
     v.setUint8(2, state);
-    v.setUint16(4, 512, true);
-    v.setUint16(6, 509, true);
-    v.setUint8(8, 4);
+    // Firmware resets transport metadata on a new link while the previous
+    // buffered take waits for its owner to RESUME, or for STOP/expiry.
+    v.setUint16(4, waiting ? 23 : 512, true);
+    v.setUint16(6, waiting ? 20 : 509, true);
+    v.setUint8(8, waiting ? 0 : 4);
     v.setUint8(9, 8);
     v.setUint16(10, 16000, true);
     v.setUint16(12, 800, true);
-    v.setUint16(14, 400, true);
+    v.setUint16(14, waiting ? 0 : 400, true);
     return v;
   };
   async function operation(fn) {
@@ -272,7 +275,7 @@ module.exports = function pendantFixture() {
           }
           return;
         }
-        if (buffered && value[0] === 0 && state === 2) {
+        if (buffered && value[0] === 0 && state === 2 && !waiting) {
           if (stopDisconnect === 'before') {
             stopDisconnect = null;
             setVisibility('hidden');
@@ -308,7 +311,12 @@ module.exports = function pendantFixture() {
         }
         if (value[0] === 0) {
           state = 1;
+          waiting = false;
+          finishing = false;
+          buffer = [];
           clearInterval(audioTimer);
+          clearInterval(sendTimer);
+          sendTimer = null;
         }
         this.value = status();
         this.dispatchEvent(new Event('characteristicvaluechanged'));

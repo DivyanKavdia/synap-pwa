@@ -26,7 +26,7 @@
       const error = new Error('Optional Bluetooth setup deferred until recording stops.');
       error.name = 'AbortError'; error.code = 'OPTIONAL_GATT_DEFERRED'; return error;
     }
-    const context = { service, canUse, queue(action, label) {
+    const context = { service, canUse, canUseMedia, queue(action, label) {
       // Passive consumers must not occupy the queue during capture or recovery.
       if (!canUse()) return Promise.reject(deferred());
       return queue(async () => {
@@ -53,8 +53,8 @@
     try { root.dispatchEvent(new CustomEvent('synap-gatt-service-ready', { detail: context })); }
     catch (_) {}
   }
-  async function read(service, queue, assertConnection, canUse, canUseMedia) {
-    publishService(service, queue, assertConnection, canUse, canUseMedia);
+  async function read(service, queue, assertConnection, canUse, canUseMedia, assertServiceConnection = assertConnection) {
+    publishService(service, queue, assertServiceConnection, canUse, canUseMedia);
     let characteristic;
     try { characteristic = await queue(() => service.getCharacteristic(UUID), 'Find device identifier'); }
     catch (error) {

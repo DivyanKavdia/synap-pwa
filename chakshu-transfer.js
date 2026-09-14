@@ -38,15 +38,30 @@
     constructor(context) {
       this.context = context;
       this.id = 0;
-      this.pending = false;
+      this.operations = Promise.resolve();
       this.command = null;
       this.data = null;
     }
-    async request(op, offset = 0, path = '', signal) {
-      if (this.pending) throw Error('Wait for the current media transfer.');
-      this.pending = true;
+    serialize(action) {
+      // The pendant has one response and one selected image/file. Keep that
+      // source owned through all chunks; status polling waits its turn too.
+      // Native ATT operations still use the shared queue below, so microphone
+      // commands can run between camera chunks.
+      const operation = this.operations.then(action);
+      this.operations = operation.catch(() => {});
+      return operation;
+    }
+    request(op, offset = 0, path = '', signal) {
+      return this.serialize(() => this._request(op, offset, path, signal));
+    }
+    async _request(op, offset = 0, path = '', signal) {
       const queue = this.context.mediaQueue || this.context.queue;
-      const run = (action) => queue(action, 'Chakshu camera transfer');
+      const run = (action) => queue(async () => {
+        signal?.throwIfAborted();
+        const value = await action();
+        signal?.throwIfAborted();
+        return value;
+      }, 'Chakshu camera transfer');
       try {
         signal?.throwIfAborted();
         this.command ||= await run(() => this.context.service.getCharacteristic(COMMAND));
@@ -75,12 +90,13 @@
           detail: { operation: op, message: error.message },
         }));
         throw error;
-      } finally {
-        this.pending = false;
       }
     }
-    async bytes(op, path, signal, progress = () => {}) {
-      const first = await this.request(op, 0, path, signal),
+    bytes(op, path, signal, progress = () => {}) {
+      return this.serialize(() => this._bytes(op, path, signal, progress));
+    }
+    async _bytes(op, path, signal, progress = () => {}) {
+      const first = await this._request(op, 0, path, signal),
         limit = op === 1 ? 250000 : 32 * 1024 * 1024;
       if (!first.total || first.total > limit)
         throw Error('Camera file exceeds this transfer limit. Import it from the SD card.');
@@ -88,7 +104,7 @@
       let size = 0;
       const readOp = op === 1 ? 2 : 4;
       while (size < first.total) {
-        const reply = await this.request(readOp, size, '', signal);
+        const reply = await this._request(readOp, size, '', signal);
         if (
           reply.total !== first.total ||
           reply.offset !== size ||
@@ -110,10 +126,12 @@
         throw Error('Invalid SD path.');
       return this.bytes(3, path, signal, progress);
     }
-    async catalogue(signal) {
-      await this.request(7, 0, '', signal);
-      const blob = await this.bytes(8, '', signal);
-      return JSON.parse(await blob.text());
+    catalogue(signal) {
+      return this.serialize(async () => {
+        await this._request(7, 0, '', signal);
+        const blob = await this._bytes(8, '', signal);
+        return JSON.parse(await blob.text());
+      });
     }
   }
   root.SynapChakshuTransfer = { Client, decode };

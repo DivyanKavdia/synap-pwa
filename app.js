@@ -1090,14 +1090,17 @@
         disconnectGatt("Connection attempt failed: " + friendlyError(error), connectingDevice);
         throw error;
       }
+      function assertServiceConnection() {
+        if (epoch !== connectionEpoch || connectingDevice !== bluetoothDevice || !isGattConnected()) {
+          throw new Error("Connection changed during discovery.");
+        }
+      }
       function assertConnection() {
+        assertServiceConnection();
         // Visibility gates new attempts. Native Bluetooth UI can hide the page
         // during a successful handshake; it must not cancel an existing one.
         if (settings.recoveryAttempt && (!reconnectRequested() || manualDisconnect)) {
           throw new Error("Automatic reconnect was cancelled.");
-        }
-        if (epoch !== connectionEpoch || !isGattConnected()) {
-          throw new Error("Connection changed during discovery.");
         }
         if (resumingSessionId !== null && (finalizing || !isCurrentSession(resumingSessionId))) {
           throw new Error("Interrupted recording was already saved.");
@@ -1113,7 +1116,9 @@
       let connectedDeviceId = null;
       let identityMessage = "This firmware has no permanent device ID. Recording is available; install identity-enabled firmware to remember this device.";
       try {
-        connectedDeviceId = await globalThis.SynapDevices.read(service, queueGattOperation, assertConnection, optionalGattAllowed, mediaGattAllowed);
+        // Discovery belongs to the interrupted recording; the established
+        // service must remain usable after that take is saved or replaced.
+        connectedDeviceId = await globalThis.SynapDevices.read(service, queueGattOperation, assertConnection, optionalGattAllowed, mediaGattAllowed, assertServiceConnection);
       } catch (error) {
         assertConnection();
         identityMessage = "Device ID could not be read. Reconnect to retry setup. Recording is still available.";
@@ -1164,7 +1169,34 @@
       if(resumeBuffered) { await protection.resume(); log("Recovering buffered pendant audio", {capacityMs:protection.capacityMs()}); }
       await writeCommand(CMD_GET_STATUS);
       await delay(120);
-      await readControlStatus();
+      let unconfiguredStream = false;
+      await readControlStatus(() => { unconfiguredStream = true; });
+      assertConnection();
+
+      // An abandoned buffered take can report STREAMING with the new link's
+      // reset MTU/chunk fields until RESUME or STOP. Its audio is unusable, but
+      // the compatible control state still tells us to stop the old take.
+      // Never send this STOP when an in-page journal owns the recovery.
+      if (!resumingRecording && (deviceStatus.state === DEVICE_STATE.STREAMING || unconfiguredStream)) {
+        log("Recovered orphaned stream; requesting clean stop", { unconfiguredTransport: unconfiguredStream });
+        await writeCommand(CMD_STOP, assertConnection);
+        let stopped = false;
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          await delay(180);
+          const accepted = await readControlStatus();
+          assertConnection();
+          if (accepted && deviceStatus.state === DEVICE_STATE.CONNECTED_IDLE && deviceStatus.error === 0) {
+            stopped = true;
+            break;
+          }
+        }
+        if (!stopped) throw new Error("Pendant did not acknowledge stopping the previous stream.");
+        // STOP may still contain reset transport fields. GET_STATUS configures
+        // the actual current peer MTU before the app offers a new recording.
+        await writeCommand(CMD_GET_STATUS, assertConnection);
+        await delay(120);
+        await readControlStatus();
+      }
 
       // Android negotiates MTU asynchronously. Give it a bounded settling window.
       for (let retry = 0; deviceStatus.error === 1 && retry < 3; retry += 1) {
@@ -1187,17 +1219,6 @@
         if (deviceStatus.state !== DEVICE_STATE.STREAMING || deviceStatus.error !== 0) {
           throw new Error("Pendant did not resume the interrupted recording stream.");
         }
-      }
-
-      // A browser refresh can leave the peripheral streaming while the new
-      // page has no matching recording session. Normalize it to idle before
-      // exposing Start, so the LED and UI cannot disagree. An in-page transport
-      // recovery is different: it owns an existing journal and keeps streaming.
-      if (!resumingRecording && deviceStatus.state === DEVICE_STATE.STREAMING) {
-        log("Recovered orphaned stream; requesting clean stop");
-        await writeCommand(CMD_STOP);
-        await delay(180);
-        await readControlStatus();
       }
 
       if (resumingRecording &&
@@ -1491,7 +1512,7 @@
     log("Control command sent", { command, protocol: PROTOCOL_VERSION });
   }
 
-  async function readControlStatus() {
+  async function readControlStatus(onInvalidStream) {
     const characteristic = controlCharacteristic;
     const epoch = connectionEpoch;
     if (!characteristic || !isGattConnected()) return false;
@@ -1500,7 +1521,7 @@
         return characteristic.readValue();
       });
       if (epoch !== connectionEpoch) return false;
-      return parseStatusValue(value, "read");
+      return parseStatusValue(value, "read", onInvalidStream);
     } catch (error) {
       log("Control status read failed", friendlyError(error));
       return false;
@@ -1511,7 +1532,7 @@
     parseStatusValue(event.target.value, "notification");
   }
 
-  function parseStatusValue(value, source) {
+  function parseStatusValue(value, source, onInvalidStream) {
     if (!value || value.byteLength !== 16) {
       log("Ignored short status value", {
         source: source,
@@ -1567,6 +1588,9 @@
          receivedStatus.payloadBytes > MAX_AUDIO_PAYLOAD_BYTES ||
          receivedStatus.payloadBytes + AUDIO_HEADER_BYTES > receivedStatus.attCapacity)) {
       log("Rejected invalid streaming transport", receivedStatus);
+      // Connection setup can recover an orphan without accepting this as an
+      // audio transport or confirming that a recording has started.
+      onInvalidStream?.(receivedStatus);
       return false;
     }
     deviceStatus = receivedStatus;

@@ -58,6 +58,29 @@ test('a disconnect during discovery never updates another connection or rejects 
   const pending=client.refresh();client.close();release();
   assert.equal(await pending,false);assert.equal(client.module,null);
 });
+test('resumed audio identifies fresh camera capabilities once without polling SD or interrupting recording',async()=>{
+  let allowed=false,mediaAllowed=false;
+  const reads=[],queueCalls=[];
+  const context={canUse:()=>allowed,canUseMedia:()=>mediaAllowed,
+    queue:async action=>{assert(allowed);queueCalls.push('optional');return action();},
+    mediaQueue:async action=>{assert(mediaAllowed);queueCalls.push('media');return action();},
+    service:{getCharacteristic:async uuid=>({readValue:async()=>{
+      reads.push(uuid);const v=descriptor();v.setUint8(14,1);
+      return uuid===UUID?v:uuid.includes('352-')?status():new DataView(new ArrayBuffer(0));
+    }})},
+  };
+  const client=new Client(context);
+  assert.equal(await client.refresh(),false,'discovery waits until audio reconnect is complete');
+  assert.equal(reads.length,0);
+  mediaAllowed=true;
+  assert.equal(await client.refresh(),true);assert.equal(client.module.mediaVersion,1);
+  assert.deepEqual(reads,[UUID]);assert.deepEqual(queueCalls,['media','media']);
+  assert.equal(await client.refresh(),false,'no repeat polling during the same take');
+  await assert.rejects(client.run(2),/Finish/,'SD capture remains blocked while audio is recording');
+  assert.deepEqual(reads,[UUID]);
+  allowed=true;
+  assert.equal(await client.refresh(),true);assert.equal(client.status.freeMiB,1800);
+});
 
 test('Chakshu 1227 bounded C path buffers support captures and refreshes without accepting invalid paths',async()=>{
   const path='/synap/abcdef01-00000001.jpg';
