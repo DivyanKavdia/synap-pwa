@@ -8,6 +8,7 @@
     timer = null,
     lastPoll = 0,
     message = '',
+    readError = '',
     state = null;
   const api = () => root.SynapChakshu;
   function decode(value) {
@@ -45,6 +46,7 @@
       'Voice controls are off.',
     ];
     document.getElementById('chakshuVoiceStatus').textContent =
+      readError ||
       message ||
       (!supported
         ? 'Update Chakshu firmware for local voice controls.'
@@ -71,6 +73,8 @@
       binding.events.removeEventListener('characteristicvaluechanged', binding.handler);
     binding = null;
     state = null;
+    message = '';
+    readError = '';
     lastPoll = 0;
     clearTimeout(timer);
     timer = null;
@@ -83,6 +87,7 @@
     // A poll begun before a notification may finish afterward. Keep newer state.
     if (delta >= 0x80000000) return;
     state = incoming;
+    readError = '';
     render();
     if (!delta) return;
     b.sequence = incoming.sequence;
@@ -152,7 +157,10 @@
           'Find voice events',
         );
         if (!current(b)) return;
-        state = decode(await context.mediaQueue(() => b.control.readValue(), 'Read voice status'));
+        const value = await context.mediaQueue(() => b.control.readValue(), 'Read voice status');
+        if (!current(b)) return;
+        state = decode(value);
+        readError = '';
         b.sequence = state.sequence;
         b.handler = (e) => {
           command(b, e.target.value).catch((e) => {
@@ -185,8 +193,13 @@
     } catch (e) {
       // Recorder recovery/OTA owns the link. Let the lease expire without retrying
       // native requests in a tight loop or disconnecting the audio stream.
+      if (context !== root.SynapDevices?.connection || owner !== api()?.state.owner) return;
       if (!binding?.started) close();
-      if (e.code !== 'OPTIONAL_GATT_DEFERRED') message = e.message;
+      if (e.code !== 'OPTIONAL_GATT_DEFERRED')
+        readError =
+          e.message === 'Unsupported voice status.'
+            ? 'Could not read voice status. Update Chakshu firmware, then reconnect.'
+            : e.message;
     } finally {
       pending = false;
       render();
