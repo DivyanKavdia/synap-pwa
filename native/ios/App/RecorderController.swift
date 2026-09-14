@@ -219,7 +219,9 @@ final class RecorderController: ObservableObject {
             do {
                 if bound { try current.receive(bytes) }
                 else {
-                    guard bufferedPackets.count < 128 else { throw LinkFailure(message: "The pendant handshake took too long. Received audio has been kept.") }
+                    // Allow a restored notification burst while identity reads complete.
+                    // This remains bounded to about 4 MiB of maximum-size packet payloads.
+                    guard bufferedPackets.count < 8192 else { throw LinkFailure(message: "Could not verify this stream. Previously saved audio is kept.") }
                     bufferedPackets.append((bytes, Date().timeIntervalSince1970))
                 }
                 if current.assembler.receivedFrames > framesBefore { state.lastAudio = Date() }

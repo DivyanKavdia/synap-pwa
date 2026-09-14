@@ -16,11 +16,31 @@ jobs:
         run: swift test --package-path native/ios
       - name: Build simulator app
         run: xcodebuild -project native/ios/SynapRecorder.xcodeproj -scheme SynapRecorder -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath native/ios/DerivedData CODE_SIGNING_ALLOWED=NO build
+      - name: Launch simulator app
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, subprocess, time
+          devices = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devices', 'available', '-j']))['devices']
+          device = next(d for runtime, entries in sorted(devices.items(), reverse=True) if 'iOS' in runtime for d in entries if d['name'].startswith('iPhone'))
+          identifier = device['udid']
+          if device['state'] != 'Booted': subprocess.run(['xcrun', 'simctl', 'boot', identifier], check=True)
+          subprocess.run(['xcrun', 'simctl', 'bootstatus', identifier, '-b'], check=True)
+          app = 'native/ios/DerivedData/Build/Products/Debug-iphonesimulator/SynapRecorder.app'
+          subprocess.run(['xcrun', 'simctl', 'install', identifier, app], check=True)
+          subprocess.run(['xcrun', 'simctl', 'launch', identifier, 'com.synap.recorder'], check=True)
+          time.sleep(5)
+          processes = subprocess.check_output(['xcrun', 'simctl', 'spawn', identifier, 'launchctl', 'list'], text=True)
+          running = [line for line in processes.splitlines() if 'com.synap.recorder' in line and line.split()[0].isdigit()]
+          assert running, 'The recorder exited after launch'
+          subprocess.run(['xcrun', 'simctl', 'io', identifier, 'screenshot', 'native/ios/simulator.png'], check=True)
+          PY
       - name: Build unsigned iPhone archive
         run: xcodebuild -project native/ios/SynapRecorder.xcodeproj -scheme SynapRecorder -configuration Release -destination 'generic/platform=iOS' -archivePath native/ios/SynapRecorder.xcarchive CODE_SIGNING_ALLOWED=NO archive
       - uses: actions/upload-artifact@v4
         with:
           name: synap-ios-unsigned
-          path: native/ios/SynapRecorder.xcarchive
+          path: |
+            native/ios/SynapRecorder.xcarchive
+            native/ios/simulator.png
           if-no-files-found: error
           retention-days: 14
