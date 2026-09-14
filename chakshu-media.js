@@ -16,6 +16,7 @@
     context = null,
     accountPending = false;
   const controllers = new Set();
+  let workController = null;
   const voicePending = new Set();
   let associatedConnection = null;
   const MAX_VIDEO_BYTES = 32 * 1024 * 1024;
@@ -79,6 +80,7 @@
     const next = uid();
     if (next !== owner) {
       controllers.forEach((controller) => controller.abort());
+      workController?.abort();
       const old = session;
       if (old) {
         old.cancelled = true;
@@ -153,41 +155,52 @@
   async function operation(action) {
     if (working || session || offline) throw Error('Finish the current capture or transfer first.');
     working = true;
+    const controller = new AbortController(),
+      expected = owner;
+    workController = controller;
     error = '';
     notify();
     try {
-      return await action();
+      return await action(controller.signal);
     } catch (e) {
-      error = e.message;
+      if (owner === expected) error = e.message;
       throw e;
     } finally {
       working = false;
+      if (workController === controller) workController = null;
       notify();
     }
   }
   async function photo(withAudio = false) {
-    return operation(async () => {
+    return operation(async (signal) => {
       const owned = requireAccess(),
         device = connected(),
         client = camera();
       let audio = root.SynapAppControls.recordingState();
-      if (withAudio && !audio.active) audio = await root.SynapAppControls.startMediaAudio();
-      check(owned.owner);
-      const atMs = audio.active ? audio.offsetMs : 0;
-      const blob = await client.snapshot();
-      check(owned.owner);
-      const row = await owned.store.create({
-        kind: 'image',
-        deviceId: device.deviceId,
-        audioId: audio.active ? audio.recordingId : null,
-        audioOffsetMs: atMs,
-        name: 'Photo',
-        captureMode: 'photo',
-      });
-      await owned.store.append(row.id, { blob, atMs });
-      await owned.store.patch(row.id, { state: 'saved' });
-      notify();
-      return row.id;
+      const audioOwned = withAudio && !audio.active;
+      try {
+        if (audioOwned) audio = await root.SynapAppControls.startMediaAudio();
+        check(owned.owner);
+        const atMs = audio.active ? audio.offsetMs : 0;
+        const blob = await client.snapshot(signal);
+        check(owned.owner);
+        const row = await owned.store.create({
+          kind: 'image',
+          deviceId: device.deviceId,
+          audioId: audio.active ? audio.recordingId : null,
+          audioOffsetMs: atMs,
+          name: 'Photo',
+          captureMode: 'photo',
+        });
+        await owned.store.append(row.id, { blob, atMs });
+        await owned.store.patch(row.id, { state: 'saved' });
+        notify();
+        return row.id;
+      } catch (e) {
+        if (audioOwned && audio.sessionId)
+          await root.SynapAppControls.stopCapture(audio.sessionId).catch(() => {});
+        throw e;
+      }
     });
   }
   async function describe(
@@ -384,8 +397,8 @@
     if (offline && connected()) offlineTimer = setTimeout(pollOffline, 2000);
   }
   async function catalogue() {
-    return operation(async () => {
-      const files = await camera().catalogue();
+    return operation(async (signal) => {
+      const files = await camera().catalogue(signal);
       if (!Array.isArray(files)) throw Error('Invalid SD catalogue.');
       return files;
     });
@@ -501,13 +514,13 @@
     return count;
   }
   async function importSD(path, progress) {
-    return operation(async () => {
+    return operation(async (signal) => {
       const scope = requireAccess(),
         client = camera(),
         files = [];
       const deviceId = connected().deviceId;
       const add = async (name) => {
-        const blob = await client.file(name, undefined, progress);
+        const blob = await client.file(name, signal, progress);
         files.push(new File([blob], name.split('/').pop()));
       };
       await add(path);
