@@ -182,7 +182,13 @@
         if (info.maxData<64 || info.maxData>503) throw new Error("Unsupported BLE firmware packet size.");
         if (!file || file.size<36 || file.size>info.capacity || file.size>16*1024*1024) throw new Error("Choose an application .bin that fits the available slot.");
         this.io.progress("Preparing update…",0,false);
-        const bytes=new Uint8Array(await file.arrayBuffer());validateImage(bytes,info.capacity,info.protocol);
+        const bytes=new Uint8Array(await file.arrayBuffer());
+        const imageTarget=validateImage(bytes,info.capacity,info.protocol);
+        // Earlier Chakshu builds defer the BLE callback while reusing one value
+        // buffer. A write response acknowledges the radio, not the copied bytes.
+        // Wait for the persisted offset before replacing that buffer. Build 1227
+        // introduced synchronous, owned callbacks; other targets keep their window.
+        const windowChunks=imageTarget==='xiao-esp32s3-sense-8m' && info.build<1227 ? 1 : WINDOW_CHUNKS;
         const digest=new Uint8Array(await crypto.subtle.digest("SHA-256",bytes));
         this.ensure(epoch);
         if(await this.readDeviceId()!==expectedDeviceId) throw new Error("Device ID mismatch. Nothing was flashed.");
@@ -209,7 +215,7 @@
         }
         while(!ready && offset<bytes.length) {
           const start=offset;let target=offset;
-          for(let i=0;i<WINDOW_CHUNKS && target<bytes.length;i+=1) {
+          for(let i=0;i<windowChunks && target<bytes.length;i+=1) {
             const count=Math.min(info.maxData,bytes.length-target),next=target+count;
             const chunk=packet(2,session,9+count);new DataView(chunk.buffer).setUint32(5,target,true);
             chunk.set(bytes.subarray(target,next),9);

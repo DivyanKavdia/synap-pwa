@@ -93,7 +93,10 @@ async function until(page, predicate, arg) {
       });
       const page = await context.newPage(),
         errors = [];
-      page.on('pageerror', (e) => errors.push(e.message));
+      page.on('pageerror', (e) => {
+        errors.push(e.message);
+        console.error(e.stack);
+      });
       page.setDefaultTimeout(20000);
       await page.goto(origin + '/?chakshu-media&voice');
       await page.waitForFunction(() => document.body.dataset.startup === 'ready');
@@ -139,8 +142,24 @@ async function until(page, predicate, arg) {
         return id && (await SynapChakshu.store.get(id)).frameCount > 0;
       });
       const headerVideo = await page.evaluate(() => SynapChakshu.state.session.id);
-      assert((await page.evaluate(() => bleFixture.uninitializedMediaReads)) > 0,
-        'camera capture must survive reads before the firmware worker responds');
+      await page.waitForFunction(
+        () => document.getElementById('capturePreviewImage').naturalWidth === 160,
+      );
+      assert(await page.locator('#capturePreview').evaluate((el) => el.open));
+      assert.match(await page.locator('#capturePreviewHint').textContent(), /keeps recording/);
+      fs.mkdirSync('artifacts/workflows/chakshu-library', { recursive: true });
+      await page.screenshot({
+        path: 'artifacts/workflows/chakshu-library/live-preview-' + width + '.png',
+      });
+      await page.locator('#capturePreviewClose').click();
+      assert(
+        await page.evaluate(() => Boolean(SynapChakshu.state.session)),
+        'closing preview preserves capture',
+      );
+      assert(
+        (await page.evaluate(() => bleFixture.uninitializedMediaReads)) > 0,
+        'camera capture must survive reads before the firmware worker responds',
+      );
       const soundtrack = await page.evaluate((id) => SynapChakshu.store.get(id), headerVideo);
       assert.notEqual(soundtrack.audioId, beforeVideo);
       assert.equal(await page.evaluate(() => window.gallerySettlingSeen), true);
@@ -154,6 +173,22 @@ async function until(page, predicate, arg) {
       await page.waitForFunction(
         () => document.getElementById('headerMediaNotice').textContent === 'Photo saved',
       );
+      await page.waitForFunction(
+        () => document.getElementById('capturePreviewImage').naturalWidth === 160,
+      );
+      assert(await page.locator('#capturePreview').evaluate((el) => el.open));
+      await page.locator('#capturePreviewOpen').click();
+      await page.waitForFunction(
+        () =>
+          document.getElementById('visualDialog').open &&
+          !document.getElementById('capturePreview').open,
+      );
+      assert.equal(
+        await page.locator('#visualPlayback').isVisible(),
+        false,
+        'a photo uses its image viewer',
+      );
+      await page.locator('#visualClose').click();
       await page.locator('#headerCaptureToggle').click();
       await page.waitForFunction(
         () => !SynapChakshu.state.session && SynapAppControls.recordingState().active,
@@ -167,6 +202,36 @@ async function until(page, predicate, arg) {
       );
       await page.locator('#headerCaptureToggle').click();
       await page.waitForFunction(() => !SynapAppControls.recordingState().active);
+      if (width === 320) {
+        await page.locator('#headerVideo').click();
+        await until(page, async () => {
+          const id = SynapChakshu.state.session?.id;
+          return id && (await SynapChakshu.store.get(id)).frameCount > 0;
+        });
+        const previewVideo = await page.evaluate(() => SynapChakshu.state.session.id);
+        await page.locator('#capturePreviewPhoto').click();
+        await page.waitForFunction(() =>
+          document.getElementById('capturePreviewStatus').textContent.includes('Video continues'),
+        );
+        await page.locator('#capturePreviewStop').click();
+        await page.waitForFunction(
+          () =>
+            document.getElementById('capturePreviewStatus').textContent ===
+            'Video saved. Audio is saved separately.',
+        );
+        assert.equal(await page.evaluate(() => SynapAppControls.recordingState().active), false);
+        const saved = await page.evaluate((id) => SynapChakshu.store.get(id), previewVideo);
+        assert.equal(saved.state, 'saved');
+        assert(saved.audioId);
+        await page.locator('#capturePreviewOpen').click();
+        await page.waitForFunction(
+          () =>
+            document.getElementById('visualDialog').open &&
+            !document.getElementById('capturePreview').open,
+        );
+        assert(await page.locator('#visualPlayback').isVisible());
+        await page.locator('#visualClose').click();
+      }
       // Recognition is simulated at the GATT boundary; actual pronunciation needs hardware.
       await page.waitForFunction(() => document.body.dataset.state === 'idle');
       if (width === 320) {
@@ -174,15 +239,31 @@ async function until(page, predicate, arg) {
           const before = (await SynapChakshu.store.list()).length;
           bleFixture.blockAudio(true);
           let message = '';
-          try { await SynapChakshu.startLive(false); }
-          catch (error) { message = error.message; }
-          finally { bleFixture.blockAudio(false); }
+          try {
+            await SynapChakshuPreview.video();
+          } catch (error) {
+            message = error.message;
+          } finally {
+            bleFixture.blockAudio(false);
+          }
           return { before, after: (await SynapChakshu.store.list()).length, message };
         });
         assert.match(failed.message, /No audio samples arrived/);
+        assert(await page.locator('#capturePreview').evaluate((el) => el.open));
+        assert.match(
+          await page.locator('#capturePreviewStatus').textContent(),
+          /No audio samples arrived/,
+        );
+        assert.equal(await page.locator('#capturePreviewImage').getAttribute('src'), null);
+        await page.locator('#capturePreviewClose').click();
         assert.equal(failed.before, failed.after, 'failed audio cannot create an empty video');
-        await page.waitForFunction(() => !SynapChakshu.state.session && document.body.dataset.state === 'idle');
-        assert.match(await page.locator('#diagnosticsLog').textContent(), /No audio samples arrived/);
+        await page.waitForFunction(
+          () => !SynapChakshu.state.session && document.body.dataset.state === 'idle',
+        );
+        assert.match(
+          await page.locator('#diagnosticsLog').textContent(),
+          /No audio samples arrived/,
+        );
       }
       await page.evaluate(() => bleFixture.voice(4));
       await page.waitForFunction(() => SynapAppControls.recordingState().active);
@@ -415,7 +496,7 @@ async function until(page, predicate, arg) {
       assert.equal(await page.locator('#visualDialog').evaluate((el) => el.open), false);
       await page.locator('[data-media-id="' + paired.id + '"]').click();
       await page.locator('#visualNextFrame').click();
-      assert.equal(await page.locator('#visualSeek').inputValue(), '1');
+      assert.equal(await page.locator('#visualSeek').inputValue(), '500');
       assert.equal(await page.locator('#visualNextFrame').isDisabled(), true);
       await page.locator('#visualDescribe').click();
       await page.waitForFunction(
@@ -423,7 +504,7 @@ async function until(page, predicate, arg) {
       );
       assert.equal(
         await page.locator('#visualSeek').inputValue(),
-        '1',
+        '500',
         'description must retain the selected frame',
       );
       assert.deepEqual(
@@ -432,12 +513,25 @@ async function until(page, predicate, arg) {
       );
       await page.locator('#visualPreviousFrame').click();
       await page.locator('#visualDescriptions button').click();
-      assert.equal(await page.locator('#visualSeek').inputValue(), '1');
+      assert.equal(await page.locator('#visualSeek').inputValue(), '500');
+      await page.waitForFunction(() => document.getElementById('visualAudio').readyState >= 1);
+      await page.locator('#visualPlay').click();
+      await page.waitForFunction(() => !document.getElementById('visualAudio').paused);
+      await page.locator('#visualPlay').click();
+      assert(await page.locator('#visualAudio').evaluate((el) => el.paused));
+      await page.locator('#visualSeek').evaluate((el) => {
+        el.value = 250;
+        el.dispatchEvent(new Event('input'));
+      });
+      assert(
+        Math.abs((await page.locator('#visualAudio').evaluate((el) => el.currentTime)) - 0.25) <
+          0.1,
+      );
       await page.locator('#visualPlay').click();
       await page.waitForFunction(
         () => document.getElementById('visualPlay').textContent === 'Play video',
       );
-      assert.equal(await page.locator('#visualSeek').inputValue(), '1');
+      assert.equal(await page.locator('#visualSeek').inputValue(), '1000');
       await page.locator('#visualSaveFrame').click();
       await page.waitForFunction(() =>
         document.getElementById('visualDetailStatus').textContent.startsWith('Photo saved'),
@@ -483,6 +577,11 @@ async function until(page, predicate, arg) {
         jpeg,
         'saved photo keeps the exact selected JPEG after source deletion',
       );
+      // A preview and viewer both release their images when the account changes.
+      await page.evaluate(() => SynapChakshuPreview.photo());
+      await page.waitForFunction(
+        () => document.getElementById('capturePreviewImage').naturalWidth === 160,
+      );
       // Keep this viewer open while the account changes: all media URLs and fields must clear.
       // A second account on the same browser cannot see the first account's library.
       await page.evaluate(async () => {
@@ -502,6 +601,8 @@ async function until(page, predicate, arg) {
       assert.equal(await page.locator('.visual-card').count(), 0);
       assert.equal(await page.locator('#visualDialog').evaluate((el) => el.open), false);
       assert.equal(await page.locator('#visualPreview').getAttribute('src'), null);
+      assert.equal(await page.locator('#capturePreview').evaluate((el) => el.open), false);
+      assert.equal(await page.locator('#capturePreviewImage').getAttribute('src'), null);
       assert.equal(await page.locator('#visualAudio').getAttribute('src'), null);
       assert.equal(await page.locator('#visualNotes').inputValue(), '');
       assert(await page.locator('#headerPhoto').isDisabled());

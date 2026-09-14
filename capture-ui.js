@@ -165,7 +165,7 @@
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l2-3h4l2 3h5v16H3V5z"/><circle cx="12" cy="12" r="4"/></svg>';
     photo.addEventListener('click', () =>
       mediaAction(async () => {
-        await window.SynapChakshu.photo();
+        await window.SynapChakshuPreview.photo();
         captureMessage('Photo saved');
       }),
     );
@@ -177,9 +177,7 @@
       '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="14" height="14" rx="3"/><path d="m16 9 6-4v14l-6-4"/></svg><span class="header-stop" aria-hidden="true"></span>';
     video.addEventListener('click', () =>
       mediaAction(async () => {
-        const api = window.SynapChakshu;
-        if (api.state.session || api.state.offline) await api.stop();
-        else await api.startLive(false);
+        await window.SynapChakshuPreview.video();
       }),
     );
     actions.insertBefore(photo, settings);

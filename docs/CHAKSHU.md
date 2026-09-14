@@ -16,9 +16,9 @@ In **Library → Photos & video**, search titles, notes and saved descriptions, 
 
 Open a photo to zoom the view, add a title or notes, link a saved audio recording, ask a question, or choose **Read text in view**. Text reading uses the same cloud vision service as descriptions; it does not create an audio transcript. The original JPEG remains available to download.
 
-Open a video to play its saved frames, move one frame at a time, or select a moment on the timeline. Saved descriptions have **View at…** buttons that return to their frame. Describing a moment keeps the current position and sends only that frame and up to two nearby frames on either side.
+Video cards show **Play video**. Open one for play/pause, elapsed time, a seekable timeline, playback speed, and previous/next frame controls. Seeking pauses at the chosen moment. **Play linked audio** synchronizes the separately saved soundtrack with the frames; turn it off for silent playback. Playback pauses when the page is hidden or the viewer closes. Saved descriptions have **View at…** buttons that return to their frame. Describing a moment keeps the current position and sends only that frame and up to two nearby frames on either side.
 
-**Save frame as photo** copies the selected JPEG into its own library item with the original video timestamp and audio link. Deleting the source video leaves both the extracted photo and its separate audio recording intact. Video playback is silent; the linked audio has its own player and transcript. Audio-only takes remain separate from video soundtracks.
+**Save frame as photo** copies the selected JPEG into its own library item with the original video timestamp and audio link. Deleting the source video leaves both the extracted photo and its separate audio recording intact. The linked audio retains its own player and transcript, even when played in sync with video. Audio-only takes remain separate from video soundtracks.
 
 ## Account photo/video library
 
@@ -47,7 +47,7 @@ The backend accepts up to five JPEG images and a prompt, validates account assoc
 
 Browse SD card transfers files through Bluetooth; the current firmware catalogue lists up to 100 photos/clips. For larger archives or faster import, select files with a card reader. Import the matching `.mjpeg`, `.wav`, and `.json` together to retain audio alignment. Earlier clips without JSON use estimated two-fps playback and disable automatic spoken explanations. JPEG photos also import directly. Camera/audio imports are limited to 32 MiB per file. Incomplete JPEG streams or inconsistent timing files are rejected.
 
-The viewer plays silent frames with their saved timing and has a separate audio player/transcript link. Audio can be linked or replaced from recordings belonging to the same account. Original video export is MJPEG plus a JSON timing sidecar; original audio remains downloadable through the audio recording.
+The viewer plays frames at their saved timestamps and follows the linked audio clock when enabled. It also supports silent clips and a silent video tail after a shorter soundtrack ends. Audio remains independently stored with its own transcript link. Audio can be linked or replaced from recordings belonging to the same account. Original video export is MJPEG plus a JSON timing sidecar; original audio remains downloadable through the audio recording.
 
 ## Code boundaries
 
@@ -59,7 +59,9 @@ The viewer plays silent frames with their saved timing and has a separate audio 
 | Camera/file transport | chakshu-transfer.js |
 | Account association, capture and audio links | chakshu-media.js |
 | Account-keyed media and frame storage | chakshu-store.js |
-| Library, playback and selected-frame descriptions | chakshu-library.js, chakshu-library.css |
+| Library and selected-frame descriptions | chakshu-library.js, chakshu-library.css |
+| Timestamped playback and linked audio clock | chakshu-player.js |
+| Header photo/video preview popup | chakshu-capture-preview.js |
 | Encrypted account device association and vision endpoint | backend/src/http/routes/chakshu.ts |
 | Timestamped audio transcription events | synap-backend.js, backend/src/http/routes/recordings.ts |
 | Firmware capture and SD worker | synap-firmware repository |
@@ -76,11 +78,17 @@ See the [firmware media protocol and setup](https://github.com/DivyanKavdia/syna
 
 Photo and video buttons sit beside the microphone. They show unavailable until the account has a Chakshu association and require a connected camera for capture. Audio-only keeps the normal C3/S3 journal behavior. Starting video seals any audio-only take and creates a fresh audio journal linked to a separate silent video record. The video button stops both parts; the microphone button saves video and starts a new audio-only take. A photo during video saves the latest available video frame with its audio position.
 
-For local commands, update the firmware, connect the associated Chakshu, and choose **Install voice model** under Settings → Device → Local voice controls. The PWA downloads and verifies the 2.18 MB model, transfers it by Bluetooth, and verifies the SD file before installation. Choose **Restart Chakshu** when complete, then reconnect. Keep the app visible, the pendant powered, and its SD card inserted during installation. A dropped connection can resume within 15 minutes without starting over while the pendant stays powered; a power cycle starts a new transfer. Cancel preserves existing recordings and the previous model. Recording, camera checks, firmware updates and page reload are blocked while the model uses the card. Older firmware shows an update instruction. The SD card reader download remains available as an alternative. Settings → Device → Local voice controls shows readiness and an enable switch. Say **“Hi Chakshu”**, pause, then one of **“take photo”** (or **“click photo”**), **“start video”**, **“stop video”**, **“audio on”**, or **“audio off”**. Repeat the activation phrase for each command. Audio off stops recording; the separate voice-control switch stops command listening.
+The header camera/video buttons immediately open a preview popup. It shows the actual saved photo or latest captured video frame, plus waiting/error status while capture starts. During video, **Take photo** saves a frame and **Stop & save video** finishes both separate recordings. Closing the preview keeps recording; the popup explains this. After saving, **Open in library** opens the captured item. Preview reads the existing capture stream and does not start another camera or audio stream. Online capture and playback need no SD card; disconnected/offline recordings still require SD storage.
+
+For local commands, install the current Chakshu firmware through **Settings → Firmware**, then reconnect. Published Chakshu images include the voice model in internal flash; there is no separate model upload or SD requirement. Settings identifies the embedded model and hides the SD installer. Older/manual builds without embedded weights retain the **Install voice model** SD fallback. Enable Local voice controls if the listener was previously switched off. Settings → Device → Local voice controls shows readiness and an enable switch. Say **“Hi Chakshu”**, pause, then one of **“take photo”** (or **“click photo”**), **“start video”**, **“stop video”**, **“audio on”**, or **“audio off”**. Repeat the activation phrase for each command. Audio off stops recording; the separate voice-control switch stops command listening.
 
 Recognition runs on Chakshu. An associated, visible, connected PWA renews a six-second command lease through its existing GATT queue and routes recognized actions to these same controls. Duplicate notifications are ignored; a bounded queue preserves a stop arriving during startup. Hidden pages release the lease, and a disconnected page cannot replay commands into another account. Without a current lease, the pendant saves JPEG photos, paired video/WAV/JSON takes, or standalone audio WAV takes on SD. SD audio and video takes are each bounded to 60 seconds. Switching offline modes closes the current files before opening new ones. Import the files when reconnected, or use a card reader.
 
 The model uses MultiNet phoneme commands with “Hi Chakshu” as an activation gate. This is not a separately trained wake-word model. Recognition accuracy, false activations, runtime memory and battery use require device measurement. Missing or invalid model files leave the ordinary capture controls available and show a model setup message.
+
+## Updating older Chakshu firmware
+
+Before build 1227, Chakshu's BLE wrapper can acknowledge a write before its deferred callback copies the packet. Sending several chunks together can then report **Chunk order or duplicate mismatch**. The PWA sends one chunk per firmware acknowledgement for these older Chakshu builds, including resumed transfers. Native-callback Chakshu builds (1227 onward), C3 and ordinary S3 retain the existing window. Image target, device identity, cumulative offset, SHA-256 and commit validation remain enforced. Reopen the updated PWA, reconnect, and retry the update if an earlier transfer failed; the fix is in the PWA and can install the newer firmware.
 
 ## Verification boundary
 

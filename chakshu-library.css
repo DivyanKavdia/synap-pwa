@@ -83,12 +83,74 @@
   margin-top: 16px;
 }
 .visual-grid .visual-card {
+  position: relative;
   text-align: left;
   padding: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.visual-card .visual-play-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 6px 10px;
+  border-radius: 20px;
+  background: #14251fdd;
+  color: #fff;
+  opacity: 1;
+  font-weight: 650;
+}
+.visual-playback {
+  padding: 12px;
+  margin: 12px 0;
+  border-radius: 14px;
+  background: var(--surface-2, #f4f3f9);
+}
+.visual-player-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.visual-player-main output {
+  font-variant-numeric: tabular-nums;
+}
+.visual-player-main label,
+.visual-playback .visual-actions label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+}
+.visual-player-main select {
+  padding: 8px;
+}
+.visual-playback #visualPlay,
+.capture-preview #capturePreviewStop {
+  background: var(--accent, #35735e);
+  color: #fff;
+  border-color: transparent;
+}
+.capture-preview-stage {
+  margin-top: 10px;
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #17221e;
+  color: #fff;
+}
+.capture-preview-stage p {
+  padding: 20px;
+  text-align: center;
+}
+.capture-preview #capturePreviewHint {
+  opacity: 0.72;
+  font-size: 0.8rem;
 }
 .visual-card img {
   width: 100%;
