@@ -1,0 +1,9 @@
+.module-heading{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.module-heading h3{margin:0}.module-heading p{margin:4px 0 0}
+.module-features{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0}
+.module-feature{font-size:.75rem;padding:5px 9px;border:1px solid var(--border,#7775);border-radius:12px}
+.module-feature[data-ready="false"]{opacity:.65}
+.chakshu-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}
+.chakshu-actions button{min-height:44px;white-space:normal}
+.chakshu-file{overflow-wrap:anywhere;font-size:.78rem}
+#chakshuProgress{width:100%;margin-top:10px}
