@@ -5,6 +5,12 @@
     DATA = '4fa12355-0000-1000-8000-00805f9b34fb';
   const delay = (ms) => new Promise((resolve) => root.setTimeout(resolve, ms));
   function decode(value, id) {
+    // Released firmware starts with a zeroed 16-byte response. Its worker (and
+    // Arduino's deferred write callback) may not have answered the first read.
+    if (value.byteLength === 0 ||
+        (value.byteLength === 16 &&
+         new Uint8Array(value.buffer, value.byteOffset, 16).every(byte => byte === 0)))
+      return null;
     if (value.byteLength < 16 || value.getUint8(0) !== 0xcb || value.getUint8(1) !== 1)
       throw Error('Invalid camera transfer response.');
     if (value.getUint32(4, true) !== id || value.getUint8(2) === 0) return null;
@@ -64,6 +70,11 @@
           await delay(60);
         }
         throw Error('Camera request timed out. Reconnect and refresh its status.');
+      } catch (error) {
+        if (error.name !== 'AbortError') root.dispatchEvent?.(new CustomEvent('synap-capture-diagnostic', {
+          detail: { operation: op, message: error.message },
+        }));
+        throw error;
       } finally {
         this.pending = false;
       }

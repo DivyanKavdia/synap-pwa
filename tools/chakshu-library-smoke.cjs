@@ -132,12 +132,15 @@ async function until(page, predicate, arg) {
       await page.locator('#headerCaptureToggle').click();
       await page.waitForFunction(() => SynapAppControls.recordingState().active);
       const beforeVideo = await page.evaluate(() => SynapAppControls.recordingState().recordingId);
+      await page.evaluate(() => bleFixture.delayNextCameraReply());
       await page.locator('#headerVideo').click();
       await until(page, async () => {
         const id = SynapChakshu.state.session?.id;
         return id && (await SynapChakshu.store.get(id)).frameCount > 0;
       });
       const headerVideo = await page.evaluate(() => SynapChakshu.state.session.id);
+      assert((await page.evaluate(() => bleFixture.uninitializedMediaReads)) > 0,
+        'camera capture must survive reads before the firmware worker responds');
       const soundtrack = await page.evaluate((id) => SynapChakshu.store.get(id), headerVideo);
       assert.notEqual(soundtrack.audioId, beforeVideo);
       assert.equal(await page.evaluate(() => window.gallerySettlingSeen), true);
@@ -166,6 +169,21 @@ async function until(page, predicate, arg) {
       await page.waitForFunction(() => !SynapAppControls.recordingState().active);
       // Recognition is simulated at the GATT boundary; actual pronunciation needs hardware.
       await page.waitForFunction(() => document.body.dataset.state === 'idle');
+      if (width === 320) {
+        const failed = await page.evaluate(async () => {
+          const before = (await SynapChakshu.store.list()).length;
+          bleFixture.blockAudio(true);
+          let message = '';
+          try { await SynapChakshu.startLive(false); }
+          catch (error) { message = error.message; }
+          finally { bleFixture.blockAudio(false); }
+          return { before, after: (await SynapChakshu.store.list()).length, message };
+        });
+        assert.match(failed.message, /No audio samples arrived/);
+        assert.equal(failed.before, failed.after, 'failed audio cannot create an empty video');
+        await page.waitForFunction(() => !SynapChakshu.state.session && document.body.dataset.state === 'idle');
+        assert.match(await page.locator('#diagnosticsLog').textContent(), /No audio samples arrived/);
+      }
       await page.evaluate(() => bleFixture.voice(4));
       await page.waitForFunction(() => SynapAppControls.recordingState().active);
       const voiceAudio = await page.evaluate(() => SynapAppControls.recordingState().recordingId);
