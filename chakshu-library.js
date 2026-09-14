@@ -12,6 +12,8 @@
     selectedFrames = [],
     frameIndex = 0,
     pageSize = 40,
+    liveUrl = null,
+    liveKey = '',
     renderSignature = '';
   const revoke = (list) => {
     for (const url of list) URL.revokeObjectURL(url);
@@ -181,6 +183,14 @@
     $('visualMode').disabled = busy;
     $('visualExplainLive').hidden = !state.session?.id;
     $('visualAudioOnly').disabled = state.offline || state.working;
+    $('visualLive').hidden = !state.session?.id;
+    if (!state.session?.id && liveUrl) {
+      URL.revokeObjectURL(liveUrl);
+      liveUrl = null;
+      liveKey = '';
+      $('visualLiveFrame').removeAttribute('src');
+      $('visualLiveDescription').textContent = '';
+    }
     $('visualConnectionStatus').textContent =
       state.error ||
       (state.session
@@ -192,6 +202,24 @@
     const store = api().store,
       rows = await store.list();
     if (token !== generation || store !== api().store) return;
+    if (state.session?.id) {
+      const take = rows.find((row) => row.id === state.session.id);
+      const frame = await store.lastFrame(state.session.id);
+      if (token !== generation || store !== api().store) return;
+      const key = state.session.id + ':' + frame?.index;
+      if (frame && key !== liveKey) {
+        if (liveUrl) URL.revokeObjectURL(liveUrl);
+        liveUrl = URL.createObjectURL(frame.blob);
+        liveKey = key;
+        $('visualLiveFrame').src = liveUrl;
+      }
+      const description = take?.descriptions?.at(-1);
+      $('visualLiveDescription').textContent = description
+        ? (description.atMs / 1000).toFixed(1) + ' s · ' + description.text
+        : frame
+          ? 'Camera frame · ' + (frame.atMs / 1000).toFixed(1) + ' s'
+          : 'Waiting for the camera…';
+    }
     const filter = $('visualFilter').value,
       visible = rows.filter((row) => filter === 'all' || row.kind === filter);
     const signature = JSON.stringify([

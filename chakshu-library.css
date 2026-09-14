@@ -4,7 +4,7 @@
   border: 1px solid var(--border, #dedee8);
   border-radius: 18px;
   background: var(--surface, #fff);
-  color: var(--text, #252537);
+  color: var(--ink, #252537);
 }
 .visual-library summary {
   cursor: pointer;
@@ -111,7 +111,7 @@
   border: 1px solid var(--border, #dedee8);
   border-radius: 20px;
   background: var(--surface, #fff);
-  color: var(--text, #252537);
+  color: var(--ink, #252537);
 }
 .visual-dialog::backdrop {
   background: #14142088;
@@ -147,7 +147,7 @@
 }
 .visual-dialog #visualDescriptions p {
   padding: 12px;
-  background: var(--surface-alt, #f4f3f9);
+  background: var(--surface-2, #f4f3f9);
   border-radius: 12px;
 }
 .visual-dialog #visualPrompt {
@@ -160,6 +160,23 @@
   flex-direction: column;
   gap: 6px;
   max-height: 220px;
+  overflow: auto;
+}
+#visualLive {
+  margin: 16px 0;
+}
+#visualLiveFrame {
+  width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+  border-radius: 12px;
+  background: #20202b;
+}
+#visualLiveDescription {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin-top: 8px;
+  max-height: 160px;
   overflow: auto;
 }
 .visual-library [hidden],

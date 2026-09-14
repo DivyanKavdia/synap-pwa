@@ -117,6 +117,17 @@
         db.transaction('frames').objectStore('frames').index('media').get([this.uid, id]),
       );
     }
+    async lastFrame(id) {
+      const db = await this.open();
+      const cursor = await request(
+        db
+          .transaction('frames')
+          .objectStore('frames')
+          .index('media')
+          .openCursor(root.IDBKeyRange.only([this.uid, id]), 'prev'),
+      );
+      return cursor?.value;
+    }
     async addDescription(id, description) {
       return this.transaction(['media'], (s) => {
         const req = s.media.get([this.uid, id]);

@@ -131,6 +131,11 @@ async function until(page, predicate, arg) {
         async (id) => (await SynapChakshu.store.get(id)).descriptions.length > 0,
         video,
       );
+      await page.waitForFunction(
+        () =>
+          document.querySelector('#visualLiveDescription').textContent.includes('rectangle') &&
+          document.querySelector('#visualLiveFrame').naturalWidth === 160,
+      );
       await page.locator('#visualStop').click();
       await page.waitForFunction(() => !SynapChakshu.state.session);
       const saved = await page.evaluate((id) => SynapChakshu.store.get(id), video);
@@ -250,6 +255,14 @@ async function until(page, predicate, arg) {
         await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
         false,
       );
+      await page.evaluate(() => (document.documentElement.dataset.theme = 'dark'));
+      assert.equal(
+        await page.locator('#visualLibrary').evaluate((el) => getComputedStyle(el).color),
+        await page.locator('body').evaluate((el) => getComputedStyle(el).color),
+      );
+      await page.screenshot({
+        path: 'artifacts/workflows/chakshu-library/library-dark-' + width + '.png',
+      });
       assert.deepEqual(errors, []);
       await context.close();
     }
