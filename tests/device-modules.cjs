@@ -59,6 +59,24 @@ test('a disconnect during discovery never updates another connection or rejects 
   assert.equal(await pending,false);assert.equal(client.module,null);
 });
 
+test('Chakshu 1227 fixed C path buffers support empty and saved paths but reject corrupt padding',async()=>{
+  const path='/synap/abcdef01-00000001.jpg';
+  const client=new Client({queue:action=>action(),service:{getCharacteristic:async uuid=>({
+    readValue:async()=>uuid===UUID?descriptor():uuid.includes('352-')?status():wire
+  })}});
+  let wire=new DataView(new ArrayBuffer(64));
+  assert.equal(await client.refresh(),true);assert.equal(client.path,'');
+  const bytes=new Uint8Array(70);bytes.set(new TextEncoder().encode(path),3);
+  wire=new DataView(bytes.buffer,3,64);client.pathKey='';
+  assert.equal(await client.refresh(),true);assert.equal(client.path,path);
+  for(const invalid of [path+'\0junk',path+'\0','/synap/../other.jpg']){
+    wire=new DataView(new TextEncoder().encode(invalid).buffer);client.pathKey='';
+    assert.equal(await client.refresh(),false);assert.match(client.error,/Invalid SD/);
+  }
+  bytes[66]=65;wire=new DataView(bytes.buffer,3,64);client.pathKey='';
+  assert.equal(await client.refresh(),false);assert.match(client.error,/Invalid SD/);
+});
+
 test('an ATT write response is not mistaken for firmware acceptance or successful capture',async()=>{
   let result=status(),written=0;
   const empty=new DataView(new ArrayBuffer(0));

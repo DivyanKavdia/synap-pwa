@@ -22,7 +22,7 @@ test('associations survive reload, new Bluetooth handles and multiple pendants; 
   local.data.clear(); assert.equal(registry().load().devices.length, 0);
 });
 test('invalid IDs and corrupt/blocked storage never claim a saved association', () => {
-  for (const id of ['SYNAP-000000000000','SYNAP-FFFFFFFFFFFF','SYNAP-aabbccddeeff', A+'\0','other']) {
+  for (const id of ['SYNAP-000000000000','SYNAP-FFFFFFFFFFFF','SYNAP-aabbccddeeff', A+'\0\0',A+'X',A+'\0X',' SYNAP-AABBCCDDEEFF',A+'\n','SYNAP-AABB\0CDDEEFF','other']) {
     assert.throws(() => devices.decode(value(id)));
   }
   assert.equal(devices.decode(value(A)), A);
@@ -30,6 +30,12 @@ test('invalid IDs and corrupt/blocked storage never claim a saved association', 
   assert.throws(() => new devices.Registry(local).associate(A, {id:'a'}));
   const blocked = storage(); blocked.setItem = () => {throw Error('quota');};
   assert.throws(() => new devices.Registry(blocked).associate(A, {id:'a'}), /quota/);
+});
+test('Chakshu 1227 C-string ID is canonicalized without accepting other padding or invalid IDs',()=>{
+  const id='SYNAP-68EE8F4719A0';
+  const bytes=new TextEncoder().encode('prefix'+id+'\0suffix');
+  assert.equal(devices.decode(new DataView(bytes.buffer,6,19)),id);
+  for(const bad of ['SYNAP-000000000000\0','SYNAP-FFFFFFFFFFFF\0','SYNAP-aabbccddeeff\0'])assert.throws(()=>devices.decode(value(bad)));
 });
 test('GATT identity read supports old firmware but rejects malformed data, read failure and stale connections', async () => {
   const queue = f => f();
@@ -69,6 +75,8 @@ async function connect({id=A, local=storage(), stale=false, mismatch=false}={}) 
 }
 test('actual connect handler enrolls only an acknowledged connection; missing or failed identity is never marked complete', async () => {
   let c=await connect();assert.equal(c.state,'idle');assert.equal(c.deviceAssociation.deviceId,A);assert.match(c.deviceIdentityMessage,/Connected/);
+  c=await connect({id:A+'\0'});assert.equal(c.state,'idle');assert.equal(c.deviceAssociation.deviceId,A);
+  c=await connect({id:A+'\0',mismatch:true});assert.equal(c.state,'disconnected');assert.equal(c.deviceAssociation,null);
   c=await connect({id:null});assert.equal(c.state,'idle');assert.equal(c.deviceAssociation,null);assert.match(c.deviceIdentityMessage,/no permanent/);
   c=await connect({id:'bad'});assert.equal(c.state,'idle');assert.equal(c.deviceAssociation,null);assert.match(c.deviceIdentityMessage,/could not be read/);
   const local=storage();c=await connect({local,stale:true});assert.equal(c.state,'disconnected');assert.equal(local.getItem(devices.KEY),null);

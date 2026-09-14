@@ -105,8 +105,13 @@
       if(!characteristic) throw new Error("Check the pendant to identify the update target first.");
       const value=await this.io.queue(()=>characteristic.readValue(),"Read update target identity");
       if(epoch!==this.epoch || !this.io.connected()) throw new Error("Pendant connection changed.");
-      const id=new TextDecoder('utf-8',{fatal:true}).decode(value);
-      if(value.byteLength!==18 || !validDeviceId(id)) throw new Error("Invalid pendant device ID.");
+      if(!value || ![18,19].includes(value.byteLength)) throw new Error("Invalid pendant device ID.");
+      const bytes=new Uint8Array(value.buffer || value,value.byteOffset || 0,value.byteLength);
+      // Recover installed Chakshu 1227 over OTA: its char[19] includes one NUL.
+      // Never trim arbitrary bytes, guess from the BLE name, or skip target checks.
+      if(bytes.length===19 && bytes[18]!==0) throw new Error("Invalid pendant device ID.");
+      const id=new TextDecoder('utf-8',{fatal:true}).decode(bytes.subarray(0,18));
+      if(!validDeviceId(id)) throw new Error("Invalid pendant device ID.");
       return id;
     }
     async read() {

@@ -87,7 +87,13 @@
       if (this.status.state!==1) {
         const key=this.status.id+':'+this.status.operation;
         if (this.pathKey!==key) {
-          const path=new TextDecoder('utf-8',{fatal:true}).decode(await this.read(PATH));
+          const value=await this.read(PATH);
+          let bytes=new Uint8Array(value.buffer || value,value.byteOffset || 0,value.byteLength);
+          // Chakshu 1227 emitted Snapshot::path as a zero-padded char[64].
+          // Only normalize that exact wire shape; malformed paths still fail.
+          const end=bytes.indexOf(0);
+          if(bytes.length===64 && end>=0 && bytes.subarray(end).every(byte=>byte===0))bytes=bytes.subarray(0,end);
+          const path=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
           if(path&&!/^\/synap\/[a-f0-9]{8}-[a-f0-9]{8}\.(jpg|wav|mjpeg)$/.test(path))throw Error('Invalid SD file path.');
           this.path=path;this.pathKey=key;
         }
