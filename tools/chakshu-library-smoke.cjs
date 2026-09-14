@@ -117,6 +117,17 @@ async function until(page, predicate, arg) {
         });
       await page.waitForFunction(() => bleFixture.voiceLease > 0);
       assert((await page.locator('#chakshuVoice').textContent()).includes('Hi Chakshu'));
+      // Hold cleanup after the audio journal has cleared its ID. Video must wait
+      // for the capture owner, even though there is no longer an active journal.
+      await page.evaluate(() => {
+        const release = SynapScreenWakeLock.prototype.release;
+        SynapScreenWakeLock.prototype.release = async function (...args) {
+          await release.apply(this, args);
+          const state = SynapAppControls.recordingState();
+          if (!state.active && state.settling) window.gallerySettlingSeen = true;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        };
+      });
       // Audio-only -> video -> audio-only saves three distinct journals.
       await page.locator('#headerCaptureToggle').click();
       await page.waitForFunction(() => SynapAppControls.recordingState().active);
@@ -129,6 +140,7 @@ async function until(page, predicate, arg) {
       const headerVideo = await page.evaluate(() => SynapChakshu.state.session.id);
       const soundtrack = await page.evaluate((id) => SynapChakshu.store.get(id), headerVideo);
       assert.notEqual(soundtrack.audioId, beforeVideo);
+      assert.equal(await page.evaluate(() => window.gallerySettlingSeen), true);
       assert(
         await page.evaluate(
           async (id) => Boolean((await new DKAudioStore().get('recordings', id))?.sealed),
@@ -221,7 +233,44 @@ async function until(page, predicate, arg) {
         document.querySelector('#visualDescriptions').textContent.includes('rectangle'),
       );
       assert.equal(descriptions[0].body.frames.length, 1);
+      await page.locator('.visual-edit summary').click();
+      await page.locator('#visualName').fill('Station sign');
+      await page.locator('#visualNotes').fill('Return platform <b>north</b>');
+      await page.locator('#visualSaveDetails').click();
+      await page.waitForFunction(
+        () => document.getElementById('visualTitle').textContent === 'Station sign',
+      );
+      await page.locator('#visualFavourite').click();
+      await page.waitForFunction(
+        () => document.getElementById('visualFavourite').getAttribute('aria-pressed') === 'true',
+      );
+      await page.locator('#visualZoom').click();
+      assert.equal(await page.locator('#visualZoom').getAttribute('aria-pressed'), 'true');
+      assert(await page.locator('#visualStage').evaluate((el) => el.scrollWidth > el.clientWidth));
+      await page.locator('#visualZoom').click();
+      await page.locator('#visualReadText').click();
+      await page.waitForFunction(
+        () => document.querySelectorAll('#visualDescriptions article').length === 2,
+      );
+      assert.match(descriptions.at(-1).body.prompt, /Read the text/);
+      assert.equal(descriptions.at(-1).body.frames.length, 1);
+      await page.locator('#visualDialog').evaluate((el) => (el.scrollTop = 0));
+      await page.screenshot({
+        path: 'artifacts/workflows/chakshu-library/photo-viewer-' + width + '.png',
+      });
       await page.locator('#visualClose').click();
+      await page.locator('#visualSearch').fill('station north');
+      await page.locator('#visualFavourites').click();
+      await page.waitForFunction(() => document.querySelectorAll('.visual-card').length === 1);
+      assert.equal(await page.locator('.visual-card strong').textContent(), 'Station sign');
+      await page.locator('.visual-card').click();
+      assert.equal(await page.locator('#visualNotes').inputValue(), 'Return platform <b>north</b>');
+      assert.equal(await page.locator('#visualFavourite').getAttribute('aria-pressed'), 'true');
+      await page.locator('#visualClose').click();
+      await page.locator('#visualSearch').fill('no matching visual');
+      await page.waitForFunction(() => document.querySelectorAll('.visual-card').length === 0);
+      assert.match(await page.locator('.visual-empty').textContent(), /No matching/);
+      await page.locator('#visualClearSearch').click();
       await page.locator('#visualPhotoAudio').click();
       await page.waitForFunction(() => document.getElementById('visualDialog').open);
       assert.equal(await page.evaluate(() => SynapAppControls.recordingState().active), true);
@@ -335,6 +384,88 @@ async function until(page, predicate, arg) {
             r.name === 'paired.mjpeg' && r.state === 'saved' && r.audioId && !r.timingEstimated,
         ),
       );
+      const paired = await page.evaluate(async () =>
+        (await SynapChakshu.store.list()).find((r) => r.name === 'paired.mjpeg'),
+      );
+      await page.locator('[data-media-id="' + paired.id + '"]').click();
+      await page.waitForFunction(() => !document.getElementById('visualAudio').hidden);
+      await page.locator('#visualAudioSource').click();
+      await page.waitForFunction(
+        (id) => document.getElementById('recording-' + id)?.open,
+        paired.audioId,
+      );
+      assert.equal(await page.locator('#visualDialog').evaluate((el) => el.open), false);
+      await page.locator('[data-media-id="' + paired.id + '"]').click();
+      await page.locator('#visualNextFrame').click();
+      assert.equal(await page.locator('#visualSeek').inputValue(), '1');
+      assert.equal(await page.locator('#visualNextFrame').isDisabled(), true);
+      await page.locator('#visualDescribe').click();
+      await page.waitForFunction(
+        () => document.querySelectorAll('#visualDescriptions article').length === 1,
+      );
+      assert.equal(
+        await page.locator('#visualSeek').inputValue(),
+        '1',
+        'description must retain the selected frame',
+      );
+      assert.deepEqual(
+        descriptions.at(-1).body.frames.map((f) => f.atMs),
+        [0, 500],
+      );
+      await page.locator('#visualPreviousFrame').click();
+      await page.locator('#visualDescriptions button').click();
+      assert.equal(await page.locator('#visualSeek').inputValue(), '1');
+      await page.locator('#visualPlay').click();
+      await page.waitForFunction(
+        () => document.getElementById('visualPlay').textContent === 'Play video',
+      );
+      assert.equal(await page.locator('#visualSeek').inputValue(), '1');
+      await page.locator('#visualSaveFrame').click();
+      await page.waitForFunction(() =>
+        document.getElementById('visualDetailStatus').textContent.startsWith('Photo saved'),
+      );
+      const framePhoto = await page.evaluate(
+        async (id) => (await SynapChakshu.store.list()).find((r) => r.sourceVideoId === id),
+        paired.id,
+      );
+      assert.equal(framePhoto.kind, 'image');
+      assert.equal(framePhoto.frameCount, 1);
+      assert.equal(framePhoto.audioId, paired.audioId);
+      assert.equal(framePhoto.sourceFrameMs, 500);
+      assert.equal(
+        await page.evaluate(
+          async (id) => new SynapVisualStore.Store('owner-b').savePhotoFrame(id, 1),
+          paired.id,
+        ),
+        undefined,
+      );
+      await page.locator('#visualDialog').evaluate((el) => (el.scrollTop = 0));
+      assert.equal(
+        await page.locator('#visualDialog').evaluate((el) => el.scrollWidth > el.clientWidth),
+        false,
+      );
+      await page.screenshot({
+        path: 'artifacts/workflows/chakshu-library/video-viewer-' + width + '.png',
+      });
+      await page.locator('#visualDelete').click();
+      await page.waitForFunction(() => !document.getElementById('visualDialog').open);
+      assert.equal(await page.evaluate((id) => SynapChakshu.store.get(id), paired.id), undefined);
+      assert(
+        await page.evaluate(
+          async (id) => Boolean(await new DKAudioStore().get('recordings', id)),
+          paired.audioId,
+        ),
+      );
+      await page.locator('[data-media-id="' + framePhoto.id + '"]').click();
+      const downloadEvent = page.waitForEvent('download');
+      await page.locator('#visualDownload').click();
+      const exported = await downloadEvent;
+      assert.deepEqual(
+        fs.readFileSync(await exported.path()),
+        jpeg,
+        'saved photo keeps the exact selected JPEG after source deletion',
+      );
+      // Keep this viewer open while the account changes: all media URLs and fields must clear.
       // A second account on the same browser cannot see the first account's library.
       await page.evaluate(async () => {
         await SynapAppControls.toggleConnection();
@@ -351,6 +482,10 @@ async function until(page, predicate, arg) {
       });
       assert.equal(await page.locator('#visualAccess').textContent(), 'Unavailable');
       assert.equal(await page.locator('.visual-card').count(), 0);
+      assert.equal(await page.locator('#visualDialog').evaluate((el) => el.open), false);
+      assert.equal(await page.locator('#visualPreview').getAttribute('src'), null);
+      assert.equal(await page.locator('#visualAudio').getAttribute('src'), null);
+      assert.equal(await page.locator('#visualNotes').inputValue(), '');
       assert(await page.locator('#headerPhoto').isDisabled());
       assert(await page.locator('#headerVideo').isDisabled());
       await page.evaluate(() => bleFixture.replayVoice());
@@ -385,11 +520,17 @@ async function until(page, predicate, arg) {
       await page.screenshot({
         path: 'artifacts/workflows/chakshu-library/library-dark-' + width + '.png',
       });
+      await page.reload();
+      await page.waitForFunction(() => SynapChakshu.state.available);
+      await page.locator('nav a[href="#library"]').click();
+      await page.locator('#visualFavourites').click();
+      await page.waitForFunction(() => document.querySelectorAll('.visual-card').length === 1);
+      assert.equal(await page.locator('.visual-card strong').textContent(), 'Station sign');
       assert.deepEqual(errors, []);
       await context.close();
     }
     console.log(
-      'PASS account gating/isolation, camera transfer, photo descriptions, separate live audio/video, spoken frame window, SD import and layouts',
+      'PASS account gating/isolation, capture, separate audio/video, gallery search/favourites, notes, text reading, frame navigation/extraction, export, persistence and layouts',
     );
   } finally {
     await browser.close();

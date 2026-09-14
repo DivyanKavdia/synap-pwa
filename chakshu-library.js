@@ -5,6 +5,7 @@
     api = () => root.SynapChakshu;
   let owner = '',
     generation = 0,
+    viewerGeneration = 0,
     urls = [],
     viewerUrls = [],
     playTimer = null,
@@ -47,8 +48,8 @@
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   }
   function closeViewer() {
-    clearTimeout(playTimer);
-    playTimer = null;
+    viewerGeneration++;
+    pause();
     revoke(viewerUrls);
     selected = null;
     selectedFrames = [];
@@ -56,6 +57,94 @@
     $('visualPreview').removeAttribute('src');
     $('visualAudio').pause();
     $('visualAudio').removeAttribute('src');
+    $('visualAudio').hidden = true;
+    $('visualAudioSource').hidden = true;
+    $('visualStage').classList.remove('zoomed');
+    $('visualZoom').setAttribute('aria-pressed', 'false');
+    $('visualZoom').textContent = 'Zoom view';
+    $('visualPrompt').value = '';
+    $('visualName').value = '';
+    $('visualNotes').value = '';
+    $('visualTitle').textContent = 'Photo';
+    $('visualInfo').textContent = '';
+    $('visualTime').textContent = '';
+    $('visualDetailStatus').textContent = '';
+    $('visualAudioSource').removeAttribute('href');
+    $('visualDescriptions').replaceChildren();
+    $('visualAudioLink').replaceChildren();
+    document.querySelector('.visual-edit').open = false;
+    for (const id of [
+      'visualSaveFrame',
+      'visualFavourite',
+      'visualSaveDetails',
+      'visualDescribe',
+      'visualReadText',
+      'visualSaveLink',
+    ])
+      $(id).disabled = false;
+  }
+  function pause() {
+    clearTimeout(playTimer);
+    playTimer = null;
+    $('visualPlay').textContent = 'Play video';
+  }
+  function viewContext() {
+    const id = selected?.id,
+      store = api().store,
+      token = viewerGeneration;
+    return {
+      id,
+      store,
+      current: () => selected?.id === id && store === api().store && token === viewerGeneration,
+    };
+  }
+  async function detailAction(buttonId, fn) {
+    if (!selected) return;
+    const context = viewContext(),
+      control = $(buttonId);
+    control.disabled = true;
+    $('visualDetailStatus').textContent = 'Working…';
+    try {
+      const result = await fn(context);
+      if (context.current()) $('visualDetailStatus').textContent = result || '';
+    } catch (error) {
+      if (context.current()) $('visualDetailStatus').textContent = error.message;
+    } finally {
+      if (context.current()) control.disabled = false;
+    }
+  }
+  function renderFavourite() {
+    $('visualFavourite').setAttribute('aria-pressed', String(Boolean(selected?.favourite)));
+    $('visualFavourite').textContent = selected?.favourite
+      ? 'Remove from favourites'
+      : 'Add to favourites';
+  }
+  function renderDescriptions() {
+    $('visualDescriptions').replaceChildren();
+    for (const description of selected?.descriptions || []) {
+      const article = document.createElement('article'),
+        p = document.createElement('p');
+      if (selected.kind === 'video') {
+        const jump = document.createElement('button');
+        jump.type = 'button';
+        jump.textContent = 'View at ' + (description.atMs / 1000).toFixed(1) + ' s';
+        jump.addEventListener('click', () => {
+          pause();
+          let nearest = 0;
+          for (let i = 1; i < selectedFrames.length; i++)
+            if (
+              Math.abs(selectedFrames[i].atMs - description.atMs) <
+              Math.abs(selectedFrames[nearest].atMs - description.atMs)
+            )
+              nearest = i;
+          showFrame(nearest);
+        });
+        article.append(jump);
+      }
+      p.textContent = description.text;
+      article.append(p);
+      $('visualDescriptions').append(article);
+    }
   }
   function showFrame(index) {
     frameIndex = Math.max(0, Math.min(index, selectedFrames.length - 1));
@@ -63,6 +152,17 @@
     $('visualPreview').src = viewerUrls[frameIndex];
     $('visualSeek').value = frameIndex;
     $('visualTime').textContent = (selectedFrames[frameIndex].atMs / 1000).toFixed(1) + ' s';
+    $('visualSeek').setAttribute(
+      'aria-valuetext',
+      'Frame ' +
+        (frameIndex + 1) +
+        ' of ' +
+        selectedFrames.length +
+        ', ' +
+        $('visualTime').textContent,
+    );
+    $('visualPreviousFrame').disabled = frameIndex === 0;
+    $('visualNextFrame').disabled = frameIndex === selectedFrames.length - 1;
   }
   function play() {
     clearTimeout(playTimer);
@@ -87,12 +187,19 @@
     next();
   }
   async function open(id) {
+    closeViewer();
+    const token = viewerGeneration;
     const store = api().store,
       expected = api().state.owner;
     const row = await store.get(id),
       frames = await store.frames(id);
-    if (expected !== api().state.owner || !row) return;
-    closeViewer();
+    if (
+      token !== viewerGeneration ||
+      store !== api().store ||
+      expected !== api().state.owner ||
+      !row
+    )
+      return;
     selected = row;
     selectedFrames = frames;
     for (const frame of frames) viewerUrls.push(URL.createObjectURL(frame.blob));
@@ -101,17 +208,23 @@
     $('visualSeek').hidden = row.kind !== 'video';
     $('visualPlay').hidden = row.kind !== 'video';
     $('visualPlay').textContent = 'Play video';
+    for (const id of ['visualPreviousFrame', 'visualNextFrame', 'visualSaveFrame'])
+      $(id).hidden = row.kind !== 'video';
+    $('visualSaveFrame').disabled = !frames.length;
+    $('visualDescribe').disabled = !frames.length;
+    $('visualReadText').disabled = !frames.length;
+    $('visualDownload').disabled = !frames.length;
+    $('visualZoom').disabled = !frames.length;
+    $('visualPlay').disabled = frames.length < 2;
+    $('visualName').value = row.name || '';
+    $('visualNotes').value = row.notes || '';
+    renderFavourite();
     $('visualInfo').textContent =
       (row.state === 'interrupted' ? 'Interrupted capture · ' : '') +
       (row.kind === 'video' ? 'Silent video · audio is saved separately. ' : '') +
       (row.timingEstimated ? 'Frame times estimated from the earlier 2 fps capture. ' : '') +
       'Saved on this browser.';
-    $('visualDescriptions').replaceChildren();
-    for (const description of row.descriptions || []) {
-      const p = document.createElement('p');
-      p.textContent = (description.atMs / 1000).toFixed(1) + ' s · ' + description.text;
-      $('visualDescriptions').append(p);
-    }
+    renderDescriptions();
     $('visualDetailStatus').textContent = '';
     showFrame(0);
     $('visualDialog').showModal();
@@ -119,20 +232,21 @@
       recordings = (await journal.all('recordings')).filter(
         (r) => r.ownerUid === expected && r.status !== 'recording',
       );
-    if (selected?.id !== id || expected !== api().state.owner) return;
+    if (token !== viewerGeneration || selected?.id !== id || expected !== api().state.owner) return;
     const select = $('visualAudioLink');
     select.replaceChildren(new Option('No linked audio', ''));
     for (const record of recordings)
       select.add(new Option(record.name || 'Audio recording', record.id));
     select.value = row.audioId || '';
     const audio = row.audioId ? await journal.get('recordings', row.audioId) : null;
-    if (selected?.id !== id || expected !== api().state.owner) return;
+    if (token !== viewerGeneration || selected?.id !== id || expected !== api().state.owner) return;
     $('visualAudio').hidden = true;
     $('visualAudioSource').hidden = audio?.ownerUid !== expected;
     $('visualAudioSource').href = '#recording-' + (audio?.id || '');
     if (audio?.ownerUid === expected) {
       const blob = await journal.blob(audio);
-      if (selected?.id !== id || api().state.owner !== expected) return;
+      if (token !== viewerGeneration || selected?.id !== id || api().state.owner !== expected)
+        return;
       const url = URL.createObjectURL(blob);
       viewerUrls.push(url);
       $('visualAudio').src = url;
@@ -145,6 +259,10 @@
     if (owner !== state.owner) {
       owner = state.owner;
       pageSize = 40;
+      $('visualSearch').value = '';
+      $('visualFilter').value = 'all';
+      $('visualFavourites').setAttribute('aria-pressed', 'false');
+      $('visualCount').textContent = '';
       renderSignature = '';
       closeViewer();
       revoke(urls);
@@ -170,7 +288,8 @@
         ? 'Saving…'
         : 'Stop video';
     $('visualStop').disabled = state.session?.phase === 'saving';
-    const busy = state.working || Boolean(state.session) || state.offline;
+    const deviceBusy = root.SynapChakshuModel?.busy || root.SynapModules?.busy;
+    const busy = state.working || Boolean(state.session) || state.offline || deviceBusy;
     for (const id of [
       'visualPhoto',
       'visualPhotoAudio',
@@ -182,7 +301,7 @@
     $('visualImport').disabled = busy;
     $('visualMode').disabled = busy;
     $('visualExplainLive').hidden = !state.session?.id;
-    $('visualAudioOnly').disabled = state.offline || state.working;
+    $('visualAudioOnly').disabled = state.offline || state.working || deviceBusy;
     $('visualLive').hidden = !state.session?.id;
     if (!state.session?.id && liveUrl) {
       URL.revokeObjectURL(liveUrl);
@@ -221,12 +340,27 @@
           : 'Waiting for the camera…';
     }
     const filter = $('visualFilter').value,
-      visible = rows.filter((row) => filter === 'all' || row.kind === filter);
+      query = $('visualSearch').value,
+      favourites = $('visualFavourites').getAttribute('aria-pressed') === 'true',
+      visible = root.SynapVisualStore.filterMedia(rows, { kind: filter, query, favourites });
+    $('visualCount').textContent = visible.length + ' of ' + rows.length + ' saved items';
+    $('visualClearSearch').hidden = !query && filter === 'all' && !favourites;
     const signature = JSON.stringify([
       state.owner,
       filter,
+      query,
+      favourites,
       pageSize,
-      rows.map((row) => [row.id, row.frameCount, row.state, row.audioId, row.descriptions?.length]),
+      rows.map((row) => [
+        row.id,
+        row.name,
+        row.notes,
+        row.favourite,
+        row.frameCount,
+        row.state,
+        row.audioId,
+        row.descriptions?.length,
+      ]),
     ]);
     if (signature === renderSignature) return;
     const grid = $('visualGrid');
@@ -235,7 +369,9 @@
     if (!visible.length) {
       const p = document.createElement('p');
       p.className = 'visual-empty';
-      p.textContent = 'Your photos and video clips will appear here.';
+      p.textContent = rows.length
+        ? 'No matching photos or videos. Try clearing the filters.'
+        : 'Your photos and video clips will appear here.';
       fragment.append(p);
     }
     // Keep a large library responsive; its original media is loaded only on open.
@@ -263,6 +399,8 @@
       const meta = document.createElement('span');
       meta.textContent =
         (row.kind === 'video' ? 'Video' : 'Photo') +
+        (row.favourite ? ' · Favourite' : '') +
+        (row.kind === 'video' ? ' · ' + ((row.durationMs || 0) / 1000).toFixed(1) + ' s' : '') +
         ' · ' +
         new Date(row.createdAt).toLocaleDateString() +
         (row.audioId ? ' · with audio' : '') +
@@ -289,9 +427,24 @@
   }
   function init() {
     $('visualMode').addEventListener('change', mode);
-    $('visualFilter').addEventListener('change', () => {
+    const refreshFilters = () => {
       pageSize = 40;
-      render();
+      render().catch((e) => status(e.message));
+    };
+    $('visualFilter').addEventListener('change', refreshFilters);
+    $('visualSearch').addEventListener('input', refreshFilters);
+    $('visualFavourites').addEventListener('click', () => {
+      $('visualFavourites').setAttribute(
+        'aria-pressed',
+        String($('visualFavourites').getAttribute('aria-pressed') !== 'true'),
+      );
+      refreshFilters();
+    });
+    $('visualClearSearch').addEventListener('click', () => {
+      $('visualSearch').value = '';
+      $('visualFilter').value = 'all';
+      $('visualFavourites').setAttribute('aria-pressed', 'false');
+      refreshFilters();
     });
     $('visualRetryAccess').addEventListener('click', () => action(() => api().sync()));
     $('visualAudioOnly').addEventListener('click', () =>
@@ -343,50 +496,118 @@
       }),
     );
     $('visualClose').addEventListener('click', closeViewer);
+    $('visualAudioSource').addEventListener('click', (event) => {
+      if (!selected?.audioId) return;
+      const audioId = selected.audioId;
+      if (root.SynapProvenance?.openSource) {
+        event.preventDefault();
+        closeViewer();
+        root.SynapProvenance.openSource(audioId);
+      } else closeViewer();
+    });
     $('visualDialog').addEventListener('cancel', (e) => {
       e.preventDefault();
       closeViewer();
     });
     $('visualSeek').addEventListener('input', () => {
-      clearTimeout(playTimer);
-      playTimer = null;
-      $('visualPlay').textContent = 'Play video';
+      pause();
       showFrame(Number($('visualSeek').value));
     });
     $('visualPlay').addEventListener('click', () => {
-      if (playTimer) {
-        clearTimeout(playTimer);
-        playTimer = null;
-        $('visualPlay').textContent = 'Play video';
-      } else play();
+      if (playTimer) pause();
+      else play();
     });
-    $('visualDescribe').addEventListener('click', async () => {
-      if (!selected) return;
-      const id = selected.id,
-        index = frameIndex;
-      const button = $('visualDescribe');
-      button.disabled = true;
-      $('visualDetailStatus').textContent = 'Looking at the selected frames…';
-      try {
-        await api().describe(
-          id,
-          selectedFrames[index]?.atMs || 0,
-          $('visualPrompt').value.trim() || 'Describe what is visible here.',
+    for (const [id, step] of [
+      ['visualPreviousFrame', -1],
+      ['visualNextFrame', 1],
+    ])
+      $(id).addEventListener('click', () => {
+        pause();
+        showFrame(frameIndex + step);
+      });
+    $('visualZoom').addEventListener('click', () => {
+      const zoomed = $('visualStage').classList.toggle('zoomed');
+      $('visualZoom').setAttribute('aria-pressed', String(zoomed));
+      $('visualZoom').textContent = zoomed ? 'Fit view' : 'Zoom view';
+    });
+    $('visualFavourite').addEventListener('click', () =>
+      detailAction('visualFavourite', async (context) => {
+        const favourite = !selected.favourite;
+        await context.store.patch(context.id, { favourite });
+        if (context.current()) {
+          selected.favourite = favourite;
+          renderFavourite();
+          await render();
+        }
+        return favourite ? 'Added to favourites.' : 'Removed from favourites.';
+      }),
+    );
+    $('visualSaveDetails').addEventListener('click', () =>
+      detailAction('visualSaveDetails', async (context) => {
+        const fields = {
+          name: $('visualName').value.trim().slice(0, 160),
+          notes: $('visualNotes').value.trim().slice(0, 2000),
+        };
+        if (!fields.name) throw Error('Enter a title before saving.');
+        await context.store.patch(context.id, fields);
+        if (context.current()) {
+          Object.assign(selected, fields);
+          $('visualTitle').textContent = fields.name;
+          await render();
+        }
+        return 'Title and notes saved.';
+      }),
+    );
+    $('visualSaveFrame').addEventListener('click', () =>
+      detailAction('visualSaveFrame', async (context) => {
+        pause();
+        const id = await context.store.savePhotoFrame(
+          context.id,
+          selectedFrames[frameIndex]?.index,
         );
-        if (selected?.id === id) await open(id);
-      } catch (e) {
-        $('visualDetailStatus').textContent = e.message;
-      } finally {
-        button.disabled = false;
-      }
-    });
+        if (!id) throw Error('This frame is no longer available.');
+        if (context.current()) await render();
+        return 'Photo saved to your library. Its audio link is kept.';
+      }),
+    );
+    const describe = (id, prompt) =>
+      detailAction(id, async (context) => {
+        pause();
+        await api().describe(context.id, selectedFrames[frameIndex]?.atMs || 0, prompt);
+        const row = await context.store.get(context.id);
+        if (context.current() && row) {
+          selected.descriptions = row.descriptions;
+          renderDescriptions();
+          await render();
+        }
+        return 'Description saved.';
+      });
+    $('visualDescribe').addEventListener('click', () =>
+      describe(
+        'visualDescribe',
+        $('visualPrompt').value.trim() || 'Describe what is visible here.',
+      ),
+    );
+    $('visualReadText').addEventListener('click', () =>
+      describe(
+        'visualReadText',
+        'Read the text visible in this view. Preserve its reading order and say when text is unclear.',
+      ),
+    );
     $('visualSaveLink').addEventListener('click', () =>
-      action(async () => {
-        if (!selected) return;
-        const id = selected.id;
-        await api().store.patch(id, { audioId: $('visualAudioLink').value || null });
-        await open(id);
-        render();
+      detailAction('visualSaveLink', async (context) => {
+        const audioId = $('visualAudioLink').value || null;
+        if (audioId) {
+          const audio = await new root.DKAudioStore().get('recordings', audioId);
+          if (!context.current()) return;
+          if (!audio || audio.ownerUid !== api().state.owner || audio.status === 'recording')
+            throw Error('Choose a saved recording from this account.');
+        }
+        await context.store.patch(context.id, { audioId });
+        if (context.current()) {
+          await open(context.id);
+          await render();
+        }
       }),
     );
     $('visualDownload').addEventListener('click', () => {
@@ -425,6 +646,7 @@
       }),
     );
     root.addEventListener('synap-chakshu-changed', () => render().catch((e) => status(e.message)));
+    root.addEventListener('synap-module-changed', () => render().catch((e) => status(e.message)));
     root.addEventListener('synap-chakshu-offline', (e) => {
       if (e.detail.active) status('SD recording · ' + e.detail.progress + '%');
       else if (e.detail.path)

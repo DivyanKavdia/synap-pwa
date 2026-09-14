@@ -2,6 +2,17 @@
 (function (root) {
   'use strict';
   const TARGET = 'xiao-esp32s3-sense-8m';
+  function filterMedia(rows, { kind = 'all', query = '', favourites = false } = {}) {
+    const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    return rows.filter((row) => {
+      if ((kind !== 'all' && row.kind !== kind) || (favourites && !row.favourite)) return false;
+      const text = [row.name, row.notes, ...(row.descriptions || []).map((d) => d.text)]
+        .filter(Boolean)
+        .join(' ')
+        .toLocaleLowerCase();
+      return terms.every((term) => text.includes(term));
+    });
+  }
   function windowFrames(frames, atMs, radius = 2) {
     if (!Number.isFinite(atMs) || atMs < 0 || !frames.length) return [];
     const ordered = [...frames].sort((a, b) => a.atMs - b.atMs);
@@ -128,6 +139,42 @@
       );
       return cursor?.value;
     }
+    async savePhotoFrame(id, index) {
+      // Copy the JPEG and metadata atomically. The source video and audio stay independent.
+      return this.transaction(['media', 'frames'], (s, result) => {
+        const source = s.media.get([this.uid, id]);
+        source.onsuccess = () => {
+          const row = source.result;
+          if (!row || row.kind !== 'video') return;
+          const frame = s.frames.get([this.uid, id, index]);
+          frame.onsuccess = () => {
+            if (!frame.result) return;
+            const { blob, atMs } = frame.result,
+              photoId = root.crypto.randomUUID();
+            s.media.add({
+              id: photoId,
+              ownerUid: this.uid,
+              kind: 'image',
+              name: (row.name || 'Video') + ' · ' + (atMs / 1000).toFixed(1) + ' s',
+              createdAt: new Date().toISOString(),
+              state: 'saved',
+              captureMode: 'video-frame',
+              deviceId: row.deviceId,
+              audioId: row.audioId || null,
+              audioOffsetMs: atMs,
+              sourceVideoId: id,
+              sourceFrameMs: atMs,
+              frameCount: 1,
+              bytes: blob.size,
+              durationMs: 0,
+              descriptions: [],
+            });
+            s.frames.add({ ownerUid: this.uid, mediaId: photoId, index: 0, blob, atMs });
+            result(photoId);
+          };
+        };
+      });
+    }
     async addDescription(id, description) {
       return this.transaction(['media'], (s) => {
         const req = s.media.get([this.uid, id]);
@@ -213,7 +260,7 @@
         if (row.state === 'capturing') await this.patch(row.id, { state: 'interrupted' });
     }
   }
-  const api = { Store, TARGET, windowFrames, explainWords, splitMJPEG };
+  const api = { Store, TARGET, filterMedia, windowFrames, explainWords, splitMJPEG };
   root.SynapVisualStore = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(globalThis);
