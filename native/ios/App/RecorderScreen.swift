@@ -138,6 +138,12 @@ private struct RecordingScreen: View {
             } footer: { Text("The original PCM and received Bluetooth packets stay on this iPhone until you delete the recording.") }
         }
         .navigationTitle("Recording").navigationBarTitleDisplayMode(.inline)
+        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
+            if playing, player?.isPlaying != true { playing = false }
+        }
+        .onChange(of: controller.view.active) { active in
+            if active { player?.stop(); playing = false; try? AVAudioSession.sharedInstance().setActive(false) }
+        }
         .onDisappear { player?.stop(); playing = false; try? AVAudioSession.sharedInstance().setActive(false) }
         .confirmationDialog("Delete this recording and its original audio from this iPhone?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete recording", role: .destructive) { controller.delete(recording); dismiss() }

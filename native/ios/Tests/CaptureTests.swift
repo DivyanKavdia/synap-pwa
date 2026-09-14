@@ -106,6 +106,31 @@ final class CaptureTests: XCTestCase {
         XCTAssertEqual(RecoveryStatus.command(3, token: token, sequence: 65535), Data([3] + Array(repeating: 7, count: 8) + [255, 255]))
     }
 
+    func testStopIntentSurvivesRelaunch() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var journal: CaptureJournal? = try CaptureJournal(root: root, info: RecordingInfo(name: "Stop", peripheralID: UUID(), deviceID: "SYNAP-123456ABCDEF", token: Data(repeating: 1, count: 8)))
+        let directory = journal!.directory
+        try journal!.setGeneration(123); try journal!.requestStop()
+        let deadlineOrigin = journal!.info.stopRequestedAt; journal = nil
+        let restored = try CaptureJournal(restoring: directory)
+        XCTAssertTrue(restored.info.stopRequested)
+        XCTAssertEqual(restored.info.stopRequestedAt, deadlineOrigin)
+        XCTAssertEqual(restored.info.generation, 123)
+    }
+
+    func testChecksumCorruptionRetainsTheOriginalJournal() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var journal: CaptureJournal? = try CaptureJournal(root: root, info: RecordingInfo(name: "CRC", peripheralID: UUID(), deviceID: "SYNAP-123456ABCDEF", token: Data(repeating: 1, count: 8)))
+        let directory = journal!.directory
+        try journal!.receive(packets(0)[0]); journal = nil
+        let url = directory.appendingPathComponent("packets.synap")
+        var raw = try Data(contentsOf: url); raw[raw.count - 1] ^= 0xff; try raw.write(to: url)
+        XCTAssertThrowsError(try CaptureJournal(restoring: directory))
+        XCTAssertEqual(try Data(contentsOf: url), raw)
+    }
+
     func testRecoveryNeverTakesOverAnotherSessionOrRestartsAStoppedTake() {
         let token = Data(repeating: 7, count: 8)
         func control(_ state: UInt8) -> PendantStatus {

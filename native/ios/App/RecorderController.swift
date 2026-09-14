@@ -151,7 +151,7 @@ final class RecorderController: ObservableObject {
         let info = RecordingInfo(name: "Recording " + stamp.string(from: Date()), peripheralID: id, deviceID: state.deviceID, token: token)
         let created = try CaptureJournal(root: root, info: info)
         try JSONEncoder().encode(info.id).write(to: activeURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-        journal = created; bound = false; stopDeadline = nil
+        journal = created; bound = false; stopDeadline = nil; state.lastAudio = nil
     }
     func startRecording() {
         queue.async {
@@ -269,7 +269,8 @@ final class RecorderController: ObservableObject {
     func mark() {
         queue.async {
             guard self.bound, self.state.phase == "recording", let journal = self.journal,
-                  !journal.info.stopRequested, Date().timeIntervalSince(self.state.lastAudio ?? .distantPast) <= 2 else { return }
+                  !journal.info.stopRequested, journal.assembler.receivedFrames > 0,
+                  Date().timeIntervalSince(self.state.lastAudio ?? .distantPast) <= 2 else { return }
             do { try journal.mark(); self.state.message = "Moment marked."; self.emit() }
             catch { self.fail(error.localizedDescription) }
         }
@@ -313,6 +314,19 @@ final class RecorderController: ObservableObject {
             if let deadline = self.stopDeadline, Date() > deadline, self.journal?.info.stopRequested == true {
                 self.allowReconnect = false
                 self.finish(reason: "stop-interrupted", message: "Received audio has been saved."); self.link.disconnect()
+            } else if self.journal != nil, self.bound, self.link?.connected == true, self.state.phase == "recording",
+                      Date().timeIntervalSince(self.state.lastAudio ?? .distantPast) > 2 {
+                // A live GATT connection alone is not evidence of audio delivery.
+                // Reclaim only our current generation; never restart the microphone.
+                self.bound = false; self.state.phase = "reconnecting"
+                self.state.message = "Checking interrupted audio…"
+                self.operation(PendantLink.control, .read) { bytes in
+                    guard let status = PendantStatus(bytes) else { self.fail("The pendant status was invalid."); return }
+                    self.operation(PendantLink.recovery, .read) { bytes in
+                        guard let recovery = RecoveryStatus(bytes) else { self.fail("The pendant recovery status was invalid."); return }
+                        self.resume(recovery, status: status)
+                    }
+                }
             }
             self.emit()
         }

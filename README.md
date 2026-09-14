@@ -20,6 +20,12 @@ The browser owns the durable packet journal, audio, recording metadata, processi
 
 With a compatible pendant, the same open app page can recover buffered audio after a short disconnect. Capacity is reported by the firmware: up to 30 seconds on S3 PSRAM or 1.25 seconds with sufficient internal memory. Overflow, power loss, sleep or a closed/reloaded app can still lose audio. Screen Wake Lock and foreground recovery cannot override OS-level Bluetooth suspension.
 
+## Native iPhone recording
+
+The [native iOS recorder](native/ios/README.md) uses background CoreBluetooth and protected local files to receive pendant audio while another app is visible or the screen is locked. It includes playback, received-audio timing, recovery and original WAV export. Apple signing and physical iPhone + C3/S3 validation are required before distribution; browser updates alone cannot install it.
+
+In the web app, **Library → Import audio** accepts mono 16 kHz PCM16 WAVs, including native exports. Import preserves the entire original file, timestamps, marked moments and native gap/transport counts. Each import creates a new local recording. Select it and choose **Process** to upload source samples in 30-second windows through the existing account; import itself does not upload audio.
+
 ## Pendant interaction
 
 Current ESP32-S3 and ESP32-C3 firmware share the same touch model:
@@ -55,7 +61,7 @@ Primary service: `4fa12345-0000-1000-8000-00805f9b34fb`
 - diagnostics: `4fa1234d-0000-1000-8000-00805f9b34fb`
 - asynchronous events: `4fa1234e-0000-1000-8000-00805f9b34fb`
 
-Audio is captured at 16 kHz, mono. Firmware transports independent IMA ADPCM frames; the PWA decodes them back to PCM before storage and AI processing.
+Audio is captured at 16 kHz, mono. Firmware sends uncompressed PCM16 when the negotiated link supports it, with independent IMA ADPCM frames as a fallback for smaller MTUs. The PWA preserves PCM samples and decodes fallback frames without enhancement before storage and AI processing.
 
 ## Recording and storage
 
@@ -93,7 +99,7 @@ Current capabilities include rolling transcription, conservative silence handlin
 
 Today and Weekly review share one card with source-linked memories in each view. Actions includes an independent timeline, Complete and Reopen. People profiles can be deleted while keeping recordings. See [memory workspace](docs/MEMORY_WORKSPACE.md) and [My actions](docs/MY_ACTIONS.md).
 
-New summaries include topic chapters, grounded reminder suggestions and unanswered questions. Library recording details link those items to their source times. People → Prepare shows recent related conversations, open actions and questions inside My actions. Original recordings are retained during local enhancement, with short-window checks that fall back to the original if the enhanced copy is unsafe. See [meeting features](docs/MEETING_FEATURES.md) for usage and limits.
+New summaries include topic chapters, grounded reminder suggestions and unanswered questions. Library recording details link those items to their source times. People → Prepare shows recent related conversations, open actions and questions inside My actions. Original recordings and upload samples are retained without automatic enhancement. See [meeting features](docs/MEETING_FEATURES.md) for usage and limits.
 
 Local recording data always wins during cloud history restoration. Cloud-restored memories do not claim playable audio when the original audio is no longer available.
 
