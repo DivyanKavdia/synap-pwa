@@ -1,5 +1,8 @@
 # Recording architecture audit — 13 September 2026
 
+Follow-up: [14 September robotic-audio investigation](ROBOTIC_AUDIO_2026-09-14.md)
+documents a separate PCM alignment defect and the corresponding validation.
+
 The recording path has working recovery mechanisms, but ownership was fragmented.
 The highest-value structural change is to make one component own each operation's
 lifetime: native Bluetooth requests, journal writes, cloud window transcription,

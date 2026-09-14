@@ -13,39 +13,62 @@ function ascii(buffer: Buffer, offset: number, length: number): string {
 
 export function parsePcm16Wav(buffer: Buffer): ParsedWav {
   if (buffer.length < 44 || ascii(buffer, 0, 4) !== 'RIFF' || ascii(buffer, 8, 4) !== 'WAVE') {
-    throw new Error('Speaker verification requires a WAV recording');
+    throw new Error('Audio requires a complete PCM WAV recording');
   }
+  const riffEnd = buffer.readUInt32LE(4) + 8;
+  if (riffEnd !== buffer.length) throw new Error('WAV container length does not match the audio');
 
   let offset = 12;
+  let chunks = 0;
   let sampleRate = 0;
   let channels = 0;
   let bitsPerSample = 0;
   let format = 0;
+  let blockAlign = 0;
+  let byteRate = 0;
+  let seenFormat = false;
   let data: Buffer | null = null;
 
-  while (offset + 8 <= buffer.length) {
+  while (offset < riffEnd) {
+    if (offset + 8 > riffEnd || ++chunks > 1024) throw new Error('Invalid WAV chunks');
     const id = ascii(buffer, offset, 4);
     const size = buffer.readUInt32LE(offset + 4);
     const start = offset + 8;
-    const end = Math.min(buffer.length, start + size);
-    if (id === 'fmt ' && end - start >= 16) {
+    const end = start + size;
+    if (end > riffEnd) throw new Error('WAV audio data is incomplete');
+    if (id === 'fmt ') {
+      if (seenFormat || size < 16) throw new Error('Invalid PCM format chunk');
+      seenFormat = true;
       format = buffer.readUInt16LE(start);
       channels = buffer.readUInt16LE(start + 2);
       sampleRate = buffer.readUInt32LE(start + 4);
+      byteRate = buffer.readUInt32LE(start + 8);
+      blockAlign = buffer.readUInt16LE(start + 12);
       bitsPerSample = buffer.readUInt16LE(start + 14);
     } else if (id === 'data') {
+      if (data || !size || size % 2) throw new Error('WAV contains an incomplete PCM sample');
       data = buffer.subarray(start, end);
     }
     offset = start + size + (size % 2);
+    if (offset > riffEnd) throw new Error('WAV chunk padding is incomplete');
   }
 
-  if (!data || format !== 1 || channels !== 1 || bitsPerSample !== 16 || sampleRate !== 16000) {
-    throw new Error('Speaker verification requires mono 16-bit PCM at 16 kHz');
+  if (
+    !data ||
+    format !== 1 ||
+    channels !== 1 ||
+    bitsPerSample !== 16 ||
+    sampleRate !== 16000 ||
+    blockAlign !== 2 ||
+    byteRate !== sampleRate * 2
+  ) {
+    throw new Error('Audio requires mono 16-bit PCM at 16 kHz');
   }
   return { sampleRate, channels, bitsPerSample, data };
 }
 
 export function makePcm16Wav(pcm: Buffer, sampleRate = 16000): Buffer {
+  if (pcm.length % 2) throw new Error('Cannot encode an incomplete PCM sample');
   const header = Buffer.alloc(44);
   header.write('RIFF', 0, 'ascii');
   header.writeUInt32LE(36 + pcm.length, 4);

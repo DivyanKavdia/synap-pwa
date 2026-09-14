@@ -12,7 +12,7 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
     const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
     await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
     await context.route('**/__storage', route => route.fulfill({ contentType: 'text/html', body:
-      '<!doctype html><title>Audio storage fixture</title><header></header><script src="/audio-store.js"></script><script src="/recording/journal.js"></script><script src="/recording/timeline.js"></script><script src="/audio-quality.js"></script>' }));
+      '<!doctype html><title>Audio storage fixture</title><header></header><script src="/audio-codec-v3.js"></script><script src="/audio-store.js"></script><script src="/recording/journal.js"></script><script src="/recording/timeline.js"></script><script src="/audio-quality.js"></script>' }));
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -31,6 +31,39 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
         await store.flushWindows();
         await store.flush();
       }
+      // Production codec -> notification views -> IndexedDB -> WAV -> native
+      // browser decoder. Include the write probe that stores a temporary byte.
+      const voice = new DKAudioStore({ name: 'pcm-alignment' });
+      await voice.verifyWritable();
+      const voiceId = await voice.begin('Generated voice waveform');
+      const expected = new Int16Array(384 * 800);
+      for (let sequence = 0; sequence < 384; sequence++) {
+        const samples = new Int16Array(800);
+        for (let i = 0; i < 800; i++) samples[i] = Math.round(1000 * Math.sin((sequence * 800 + i) / 11));
+        const encoded = SynapAudioCodecV3.encodeFrame(samples);
+        const decoded = SynapAudioCodecV3.decodeFrame(encoded);
+        expected.set(new Int16Array(decoded.buffer), sequence * 800);
+        const packet = new DataView(new ArrayBuffer(429), 17, 412);
+        packet.setUint8(0, 0xa5); packet.setUint8(1, 3);
+        packet.setUint16(2, sequence, true); packet.setUint8(4, 0); packet.setUint8(5, 1);
+        packet.setUint16(6, encoded.length, true);
+        new Uint8Array(packet.buffer, packet.byteOffset + 8).set(encoded);
+        for (const value of SynapAudioCodecV3.normalizePacket(packet, 'voice')) {
+          voice.append(voiceId, { sequence, chunk: value.getUint8(4), total: value.getUint8(5),
+            payload: new Uint8Array(value.buffer, value.byteOffset + 8, value.getUint16(6, true)) });
+        }
+      }
+      await voice.verifyWritable();
+      const voiceRecording = await voice.close(voiceId);
+      const voiceWav = await voice.blob(voiceRecording);
+      await DKAudioCodec.validateWav(voiceWav);
+      const playback = await new OfflineAudioContext(1, expected.length, 16000).decodeAudioData(await voiceWav.arrayBuffer());
+      const audible = playback.getChannelData(0);
+      let maxError = 0;
+      for (let i = 0; i < expected.length; i++) maxError = Math.max(maxError, Math.abs(audible[i] - expected[i] / 32768));
+      const aligned = { bytes: voiceWav.size, samples: playback.length, rate: playback.sampleRate,
+        channels: playback.numberOfChannels, maxError, recordings: (await voice.all('recordings')).length,
+        segments: (await voice.all('segments')).length };
       const store = new DKAudioStore({ ...SynapRecordingJournal.options({transport:true}), name: 'replayed-frames' });
       const id = await store.begin('Recovered window');
       append(store, id, 0, 97);
@@ -109,6 +142,7 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
       const signalRecording = await gaps.close(signalId);
       await gaps.atomic(['recordings'], s => s.recordings.put({ ...signalRecording, audioQuality: SynapAudioQuality.snapshot() }));
       return {
+        aligned,
         signalId, liveSignal, signalEvents,
         before, after, recovered: { stats: recovered.stats, durationMs: recovered.durationMs, exact },
         gap: { id: gapId, stats: gapRecording.stats, durationMs: gapRecording.durationMs, zeroFrames,
@@ -117,6 +151,8 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
         partial: { status: partialRecording.status, packets: (await partial.all('packets')).length, jobs: (await partial.all('jobs')).length },
       };
     });
+    assert.deepEqual(result.aligned, { bytes: 614444, samples: 307200, rate: 16000,
+      channels: 1, maxError: 0, recordings: 1, segments: 1 }, 'browser playback retains every decoded sample with no leading probe byte');
     assert.deepEqual(result.before, { compacted: false, packets: 98, jobs: 0 });
     assert.deepEqual(result.after, { compacted: true, liveWindow: 1 });
     assert.equal(result.recovered.stats.completeFrames, 981);

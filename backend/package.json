@@ -11,7 +11,7 @@
     "build": "npm run clean && tsc -p tsconfig.json",
     "start": "node --env-file-if-exists=.env dist/src/index.js",
     "dev": "node --watch --import tsx --env-file-if-exists=.env src/index.ts",
-    "test": "npm run build && node --env-file-if-exists=test/test.env --test dist/test/*.test.js",
+    "test": "npm run build && node --require ./test/offline.cjs --env-file-if-exists=test/test.env --test dist/test/*.test.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "node -e \"require('node:fs').rmSync('dist', {recursive: true, force: true})\""
   },

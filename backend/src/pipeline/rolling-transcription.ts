@@ -1,5 +1,6 @@
 import { openBytes, sealJson, sealText, type Binding } from '../crypto/envelope.js';
 import { transcribeSegment } from '../gemini/transcribe.js';
+import { parsePcm16Wav } from '../speaker/audio.js';
 import * as db from '../store/firestore.js';
 import { readSealedSegment } from '../store/gcs.js';
 import type { RecordingDoc, SegmentDoc } from '../store/types.js';
@@ -46,6 +47,11 @@ async function transcribeOne(
     sealed,
     binding(uid, `recording/${recordingId}/segment/${segment.index}`, 'audio'),
   );
+  try {
+    parsePcm16Wav(audio);
+  } catch {
+    throw new db.SegmentWriteError(409, 'Stored audio is malformed. Keep the original for recovery.');
+  }
 
   const result = await transcribeSegment(audio, 'audio/wav', {
     baseOffsetMs: segment.startMs,

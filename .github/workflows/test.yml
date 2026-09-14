@@ -80,7 +80,7 @@ jobs:
           emulator_pid=$!
           trap 'kill "$emulator_pid" || true' EXIT
           node -e 'const net=require("node:net"); const deadline=Date.now()+60000; function probe(){const socket=net.connect(8085,"127.0.0.1");socket.on("connect",()=>{socket.destroy();process.exit(0)});socket.on("error",()=>{socket.destroy();if(Date.now()>deadline)process.exit(1);setTimeout(probe,500)})}probe()'
-          node --env-file-if-exists=test/test.env --test dist/test/integration/*.test.js
+          node --require ./test/offline.cjs --env-file-if-exists=test/test.env --test dist/test/integration/*.test.js
       - name: Emulator log on failure
         if: failure()
         run: cat /tmp/synap-firestore.log

@@ -5,11 +5,12 @@ import type { AddressInfo } from 'node:net';
 import type { Firestore } from '@google-cloud/firestore';
 import { OAuth2Client } from 'google-auth-library';
 import { Storage, type Bucket } from '@google-cloud/storage';
-import { generateDek, sealJson, sealText } from '../src/crypto/envelope.js';
+import { generateDek, sealBytes, sealJson, sealText } from '../src/crypto/envelope.js';
 import { keyring } from '../src/crypto/keyring.js';
 import { createApp } from '../src/http/app.js';
 import { issueTokens } from '../src/http/auth.js';
 import { makePcm16Wav } from '../src/speaker/audio.js';
+import { transcribeUploadedWindow } from '../src/pipeline/rolling-transcription.js';
 import * as db from '../src/store/firestore.js';
 import type { RecordingDoc, SegmentDoc, UserDoc } from '../src/store/types.js';
 
@@ -114,11 +115,25 @@ test('authenticated PUT preserves permanent model failures, source bytes and del
     const res=await fetch(origin+'/v1/recordings/r/segments/0',{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'audio/wav','X-Synap-Start-Ms':'0','X-Synap-End-Ms':'1000',...extra},body:bytes});
     return {status:res.status,data:await res.json() as any};
   };
+  const malformed=Buffer.concat([audio.subarray(0,44),Buffer.alloc(1),audio.subarray(44)]);
+  malformed.writeUInt32LE(malformed.length-8,4);malformed.writeUInt32LE(malformed.length-44,40);
+  for(const broken of [malformed,audio.subarray(0,audio.length-1)]){
+    const result=await put(broken);
+    assert.equal(result.status,400);assert.equal(result.data.error.code,'invalid_audio');
+    assert.equal(result.data.error.retryable,false);assert.equal(modelCalls,0);
+    assert.equal(objects.size,0);assert.equal(f.rows.has(f.child),false,'invalid audio cannot become accepted evidence');
+  }
   for(let attempt=0;attempt<2;attempt++){
     const result=await put();assert.equal(result.status,502);assert.equal(result.data.error.retryable,false);assert(!JSON.stringify(result.data).includes('PRIVATE DETAIL'));
     assert.equal(objects.size,1);assert.equal(f.rows.get(f.parent).uploadedSegments,1);assert.equal(f.rows.get(f.child).state,'accepted');
   }
   assert(modelCalls>0);const before=modelCalls,path=f.rows.get(f.child).storagePath,bytes=Buffer.from(objects.get(path)!);
+  // A source accepted by an older release also must not reach the model again.
+  const invalidStored=Buffer.from(JSON.stringify(sealBytes(dek,malformed,{uid:'u',scope:'recording/r/segment/0',field:'audio'})));
+  objects.set(path,invalidStored);
+  await assert.rejects(transcribeUploadedWindow('u','r',0,dek),{status:409,retryable:false});
+  assert.equal(modelCalls,before);assert.deepEqual(objects.get(path),invalidStored);
+  objects.set(path,bytes);
   const conflict=await put(makePcm16Wav(Buffer.alloc(32000,17)));assert.equal(conflict.status,409);assert.equal(conflict.data.error.retryable,false);
   assert.equal((await put(audio,{'X-Synap-End-Ms':'2000'})).status,409);
   assert.equal((await put(audio,{'X-Synap-End-Ms':'NaN'})).status,400);

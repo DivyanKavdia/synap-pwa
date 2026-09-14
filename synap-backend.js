@@ -231,13 +231,17 @@
 
   async function transcriptionAudio(store,job,original,signal) {
     const key=[job.recordingId,job.segmentIndex],meta=await store.get('segments',key);
-    if(meta?.transcriptionBlob)return meta.transcriptionBlob;
+    const validate=root.DKAudioCodec?.validateWav;
+    if(!validate)throw permanent('Audio validation did not load. Reopen Synap online, then retry.');
+    if(meta?.transcriptionBlob){await validate(meta.transcriptionBlob);return meta.transcriptionBlob;}
+    await validate(original);
     if(!meta || meta.uploadedToBackend || !store.atomic || !root.SynapAudioEnhancement?.prepareForUpload)return original;
     const copy=await root.SynapAudioEnhancement.prepareForUpload(original,{signal});
     if(signal?.aborted)throw new DOMException('Upload cancelled.','AbortError');
+    await validate(copy);
     // Persist the exact request body before sending it: retries after a reload
     // must keep the same digest even when the Worker previously fell back.
-    return store.atomic(['segments'],function(stores,result,transaction){
+    const selected=await store.atomic(['segments'],function(stores,result,transaction){
       const get=stores.segments.get(key);
       get.onsuccess=function(){
         if(!get.result){transaction.abort();return;}
@@ -245,6 +249,8 @@
         stores.segments.put({...get.result,transcriptionBlob:selected});result(selected);
       };
     });
+    await validate(selected);
+    return selected;
   }
 
   async function uploadSegment(processor, job, signal) {

@@ -3,6 +3,7 @@ import { openBytes, openJson } from '../../crypto/envelope.js';
 import { binding } from '../../pipeline/process.js';
 import { materializeTranscript } from '../../pipeline/source-materialize.js';
 import { speakerTranscriptFields } from '../../speaker/names.js';
+import { parsePcm16Wav } from '../../speaker/audio.js';
 import * as db from '../../store/firestore.js';
 import { readSealedSegment } from '../../store/gcs.js';
 import type { StructuredMemory } from '../../store/types.js';
@@ -12,10 +13,18 @@ import { HttpError, handler } from '../errors.js';
 const PCM_BYTES_PER_SECOND = 16_000 * 2; // 16 kHz, mono, signed 16-bit PCM.
 
 export function wavHeader(dataBytes: number, sampleRate = 16_000): Buffer {
-  const bytes = Math.max(0, Math.trunc(dataBytes));
+  if (
+    !Number.isSafeInteger(dataBytes) ||
+    dataBytes < 0 ||
+    dataBytes % 2 ||
+    dataBytes > 0xffffffff - 36
+  ) {
+    throw new Error('Cannot encode an incomplete PCM sample or oversized WAV');
+  }
+  const bytes = dataBytes;
   const out = Buffer.alloc(44);
   out.write('RIFF', 0, 'ascii');
-  out.writeUInt32LE(Math.min(0xffffffff, bytes + 36), 4);
+  out.writeUInt32LE(bytes + 36, 4);
   out.write('WAVE', 8, 'ascii');
   out.write('fmt ', 12, 'ascii');
   out.writeUInt32LE(16, 16);
@@ -26,29 +35,19 @@ export function wavHeader(dataBytes: number, sampleRate = 16_000): Buffer {
   out.writeUInt16LE(2, 32);
   out.writeUInt16LE(16, 34);
   out.write('data', 36, 'ascii');
-  out.writeUInt32LE(Math.min(0xffffffff, bytes), 40);
+  out.writeUInt32LE(bytes, 40);
   return out;
 }
 
 /** Extract the PCM data chunk without assuming a fixed 44-byte WAV header. */
 export function wavPayload(wav: Buffer): Buffer {
-  if (wav.length < 12 || wav.toString('ascii', 0, 4) !== 'RIFF' || wav.toString('ascii', 8, 12) !== 'WAVE') {
-    throw new Error('Stored source segment is not a PCM WAV file');
-  }
-  let offset = 12;
-  while (offset + 8 <= wav.length) {
-    const id = wav.toString('ascii', offset, offset + 4);
-    const size = wav.readUInt32LE(offset + 4);
-    const start = offset + 8;
-    const end = Math.min(wav.length, start + size);
-    if (id === 'data') return wav.subarray(start, end);
-    offset = start + size + (size % 2);
-  }
-  throw new Error('Stored source WAV has no data chunk');
+  return parsePcm16Wav(wav).data;
 }
 
-function byteOffset(ms: number): number {
-  return Math.max(0, Math.round((Number(ms) || 0) * PCM_BYTES_PER_SECOND / 1000));
+export function byteOffset(ms: number): number {
+  // Round sample positions before converting to bytes, including old metadata
+  // that may contain fractional milliseconds. Never pad half a PCM sample.
+  return Math.max(0, Math.round(((Number(ms) || 0) * PCM_BYTES_PER_SECOND) / 2000)) * 2;
 }
 
 /**
@@ -115,7 +114,11 @@ export function sourceRoutes(): Router {
         .filter((segment) => Boolean(segment.storagePath))
         .sort((a, b) => a.index - b.index);
       if (segments.length === 0) {
-        throw new HttpError(410, 'audio_unavailable', 'No retained source audio is available for this recording');
+        throw new HttpError(
+          410,
+          'audio_unavailable',
+          'No retained source audio is available for this recording',
+        );
       }
 
       const targetBytes = Math.max(
@@ -162,12 +165,16 @@ export function sourceRoutes(): Router {
       }
 
       if (retained === 0) {
-        throw new HttpError(410, 'audio_expired', 'The retained cloud source audio has expired for this recording');
+        throw new HttpError(
+          410,
+          'audio_expired',
+          'The retained cloud source audio has expired for this recording',
+        );
       }
       if (targetBytes > cursor) chunks.push(Buffer.alloc(targetBytes - cursor));
 
       const dataBytes = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-      const body = Buffer.concat([wavHeader(dataBytes, recording.sampleRate || 16_000), ...chunks]);
+      const body = Buffer.concat([wavHeader(dataBytes), ...chunks]);
       res.setHeader('Content-Type', 'audio/wav');
       res.setHeader('Content-Length', String(body.length));
       res.setHeader('Content-Disposition', 'inline');

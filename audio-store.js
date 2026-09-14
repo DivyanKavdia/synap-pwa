@@ -20,8 +20,77 @@
       if (!existing.result) store.add(job);
     };
   }
+  function audioError(detail) {
+    return Object.assign(
+      new Error('Audio data is damaged (' + detail + '). Keep the original for recovery.'),
+      {
+        code: 'audio_integrity',
+        retryable: false,
+      },
+    );
+  }
+  function pcmBytes(frames, frameBytes = 2) {
+    let bytes = 0;
+    for (const frame of frames) {
+      if (
+        !(ArrayBuffer.isView(frame) || frame instanceof ArrayBuffer) ||
+        frame.byteLength % frameBytes ||
+        (frameBytes > 2 && frame.byteLength !== frameBytes)
+      ) {
+        throw audioError('incomplete PCM sample or frame');
+      }
+      bytes += frame.byteLength;
+    }
+    if (!Number.isSafeInteger(bytes) || bytes > 0xffffffff - 36) throw audioError('WAV size limit');
+    return bytes;
+  }
+  // Read only chunk headers. Validation must stay bounded for long recordings
+  // and must never silently drop a byte or guess how damaged PCM was aligned.
+  async function validateWav(blob) {
+    if (!(blob instanceof Blob) || blob.size < 44) throw audioError('invalid WAV header');
+    const tag = (view, at) => view.getUint32(at, false);
+    const riff = new DataView(await blob.slice(0, 12).arrayBuffer());
+    if (tag(riff, 0) !== 0x52494646 || tag(riff, 8) !== 0x57415645)
+      throw audioError('invalid WAV header');
+    const end = riff.getUint32(4, true) + 8;
+    if (end !== blob.size) throw audioError('incomplete WAV container');
+    let format = false,
+      data = null,
+      offset = 12,
+      chunks = 0;
+    while (offset < end) {
+      if (offset + 8 > end || ++chunks > 1024) throw audioError('invalid WAV chunks');
+      const chunk = new DataView(await blob.slice(offset, offset + 8).arrayBuffer());
+      const kind = tag(chunk, 0),
+        size = chunk.getUint32(4, true),
+        start = offset + 8;
+      if (start + size > end) throw audioError('incomplete WAV audio');
+      if (kind === 0x666d7420) {
+        if (format || size < 16) throw audioError('invalid PCM format');
+        const fmt = new DataView(await blob.slice(start, start + 16).arrayBuffer());
+        if (
+          fmt.getUint16(0, true) !== 1 ||
+          fmt.getUint16(2, true) !== 1 ||
+          fmt.getUint32(4, true) !== 16000 ||
+          fmt.getUint32(8, true) !== 32000 ||
+          fmt.getUint16(12, true) !== 2 ||
+          fmt.getUint16(14, true) !== 16
+        ) {
+          throw audioError('expected mono 16-bit PCM at 16 kHz');
+        }
+        format = true;
+      } else if (kind === 0x64617461) {
+        if (data || !size || size % 2) throw audioError('incomplete PCM sample');
+        data = { start, bytes: size, samples: size / 2 };
+      }
+      offset = start + size + (size % 2);
+      if (offset > end) throw audioError('incomplete WAV padding');
+    }
+    if (!format || !data) throw audioError('missing PCM format or audio');
+    return data;
+  }
   function wav(frames) {
-    const bytes = frames.reduce((n, f) => n + f.byteLength, 0);
+    const bytes = pcmBytes(frames);
     const header = new ArrayBuffer(44),
       view = new DataView(header);
     const text = (at, value) =>
@@ -492,6 +561,8 @@
       // Until Stop, missing frames may still arrive from pendant recovery.
       // A PCM snapshot must not permanently replace those recoverable holes.
       if (!final && (data.missing || data.incomplete)) return false;
+      // Validate before the transaction can delete the raw packet evidence.
+      pcmBytes(data.frames, PCM_BYTES_PER_FRAME);
       const pcmBlob = new Blob(data.frames, { type: 'application/octet-stream' });
       const consumed = new Set(data.completeSequences || []);
       await this.atomic(['segments', 'packets', 'jobs'], (s) => {
@@ -815,5 +886,5 @@
   }
 
   root.DKAudioStore = AudioStore;
-  root.DKAudioCodec = { assemble, wav, SEGMENT_FRAMES, PCM_BYTES_PER_FRAME };
+  root.DKAudioCodec = { assemble, wav, validateWav, SEGMENT_FRAMES, PCM_BYTES_PER_FRAME };
 })(globalThis);

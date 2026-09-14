@@ -1,4 +1,5 @@
 import { Router, raw } from 'express';
+import { parsePcm16Wav } from '../../speaker/audio.js';
 import { z } from 'zod';
 import { config } from '../../config.js';
 import { GeminiError } from '../../gemini/client.js';
@@ -135,6 +136,13 @@ export function recordingRoutes(): Router {
       const audio = req.body as Buffer;
       if (!Buffer.isBuffer(audio) || audio.length === 0) {
         throw new HttpError(400, 'empty_body', 'Segment body must be audio bytes');
+      }
+      try {
+        parsePcm16Wav(audio);
+      } catch {
+        // Reject before storage or model requests. The client retains its
+        // source bytes for recovery; retries cannot repair a malformed body.
+        throw new HttpError(400, 'invalid_audio', 'Audio must be a complete mono 16-bit PCM WAV at 16 kHz. Keep the original for recovery.');
       }
 
       const digest = sha256(audio);
