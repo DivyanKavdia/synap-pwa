@@ -102,7 +102,8 @@ private struct RecordingScreen: View {
     let recording: RecordingInfo
     @ObservedObject var controller: RecorderController
     @State private var player: AVAudioPlayer?
-    @State private var playing = false, confirmDelete = false
+    @State private var playing = false
+    @State private var confirmDelete = false
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
     var body: some View {
