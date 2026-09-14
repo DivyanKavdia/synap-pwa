@@ -164,8 +164,8 @@ final class RecorderController: ObservableObject {
     private func bindStartedStream() {
         guard let current = journal, !bound else { return }
         let id = current.info.id
-        let expected = preparedGeneration.map { $0 &+ 1 }
-        pollRecovery { $0.belongs(to: current.info.token, generation: expected) && expected != nil && !$0.waiting && !$0.finishing } completion: { status in
+        let armedGeneration = preparedGeneration
+        pollRecovery { $0.confirmsStart(token: current.info.token, armedGeneration: armedGeneration) } completion: { status in
             guard self.journal?.info.id == id else { return }
             do { try current.setGeneration(status.generation); try self.acceptBufferedAudio() }
             catch { self.fail(error.localizedDescription); return }
@@ -214,6 +214,11 @@ final class RecorderController: ObservableObject {
     }
     private func received(_ uuid: CBUUID, _ bytes: Data) {
         if uuid == PendantLink.audio {
+            // Firmware capture/transmit tasks can beat the START status notification.
+            // Quarantine the first packets, then verify the same next-generation ACK.
+            if journal == nil, configured, state.phase == "idle", preparedToken != nil {
+                beginPhysicalCapture()
+            }
             guard let current = journal else { return }
             let framesBefore = current.assembler.receivedFrames
             do {
@@ -230,8 +235,7 @@ final class RecorderController: ObservableObject {
         } else if uuid == PendantLink.control, configured, let status = PendantStatus(bytes) {
             if status.error != 0 { fail("The pendant stopped with error \(status.error). Received audio has been kept."); return }
             if status.state == 2, journal == nil, state.phase == "idle", preparedToken != nil {
-                do { try makeJournal(); state.phase = "starting"; bindStartedStream() }
-                catch { fail(error.localizedDescription) }
+                beginPhysicalCapture()
             } else if status.state == 1, journal != nil, bound {
                 finish(reason: journal?.info.stopRequested == true ? "user-stop" : "pendant-stop", message: "Recording saved on your iPhone.")
                 prepareIdle()
@@ -239,6 +243,10 @@ final class RecorderController: ObservableObject {
         } else if bytes.count == 12, bytes[0] == 0xb7, bytes[1] == 2 {
             state.battery = bytes[3] & 1 != 0 ? Int(bytes[2]) : nil; emit(force: false)
         }
+    }
+    private func beginPhysicalCapture() {
+        do { try makeJournal(); state.phase = "starting"; state.message = "Verifying pendant recording…"; emit(); bindStartedStream() }
+        catch { fail(error.localizedDescription) }
     }
     func stopRecording() {
         queue.async {

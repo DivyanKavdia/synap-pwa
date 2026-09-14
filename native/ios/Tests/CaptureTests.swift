@@ -106,6 +106,21 @@ final class CaptureTests: XCTestCase {
         XCTAssertEqual(RecoveryStatus.command(3, token: token, sequence: 65535), Data([3] + Array(repeating: 7, count: 8) + [255, 255]))
     }
 
+    func testEarlyAudioCannotUseTheIdleArmAsItsStartAcknowledgement() {
+        let token = Data(repeating: 7, count: 8)
+        func status(_ generation: UInt32, flags: UInt8 = 0x13) -> RecoveryStatus {
+            var bytes = Data([0x52, 1, flags, 0]); bytes.appendLE(UInt16(600)); bytes.appendLE(UInt16(0))
+            bytes.appendLE(generation); bytes.appendLE(RecoveryStatus.hash(token)); return RecoveryStatus(bytes)!
+        }
+        XCTAssertFalse(status(12).confirmsStart(token: token, armedGeneration: 12))
+        XCTAssertTrue(status(13).confirmsStart(token: token, armedGeneration: 12))
+        XCTAssertFalse(status(13).confirmsStart(token: token, armedGeneration: nil))
+        XCTAssertFalse(status(13, flags: 0x17).confirmsStart(token: token, armedGeneration: 12))
+        XCTAssertFalse(status(13, flags: 0x1b).confirmsStart(token: token, armedGeneration: 12))
+        XCTAssertFalse(status(13).confirmsStart(token: Data(repeating: 8, count: 8), armedGeneration: 12))
+        XCTAssertTrue(status(0).confirmsStart(token: token, armedGeneration: .max))
+    }
+
     func testStopIntentSurvivesRelaunch() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

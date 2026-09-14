@@ -17,17 +17,21 @@ jobs:
       - name: Build simulator app
         run: xcodebuild -project native/ios/SynapRecorder.xcodeproj -scheme SynapRecorder -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath native/ios/DerivedData CODE_SIGNING_ALLOWED=NO build
       - name: Launch simulator app
+        timeout-minutes: 6
         run: |
           python3 - <<'PY'
           import json, pathlib, subprocess, time
           devices = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devices', 'available', '-j']))['devices']
-          device = next(d for runtime, entries in sorted(devices.items(), reverse=True) if 'iOS' in runtime for d in entries if d['name'].startswith('iPhone'))
+          sdk = subprocess.check_output(['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-version'], text=True).strip()
+          runtime = 'com.apple.CoreSimulator.SimRuntime.iOS-' + '-'.join(sdk.split('.')[:2])
+          device = next(d for d in devices[runtime] if d['name'].startswith('iPhone'))
+          print('Launching with SDK', sdk, 'and matching runtime', runtime, flush=True)
           identifier = device['udid']
           if device['state'] != 'Booted': subprocess.run(['xcrun', 'simctl', 'boot', identifier], check=True)
-          subprocess.run(['xcrun', 'simctl', 'bootstatus', identifier, '-b'], check=True)
+          subprocess.run(['xcrun', 'simctl', 'bootstatus', identifier, '-b'], check=True, timeout=180)
           app = 'native/ios/DerivedData/Build/Products/Debug-iphonesimulator/SynapRecorder.app'
           subprocess.run(['xcrun', 'simctl', 'install', identifier, app], check=True)
-          subprocess.run(['xcrun', 'simctl', 'launch', identifier, 'com.synap.recorder'], check=True)
+          subprocess.run(['xcrun', 'simctl', 'launch', identifier, 'com.synap.recorder'], check=True, timeout=45)
           time.sleep(5)
           processes = subprocess.check_output(['xcrun', 'simctl', 'spawn', identifier, 'launchctl', 'list'], text=True)
           running = [line for line in processes.splitlines() if 'com.synap.recorder' in line and line.split()[0].isdigit()]

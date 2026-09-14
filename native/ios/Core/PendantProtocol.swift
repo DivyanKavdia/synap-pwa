@@ -48,6 +48,10 @@ public struct RecoveryStatus {
     public func belongs(to token: Data, generation expected: UInt32? = nil) -> Bool {
         token.count == 8 && armed && tokenHash == Self.hash(token) && (expected == nil || generation == expected)
     }
+    public func confirmsStart(token: Data, armedGeneration: UInt32?) -> Bool {
+        guard let armedGeneration else { return false }
+        return available && belongs(to: token, generation: armedGeneration &+ 1) && !waiting && !finishing
+    }
     public static func hash(_ token: Data) -> UInt32 {
         token.reduce(UInt32(2166136261)) { ($0 ^ UInt32($1)) &* 16777619 }
     }
