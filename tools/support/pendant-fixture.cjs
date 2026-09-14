@@ -11,6 +11,7 @@ module.exports = function pendantFixture() {
   const recoveryCapacity = connectedReplay && location.search.includes('c3') ? 25 : 600;
   const chakshu=location.search.includes('chakshu');
   const chakshu1227=chakshu&&location.search.includes('chakshu1227');
+  const legacyPathBuffer=new Uint8Array(64);
   const ota = location.search.includes('ota');
   const target = chakshu ? 'xiao-esp32s3-sense-8m' : location.search.includes('c3') ? 'esp32c3-supermini-4m' : 'esp32s3-fh4r2-qspi-4m';
   let firmwareBuild = chakshu1227 ? 1227 : 1200,
@@ -158,7 +159,8 @@ module.exports = function pendantFixture() {
         if (this.id === uuid('53')) {
           const path=new TextEncoder().encode(mediaPath());
           if(!chakshu1227)return new DataView(path.buffer);
-          const padded=new Uint8Array(64);padded.set(path);return new DataView(padded.buffer);
+          legacyPathBuffer.set(path);legacyPathBuffer[path.length]=0;
+          return new DataView(legacyPathBuffer.slice().buffer);
         }
         if (this.id === uuid('49')) return otaStatus();
         if (this.id === uuid('4b'))

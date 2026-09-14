@@ -59,7 +59,7 @@ test('a disconnect during discovery never updates another connection or rejects 
   assert.equal(await pending,false);assert.equal(client.module,null);
 });
 
-test('Chakshu 1227 fixed C path buffers support empty and saved paths but reject corrupt padding',async()=>{
+test('Chakshu 1227 bounded C path buffers support captures and refreshes without accepting invalid paths',async()=>{
   const path='/synap/abcdef01-00000001.jpg';
   const client=new Client({queue:action=>action(),service:{getCharacteristic:async uuid=>({
     readValue:async()=>uuid===UUID?descriptor():uuid.includes('352-')?status():wire
@@ -74,6 +74,10 @@ test('Chakshu 1227 fixed C path buffers support empty and saved paths but reject
     assert.equal(await client.refresh(),false);assert.match(client.error,/Invalid SD/);
   }
   bytes[66]=65;wire=new DataView(bytes.buffer,3,64);client.pathKey='';
+  assert.equal(await client.refresh(),true);assert.equal(client.path,path,'bytes after the C terminator are not part of the path');
+  bytes[3]=0;client.pathKey='';
+  assert.equal(await client.refresh(),true);assert.equal(client.path,'','hardware refresh clears only path[0] in build 1227');
+  bytes.fill(0);bytes.set(new TextEncoder().encode('/synap/../other.jpg'),3);client.pathKey='';
   assert.equal(await client.refresh(),false);assert.match(client.error,/Invalid SD/);
 });
 
