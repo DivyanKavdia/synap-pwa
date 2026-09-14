@@ -98,7 +98,8 @@ async function until(page, predicate, arg) {
         console.error(e.stack);
       });
       page.setDefaultTimeout(20000);
-      await page.goto(origin + '/?chakshu-media&voice');
+      // Mobile reproduces installed 1227's NimBLE char-array ID and SD path.
+      await page.goto(origin + '/?chakshu-media&voice' + (width === 390 ? '&chakshu1227&ota' : ''));
       await page.waitForFunction(() => document.body.dataset.startup === 'ready');
       assert.equal(await page.locator('#visualAccess').textContent(), 'Unavailable');
       assert(await page.locator('#headerPhoto').isDisabled());
@@ -118,6 +119,19 @@ async function until(page, predicate, arg) {
           );
           throw e;
         });
+      if(width===390) {
+        const info=await page.evaluate(async()=>{
+          const context=SynapDevices.connection;
+          const client=new SynapOTA.Client({getService:async()=>context.service,queue:context.queue,
+            connected:()=>SynapDevices.connection===context});
+          try {
+            const info=await client.check();
+            if(!await SynapModules.refresh())throw Error(SynapModules.client.error);
+            return {id:info.deviceId,associated:context.deviceId,build:info.build,path:SynapModules.client.path};
+          } finally {client.reset();}
+        });
+        assert.deepEqual(info,{id:'SYNAP-ABCDEF123456',associated:'SYNAP-ABCDEF123456',build:1227,path:''});
+      }
       await page.waitForFunction(() => bleFixture.voiceLease > 0);
       assert((await page.locator('#chakshuVoice').textContent()).includes('Hi Chakshu'));
       // Hold cleanup after the audio journal has cleared its ID. Video must wait

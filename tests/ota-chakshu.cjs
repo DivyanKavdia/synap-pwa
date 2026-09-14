@@ -12,6 +12,7 @@ function fixture({
   deferred = true,
   resume = false,
   notify = true,
+  deviceId = ID,
 } = {}) {
   const realm = {
     navigator: { bluetooth: {} },
@@ -135,7 +136,7 @@ function fixture({
         uuid.includes('12348')
           ? write
           : uuid.includes('1234c')
-            ? { readValue: async () => new TextEncoder().encode(ID) }
+            ? { readValue: async () => new TextEncoder().encode(deviceId) }
             : statusChar,
     }),
   });
@@ -184,4 +185,21 @@ test('old Chakshu can use read acknowledgements when notifications are unavailab
   assert((await f.client.update(f.file, ID)).committed);
   assert.equal(f.peak, 1);
   assert.equal(f.state.error, 0);
+});
+
+test('installed Chakshu 1227 with a NUL-terminated ID can check, target and finish an OTA update',async()=>{
+  const f=fixture({build:1227,deferred:false,deviceId:ID+'\0'});
+  assert.equal((await f.client.check()).deviceId,ID);
+  assert((await f.client.update(f.file,ID)).committed);
+  assert.equal(f.state.error,0);
+});
+test('OTA still rejects malformed IDs and preserves target mismatch checks for C-string IDs',async()=>{
+  for(const deviceId of [ID+'X',ID+'\0\0',ID+'\0X','SYNAP-000000000000\0','SYNAP-FFFFFFFFFFFF\0',ID.toLowerCase()+'\0']){
+    const f=fixture({build:1227,deviceId});
+    await assert.rejects(f.client.check(),/Invalid pendant device ID/);assert.equal(f.commands.length,0);
+  }
+  const f=fixture({build:1227,deviceId:'SYNAP-112233445566\0'});
+  await f.client.check();
+  await assert.rejects(f.client.update(f.file,ID),/Device ID mismatch/);
+  assert.equal(f.commands.length,0);
 });

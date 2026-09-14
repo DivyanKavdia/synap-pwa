@@ -6,8 +6,12 @@
   const validId = value => typeof value === 'string' && /^SYNAP-[0-9A-F]{12}$/.test(value) &&
     value !== 'SYNAP-000000000000' && value !== 'SYNAP-FFFFFFFFFFFF';
   function decode(value) {
-    if (!value || value.byteLength !== 18) throw Error('Invalid pendant device identifier.');
-    const id = new TextDecoder('utf-8', { fatal: true }).decode(value);
+    if (!value || ![18,19].includes(value.byteLength)) throw Error('Invalid pendant device identifier.');
+    const bytes = new Uint8Array(value.buffer || value, value.byteOffset || 0, value.byteLength);
+    // Chakshu build 1227 sent its char[19] through NimBLE's generic overload.
+    // Accept exactly that terminal NUL, then apply the same canonical ID checks.
+    if (bytes.length === 19 && bytes[18] !== 0) throw Error('Invalid pendant device identifier.');
+    const id = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0,18));
     if (!validId(id)) throw Error('Invalid pendant device identifier.');
     return id;
   }

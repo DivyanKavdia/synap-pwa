@@ -10,9 +10,11 @@ module.exports = function pendantFixture() {
   const connectedReplay = location.search.includes('background');
   const recoveryCapacity = connectedReplay && location.search.includes('c3') ? 25 : 600;
   const chakshu=location.search.includes('chakshu');
+  const chakshu1227=chakshu&&location.search.includes('chakshu1227');
+  const legacyPathBuffer=new Uint8Array(64);
   const ota = location.search.includes('ota');
   const target = chakshu ? 'xiao-esp32s3-sense-8m' : location.search.includes('c3') ? 'esp32c3-supermini-4m' : 'esp32s3-fh4r2-qspi-4m';
-  let firmwareBuild = 1200,
+  let firmwareBuild = chakshu1227 ? 1227 : 1200,
     otaState = 1,
     otaSession = 0,
     otaOffset = 0,
@@ -154,7 +156,12 @@ module.exports = function pendantFixture() {
         if (this.id === uuid('56')) return emptyVoiceRead?new DataView(new ArrayBuffer(0)):voiceStatus();
         if (this.id === uuid('59')) return modelStatus();
         if (this.id === uuid('52')) return mediaStatus();
-        if (this.id === uuid('53')) return new DataView(new TextEncoder().encode(mediaPath()).buffer);
+        if (this.id === uuid('53')) {
+          const path=new TextEncoder().encode(mediaPath());
+          if(!chakshu1227)return new DataView(path.buffer);
+          legacyPathBuffer.set(path);legacyPathBuffer[path.length]=0;
+          return new DataView(legacyPathBuffer.slice().buffer);
+        }
         if (this.id === uuid('49')) return otaStatus();
         if (this.id === uuid('4b'))
           return new DataView(
@@ -178,7 +185,7 @@ module.exports = function pendantFixture() {
           return status();
         }
         return this.id === uuid('4c')
-          ? new DataView(new TextEncoder().encode('SYNAP-ABCDEF123456').buffer)
+          ? new DataView(new TextEncoder().encode('SYNAP-ABCDEF123456'+(chakshu1227?'\0':'')).buffer)
           : new DataView(new Uint8Array([0xe2, 1, 1, 0, 0x82, 4]).buffer);
       });
     }
