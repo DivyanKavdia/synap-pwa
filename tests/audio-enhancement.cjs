@@ -120,12 +120,12 @@ test('quiet voices and noise-like consonants retain their waveform instead of be
   assert(xy/Math.sqrt(xx*yy)>.95,'quiet waveform is retained without shifting its phase');
 });
 
-test('legacy automatic preparation passes through every source without starting DSP, while manual copies stay cancellable',async()=>{
+test('upload compatibility always passes the original through, while explicit previews remain cancellable',async()=>{
   const h=setup(),bad=new Blob([wav(new Int16Array(100),44100)]);
   assert.equal(await h.api.prepareForUpload(bad),bad);
   const original=new Blob([wav(fixture(16000,2))]);
   assert.equal(await h.api.prepareForUpload(original),original);
-  assert.equal(h.instances.length,0,'automatic upload must not create a model Worker');
+  assert.equal(h.instances.length,0,'uploads cannot start a model Worker');
   const running=h.api.enhance(original);
   assert.equal(await h.api.prepareForUpload(original),original);
   await running;

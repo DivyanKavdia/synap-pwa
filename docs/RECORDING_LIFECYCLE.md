@@ -44,7 +44,7 @@ actions and bind each command to its owning client and recording session.
 | ----------------------------- | --------------------------------------------------------------------------- |
 | PWA same-page recovery        | Up to five minutes of reconnect attempts for an interrupted take            |
 | Firmware disconnect handshake | 60-second bound on negotiated recovery                                      |
-| Firmware buffered audio       | Up to 30 seconds in S3 PSRAM; up to 5 seconds with sufficient internal heap |
+| Firmware buffered audio       | Up to 30 seconds in S3 PSRAM; up to 1.25 seconds with sufficient internal heap |
 | Firmware Stop drain           | 35-second absolute bound, including a reconnect during drain                |
 
 The app's retry window is not an audio retention guarantee. Buffer capacity is

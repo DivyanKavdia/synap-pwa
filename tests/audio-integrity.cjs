@@ -72,3 +72,23 @@ test('ordinary quiet audio and short pauses are not diagnosed as a missing micro
   observeSamples([0], 40);
   assert(!quality.describe(quality.snapshot()).some(text => text.includes('Almost no microphone')));
 });
+
+
+test('transport provenance survives assembly and cannot claim unknown or mixed audio is lossless',()=>{
+  const packets=[
+    {sequence:0,chunk:0,total:1,payload:new Uint8Array(1600),transport:'pcm16'},
+    {sequence:1,chunk:0,total:1,payload:new Uint8Array(1600),transport:'adpcm'},
+    {sequence:2,chunk:0,total:1,payload:new Uint8Array(1600)},
+  ];
+  const result=DKAudioCodec.assemble(packets);
+  assert.deepEqual(result.transportFrames,{pcm16:1,adpcm:1});
+  assert.match(quality.transportLabel(result),/Earlier format unknown/);
+  assert.equal(quality.transportLabel({completeFrames:5,transportFrames:{pcm16:5}}),'Uncompressed audio · 16 kHz');
+  assert.match(quality.transportLabel({completeFrames:5,transportFrames:{adpcm:5}}),/Bluetooth compression used/);
+  assert.equal(quality.transportLabel({completeFrames:5}),'');
+  const broken=DKAudioCodec.assemble([
+    {sequence:0,chunk:0,total:2,payload:new Uint8Array(800),transport:'pcm16'},
+    {sequence:0,chunk:1,total:2,payload:new Uint8Array(800),transport:'adpcm'},
+  ]);
+  assert.equal(broken.completeFrames,0,'a frame cannot mix compressed and raw fragments');
+});

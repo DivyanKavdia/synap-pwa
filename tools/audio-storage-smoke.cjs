@@ -12,7 +12,7 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
     const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
     await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
     await context.route('**/__storage', route => route.fulfill({ contentType: 'text/html', body:
-      '<!doctype html><title>Audio storage fixture</title><header></header><script src="/audio-codec-v3.js"></script><script src="/audio-store.js"></script><script src="/recording/journal.js"></script><script src="/recording/timeline.js"></script><script src="/audio-quality.js"></script>' }));
+      '<!doctype html><title>Audio storage fixture</title><header></header><script src="/audio-codec-v3.js"></script><script src="/audio-store.js"></script><script src="/recording/journal.js"></script><script src="/recording/timeline.js"></script><script src="/audio-quality.js"></script><script src="/synap-backend.js"></script>' }));
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -21,7 +21,7 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
       function frame(sequence) {
         const payload = new Uint8Array(1600), view = new DataView(payload.buffer);
         for (let at = 0; at < 1600; at += 2) view.setInt16(at, sequence + 1, true);
-        return { sequence, chunk: 0, total: 1, payload };
+        return { sequence, chunk: 0, total: 1, payload, transport: 'pcm16' };
       }
       function append(store, id, from, to) {
         for (let sequence = from; sequence <= to; sequence++) store.append(id, frame(sequence));
@@ -57,16 +57,51 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
       const voiceRecording = await voice.close(voiceId);
       const voiceWav = await voice.blob(voiceRecording);
       await DKAudioCodec.validateWav(voiceWav);
-      const voiceBytes = await voiceWav.arrayBuffer(), storedSamples = new DataView(voiceBytes);
-      let exactPcm = true;
-      for (let i = 0; i < expected.length; i++) if (storedSamples.getInt16(44 + i * 2, true) !== expected[i]) exactPcm = false;
-      const playback = await new OfflineAudioContext(1, expected.length, 16000).decodeAudioData(voiceBytes);
+      const playback = await new OfflineAudioContext(1, expected.length, 16000).decodeAudioData(await voiceWav.arrayBuffer());
       const audible = playback.getChannelData(0);
       let maxError = 0;
-      for (let i = 0; i < expected.length; i++) maxError = Math.max(maxError, Math.abs(audible[i] - expected[i] / 32768));
+      for (let i = 0; i < expected.length; i++) maxError = Math.max(maxError, Math.min(Math.abs(audible[i] - expected[i] / 32768), Math.abs(audible[i] - expected[i] / (expected[i] < 0 ? 32768 : 32767))));
       const aligned = { bytes: voiceWav.size, samples: playback.length, rate: playback.sampleRate,
-        channels: playback.numberOfChannels, maxError, exactPcm, recordings: (await voice.all('recordings')).length,
+        channels: playback.numberOfChannels, maxError, recordings: (await voice.all('recordings')).length,
         segments: (await voice.all('segments')).length };
+      // Uncompressed notifications at the supported packet budgets must reach
+      // IndexedDB, source WAV, upload selection and native playback unchanged.
+      for (const payloadBytes of [160,230,400]) {
+        const raw = new DKAudioStore({name:'raw-'+payloadBytes});
+        const rawId = await raw.begin('Uncompressed fixture');
+        const source = new Int16Array(84*800);
+        for(let sequence=0;sequence<84;sequence++) {
+          const samples=source.subarray(sequence*800,(sequence+1)*800);
+          for(let i=0;i<800;i++)samples[i]=sequence===0?(i%2?1:-2):sequence===1?0:((sequence-2)*800+i)%65536-32768;
+          const bytes=new Uint8Array(samples.buffer,samples.byteOffset,1600),total=Math.ceil(1600/payloadBytes);
+          for(let chunk=total-1;chunk>=0;chunk--) {
+            const payload=bytes.subarray(chunk*payloadBytes,(chunk+1)*payloadBytes);
+            const value=new DataView(new ArrayBuffer(payload.length+19),11,payload.length+8);
+            value.setUint8(0,0xa5);value.setUint8(1,2);value.setUint16(2,sequence,true);
+            value.setUint8(4,chunk);value.setUint8(5,total);value.setUint16(6,payload.length,true);
+            new Uint8Array(value.buffer,value.byteOffset+8,payload.length).set(payload);
+            for(const packet of SynapAudioCodecV3.normalizePacket(value,'raw')) raw.append(rawId,{sequence,
+              chunk:packet.getUint8(4),total:packet.getUint8(5),transport:'pcm16',
+              payload:new Uint8Array(packet.buffer,packet.byteOffset+8,packet.getUint16(6,true))});
+          }
+          if(sequence%20===19)await raw.flush();
+        }
+        const saved=await raw.close(rawId),wav=await raw.blob(saved);
+        const expected=new Uint8Array(source.buffer),body=new Uint8Array(await wav.arrayBuffer());
+        if(body.length!==44+expected.length||expected.some((x,i)=>x!==body[i+44]))throw Error('PCM bytes changed in storage');
+        if(saved.stats.transportFrames.pcm16!==84)throw Error('PCM provenance was lost');
+        globalThis.SynapAudioEnhancement={prepareForUpload:()=>{throw Error('Upload must not enhance source')}};
+        const selected=await SynapBackend.transcriptionAudio(raw,{recordingId:rawId,segmentIndex:0},wav);
+        const uploaded=new Uint8Array(await selected.arrayBuffer());
+        if(uploaded.some((x,i)=>x!==body[i]))throw Error('Upload changed PCM');
+        const decoded=await new OfflineAudioContext(1,source.length,16000).decodeAudioData(await selected.arrayBuffer());
+        // Browser decoders may normalize positive PCM with 32767 or 32768.
+        // The stored/uploaded bytes above must be exact; float playback may use
+        // either full-scale convention, with only Float32 rounding allowed.
+        const output=decoded.getChannelData(0),different=output.findIndex((x,i)=>
+          Math.min(Math.abs(x-source[i]/32768),Math.abs(x-source[i]/(source[i]<0?32768:32767)))>1e-7);
+        if(decoded.length!==source.length||different>=0)throw Error('PCM playback changed samples');
+      }
       const store = new DKAudioStore({ ...SynapRecordingJournal.options({transport:true}), name: 'replayed-frames' });
       const id = await store.begin('Recovered window');
       append(store, id, 0, 97);
@@ -154,12 +189,9 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
         partial: { status: partialRecording.status, packets: (await partial.all('packets')).length, jobs: (await partial.all('jobs')).length },
       };
     });
-    const {maxError, ...aligned} = result.aligned;
-    // Browser float normalization may differ by less than one PCM16 step;
-    // the stored integer samples themselves must remain exactly equal.
-    assert(maxError <= 1 / 32768, 'browser playback deviated by more than one PCM16 step');
-    assert.deepEqual(aligned, { bytes: 614444, samples: 307200, rate: 16000,
-      channels: 1, exactPcm: true, recordings: 1, segments: 1 }, 'export retains every decoded sample with no leading probe byte');
+    assert.deepEqual(result.aligned, { bytes: 614444, samples: 307200, rate: 16000,
+      channels: 1, maxError: result.aligned.maxError, recordings: 1, segments: 1 }, 'browser playback retains every decoded sample with no leading probe byte');
+    assert(result.aligned.maxError < 1e-7, 'playback differs only by Float32 rounding');
     assert.deepEqual(result.before, { compacted: false, packets: 98, jobs: 0 });
     assert.deepEqual(result.after, { compacted: true, liveWindow: 1 });
     assert.equal(result.recovered.stats.completeFrames, 981);
@@ -184,6 +216,7 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
     await card.locator('summary').first().click();
     await card.locator('.recording-audio-gap').waitFor({ state: 'visible' });
     assert.match(await card.locator('.recording-audio-gap').textContent(), /cannot restore missing speech/);
+    assert.match(await card.locator('.recording-transport-detail').textContent(), /Uncompressed audio/);
     const signalCard = page.locator('#recording-' + result.signalId);
     assert.match(await signalCard.locator('.recording-row-meta').textContent(), /Microphone signal was nearly silent/);
     await signalCard.locator('summary').first().click();

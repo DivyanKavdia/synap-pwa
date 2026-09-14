@@ -37,6 +37,15 @@
     if(missing)out.unshift('Audio incomplete: '+missing.label+'. Missing speech cannot be restored from this saved audio.');
     return out;
   }
+  function transportLabel(stats) {
+    const counts=stats?.transportFrames;
+    if(!counts)return '';
+    const pcm=counts.pcm16||0,compressed=counts.adpcm||0,total=stats.completeFrames||0;
+    if(!pcm&&!compressed)return '';
+    if(pcm===total && !compressed)return 'Uncompressed audio · 16 kHz';
+    if(compressed===total && !pcm)return 'Bluetooth compression used · 16 kHz';
+    return 'Uncompressed: '+(pcm*.05).toFixed(2)+' s · Compressed: '+(compressed*.05).toFixed(2)+' s'+(total>pcm+compressed?' · Earlier format unknown':'');
+  }
   function render(value){
     if(!root.document)return;
     let node=document.getElementById('recordingQuality');
@@ -67,5 +76,5 @@
     }
     frames++;const now=Date.now();if(frames%20===0&&now-lastReport>=1000){lastReport=now;render(describe(snapshot(),null,{live:true})[0]||'')}
   }
-  root.SynapAudioQuality=Object.freeze({observe,reset,snapshot,describe,gaps,clear:()=>render('')});
+  root.SynapAudioQuality=Object.freeze({observe,reset,snapshot,describe,gaps,transportLabel,clear:()=>render('')});
 })(globalThis);

@@ -70,27 +70,11 @@
       } catch (error) { finish(error); }
     });
   }
-  function digitalSilence(view) {
-    if(!view)return false;
-    for(let at=44;at+1<view.byteLength;at+=2)if(Math.abs(view.getInt16(at,true))>2)return false;
-    return true;
-  }
-  function preservesSpeech(dry,wet) {
-    if(!dry || !wet || dry.byteLength!==wet.byteLength)return false;
-    // Check short windows as well as the overall file: lost syllables cannot
-    // hide inside a good average. Uncertain copies use the untouched original.
-    for(let start=44;start<dry.byteLength;start+=640){
-      let a=0,b=0,cross=0;
-      for(let at=start;at<Math.min(start+640,dry.byteLength);at+=2){const x=dry.getInt16(at,true),y=wet.getInt16(at,true);a+=x*x;b+=y*y;cross+=x*y;}
-      if(a>320 && (b<a*.48 || cross/Math.sqrt(Math.max(1,a*b))<.9))return false;
-    }
-    return true;
-  }
+  // Compatibility with an older cached upload module. Enhancement is an
+  // explicit preview/export action only, even across a partial app update.
   async function prepareForUpload(blob,{signal}={}) {
     if(signal?.aborted)throw abortError();
-    // Compatibility for older app shells. Automatic uploads never launch DSP;
-    // enhancement is available only when the user explicitly requests a copy.
     return blob;
   }
-  root.SynapAudioEnhancement = Object.freeze({enhance,prepareForUpload,preservesSpeech,digitalSilence,supported,busy:()=>active,limits});
+  root.SynapAudioEnhancement = Object.freeze({enhance,prepareForUpload,supported,busy:()=>active,limits});
 })(typeof window!=='undefined' ? window : globalThis);

@@ -4,19 +4,21 @@
 
 Synap is a browser-based companion for the Synap pendant. It receives live audio over BLE, stores recordings locally, builds searchable memory, and manages pendant firmware updates.
 
+[Audio capture, transport and cloud audit](docs/AUDIO_PIPELINE_AUDIT.md) documents the source-preserving audio path and its hardware limits.
+
 ## Product contract
 
 - Product version: **1.0.0**
 - Primary pendant: ESP32-S3 SuperMini / ESP32-S3FH4R2
 - Secondary target: ESP32-C3 SuperMini
 - Control protocol: **v2**
-- Audio transport: **v3**
+- Audio transport: **v2 uncompressed PCM16 preferred; v3 ADPCM fallback for small Bluetooth MTUs**
 - OTA protocol: **v3**
 - Production firmware feed: `DivyanKavdia/synap-firmware` → `ota-releases/latest.json`
 
 The browser owns the durable packet journal, audio, recording metadata, processing state and local memory cache. Compatible firmware can retain a short, volatile audio buffer for an explicitly negotiated reconnect; it does not write audio to flash.
 
-With a compatible pendant, the same open app page can recover buffered audio after a short disconnect. Capacity is reported by the firmware: up to 30 seconds on S3 PSRAM or 5 seconds with sufficient internal memory. Overflow, power loss, sleep or a closed/reloaded app can still lose audio. Screen Wake Lock and foreground recovery cannot override OS-level Bluetooth suspension.
+With a compatible pendant, the same open app page can recover buffered audio after a short disconnect. Capacity is reported by the firmware: up to 30 seconds on S3 PSRAM or 1.25 seconds with sufficient internal memory. Overflow, power loss, sleep or a closed/reloaded app can still lose audio. Screen Wake Lock and foreground recovery cannot override OS-level Bluetooth suspension.
 
 ## Pendant interaction
 

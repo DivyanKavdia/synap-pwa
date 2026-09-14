@@ -166,3 +166,5 @@ body[data-state="recording"] .stage-orbit{background:radial-gradient(ellipse,var
 
 /* Internal maintenance controls are operated through the Settings support UI. */
 #advancedSettings,.product-advanced,#retrySaveButton,#recoveryButton,#runQueueButton,#pauseQueueButton { display:none!important; }
+
+.recording-transport-detail { margin: 6px 0; color: var(--muted); font-size: .75rem; }

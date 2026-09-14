@@ -83,6 +83,8 @@ export interface RecordingDoc {
 }
 
 export interface SegmentDoc {
+  /** ASR uses the stored WAV verbatim; an exact-zero source may skip the model. */
+  transcriptionAudioPolicy?: 'stored-upload-v1';
   sealedSpeakerMap?: Sealed | null;
   transcriptionReview?: { attempted: boolean; annotationsComplete: boolean };
   index: number;
