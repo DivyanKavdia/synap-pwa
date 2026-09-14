@@ -4,9 +4,9 @@ const enhancements=fs.readFileSync(require.resolve('../enhancements.js'),'utf8')
 
 test('reload safety includes pending pendant audio and every retained desktop session',()=>{
   const source=app.slice(app.indexOf('  function canReload()'),app.indexOf('  globalThis.SynapAppControls ='));
-  const c={libraryMutationActive:false,firmwareBusy:false,recordingConfirmed:false,finalizing:false,openingCapture:null,currentRecordingId:null,unsavedAudio:false,recordingReconnectPending:false,appState:'idle',SynapDesktopCapture:{state:()=>({active:false})}};
+  const c={firmwareBusy:false,recordingConfirmed:false,finalizing:false,openingCapture:null,currentRecordingId:null,unsavedAudio:false,recordingReconnectPending:false,appState:'idle',SynapDesktopCapture:{state:()=>({active:false})}};
   vm.createContext(c);vm.runInContext(source,c);assert(c.canReload());
-  for(const field of ['libraryMutationActive','firmwareBusy','recordingConfirmed','finalizing','openingCapture','currentRecordingId','unsavedAudio','recordingReconnectPending']){
+  for(const field of ['firmwareBusy','recordingConfirmed','finalizing','openingCapture','currentRecordingId','unsavedAudio','recordingReconnectPending']){
     c[field]=true;assert.equal(c.canReload(),false,field);c[field]=false;
   }
   for(const phase of ['starting','recording','saving','save-failed']){

@@ -20,11 +20,7 @@ The browser owns the durable packet journal, audio, recording metadata, processi
 
 With a compatible pendant, the same open app page can recover buffered audio after a short disconnect. Capacity is reported by the firmware: up to 30 seconds on S3 PSRAM or 1.25 seconds with sufficient internal memory. Overflow, power loss, sleep or a closed/reloaded app can still lose audio. Screen Wake Lock and foreground recovery cannot override OS-level Bluetooth suspension.
 
-## Native iPhone recording
-
-The [native iOS recorder](native/ios/README.md) uses background CoreBluetooth and protected local files to receive pendant audio while another app is visible or the screen is locked. It includes playback, received-audio timing, recovery and original WAV export. Apple signing and physical iPhone + C3/S3 validation are required before distribution; browser updates alone cannot install it.
-
-In the web app, **Library → Import audio** accepts mono 16 kHz PCM16 WAVs, including native exports. Import preserves the entire original file, timestamps, marked moments and native gap/transport counts. Each import creates a new local recording. Select it and choose **Process** to upload source samples in 30-second windows through the existing account; import itself does not upload audio.
+On iPhone, keep Synap visible in Bluefy and the screen unlocked while recording. Switching to another app or locking the screen can suspend delivery of audio packets. The recording clock counts received audio; buffered replay can recover only the pendant's short retained window. This version uses the browser and requires no Apple developer account or Mac.
 
 ## Pendant interaction
 
