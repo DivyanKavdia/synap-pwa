@@ -45,6 +45,7 @@ The viewer plays silent frames with their saved timing and has a separate audio 
 | --- | --- |
 | BLE connection, serialized queue and audio ownership | app.js, recording/bluetooth-session.js, device-identity.js |
 | Module descriptor and hardware checks | device-modules.js, chakshu-ui.js |
+| Local command lease and routing | chakshu-voice.js |
 | Camera/file transport | chakshu-transfer.js |
 | Account association, capture and audio links | chakshu-media.js |
 | Account-keyed media and frame storage | chakshu-store.js |
@@ -57,9 +58,19 @@ Native media operations use the app-owned GATT queue. Media has explicit permiss
 
 ## Protocols
 
-The existing `4fa12350` descriptor and `4fa12351`–`53` SD-check protocol remain. Descriptor byte 14 now advertises the media extension version; byte 15 remains reserved. `4fa12354`/`55` provide request/response frame and file transfer. All UUIDs share suffix `-0000-1000-8000-00805f9b34fb`.
+The existing `4fa12350` descriptor and `4fa12351`–`53` SD-check protocol remain. Descriptor byte 14 advertises the media extension version; byte 15 advertises voice extension version 1. `4fa12354`/`55` provide request/response frame and file transfer. All UUIDs share suffix `-0000-1000-8000-00805f9b34fb`.
 
 See the [firmware media protocol and setup](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/CHAKSHU.md) for wire fields and limits.
+
+## Header controls and local voice
+
+Photo and video buttons sit beside the microphone. They show unavailable until the account has a Chakshu association and require a connected camera for capture. Audio-only keeps the normal C3/S3 journal behavior. Starting video seals any audio-only take and creates a fresh audio journal linked to a separate silent video record. The video button stops both parts; the microphone button saves video and starts a new audio-only take. A photo during video saves the latest available video frame with its audio position.
+
+For local commands, install the matching firmware and copy `synap/models/srmodels.bin` from the release's `chakshu-voice-model.zip` onto the SD card, preserving existing files. Restart the pendant. Settings → Device → Local voice controls shows readiness and an enable switch. Say **“Hi Chakshu”**, pause, then one of **“take photo”** (or **“click photo”**), **“start video”**, **“stop video”**, **“audio on”**, or **“audio off”**. Repeat the activation phrase for each command. Audio off stops recording; the separate voice-control switch stops command listening.
+
+Recognition runs on Chakshu. An associated, visible, connected PWA renews a six-second command lease through its existing GATT queue and routes recognized actions to these same controls. Duplicate notifications are ignored; a bounded queue preserves a stop arriving during startup. Hidden pages release the lease, and a disconnected page cannot replay commands into another account. Without a current lease, the pendant saves JPEG photos, paired video/WAV/JSON takes, or standalone audio WAV takes on SD. SD audio and video takes are each bounded to 60 seconds. Switching offline modes closes the current files before opening new ones. Import the files when reconnected, or use a card reader.
+
+The model uses MultiNet phoneme commands with “Hi Chakshu” as an activation gate. This is not a separately trained wake-word model. Recognition accuracy, false activations, runtime memory and battery use require device measurement. Missing or invalid model files leave the ordinary capture controls available and show a model setup message.
 
 ## Verification boundary
 

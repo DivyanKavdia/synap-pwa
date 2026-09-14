@@ -85,7 +85,8 @@
       if (old) {
         old.cancelled = true;
         old.controller.abort();
-        if (old.audioOwned) root.SynapAppControls.stopCapture(old.audioSession).catch(() => {});
+        if (old.audioOwned && old.audioSession)
+          root.SynapAppControls.stopCapture(old.audioSession).catch(() => {});
       }
       session = null;
       offline = false;
@@ -172,6 +173,24 @@
     }
   }
   async function photo(withAudio = false) {
+    if (session?.id && session.phase === 'recording') {
+      const take = session,
+        frame = await take.store.lastFrame(take.id);
+      check(take.owner);
+      if (!frame) throw Error('Wait for the first video frame.');
+      const row = await take.store.create({
+        kind: 'image',
+        name: 'Video photo',
+        deviceId: connected()?.deviceId,
+        audioId: take.audioId,
+        audioOffsetMs: frame.atMs,
+        captureMode: 'video-frame',
+      });
+      await take.store.append(row.id, { blob: frame.blob, atMs: frame.atMs });
+      await take.store.patch(row.id, { state: 'saved' });
+      notify();
+      return row.id;
+    }
     return operation(async (signal) => {
       const owned = requireAccess(),
         device = connected(),
@@ -258,6 +277,18 @@
     notify();
     return description;
   }
+  async function saveAudio(sessionId) {
+    if (!sessionId) return;
+    await root.SynapAppControls.stopCapture(sessionId);
+    // STOP acknowledgement schedules journal finalization in app.js. Wait for
+    // that durable boundary before allowing startMediaAudio to choose a take.
+    const deadline = Date.now() + 15000;
+    while (root.SynapAppControls.recordingState().sessionId === sessionId) {
+      if (Date.now() >= deadline)
+        throw Error('Audio is still saving. Please wait before changing capture mode.');
+      await delay(50);
+    }
+  }
   async function startLive(inference = true) {
     if (session || working || offline) throw Error('Finish the current capture first.');
     const owned = requireAccess(),
@@ -267,15 +298,23 @@
       ...owned,
       controller: new AbortController(),
       cancelled: false,
-      audioOwned: !root.SynapAppControls.recordingState().active,
+      audioOwned: true,
       inference,
       bytes: 0,
       phase: 'starting',
     };
     session = take;
+    take.startDone = new Promise((resolve) => {
+      take.finishStart = resolve;
+    });
     error = '';
     notify();
     try {
+      // A video soundtrack owns a new journal, never an earlier audio-only take.
+      const previous = root.SynapAppControls.recordingState();
+      if (previous.active) await saveAudio(previous.sessionId);
+      check(take.owner);
+      if (take.cancelled) throw Error('Video start cancelled.');
       const audio = await root.SynapAppControls.startMediaAudio();
       take.audioSession = audio.sessionId;
       take.audioId = audio.recordingId;
@@ -333,7 +372,9 @@
         })
         .finally(async () => {
           if (take.audioOwned)
-            await root.SynapAppControls.stopCapture(take.audioSession).catch(() => {});
+            await saveAudio(take.audioSession).catch((e) => {
+              if (owner === take.owner) error = e.message;
+            });
           await take.store
             .patch(take.id, { state: take.cancelled ? 'saved' : 'interrupted' })
             .catch((e) => {
@@ -344,13 +385,42 @@
         });
     } catch (e) {
       take.cancelled = true;
-      if (take.audioOwned && take.audioSession)
-        await root.SynapAppControls.stopCapture(take.audioSession);
-      if (session === take) session = null;
-      error = e.message;
-      notify();
+      try {
+        if (take.audioOwned && take.audioSession) await saveAudio(take.audioSession);
+      } finally {
+        if (session === take) session = null;
+        error = e.message;
+        notify();
+      }
       throw e;
+    } finally {
+      take.finishStart();
     }
+  }
+  async function setAudio(on) {
+    const scope = requireAccess();
+    if (working) throw Error('Finish the current capture or transfer first.');
+    working = true;
+    notify();
+    try {
+      if (session || offline) await stop();
+      check(scope.owner);
+      const audio = root.SynapAppControls.recordingState();
+      if (on) return await root.SynapAppControls.startMediaAudio();
+      if (audio.active) return await saveAudio(audio.sessionId);
+    } finally {
+      working = false;
+      notify();
+    }
+  }
+  async function voiceCommand(command) {
+    requireAccess();
+    if (command === 1) return photo();
+    if (command === 2) {
+      if (!session && !offline) return startLive(false);
+    } else if (command === 3) return stop();
+    else if (command === 4) return setAudio(true);
+    else if (command === 5) return setAudio(false);
   }
   async function stop() {
     const take = session;
@@ -359,10 +429,20 @@
       take.controller.abort();
       take.phase = 'saving';
       notify();
+      await take.startDone;
       await take.task;
     } else if (offline) {
+      const expected = owner;
       await camera().request(6);
-      await pollOffline();
+      const deadline = Date.now() + 15000;
+      do {
+        check(expected);
+        await pollOffline();
+        if (!offline) break;
+        if (!connected() || Date.now() >= deadline)
+          throw Error('Chakshu is still saving to SD. Reconnect and check the recording.');
+        await delay(300);
+      } while (offline);
     }
   }
   async function startOffline() {
@@ -430,7 +510,7 @@
         uploadAudioProcessing: 'none',
       }),
     });
-    const id = await journal.begin('Chakshu video audio', { deviceId });
+    const id = await journal.begin('Chakshu audio', { deviceId });
     try {
       // Attach the visual before any sealed audio window can trigger transcription.
       await onBegin(id);
@@ -508,6 +588,16 @@
       }
       count++;
     }
+    for (const file of files) {
+      if (
+        !/\.wav$/i.test(file.name) ||
+        files.some((f) => f.name === file.name.replace(/\.wav$/i, '.mjpeg'))
+      )
+        continue;
+      if (file.size > MAX_VIDEO_BYTES) throw Error('Import audio files up to 32 MiB each.');
+      await importAudio(file, deviceId, scope, async () => {});
+      count++;
+    }
     if (!count)
       throw Error('Select a JPEG photo or MJPEG video, with its matching WAV and JSON files.');
     notify();
@@ -573,6 +663,8 @@
     sync,
     photo,
     startLive,
+    setAudio,
+    voiceCommand,
     startOffline,
     stop,
     describe,

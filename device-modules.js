@@ -24,7 +24,7 @@
     const supported=value.getUint16(4,true),ready=value.getUint16(6,true);
     if (ready&~supported) throw Error('Invalid module readiness flags.');
     return Object.freeze({...profile,supported,ready,sensor:value.getUint16(8,true),
-      sampleRate:value.getUint16(10,true),flashMiB:value.getUint8(12),psramMiB:value.getUint8(13),mediaVersion:value.getUint8(14),legacy:false});
+      sampleRate:value.getUint16(10,true),flashMiB:value.getUint8(12),psramMiB:value.getUint8(13),mediaVersion:value.getUint8(14),voiceVersion:value.getUint8(15),legacy:false});
   }
   function legacy(identity) {
     const match=/^SYNAP-FW:([^:]+):(?:synap-os1-build\d+|\d+\.\d+\.\d+):\d+$/.exec(identity);
