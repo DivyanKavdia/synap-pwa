@@ -107,7 +107,7 @@
       } finally { this.pending=false;if(!this.closed)this.changed(this); }
     }
     async run(operation) {
-      if(root.SynapChakshu?.busy)throw Error('Finish the current photo/video capture or transfer first.');
+      if(root.SynapChakshu?.busy || root.SynapChakshuModel?.busy)throw Error('Finish the current capture or model installation first.');
       if(![1,2,3,4].includes(operation)||this.module?.id!==3)throw Error('Connect Chakshu first.');
       if(this.pending || this.busy)throw Error('Wait for the current hardware check.');
       if(this.context.canUse?.()===false)throw Error(ERRORS[1]);

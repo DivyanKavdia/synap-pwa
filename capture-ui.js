@@ -250,7 +250,12 @@
       toggle.classList.toggle('is-connected', connected || state === 'updating');
       toggle.classList.toggle('is-recording', recording || canStop);
       toggle.disabled =
-        !ready || (!canStop && (busy || state === 'unsupported' || (connected && start.disabled)));
+        !ready ||
+        (!canStop &&
+          (window.SynapChakshuModel?.busy ||
+            busy ||
+            state === 'unsupported' ||
+            (connected && start.disabled)));
       const action = canStop
         ? interrupted
           ? 'Save received recording'
@@ -270,6 +275,7 @@
         !busy &&
         !mediaPending &&
         !media?.working &&
+        !window.SynapChakshuModel?.busy &&
         !window.SynapModules?.busy;
       photo.disabled = !visualReady || media?.offline || media?.session?.phase === 'saving';
       const unavailable = media?.available

@@ -1632,6 +1632,7 @@
   }
 
   async function startRecording() {
+    if (globalThis.SynapChakshuModel?.busy) { toast("Finish or cancel voice model installation first.", "error"); return; }
     if (globalThis.SynapModules?.busy || globalThis.SynapChakshu?.state?.offline) { toast("Wait for Chakshu to finish its SD hardware check.", "error"); return; }
     if (firmwareBusy) return;
     if (globalThis.SynapDesktopCapture?.state?.().active) {
@@ -3317,7 +3318,7 @@
       return info.deviceId;
     };
     let discoveryBusy=false, discoveryTask=null, updateRequested=false, preparing=false;
-    const eligible = ()=>!globalThis.SynapModules?.busy && !globalThis.SynapChakshu?.busy && appLockHeld && isGattConnected() && !connectInProgress && !recordingConfirmed &&
+    const eligible = ()=>!globalThis.SynapChakshuModel?.busy && !globalThis.SynapModules?.busy && !globalThis.SynapChakshu?.busy && appLockHeld && isGattConnected() && !connectInProgress && !recordingConfirmed &&
       !finalizing && !currentRecordingId && !openingCapture && !unsavedAudio &&
       !globalThis.SynapDesktopCapture?.state()?.active &&
       !["starting","stopping","saving"].includes(appState);
@@ -3975,7 +3976,7 @@
   }
 
   function canReload() {
-    return !(globalThis.SynapChakshu?.busy || globalThis.SynapModules?.busy || firmwareBusy || recordingConfirmed || finalizing || openingCapture ||
+    return !(globalThis.SynapChakshuModel?.busy || globalThis.SynapChakshu?.busy || globalThis.SynapModules?.busy || firmwareBusy || recordingConfirmed || finalizing || openingCapture ||
       currentRecordingId || unsavedAudio || recordingReconnectPending ||
       globalThis.SynapDesktopCapture?.state()?.active ||
       ['starting', 'stopping', 'saving', 'updating'].includes(appState));

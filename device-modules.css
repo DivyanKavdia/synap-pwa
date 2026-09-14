@@ -7,3 +7,6 @@
 .chakshu-actions button{min-height:44px;white-space:normal}
 .chakshu-file{overflow-wrap:anywhere;font-size:.78rem}
 #chakshuProgress{width:100%;margin-top:10px}
+#chakshuVoice .chakshu-actions button{font:inherit;font-size:.82rem;font-weight:600;border:1px solid var(--control-border,var(--border));border-radius:12px;padding:10px;color:var(--ink);background:var(--surface)}
+#chakshuVoice #chakshuModelInstall:not(:disabled),#chakshuVoice #chakshuModelRestart{background:var(--action);color:var(--on-action);border-color:var(--action)}
+#chakshuModelProgress{width:100%;accent-color:var(--accent);margin:4px 0 12px}

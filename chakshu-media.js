@@ -58,6 +58,8 @@
     return { owner, store };
   }
   function camera() {
+    if (root.SynapChakshuModel?.busy)
+      throw Error('Finish or cancel voice model installation first.');
     requireAccess();
     const next = connected();
     if (!next?.deviceId) throw Error('Connect your associated Chakshu first.');
@@ -154,6 +156,8 @@
     }
   }
   async function operation(action) {
+    if (root.SynapChakshuModel?.busy)
+      throw Error('Finish or cancel voice model installation first.');
     if (working || session || offline) throw Error('Finish the current capture or transfer first.');
     working = true;
     const controller = new AbortController(),
