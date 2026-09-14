@@ -88,14 +88,14 @@ test('the recording clock counts complete PCM and reports stalled delivery while
 });
 
 test('Bluefy dimming control is released when recording ends, including an interrupted acquisition',async()=>{
-  const calls=[];const c={navigator:{bluetooth:{setScreenDimEnabled:async value=>calls.push(value)}},
-    wakeLock:null,bluefyWakeLock:false,firmwareBusy:false,recordingSessionId:1,appState:'recording',
-    isCurrentSession:()=>true,log(){},friendlyError:e=>e.message};vm.createContext(c);
+  const calls=[],navigator={bluetooth:{setScreenDimEnabled:async value=>calls.push(value)}};let scope='recording:1';
+  const ScreenWakeLock=require('../recording/screen-wake-lock.js');
+  const c={screenWakeLock:new ScreenWakeLock({navigator,scope:()=>scope})};vm.createContext(c);
   vm.runInContext(block('  async function acquireWakeLock()', '  function drawWaveform()'),c);
-  await c.acquireWakeLock();assert(c.bluefyWakeLock);await c.releaseWakeLock();
-  assert.deepEqual(calls,[false,true]);assert(!c.bluefyWakeLock);
-  c.navigator.bluetooth.setScreenDimEnabled=async value=>{calls.push(value);c.appState='idle';};
-  await c.acquireWakeLock();assert.deepEqual(calls,[false,true,false,true]);assert(!c.bluefyWakeLock);
+  await c.acquireWakeLock();assert(c.screenWakeLock.owner.bluefy);await c.releaseWakeLock();
+  assert.deepEqual(calls,[false,true]);assert.equal(c.screenWakeLock.owner,null);
+  navigator.bluetooth.setScreenDimEnabled=async value=>{calls.push(value);scope=null;};
+  await c.acquireWakeLock();await settle();assert.deepEqual(calls,[false,true,false,true]);assert.equal(c.screenWakeLock.owner,null);
 });
 
 function protection({supported=true,acknowledge=true,ack=0}={}) {

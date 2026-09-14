@@ -170,8 +170,12 @@
   let startTimeout = null;
   let finalizeTimeout = null;
   let finalizing = false;
-  let wakeLock = null;
-  let bluefyWakeLock = false;
+  const screenWakeLock = typeof globalThis.SynapScreenWakeLock === 'function' ? new globalThis.SynapScreenWakeLock({
+    navigator,
+    scope: () => firmwareBusy ? 'firmware' :
+      (appState === 'starting' || appState === 'recording') ? `recording:${recordingSessionId}` : null,
+    log: (message, error) => log(message, error ? friendlyError(error) : undefined)
+  }) : null;
   let recordingSessionId = 0;
   const recordingControlOwnerId = globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
   let finalizedSessionId = 0;
@@ -2243,60 +2247,11 @@
   }
 
   async function acquireWakeLock() {
-    if (wakeLock || bluefyWakeLock) return;
-
-    // Bluefy exposes its own screen-dimming control on iOS. This prevents
-    // automatic screen lock; it does not grant background JavaScript execution.
-    if (typeof navigator.bluetooth?.setScreenDimEnabled === "function") {
-      try {
-        const sessionId = recordingSessionId;
-        await navigator.bluetooth.setScreenDimEnabled(false);
-        if (!firmwareBusy && (!isCurrentSession(sessionId) ||
-            (appState !== "starting" && appState !== "recording"))) {
-          await navigator.bluetooth.setScreenDimEnabled(true);
-          return;
-        }
-        bluefyWakeLock = true;
-        log("Bluefy screen dimming disabled during recording");
-        return;
-      } catch (error) { log("Bluefy screen control unavailable", friendlyError(error)); }
-    }
-    if (!("wakeLock" in navigator)) return;
-
-    try {
-      const sessionId = recordingSessionId;
-      const lock = await navigator.wakeLock.request("screen");
-      if ((!firmwareBusy && (!isCurrentSession(sessionId) ||
-          (appState !== "starting" && appState !== "recording"))) || wakeLock) {
-        await lock.release();
-        return;
-      }
-      wakeLock = lock;
-      lock.addEventListener("release", function () {
-        if (wakeLock === lock) wakeLock = null;
-        log("Screen wake lock released");
-      });
-      log("Screen wake lock acquired");
-    } catch (error) {
-      log("Wake lock unavailable", friendlyError(error));
-    }
+    await screenWakeLock?.acquire();
   }
 
   async function releaseWakeLock() {
-    if (bluefyWakeLock) {
-      bluefyWakeLock = false;
-      try { await navigator.bluetooth.setScreenDimEnabled(true); }
-      catch (error) { log("Bluefy screen control release failed", friendlyError(error)); }
-    }
-    if (!wakeLock) return;
-
-    try {
-      await wakeLock.release();
-    } catch (error) {
-      log("Wake lock release failed", friendlyError(error));
-    } finally {
-      wakeLock = null;
-    }
+    await screenWakeLock?.release();
   }
 
   function drawWaveform() {
@@ -3354,13 +3309,14 @@
       if(!targetId() || info.deviceId!==targetId()) throw Error("Connect and identify the intended pendant before updating. Device ID mismatch or unavailable.");
       return info.deviceId;
     };
-    let discoveryBusy=false, discoveryTask=null, updateRequested=false;
+    let discoveryBusy=false, discoveryTask=null, updateRequested=false, preparing=false;
     const eligible = ()=>appLockHeld && isGattConnected() && !connectInProgress && !recordingConfirmed &&
       !finalizing && !currentRecordingId && !openingCapture && !unsavedAudio &&
       !globalThis.SynapDesktopCapture?.state()?.active &&
       !["starting","stopping","saving"].includes(appState);
     function firmwareGattOperation(action, label) {
       return queueGattOperation(() => {
+        if (preparing) checkPreparationCancelled();
         // Recording may start while an earlier discovery request owns the queue.
         // Allow explicit OTA transfers, but defer every remaining idle check.
         if (!firmwareBusy && !eligible()) {
@@ -3389,12 +3345,17 @@
       setAppState(isGattConnected() ? (deviceStatus.error ? "error" : "idle") : "disconnected");
     };
     cancel.addEventListener("click",()=>{
+      if (!firmwareBusy || (!preparing && firmwareUpdater.committing)) return;
+      downloadController?.abort();
       firmwareUpdater.cancel();showProgress("Cancelling transfer…",null,true);
     });
 
     if (!globalThis.SynapReleases) return;
     const releases=globalThis.SynapReleases;
     let offered=null,offeredDevice=null,lastCheck=0,downloadController=null;
+    function checkPreparationCancelled() {
+      if (downloadController?.signal.aborted) throw Error('Update cancelled. Nothing was flashed.');
+    }
     const pendingKey=id=>"synap-ota-pending-device:"+id;
     const savePending=(id,m)=>{try{if(m)localStorage.setItem(pendingKey(id),JSON.stringify(m));else localStorage.removeItem(pendingKey(id));}catch(_){} };
     const getPending=id=>{try{const m=JSON.parse(localStorage.getItem(pendingKey(id)));return m?releases.validateManifest(m):null;}catch(_){return null;}};
@@ -3461,7 +3422,6 @@
     document.getElementById("otaReleaseCheck").addEventListener("click",()=>inspect(true));
     // Discovery runs after connection and on the existing interval, not on app focus.
     setInterval(()=>checkFirmwareRelease(),60000);
-    cancel.addEventListener('click',()=>downloadController?.abort());
     async function updateLatest() {
       if(firmwareBusy || updateRequested)return;
       openDeviceSettings();
@@ -3486,22 +3446,26 @@
       } finally { updateRequested=false; }
     }
     async function installOfferedUpdate(m,id) {
-      lock(true);showProgress('Preparing update…',null,true);
+      downloadController=new AbortController();preparing=true;
+      lock(true);showProgress('Preparing update…',null,false);
       processor?.pause();ui.queueStatus.textContent="Paused · Tap Process recordings to resume";
       let commitSent=false,resumeInterrupted=false;
       try {
         const info=await firmwareUpdater.check();
+        checkPreparationCancelled();
         if(requireTarget(info)!==id)throw Error('The connected pendant is not the selected update target.');
         const board=await identity();
+        checkPreparationCancelled();
         if(!releases.compatible(m,info,board))throw Error('This release is already installed or older than the running firmware.');
         if(![1,3,4,6].includes(info.state))throw Error('An update is already pending. Wait for reboot or transfer timeout.');
         const epoch=connectionEpoch;
-        await acquireWakeLock();showProgress('Downloading update…');
-        downloadController=new AbortController();
+        // Screen control is optional; a missing browser reply must not block OTA.
+        void acquireWakeLock();showProgress('Downloading update…');
         const binary=await releases.download(m,info.capacity,undefined,downloadController.signal);
-        if(downloadController.signal.aborted)throw Error('Download cancelled. Nothing was flashed.');
+        checkPreparationCancelled();
         if(epoch!==connectionEpoch||id!==targetId()||!isGattConnected())throw Error('Pendant connection changed during download. Nothing was flashed.');
         savePending(id,m);
+        preparing=false;
         try{await firmwareUpdater.update(binary,id);commitSent=true;}
         catch(error){if(!firmwareUpdater.committing){if(error.resumable)resumeInterrupted=true;else savePending(id,null);throw error;}commitSent=true;}
         showProgress('Restarting pendant…',1,true);
@@ -3526,8 +3490,8 @@
         announce(`Update complete · ${releases.versionLabel(m)}`);
       }catch(error){if(error.resumable)offerLabel(true);announce(error.resumable?'Update paused · Reconnect to continue':friendlyError(error));}
       finally{
-        downloadController=null;firmwareUpdater.reset();
-        await releaseWakeLock();lock(false);
+        preparing=false;downloadController=null;firmwareUpdater.reset();
+        void releaseWakeLock();lock(false);
         if((commitSent||resumeInterrupted)&&!isGattConnected())recoverRememberedConnection('firmware-update',true);
       }
     }

@@ -4,9 +4,10 @@ const APP_VERSION='1.0.0';
 const CLIENT_REVISION='1.0.0-audio2';
 /* Refresh the installed shell without changing audio protocol compatibility. */
 const UI_RECOVERY_REVISION='1.0.0-readiness1';
-const CACHE_REVISION='1.0.0-shell94-bluefy';
+const CACHE_REVISION='1.0.0-shell95-ota-preparation';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
+  './recording/screen-wake-lock.js',
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings.css','./library-tools.js','./library-tools.css',
   './touch-event-bridge.js','./battery-v2-ui.js','./event-channel.js','./audio-codec-v3.js','./battery-popover-fix.js','./memory-ui-fix.js','./memory-tools.js','./voice-profile.js','./device-identity.js','./runtime-compat.js','./audio-store.js','./processing-queue.js','./recording/journal.js','./recording/timeline.js','./recording/bluetooth-session.js','./ota.js','./releases.js',
   './disconnect-protection.js','./audio-quality.js','./meeting-tools.js','./meeting-tools.css','./app.js','./recording-notifications.js','./moments.js','./speaker-names.js','./settings-panel.js','./enhancements.js','./capture-ui.js','./brain-ui.js','./ask-synap.js','./product-ui.js','./runtime-ui.js','./dashboard-ui.js','./provenance-links.js','./productivity-tools.js','./desktop-capture.js','./interaction-surfaces.js','./memory-ready-events.js','./experience-recovery.js',

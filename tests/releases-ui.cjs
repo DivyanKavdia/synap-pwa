@@ -71,6 +71,32 @@ function setup(options={}){
   return {c,node,calls,storage,click:async id=>{for(const fn of node(id).events.click||[])await fn();},tick:()=>events.timer()};
 }
 (async()=>{
+  // The screenshot's stall: optional browser screen control never settles.
+  // Neither acquisition nor release may keep the firmware controls locked.
+  {
+    const t=setup();await t.click('otaReleaseCheck');
+    t.c.acquireWakeLock=()=>new Promise(()=>{});t.c.releaseWakeLock=()=>new Promise(()=>{});
+    let deadline;
+    try{await Promise.race([t.click('otaLatest'),new Promise((_,reject)=>deadline=setTimeout(()=>reject(Error('OTA is blocked by optional screen control')),500))]);}
+    finally{clearTimeout(deadline);}
+    assert(t.calls.includes('flash'));assert.match(t.node('otaStatus').textContent,/Update complete/);assert(!t.c.firmwareBusy);
+  }
+  {
+    const t=setup();await t.click('otaReleaseCheck');const check=t.c.firmwareUpdater.check.bind(t.c.firmwareUpdater);
+    let finishCheck;t.c.firmwareUpdater.check=()=>{const checked=check();return new Promise(resolve=>finishCheck=()=>resolve(checked));};
+    const pending=t.click('otaLatest');for(let i=0;i<10;i++)await Promise.resolve();
+    assert.equal(t.node('otaStatus').textContent,'Preparing update…');assert.equal(t.node('otaCancel').disabled,false);
+    await t.click('otaCancel');
+    await assert.rejects(Promise.resolve().then(()=>t.c.firmwareUpdater.io.queue(()=>assert.fail('cancelled preparation issued another GATT request'))),/cancelled/);
+    finishCheck();await pending;assert(!t.calls.includes('download'));assert(!t.calls.includes('flash'));assert(!t.c.firmwareBusy);
+    assert.match(t.node('otaStatus').textContent,/cancelled.*Nothing was flashed/);
+    t.c.firmwareUpdater.check=check;await t.click('otaLatest');assert(t.calls.includes('flash'),'preparation cancellation remains retryable');
+  }
+  {
+    const t=setup();await t.click('otaReleaseCheck');
+    t.c.globalThis.SynapReleases.download=async()=>{await t.click('otaCancel');return{};};
+    await t.click('otaLatest');assert(!t.calls.includes('flash'),'a late cancelled download cannot start flashing');assert(!t.c.firmwareBusy);
+  }
   for(const options of [{startDuringCheck:true},{startDuringIdentity:true},{startBeforeQueuedRead:true}]){
     const t=setup(options);await t.click('otaReleaseCheck');
     assert(!t.calls.includes('late-firmware-read')&&!t.calls.includes('late-identity-read')&&!t.calls.includes('manifest'),JSON.stringify(options));
