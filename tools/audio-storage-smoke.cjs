@@ -31,6 +31,24 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
         await store.flushWindows();
         await store.flush();
       }
+      // Model background timer throttling while BLE callbacks still arrive.
+      // More than the whole RAM queue must reach real IndexedDB without firing
+      // the periodic flush timer or explicitly asking the store to flush.
+      const timerStore=new DKAudioStore({name:'background-timers'});
+      const timerId=await timerStore.begin('Background packet delivery');
+      const realTimeout=window.setTimeout;
+      let blockedTimers=0;
+      window.setTimeout=(fn,ms,...args)=>ms===100?-(++blockedTimers):realTimeout(fn,ms,...args);
+      try {
+        for(let sequence=0;sequence<2560;sequence++){
+          timerStore.append(timerId,frame(sequence));
+          if(sequence%64===63)await timerStore.writing;
+        }
+        const durable=await timerStore.all('packets');
+        if(durable.length!==2560||timerStore.bufferedCount!==0||!blockedTimers)throw Error('Throttled timers lost background packets');
+        for(const packet of durable)if(new DataView(packet.payload.buffer,packet.payload.byteOffset,packet.payload.byteLength).getInt16(0,true)!==packet.sequence+1)throw Error('Background storage changed PCM');
+      } finally {window.setTimeout=realTimeout;}
+      await timerStore.close(timerId);
       // Production codec -> notification views -> IndexedDB -> WAV -> native
       // browser decoder. Include the write probe that stores a temporary byte.
       const voice = new DKAudioStore({ name: 'pcm-alignment' });

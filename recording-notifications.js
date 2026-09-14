@@ -144,5 +144,6 @@
     render();sync(true);
   }
   root.SynapRecordingNotifications=Object.freeze({capabilities,sync});
+  root.addEventListener('synap-audio-delivery-changed',()=>{void sync();});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })(globalThis);

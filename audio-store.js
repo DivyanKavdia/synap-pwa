@@ -6,6 +6,7 @@
   const SEGMENT_FRAMES = 600; // 30 seconds at 50 ms/frame.
   const PCM_BYTES_PER_FRAME = 1600;
   const MAX_BUFFER_PACKETS = 1600;
+  const FLUSH_PACKET_COUNT = 64;
   const ZERO_FRAME = new Uint8Array(PCM_BYTES_PER_FRAME);
 
   function requestValue(request) {
@@ -370,7 +371,10 @@
         ...(packet.transport ? { transport: packet.transport } : {}),
       });
       this.bufferedCount++;
-      if (!this.timer)
+      // BLE callbacks can run while browser timers are throttled. Keep writes
+      // driven by received data too, rather than filling RAM until a timer runs.
+      if (this.buffer.length >= FLUSH_PACKET_COUNT) this.flush().catch(this.onError);
+      else if (!this.timer)
         this.timer = setTimeout(() => {
           this.timer = null;
           this.flush().catch(this.onError);

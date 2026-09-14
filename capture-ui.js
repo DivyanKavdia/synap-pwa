@@ -46,7 +46,8 @@
     const sessionBar=document.createElement('div');sessionBar.id='recordingSessionBar';sessionBar.hidden=true;
     const mark=document.createElement('button');mark.id='markMoment';mark.type='button';mark.textContent='★ Mark moment';
     const feedback=document.createElement('span');feedback.id='momentFeedback';feedback.setAttribute('role','status');
-    if(timer){timer.setAttribute('aria-label','Recording elapsed time');sessionBar.append(timer)}
+    const reception=document.createElement('span');reception.id='audioReceptionStatus';reception.setAttribute('role','status');
+    if(timer){timer.setAttribute('aria-label','Audio received');sessionBar.append(timer,reception)}
     sessionBar.append(feedback,mark);header.append(sessionBar);
     let marking=false;
     mark.addEventListener('click',async()=>{
@@ -98,17 +99,21 @@
       const state=document.body.dataset.state||'disconnected';
       const ready=document.body.dataset.startup==='ready';
       const interrupted=document.body.dataset.recordingInterrupted==='true';
+      const delivery=document.body.dataset.audioDelivery||'idle';
+      const waiting=delivery==='waiting'||delivery==='recovering';
       const recording=RECORDING_STATES.has(state);
       const canStop=!stop.disabled;
       const connected=ACTIVE_STATES.has(state);
       const busy=BUSY_STATES.has(state);
       sessionBar.hidden=!['starting','recording','stopping','saving'].includes(state)&&document.body.dataset.recordingInterrupted!=='true';
-      mark.hidden=state!=='recording';mark.disabled=marking||state!=='recording'||document.body.dataset.recordingInterrupted==='true';
+      mark.hidden=state!=='recording';mark.disabled=marking||state!=='recording'||interrupted||waiting;
+      reception.hidden=!recording;reception.textContent=delivery==='recovering'?'Recovering audio…':waiting?'No audio arriving':'audio received';
+      reception.dataset.waiting=String(waiting);
       if(sessionBar.hidden)feedback.textContent='';
       status.classList.toggle('is-connected',connected);
-      status.classList.toggle('is-recording',recording);
+      status.classList.toggle('is-recording',recording&&!waiting);
       const label=status.querySelector('.header-status-text');
-      if(label)label.textContent=state==='updating'?'Updating':interrupted?'Paused':recording?'Listening':connected?'Connected':state==='connecting'?'Connecting':'Connect';
+      if(label)label.textContent=state==='updating'?'Updating':interrupted?'Paused':recording&&waiting?'Waiting':recording?'Listening':connected?'Connected':state==='connecting'?'Connecting':'Connect';
       status.disabled=connect.disabled;
       status.setAttribute('aria-label',connected?'Disconnect pendant':'Connect pendant');
       toggle.classList.toggle('is-connected',connected||state==='updating');
@@ -119,6 +124,8 @@
       toggle.title=action;
       const desktop=window.SynapDesktopCapture?.state();
       if(desktop?.active){
+        reception.hidden=true;
+        timer?.setAttribute('aria-label','Recording elapsed time');
         const pending=desktop.phase==='starting'||desktop.phase==='saving';
         const action=desktop.phase==='starting'?'Preparing meeting':desktop.phase==='saving'?'Saving meeting':desktop.phase==='save-failed'?'Retry saving meeting':'Stop and save meeting';
         toggle.classList.toggle('is-recording',Boolean(desktop.recordingId));
@@ -127,14 +134,14 @@
         feedback.textContent=desktop.phase==='starting'?'Choose meeting audio in the sharing window.':desktop.phase==='saving'?'Saving meeting…':desktop.phase==='save-failed'?'Audio is waiting to be saved. Retry saving.':'Meeting audio + microphone';
         if(timer)timer.hidden=!desktop.recordingId;
         updateDesktopClock();
-      }else if(timer)timer.hidden=false;
+      }else if(timer){timer.hidden=false;timer.setAttribute('aria-label','Audio received');}
       if(desktop?.phase==='recording'&&!desktopClock)desktopClock=setInterval(updateDesktopClock,1000);
       else if(desktop?.phase!=='recording'&&desktopClock){clearInterval(desktopClock);desktopClock=null}
     }
 
     if(document.documentElement.dataset.synapCaptureUiBound!=='1'){
       document.documentElement.dataset.synapCaptureUiBound='1';
-      new MutationObserver(sync).observe(document.body,{attributes:true,attributeFilter:['data-state','data-startup','data-recording-interrupted']});
+      new MutationObserver(sync).observe(document.body,{attributes:true,attributeFilter:['data-state','data-startup','data-recording-interrupted','data-audio-delivery']});
       new MutationObserver(sync).observe(connect,{attributes:true,attributeFilter:['disabled']});
       new MutationObserver(sync).observe(start,{attributes:true,attributeFilter:['disabled']});
       new MutationObserver(sync).observe(stop,{attributes:true,attributeFilter:['disabled']});

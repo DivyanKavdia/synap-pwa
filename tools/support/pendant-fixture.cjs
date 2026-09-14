@@ -7,6 +7,8 @@ module.exports = function pendantFixture() {
     JSON.stringify({ autoProcess: false, wakeLock: false }),
   );
   const buffered = location.search.includes('buffered');
+  const connectedReplay = location.search.includes('background');
+  const recoveryCapacity = connectedReplay && location.search.includes('c3') ? 25 : 600;
   const ota = location.search.includes('ota');
   const target = location.search.includes('c3') ? 'esp32c3-supermini-4m' : 'esp32s3-fh4r2-qspi-4m';
   let firmwareBuild = 1200,
@@ -34,6 +36,7 @@ module.exports = function pendantFixture() {
     owner = [],
     buffer = [],
     sendTimer = null;
+  let retained = [], replayAck = 0, replayCommands = 0, blockAudio = false, audioSubscriptions = 0;
   let stopDisconnect = null,
     pauseReplay = false,
     idleOnReconnect = false,
@@ -42,8 +45,9 @@ module.exports = function pendantFixture() {
     const v = new DataView(new ArrayBuffer(16));
     v.setUint8(0, 0x52);
     v.setUint8(1, 1);
-    v.setUint8(2, 1 + (armed ? 2 : 0) + (waiting ? 4 : 0) + (finishing ? 8 : 0));
-    v.setUint16(4, 600, true);
+    v.setUint8(2, 1 + (armed ? 2 : 0) + (waiting ? 4 : 0) + (finishing ? 8 : 0) + (connectedReplay ? 16 : 0));
+    v.setUint8(3, replayAck);
+    v.setUint16(4, recoveryCapacity, true);
     let hash = 2166136261;
     for (const byte of owner) hash = Math.imul(hash ^ byte, 16777619) >>> 0;
     v.setUint32(12, hash, true);
@@ -106,7 +110,7 @@ module.exports = function pendantFixture() {
       this.value = null;
     }
     startNotifications() {
-      return operation(() => this);
+      return operation(() => {if(this.id===uuid('46'))audioSubscriptions++;return this;});
     }
     readValue() {
       return operation(async () => {
@@ -185,6 +189,13 @@ module.exports = function pendantFixture() {
             waiting = false;
             startSender();
           }
+          if (value[0] === 3 && connectedReplay && armed && !waiting && !finishing && state === 2 && owner.every((x, i) => x === value[i + 1])) {
+            const last = value[9] + value[10] * 256, index = retained.indexOf(last);
+            buffer = retained.slice(index < 0 ? 0 : index + 1);
+            replayAck = (replayAck + 1) & 255;
+            replayCommands++;
+            startSender();
+          }
           return;
         }
         if (buffered && value[0] === 0 && state === 2) {
@@ -213,6 +224,7 @@ module.exports = function pendantFixture() {
           state = 2;
           sequence = 0;
           buffer = [];
+          retained = [];
           finishing = false;
           waiting = false;
           clearInterval(sendTimer);
@@ -299,6 +311,7 @@ module.exports = function pendantFixture() {
     );
   };
   function emit(seq) {
+    if (blockAudio) return; // Native BLE accepted the notification; the web view lost it.
     for (let chunk = 0; chunk < 4; chunk++) {
       const v = new DataView(new ArrayBuffer(408));
       v.setUint8(0, 0xa5);
@@ -329,7 +342,9 @@ module.exports = function pendantFixture() {
   function frame() {
     if (buffered) {
       buffer.push(sequence);
-      if (buffer.length > 600) buffer.shift();
+      retained.push(sequence);
+      if (retained.length > recoveryCapacity) retained.shift();
+      if (buffer.length > recoveryCapacity) buffer.shift();
       if (device.gatt.connected && !waiting && !sendTimer) startSender();
     } else emit(sequence);
     sequence = (sequence + 1) & 65535;
@@ -356,6 +371,9 @@ module.exports = function pendantFixture() {
     get: () => (bluetoothAvailable ? bluetooth : undefined),
   });
   window.bleFixture = {
+    blockAudio(value) { blockAudio = value; },
+    get replayCommands() { return replayCommands; },
+    get audioSubscriptions() { return audioSubscriptions; },
     disconnect: loseLink,
     enableBluetooth() {
       bluetoothAvailable = true;

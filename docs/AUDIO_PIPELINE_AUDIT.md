@@ -66,6 +66,11 @@ conversion onward on received frames, not a claim of raw 24-bit capture.
 
 ## Storage, retries and observability
 
+Background delivery, the received-audio clock and replay over a retained BLE
+connection are covered in [Background recording](BACKGROUND_RECORDING.md).
+Bluefy/iOS suspension remains a platform constraint; the short recovery buffer
+cannot preserve a long recording while the web page is stopped.
+
 - Raw packets retain their actual transport (`pcm16` or `adpcm`). Complete-frame
   counts survive journal compaction and crash recovery. Recording details show
   uncompressed, compressed or mixed audio; older unlabelled frames stay unknown.
