@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {speechWindow} from '../src/gemini/speech-window.js';
+import {isDigitalSilence} from '../src/gemini/digital-silence.js';
 import {makePcm16Wav} from '../src/speaker/audio.js';
 import {extractMemory,validateMemory} from '../src/gemini/memory.js';
 import {addConfirmedSample,identifyKnownSpeakers,type KnownSpeaker} from '../src/speaker/known.js';
@@ -9,13 +9,14 @@ import {generateDek,sealJson} from '../src/crypto/envelope.js';
 import {binding} from '../src/pipeline/process.js';
 import type {StructuredMemory,ConversationDoc,FollowUpDoc} from '../src/store/types.js';
 
-test('speech windows skip digital silence, preserve quiet words, and keep a half-second lead-in',()=>{
-  assert(speechWindow(makePcm16Wav(Buffer.alloc(160000))).silent);
-  const pcm=Buffer.alloc(160000);for(let i=32000;i<48000;i++)pcm.writeInt16LE(i%2?3:-3,i*2);
-  const original=makePcm16Wav(pcm),result=speechWindow(original);
-  assert.equal(result.silent,false);assert.equal(result.offsetMs,1500);assert.equal(result.audio.length,64044);
-  assert.equal(original.length,160044);assert(result.audio.includes(pcm.subarray(64000,96000)));
-  assert.deepEqual(speechWindow(Buffer.from('unsupported')),{audio:Buffer.from('unsupported'),offsetMs:0,silent:false});
+test('only exact digital zeros are skipped; even one quiet sample is retained unchanged',()=>{
+  assert(isDigitalSilence(makePcm16Wav(Buffer.alloc(160000))));
+  for(const sample of [-32768,-2,-1,1,2,32767]){
+    const pcm=Buffer.alloc(160000);pcm.writeInt16LE(sample,80000);
+    const audio=makePcm16Wav(pcm),before=Buffer.from(audio);
+    assert.equal(isDigitalSilence(audio),false);assert.deepEqual(audio,before);
+  }
+  assert.equal(isDigitalSilence(Buffer.from('unsupported')),false);
 });
 test('meeting details reject ungrounded reminders and invalid dates/spans, while retaining real topic chapters',()=>{
   const memory:StructuredMemory={schema_version:2,title:'Plan',executive_summary:'Plan',key_points:[],people:[],topics:[],conversations:[{title:'Plan',summary:'Plan',start_ms:0,end_ms:20000,people:[],topics:[],decisions:[],follow_ups:[],chapters:[{title:'Budget',summary:'Costs',start_ms:0,end_ms:10000},{title:'Overlapping',summary:'',start_ms:9000,end_ms:12000},{title:'Delivery',summary:'Dates',start_ms:15000,end_ms:20000}],unresolved_questions:[{text:'Who approves?',start_ms:19000,end_ms:20000}],action_items:[{task:'Send invoice',owner:'self',kind:'reminder',evidence:'remind me tomorrow to send the invoice',due_date:'2026-09-13',start_ms:1000,end_ms:2000},{task:'Invented',owner:'self',kind:'reminder',evidence:'pay someone',due_date:null,start_ms:5000,end_ms:6000},{task:'Invalid date',owner:'self',due_date:'2026-02-30',start_ms:5000,end_ms:6000}]}]};

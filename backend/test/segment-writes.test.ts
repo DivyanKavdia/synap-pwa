@@ -103,6 +103,7 @@ test('authenticated PUT preserves permanent model failures, source bytes and del
   globalThis.fetch=async(input,init)=>{
     if(String(input).startsWith(origin))return original(input,init);
     assert(String(input).endsWith('/interactions'),'no real cloud calls');modelCalls++;
+    assert.deepEqual(Buffer.from(JSON.parse(String(init?.body)).input[0].data,'base64'),audio,'encrypted storage round-trip must preserve the uploaded WAV exactly');
     if(removeDuringModel){
       await db.beginRecordingDeletion('u','r');f.rows.delete(f.parent);f.rows.delete(f.child);
       return new Response(JSON.stringify({status:'completed',steps:[{type:'model_output',content:[{type:'text',text:'Hello',annotations:[{type:'word_info',text:'Hello',speaker:'spk_1',start_offset:'0s',end_offset:'1s'}]}]}]}));

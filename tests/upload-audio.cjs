@@ -14,34 +14,30 @@ function journal(meta){
   })};
   return store;
 }
-test('preprocessing persists exact upload bytes across retry/reload without modifying source PCM',async()=>{
-  const original=wav(1),processed=wav(2);
-  const journalStore=journal({recordingId:'r',index:0,pcmBlob:original,notes:'preserved'});
-  let calls=0;const job={recordingId:'r',segmentIndex:0};
-  const first=await api({prepareForUpload:async()=>{calls++;return processed}}).transcriptionAudio(journalStore,job,original);
-  assert.equal(first,processed);assert.equal(journalStore.meta.pcmBlob,original);
-  const retry=await api({prepareForUpload:async()=>{throw new Error('must reuse persisted bytes')}}).transcriptionAudio(journalStore,job,original);
-  assert.deepEqual(await retry.arrayBuffer(),await processed.arrayBuffer());assert.equal(calls,1);assert.equal(journalStore.meta.notes,'preserved');
+test('new uploads persist the original WAV and never call automatic enhancement',async()=>{
+  const original=wav(1),journalStore=journal({recordingId:'r',index:0,pcmBlob:original,notes:'preserved'});
+  const client=api({prepareForUpload:async()=>{throw Error('Automatic denoising must not run');}});
+  const job={recordingId:'r',segmentIndex:0};
+  assert.equal(await client.transcriptionAudio(journalStore,job,original),original);
+  assert.equal(journalStore.meta.transcriptionBlob,original);
+  assert.equal(await client.transcriptionAudio(journalStore,job,original),original);
+  assert.equal(journalStore.meta.pcmBlob,original);assert.equal(journalStore.meta.notes,'preserved');
 });
-test('an original-audio fallback also stays identical on the next attempt',async()=>{
-  const original=wav(1),journalStore=journal({recordingId:'r',index:1});
-  const job={recordingId:'r',segmentIndex:1};
-  await api({prepareForUpload:async()=>original}).transcriptionAudio(journalStore,job,original);
-  const retry=await api({prepareForUpload:async()=>wav(2)}).transcriptionAudio(journalStore,job,original);
-  assert.equal(retry,original);
+test('legacy cached bodies remain identical because an earlier upload may already be accepted',async()=>{
+  const original=wav(1),legacy=wav(2),store=journal({recordingId:'r',index:0,pcmBlob:original,transcriptionBlob:legacy});
+  const result=await api().transcriptionAudio(store,{recordingId:'r',segmentIndex:0},original);
+  assert.equal(result,legacy);assert.equal(store.meta.pcmBlob,original);
 });
-
-test('invalid source, cached and model WAVs never become transcription uploads',async()=>{
-  const original=wav(1),bad=new Blob([new Uint8Array(45)]),job={recordingId:'r',segmentIndex:0};
-  let modelCalls=0;
-  const client=api({prepareForUpload:async()=>{modelCalls++;return bad;}});
-  for(const meta of [{recordingId:'r',index:0},{recordingId:'r',index:0,transcriptionBlob:bad}]) {
+test('invalid original and cached WAVs are retained but never submitted for transcription',async()=>{
+  const bad=new Blob([new Uint8Array(45)]),job={recordingId:'r',segmentIndex:0};
+  for(const meta of [{recordingId:'r',index:0},{recordingId:'r',index:0,transcriptionBlob:bad}]){
     const store=journal(meta);
-    await assert.rejects(client.transcriptionAudio(store,job,bad),{code:'audio_integrity',retryable:false});
-    assert.equal(modelCalls,0);
+    await assert.rejects(api().transcriptionAudio(store,job,bad),{code:'audio_integrity',retryable:false});
+    assert.equal(store.meta,meta);
   }
-  const store=journal({recordingId:'r',index:0,pcmBlob:original});
-  await assert.rejects(client.transcriptionAudio(store,job,original),{code:'audio_integrity'});
-  assert.equal(modelCalls,1);assert.equal(store.meta.pcmBlob,original);
-  assert.equal(store.meta.transcriptionBlob,undefined,'malformed model output is not cached');
+});
+test('cancelled uploads do not read or persist a source body',async()=>{
+  const signal=AbortSignal.abort();
+  const store={get:async()=>{throw Error('Cancelled job must not start');}};
+  await assert.rejects(api().transcriptionAudio(store,{recordingId:'r',segmentIndex:0},wav(1),signal),{name:'AbortError'});
 });

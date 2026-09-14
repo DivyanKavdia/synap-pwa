@@ -70,11 +70,6 @@
       } catch (error) { finish(error); }
     });
   }
-  async function pcm16(blob) {
-    const view=new DataView(await blob.arrayBuffer());
-    if(view.byteLength<44 || view.getUint32(0)!==0x52494646 || view.getUint32(8)!==0x57415645 || view.getUint32(12)!==0x666d7420 || view.getUint32(16,true)!==16 || view.getUint16(20,true)!==1 || view.getUint16(22,true)!==1 || view.getUint32(24,true)!==16000 || view.getUint16(34,true)!==16 || view.getUint32(36)!==0x64617461 || view.getUint32(40,true)!==view.byteLength-44)return null;
-    return view;
-  }
   function digitalSilence(view) {
     if(!view)return false;
     for(let at=44;at+1<view.byteLength;at+=2)if(Math.abs(view.getInt16(at,true))>2)return false;
@@ -93,16 +88,9 @@
   }
   async function prepareForUpload(blob,{signal}={}) {
     if(signal?.aborted)throw abortError();
-    // Keep rolling uploads bounded on mobile. Unsupported/slow devices still
-    // transcribe automatically using their untouched original window.
-    if(!supported() || active || blob.size>1920044)return blob;
-    try {
-      const dry=await pcm16(blob);
-      if(digitalSilence(dry))return blob;
-      const copy=await enhance(blob,{signal,timeoutMs:12000});
-      return dry && !preservesSpeech(dry,await pcm16(copy)) ? blob : copy;
-    }
-    catch(error) { if(signal?.aborted)throw abortError(); return blob; }
+    // Compatibility for older app shells. Automatic uploads never launch DSP;
+    // enhancement is available only when the user explicitly requests a copy.
+    return blob;
   }
   root.SynapAudioEnhancement = Object.freeze({enhance,prepareForUpload,preservesSpeech,digitalSilence,supported,busy:()=>active,limits});
 })(typeof window!=='undefined' ? window : globalThis);

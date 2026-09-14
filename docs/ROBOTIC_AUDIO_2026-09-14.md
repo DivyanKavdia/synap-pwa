@@ -35,15 +35,17 @@ gap. It now rounds to samples before converting to bytes. Current upload routes
 already require integer milliseconds, so this reproduction does not prove that
 the supplied recording took that path.
 
-No microphone filter, gain, ADPCM wire format or firmware version is changed by
-this fix. This evidence does not establish a physical cause for earlier BLE
-disconnects or the different silence in the September 13 recordings.
+The alignment fix itself does not establish a physical cause for earlier BLE
+disconnects or the different silence in the September 13 recordings. The later
+request to remove stacked preprocessing is handled in the separate
+[pipeline audit](AUDIO_PIPELINE_AUDIT.md): firmware filtering, automatic upload
+denoising and cloud cropping are removed; BLE ADPCM remains explicit.
 
 ## Changes and regression coverage
 
 - Reject split PCM samples at WAV construction and invalid frames before
   compaction can delete raw packets. Stored corrupt PCM is retained.
-- Validate source WAVs, persisted retry bodies and enhancement output before
+- Validate source WAVs, persisted retry bodies and selected upload output before
   uploading: exact container and chunk lengths, single format/data chunks,
   metadata padding, 16 kHz mono PCM16 format and complete samples. Browser
   validation reads headers only, with a bounded chunk count.

@@ -249,14 +249,14 @@ const server = createStaticServer(root);
 
     await page.locator('#headerCaptureToggle').click();
     await page.waitForFunction(() => document.body.dataset.state === 'recording');
-    // A real model Worker may now run during rolling capture. Exercise the same
-    // automatic entry point while BLE packets continue arriving on the main thread.
+    // Old shells may call this entry point during capture; it must return the
+    // original source immediately without starting an enhancement Worker.
     const { wav, fixture } = require('./audio-enhancement-fixtures.cjs');
     await page.evaluate(
       (bytes) => {
-        window.qaAudioPreparation = SynapAudioEnhancement.prepareForUpload(
-          new Blob([new Uint8Array(bytes)], { type: 'audio/wav' }),
-        ).then((copy) => copy.size);
+        const source = new Blob([new Uint8Array(bytes)], { type: 'audio/wav' });
+        window.qaAudioPreparation = SynapAudioEnhancement.prepareForUpload(source)
+          .then((copy) => ({ bytes: copy.size, original: copy === source, busy: SynapAudioEnhancement.busy() }));
       },
       [...wav(fixture(16000, 3))],
     );
@@ -358,10 +358,10 @@ const server = createStaticServer(root);
       0,
       'day and section browsing preserves capture',
     );
-    assert.equal(
+    assert.deepEqual(
       await page.evaluate(() => qaAudioPreparation),
-      96044,
-      'local preprocessing completes during capture',
+      {bytes: 96044, original: true, busy: false},
+      'automatic upload preparation cannot transform the source during capture',
     );
     await page.waitForTimeout(800);
     const resumed = await records();

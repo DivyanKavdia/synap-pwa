@@ -1,30 +1,20 @@
-# Automatic speech preparation and speaker continuity
+# Original audio uploads and speaker continuity
 
-New Synap Cloud processing windows are prepared locally before upload. The
-bundled RNNoise model runs in a dedicated Worker; there is no prompt or extra
-download from a model provider. The original capture journal stays on the device.
-Cloud transcription receives the prepared copy.
+New Synap Cloud processing windows upload the original journal WAV. Automatic
+RNNoise, filtering, normalization and resampling are disabled. Cloud ASR
+receives the complete uploaded WAV with no silence cropping. Only an entirely
+zero-valued window is recognized as digital silence without a model request;
+quiet samples are not gated away. See the [pipeline audit](AUDIO_PIPELINE_AUDIT.md).
 
-The previous preview used the fully denoised signal, which can suppress distant
-voices and consonants. The replacement mixes a bounded correction into the
-time-aligned original. At 16 kHz every sample keeps its sign and at least 70% of
-its original amplitude (apart from integer rounding). There is no silence gate,
-speech-probability gate, gain boost, or removal of pauses. The preview/export
-control uses the same guarded algorithm.
+An explicit **Preview clearer audio** request can still create a separate
+RNNoise copy. Its bounded correction preserves the original sign and at least
+70% amplitude apart from rounding; it does not replace capture or automatic
+upload audio. Synthetic checks do not establish improved transcription accuracy.
 
-This is deliberately mild suppression, capped at approximately 3.1 dB of sample
-attenuation. The generated noise fixture measured about 3 dB reduction and zero
-sample offset. Those measurements demonstrate the guard and timing; they do not
-establish lower word-error or diarization-error rates on real pendant audio.
-Clipping, packet loss, and voices talking over one another remain limitations.
-
-Automatic work is bounded to the normal 30-second windows (up to 60 seconds of
-16 kHz PCM for legacy inputs) with a 12-second processing budget. Unsupported,
-busy or failing Workers fall back to original audio. Upload cancellation stops
-the Worker. The selected upload bytes are stored before sending and reused on
-retry/reload, including original-audio fallbacks. Successful uploads discard the
-temporary copy and retain an acknowledgement marker, avoiding duplicate uploads.
-Existing cloud audio is not automatically retranscribed.
+Upload bodies are persisted before sending and reused after retry/reload.
+Legacy cached bodies retain their exact bytes because an earlier request may
+already have been accepted by the cloud. Existing cloud audio is not changed
+or automatically retranscribed. A fresh recording uses the original-audio path.
 
 ## Rejected transcription requests
 
@@ -83,8 +73,9 @@ speech-like signals, short tails, silence, cancellation, bounded attenuation,
 and offline loading. Upload tests preserve exact request bodies across retries.
 Speaker tests cover swapped ASR labels, ambiguous matches, service failures,
 different embedding models, overlaps, and incomplete annotations. Browser
-workflows run local preprocessing while simulated BLE recording continues and
-check the revised rectangular Ask source cards at mobile and desktop widths.
+workflows verify automatic preparation returns the original without DSP while
+simulated BLE recording continues. Cloud request tests compare every uploaded
+WAV byte after encrypted storage and on each ASR fallback.
 
 Primary references: [RNNoise design and limitations](https://jmvalin.ca/demo/rnnoise/)
 and [Gemini transcription and diarization](https://ai.google.dev/gemini-api/docs/transcribe).

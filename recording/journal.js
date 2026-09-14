@@ -20,6 +20,7 @@
         ownerUid: String(root.SynapAuth?.session?.()?.profile?.uid || '') || null,
         rollingTranscription: true,
         transcriptionWindowSeconds: 30,
+        uploadAudioProcessing: 'none',
       }),
       onWindowReady(detail) {
         root.dispatchEvent(new CustomEvent('synap-transcription-window-ready', { detail }));

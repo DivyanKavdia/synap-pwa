@@ -15,7 +15,7 @@
  * as context without fighting the transcriber.
  */
 
-import { speechWindow } from './speech-window.js';
+import { isDigitalSilence } from './digital-silence.js';
 import { config } from '../config.js';
 import { offsetToMs } from '../util/retry.js';
 import { log } from '../util/log.js';
@@ -64,11 +64,10 @@ export async function transcribeSegment(
   } = options;
 
   if(signal?.aborted)throw signal.reason;
-  const prepared=mimeType==='audio/wav' ? speechWindow(audio) : {audio,offsetMs:0,silent:false};
-  if(prepared.silent)return {text:'',words:[],speakers:[],model:config.gemini.transcribeModel,review:{attempted:false,annotationsComplete:true}};
-  const sourceOffsetMs=baseOffsetMs+prepared.offsetMs;
+  if(mimeType==='audio/wav' && isDigitalSilence(audio))return {text:'',words:[],speakers:[],model:config.gemini.transcribeModel,review:{attempted:false,annotationsComplete:true}};
+  const sourceOffsetMs=baseOffsetMs;
   const input: InteractionPart[] = [
-    { type: 'audio', data: prepared.audio.toString('base64'), mime_type: mimeType },
+    { type: 'audio', data: audio.toString('base64'), mime_type: mimeType },
   ];
 
   const mode: Record<string, unknown> = { type: 'verbatim' };
@@ -117,7 +116,7 @@ export async function transcribeSegment(
           index === variants.length - 1) throw error;
       log.warn('Retrying rejected transcription with fewer optional settings', {
         model: config.gemini.transcribeModel, stage: 'transcription', http_status: error.status,
-        fallback: variants[index + 1]!.label, audio_bytes: prepared.audio.length, mime_type: mimeType,
+        fallback: variants[index + 1]!.label, audio_bytes: audio.length, mime_type: mimeType,
       });
     }
   }

@@ -18,6 +18,22 @@ const reply = (annotated = true) => new Response(JSON.stringify({
   }] }],
 }));
 
+test('ASR receives the exact complete source including quiet samples and leading/trailing silence', async () => {
+  const originalFetch=fetch,pcm=Buffer.alloc(160000);
+  for(let sample=32000;sample<48000;sample++)pcm.writeInt16LE(sample%2?1:-1,sample*2);
+  const source=makePcm16Wav(pcm),before=Buffer.from(source);let calls=0;
+  globalThis.fetch=async(_url,init)=>{
+    const request=JSON.parse(String(init?.body));calls++;
+    assert.deepEqual(Buffer.from(request.input[0].data,'base64'),before,'no crop, gain, filter or resampling before ASR');
+    return calls===1?invalidArgument():reply();
+  };
+  try{
+    const result=await transcribeSegment(source,'audio/wav',{language:'hi-IN',baseOffsetMs:30000});
+    assert.equal(calls,2);assert.equal(result.words[0]?.start_ms,30000);
+    assert.deepEqual(source,before);
+  }finally{globalThis.fetch=originalFetch;}
+});
+
 test('legacy and free-form language preferences cannot enter the ASR request unchecked', async () => {
   for (const [language, expected] of [
     ['en', ['en-IN']], [' hi ', ['hi-IN']], ['EN_us', ['en-US']],

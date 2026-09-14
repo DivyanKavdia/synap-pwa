@@ -57,12 +57,15 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
       const voiceRecording = await voice.close(voiceId);
       const voiceWav = await voice.blob(voiceRecording);
       await DKAudioCodec.validateWav(voiceWav);
-      const playback = await new OfflineAudioContext(1, expected.length, 16000).decodeAudioData(await voiceWav.arrayBuffer());
+      const voiceBytes = await voiceWav.arrayBuffer(), storedSamples = new DataView(voiceBytes);
+      let exactPcm = true;
+      for (let i = 0; i < expected.length; i++) if (storedSamples.getInt16(44 + i * 2, true) !== expected[i]) exactPcm = false;
+      const playback = await new OfflineAudioContext(1, expected.length, 16000).decodeAudioData(voiceBytes);
       const audible = playback.getChannelData(0);
       let maxError = 0;
       for (let i = 0; i < expected.length; i++) maxError = Math.max(maxError, Math.abs(audible[i] - expected[i] / 32768));
       const aligned = { bytes: voiceWav.size, samples: playback.length, rate: playback.sampleRate,
-        channels: playback.numberOfChannels, maxError, recordings: (await voice.all('recordings')).length,
+        channels: playback.numberOfChannels, maxError, exactPcm, recordings: (await voice.all('recordings')).length,
         segments: (await voice.all('segments')).length };
       const store = new DKAudioStore({ ...SynapRecordingJournal.options({transport:true}), name: 'replayed-frames' });
       const id = await store.begin('Recovered window');
@@ -151,8 +154,12 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
         partial: { status: partialRecording.status, packets: (await partial.all('packets')).length, jobs: (await partial.all('jobs')).length },
       };
     });
-    assert.deepEqual(result.aligned, { bytes: 614444, samples: 307200, rate: 16000,
-      channels: 1, maxError: 0, recordings: 1, segments: 1 }, 'browser playback retains every decoded sample with no leading probe byte');
+    const {maxError, ...aligned} = result.aligned;
+    // Browser float normalization may differ by less than one PCM16 step;
+    // the stored integer samples themselves must remain exactly equal.
+    assert(maxError <= 1 / 32768, 'browser playback deviated by more than one PCM16 step');
+    assert.deepEqual(aligned, { bytes: 614444, samples: 307200, rate: 16000,
+      channels: 1, exactPcm: true, recordings: 1, segments: 1 }, 'export retains every decoded sample with no leading probe byte');
     assert.deepEqual(result.before, { compacted: false, packets: 98, jobs: 0 });
     assert.deepEqual(result.after, { compacted: true, liveWindow: 1 });
     assert.equal(result.recovered.stats.completeFrames, 981);
