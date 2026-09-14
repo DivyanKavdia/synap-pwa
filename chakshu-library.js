@@ -8,7 +8,7 @@
     viewerGeneration = 0,
     urls = [],
     viewerUrls = [],
-    playTimer = null,
+    player = null,
     selected = null,
     selectedFrames = [],
     frameIndex = 0,
@@ -49,7 +49,8 @@
   }
   function closeViewer() {
     viewerGeneration++;
-    pause();
+    player?.dispose();
+    player = null;
     revoke(viewerUrls);
     selected = null;
     selectedFrames = [];
@@ -58,6 +59,9 @@
     $('visualAudio').pause();
     $('visualAudio').removeAttribute('src');
     $('visualAudio').hidden = true;
+    $('visualPlayback').hidden = true;
+    $('visualSound').checked = true;
+    $('visualSoundLabel').hidden = true;
     $('visualAudioSource').hidden = true;
     $('visualStage').classList.remove('zoomed');
     $('visualZoom').setAttribute('aria-pressed', 'false');
@@ -84,8 +88,7 @@
       $(id).disabled = false;
   }
   function pause() {
-    clearTimeout(playTimer);
-    playTimer = null;
+    player?.pause();
     $('visualPlay').textContent = 'Play video';
   }
   function viewContext() {
@@ -146,45 +149,31 @@
       $('visualDescriptions').append(article);
     }
   }
-  function showFrame(index) {
+  function paintFrame(index) {
     frameIndex = Math.max(0, Math.min(index, selectedFrames.length - 1));
     if (!selectedFrames[frameIndex]) return;
-    $('visualPreview').src = viewerUrls[frameIndex];
-    $('visualSeek').value = frameIndex;
-    $('visualTime').textContent = (selectedFrames[frameIndex].atMs / 1000).toFixed(1) + ' s';
-    $('visualSeek').setAttribute(
-      'aria-valuetext',
-      'Frame ' +
-        (frameIndex + 1) +
-        ' of ' +
-        selectedFrames.length +
-        ', ' +
-        $('visualTime').textContent,
-    );
+    if ($('visualPreview').src !== viewerUrls[frameIndex])
+      $('visualPreview').src = viewerUrls[frameIndex];
     $('visualPreviousFrame').disabled = frameIndex === 0;
     $('visualNextFrame').disabled = frameIndex === selectedFrames.length - 1;
   }
-  function play() {
-    clearTimeout(playTimer);
-    if (!selectedFrames.length) return;
-    if (frameIndex >= selectedFrames.length - 1) showFrame(0);
-    const next = () => {
-      if (!selected || frameIndex >= selectedFrames.length - 1) {
-        $('visualPlay').textContent = 'Play video';
-        playTimer = null;
-        return;
-      }
-      const ms = Math.max(
-        50,
-        selectedFrames[frameIndex + 1].atMs - selectedFrames[frameIndex].atMs,
+  function showFrame(index) {
+    if (player)
+      player.seek(
+        selectedFrames[Math.max(0, Math.min(index, selectedFrames.length - 1))]?.atMs || 0,
       );
-      playTimer = setTimeout(() => {
-        showFrame(frameIndex + 1);
-        next();
-      }, ms);
-    };
-    $('visualPlay').textContent = 'Pause video';
-    next();
+    else paintFrame(index);
+  }
+  function playbackChanged(state) {
+    paintFrame(state.index);
+    $('visualSeek').max = Math.round(state.durationMs);
+    $('visualSeek').value = Math.round(state.timeMs);
+    const label = root.SynapChakshuPlayer.timeLabel;
+    $('visualTime').textContent = label(state.timeMs) + ' / ' + label(state.durationMs);
+    $('visualSeek').setAttribute('aria-valuetext', $('visualTime').textContent);
+    $('visualPlay').textContent = state.playing ? 'Pause video' : 'Play video';
+    $('visualPlay').setAttribute('aria-pressed', String(state.playing));
+    $('visualStage').dataset.playing = String(state.playing);
   }
   async function open(id) {
     closeViewer();
@@ -203,8 +192,16 @@
     selected = row;
     selectedFrames = frames;
     for (const frame of frames) viewerUrls.push(URL.createObjectURL(frame.blob));
+    const video = row.kind === 'video';
+    $('visualPlayback').hidden = !video;
+    $('visualSpeed').value = '1';
+    if (video)
+      player = new root.SynapChakshuPlayer.Player({
+        frames,
+        durationMs: row.durationMs,
+        change: playbackChanged,
+      });
     $('visualTitle').textContent = row.name || (row.kind === 'image' ? 'Photo' : 'Video');
-    $('visualSeek').max = Math.max(0, frames.length - 1);
     $('visualSeek').hidden = row.kind !== 'video';
     $('visualPlay').hidden = row.kind !== 'video';
     $('visualPlay').textContent = 'Play video';
@@ -215,13 +212,13 @@
     $('visualReadText').disabled = !frames.length;
     $('visualDownload').disabled = !frames.length;
     $('visualZoom').disabled = !frames.length;
-    $('visualPlay').disabled = frames.length < 2;
+    $('visualPlay').disabled = !frames.length;
     $('visualName').value = row.name || '';
     $('visualNotes').value = row.notes || '';
     renderFavourite();
     $('visualInfo').textContent =
       (row.state === 'interrupted' ? 'Interrupted capture · ' : '') +
-      (row.kind === 'video' ? 'Silent video · audio is saved separately. ' : '') +
+      (video ? 'Video playback · audio remains a separate recording. ' : '') +
       (row.timingEstimated ? 'Frame times estimated from the earlier 2 fps capture. ' : '') +
       'Saved on this browser.';
     renderDescriptions();
@@ -251,6 +248,10 @@
       viewerUrls.push(url);
       $('visualAudio').src = url;
       $('visualAudio').hidden = false;
+      if (video) {
+        $('visualSoundLabel').hidden = false;
+        player?.setAudio($('visualAudio'));
+      }
     }
   }
   async function render() {
@@ -384,6 +385,10 @@
       const card = document.createElement('button');
       card.type = 'button';
       card.className = 'visual-card';
+      card.setAttribute(
+        'aria-label',
+        (row.kind === 'video' ? 'Play video: ' : 'Open photo: ') + (row.name || row.kind),
+      );
       card.dataset.mediaId = row.id;
       if (first) {
         const image = document.createElement('img'),
@@ -393,6 +398,12 @@
         image.alt = '';
         image.loading = 'lazy';
         card.append(image);
+      }
+      if (row.kind === 'video') {
+        const badge = document.createElement('span');
+        badge.className = 'visual-play-badge';
+        badge.textContent = '▶ Play video';
+        card.append(badge);
       }
       const title = document.createElement('strong');
       title.textContent = row.name || (row.kind === 'video' ? 'Video' : 'Photo');
@@ -510,12 +521,25 @@
       closeViewer();
     });
     $('visualSeek').addEventListener('input', () => {
-      pause();
-      showFrame(Number($('visualSeek').value));
+      player?.seek(Number($('visualSeek').value));
     });
     $('visualPlay').addEventListener('click', () => {
-      if (playTimer) pause();
-      else play();
+      if (player?.playing) pause();
+      else {
+        const context = viewContext();
+        player?.play().catch((error) => {
+          if (context.current())
+            $('visualDetailStatus').textContent =
+              'Playback could not start. Try again or turn off linked audio. ' + error.message;
+        });
+      }
+    });
+    $('visualSpeed').addEventListener('change', () => player?.setRate($('visualSpeed').value));
+    $('visualSound').addEventListener('change', () =>
+      player?.setAudio($('visualSound').checked ? $('visualAudio') : null),
+    );
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') pause();
     });
     for (const [id, step] of [
       ['visualPreviousFrame', -1],
@@ -657,6 +681,7 @@
     mode();
     render().catch((e) => status(e.message));
   }
+  root.SynapChakshuLibrary = { open, close: closeViewer };
   if (document.readyState === 'loading')
     document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();
