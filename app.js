@@ -2535,7 +2535,8 @@
           if(model.ready||(model.failed&&recording.processingRetryable===false)){
             result.skipped.push({id,message:model.ready?'Already ready.':'This failure cannot be retried.'});continue;
           }
-          if(!recording.journal&&recording.blob?.size)await journal.enqueueLegacy(id,{preserveTranscript:provider!=='synap'});
+          if(recording.importedAudio)await globalThis.SynapAudioImport.enqueue(journal,id);
+          else if(!recording.journal&&recording.blob?.size)await journal.enqueueLegacy(id,{preserveTranscript:provider!=='synap'});
           jobs=await journal.all('jobs','recording',id);
           if(provider==='synap'&&(recording.processingStage==='failed'||(!jobs.some(job=>job.state!=='done')&&recording.restoredFromCloud))){
             const reply=await globalThis.SynapBackend.retryRecording(id);
@@ -2558,6 +2559,26 @@
     if(result.done.length)await processor.queueRecordings(result.done);
     else if(!queueWasPaused)void processor.resume(previousScope);
     return result;
+  }
+
+  async function importLibraryAudio(file) {
+    requireLibraryAction();
+    const paused = processor.paused, scope = processor.recordingScope ? Array.from(processor.recordingScope) : null;
+    libraryMutationActive = true;
+    try {
+      await processor.pause();
+      const recording = await globalThis.SynapAudioImport.save(file, journal, () => {
+        if (!appLockHeld || firmwareBusy || currentRecordingId || openingCapture || recordingConfirmed || finalizing ||
+            unsavedAudio || globalThis.SynapDesktopCapture?.state()?.active)
+          throw new Error("Finish the active recording or update before importing audio.");
+      });
+      libraryScope = "all";
+      document.querySelectorAll('[data-library-scope]').forEach(choice => choice.setAttribute('aria-pressed', String(choice.dataset.libraryScope === 'all')));
+      return recording;
+    } finally {
+      libraryMutationActive = false;
+      if (!paused) void processor.resume(scope);
+    }
   }
 
   async function deleteLibraryRecordings(recordingIds,{cloud=false,onProgress=()=>{}}={}) {
@@ -4002,7 +4023,7 @@
   }
 
   function canReload() {
-    return !(firmwareBusy || recordingConfirmed || finalizing || openingCapture ||
+    return !(firmwareBusy || libraryMutationActive || recordingConfirmed || finalizing || openingCapture ||
       currentRecordingId || unsavedAudio || recordingReconnectPending ||
       globalThis.SynapDesktopCapture?.state()?.active ||
       ['starting', 'stopping', 'saving', 'updating'].includes(appState));
@@ -4080,7 +4101,7 @@
       if (message === "Queue complete") renderRecordings();
     }});
     globalThis.SynapLibraryTools?.configure({render:renderLibraryPage,refresh:renderRecordings,process:processLibraryRecordings,
-      remove:deleteLibraryRecordings,protected:protectedLibraryRecording});
+      remove:deleteLibraryRecordings,importAudio:importLibraryAudio,protected:protectedLibraryRecording});
     if (recovered) log("Recovered interrupted recordings from stored chunks", {count:recovered});
     await renderRecordings();
     bindEvents();

@@ -1,0 +1,7 @@
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcarchive/
+*.ipa
+simulator.png
