@@ -8,8 +8,8 @@ the day being browsed in Memories. The existing To do, Decisions and Waiting
 filters remain inside Next steps.
 
 The tab strip is attached to one shared content area, without nested section
-cards or separate pill buttons. Its viewport scales from 220 to 300 pixels,
-keeping long content inside the card. Timeline controls appear above the
+cards or separate pill buttons. Short panels fit their content. Its maximum viewport scales from 240 to 440 pixels,
+keeping long content inside the card without reserving space for empty panels. Timeline controls appear above the
 scroller for Next steps and Follow-ups. Long lists and answers scroll inside that area; each tab retains its
 reading position. People uses the shared scroll area instead of a second list
 scrollbar, and suggested Ask questions fit on one horizontal row.
