@@ -13,6 +13,7 @@ import { speakerNameRoutes } from './routes/speaker-names.js';
 import { knownSpeakerRoutes } from './routes/known-speakers.js';
 import { taskRoutes } from './routes/tasks.js';
 import { voiceProfileRoutes } from './routes/voice-profile.js';
+import { chakshuRoutes } from './routes/chakshu.js';
 
 /**
  * CORS.
@@ -109,6 +110,7 @@ export function createApp(): Express {
   app.use('/v1', brainRoutes());
   app.use('/v1', memoryToolRoutes());
   app.use('/v1', voiceProfileRoutes());
+  app.use('/v1', chakshuRoutes());
 
   app.use((_req, res) => {
     res.status(404).json({ error: { code: 'not_found', message: 'No such endpoint' } });

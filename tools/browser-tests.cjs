@@ -5,6 +5,7 @@ const { spawnSync } = require('node:child_process');
 // CI and local development run this same sequence. Individual scripts also run alone.
 const suites = [
   ['chakshu'],
+  ['chakshu-library'],
   ['layout'],
   ['first-memory'],
   ['audio-storage'],

@@ -1105,7 +1105,7 @@
       let connectedDeviceId = null;
       let identityMessage = "This firmware has no permanent device ID. Recording is available; install identity-enabled firmware to remember this device.";
       try {
-        connectedDeviceId = await globalThis.SynapDevices.read(service, queueGattOperation, assertConnection, optionalGattAllowed);
+        connectedDeviceId = await globalThis.SynapDevices.read(service, queueGattOperation, assertConnection, optionalGattAllowed, mediaGattAllowed);
       } catch (error) {
         assertConnection();
         identityMessage = "Device ID could not be read. Reconnect to retry setup. Recording is still available.";
@@ -1422,6 +1422,12 @@
       !["starting", "recording", "stopping", "saving", "updating"].includes(appState);
   }
 
+  function mediaGattAllowed() {
+    return appLockHeld && !firmwareBusy && !recordingReconnectPending && !connectInProgress &&
+      !finalizing && !openingCapture && !unsavedAudio && !recordingStopRequested &&
+      (appState === 'idle' || (appState === 'recording' && recordingConfirmed));
+  }
+
   const bluetoothSession = new globalThis.SynapBluetoothSession({
     connection: () => ({ epoch: connectionEpoch, device: bluetoothDevice }),
     connected: isGattConnected,
@@ -1626,7 +1632,7 @@
   }
 
   async function startRecording() {
-    if (globalThis.SynapModules?.busy) { toast("Wait for Chakshu to finish its SD hardware check.", "error"); return; }
+    if (globalThis.SynapModules?.busy || globalThis.SynapChakshu?.state?.offline) { toast("Wait for Chakshu to finish its SD hardware check.", "error"); return; }
     if (firmwareBusy) return;
     if (globalThis.SynapDesktopCapture?.state?.().active) {
       toast("Stop the online meeting capture before starting the pendant.", "error");
@@ -3311,7 +3317,7 @@
       return info.deviceId;
     };
     let discoveryBusy=false, discoveryTask=null, updateRequested=false, preparing=false;
-    const eligible = ()=>!globalThis.SynapModules?.busy && appLockHeld && isGattConnected() && !connectInProgress && !recordingConfirmed &&
+    const eligible = ()=>!globalThis.SynapModules?.busy && !globalThis.SynapChakshu?.busy && appLockHeld && isGattConnected() && !connectInProgress && !recordingConfirmed &&
       !finalizing && !currentRecordingId && !openingCapture && !unsavedAudio &&
       !globalThis.SynapDesktopCapture?.state()?.active &&
       !["starting","stopping","saving"].includes(appState);
@@ -3946,6 +3952,8 @@
     const active = recordingConfirmed && (finalizing || isCurrentSession(recordingSessionId));
     return {
       active,
+      recordingId: active ? currentRecordingId : null,
+      offsetMs: active ? journal.timelineOffsetMs(currentRecordingId) : 0,
       sessionId: active ? recordingControlOwnerId + ':' + recordingSessionId : null,
       source: 'pendant',
       phase: finalizing ? 'saving' : recordingStopRequested ? 'stopping' : recordingReconnectPending ||
@@ -3967,13 +3975,26 @@
   }
 
   function canReload() {
-    return !(globalThis.SynapModules?.busy || firmwareBusy || recordingConfirmed || finalizing || openingCapture ||
+    return !(globalThis.SynapChakshu?.busy || globalThis.SynapModules?.busy || firmwareBusy || recordingConfirmed || finalizing || openingCapture ||
       currentRecordingId || unsavedAudio || recordingReconnectPending ||
       globalThis.SynapDesktopCapture?.state()?.active ||
       ['starting', 'stopping', 'saving', 'updating'].includes(appState));
   }
 
-  globalThis.SynapAppControls = Object.freeze({toggleCapture,toggleConnection,recordingState,stopCapture,canReload});
+  async function startMediaAudio() {
+    if (!requireReady() || !requireAppOwnership() || !isGattConnected() || firmwareBusy)
+      throw Error('Connect Chakshu and finish setup first.');
+    if (!recordingState().active) {
+      if (appState !== 'idle') throw Error('Finish the current recording first.');
+      await startRecording();
+      const deadline = Date.now() + 10000;
+      while (!recordingState().active && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    const state = recordingState();
+    if (!state.active) throw Error('Chakshu did not start its audio stream.');
+    return state;
+  }
+  globalThis.SynapAppControls = Object.freeze({toggleCapture,toggleConnection,recordingState,stopCapture,canReload,startMediaAudio});
 
   function setStartup(state, message) {
     document.body.dataset.startup = state;

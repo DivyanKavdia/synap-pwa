@@ -16,7 +16,7 @@
     connection = null;
     root.dispatchEvent?.(new CustomEvent('synap-gatt-disconnected'));
   }
-  function publishService(service, queue, assertConnection, canUse = () => true) {
+  function publishService(service, queue, assertConnection, canUse = () => true, canUseMedia = () => false) {
     if (!service) return;
     function deferred() {
       const error = new Error('Optional Bluetooth setup deferred until recording stops.');
@@ -35,12 +35,22 @@
         return value;
       }, label);
     } };
+    // Active camera capture uses the same serialized native queue, with an
+    // explicit policy that permits audio streaming but excludes recovery/OTA.
+    context.mediaQueue = (action, label) => queue(async () => {
+      assertConnection();
+      if (connection !== context || !canUseMedia()) throw deferred();
+      const value = await action();
+      assertConnection();
+      if (connection !== context) throw Error('Pendant connection changed.');
+      return value;
+    }, label);
     connection = context;
     try { root.dispatchEvent(new CustomEvent('synap-gatt-service-ready', { detail: context })); }
     catch (_) {}
   }
-  async function read(service, queue, assertConnection, canUse) {
-    publishService(service, queue, assertConnection, canUse);
+  async function read(service, queue, assertConnection, canUse, canUseMedia) {
+    publishService(service, queue, assertConnection, canUse, canUseMedia);
     let characteristic;
     try { characteristic = await queue(() => service.getCharacteristic(UUID), 'Find device identifier'); }
     catch (error) {
@@ -51,7 +61,10 @@
     assertConnection();
     const value = await queue(() => characteristic.readValue(), 'Read device identifier');
     assertConnection();
-    return decode(value);
+    const id = decode(value);
+    if (connection?.service === service) connection.deviceId = id;
+    root.dispatchEvent?.(new CustomEvent('synap-device-identified'));
+    return id;
   }
   class Registry {
     constructor(storage, randomId = () => root.crypto.randomUUID(), now = () => new Date().toISOString()) {

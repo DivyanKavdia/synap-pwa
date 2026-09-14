@@ -287,11 +287,14 @@
           method: 'PUT', headers: headers, body: buffer, signal: signal
         });
       });
-    }).then(async function () {
+    }).then(async function (response) {
       if(processor.store.atomic)await processor.store.atomic(['segments'],function(stores){
         const get=stores.segments.get([job.recordingId,job.segmentIndex]);
         get.onsuccess=function(){if(get.result){const meta={...get.result,uploadedToBackend:true};delete meta.transcriptionBlob;stores.segments.put(meta)}};
       });
+      if (Array.isArray(response?.words)) root.dispatchEvent?.(new CustomEvent('synap-audio-transcribed', {
+        detail: { ownerUid: recording.ownerUid, recordingId: job.recordingId, segmentIndex: job.segmentIndex, words: response.words }
+      }));
       return { transcript: '', uploadedToBackend: true, provider: 'synap', uploadedAt: new Date().toISOString() };
     });
   }

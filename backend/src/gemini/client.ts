@@ -30,7 +30,9 @@ export interface InteractionAudioPart {
   mime_type: string;
 }
 
-export type InteractionPart = InteractionTextPart | InteractionAudioPart;
+export type InteractionPart = InteractionTextPart | InteractionAudioPart | {
+  type: 'image'; data: string; mime_type: 'image/jpeg';
+};
 
 export interface WordAnnotation {
   type: 'word_info';

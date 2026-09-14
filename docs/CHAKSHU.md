@@ -4,62 +4,63 @@ Connect the device through the normal pendant picker. The Device panel reads fir
 
 - Main microphone control: standard Synap audio recording, playback, transcription and memory.
 - Settings → Device → Chakshu: hardware recheck, photo to SD, ten-second WAV to SD, and a silent two-fps MJPEG camera clip to SD.
-- Short checks report capacity, progress, errors and the saved filename. Read the SD card to review files; these checks do not add files to the PWA Library.
+- Short checks report capacity, progress, errors and the saved filename. Import their files using Browse SD card or a card reader; the checks do not automatically add files to the PWA Library.
 - Live audio, OTA and SD checks cannot run together. Completed results can be read after a reconnect; reboot clears the last result but keeps saved files.
 - Chakshu stays awake and requires no touch sensor, external LED or battery divider.
 
 The initial firmware supports XIAO ESP32S3 Sense with 8 MB flash / 8 MB OPI PSRAM and probes the installed card. It does not assume the 2 GB card is empty, delete files or auto-format it.
 
+## Account photo/video library
+
+Library → Photos & video shows **Unavailable** until a Chakshu device is associated with the signed-in account. Connecting an identified Chakshu while signed in saves that association in the backend. The library stays available after disconnection and can use the cached association offline. C3/S3 and unknown hardware do not unlock it. A public device ID is an account preference, not proof of exclusive hardware ownership.
+
+Choose a capture mode:
+
+| Mode | Behavior |
+| --- | --- |
+| Audio only | Existing audio recording, playback, transcription and memory, with Chakshu's onboard PDM microphone specifications. |
+| Image | Take a fresh photo, start audio with a photo, describe it, or link an existing audio recording. Photo with audio keeps recording until the audio control is stopped. |
+| Video online | Capture periodic JPEG frames while the ordinary audio journal records independently. Optional live descriptions run at most once every ten seconds, with one automatic request in flight. Keep the PWA open; radio throughput determines frame rate. Clips stop at 32 MiB of visual data. |
+| Video to SD | Firmware records up to 60 seconds with separate silent MJPEG, PCM WAV and JSON timing files. An accepted take continues without the phone. Reconnect to check status and import it. |
+
+Camera transfers and paired SD video need firmware advertising media extension version 1. Older Chakshu firmware can still use ordinary audio and manual SD imports. There is no Wi-Fi or high-frame-rate MP4 stream.
+
+Photos and video are stored in a separate, account-keyed IndexedDB library **on the current browser**. They are not cloud-synced. Audio follows the existing local/cloud processing flow. Account changes close viewers, revoke object URLs, abort pending descriptions, and stop owned online captures. Interrupted visual captures remain accessible under their original owner. Deleting a visual does not delete linked audio. Download originals before clearing browser data.
+
+### Descriptions and spoken “explain”
+
+Only audio enters transcription. A timestamped “explain” word from an audio segment selects the nearest saved camera frame and at most two frames on either side, with a ten-second maximum distance. Explicit live requests allow up to twelve seconds for following frames to arrive. A missing frame window produces no invented explanation. Duplicate voice requests are suppressed. Voice requests follow rolling audio transcription, so they are delayed by the audio segment/transcription pipeline; the **Explain this moment** button requests a frame window directly.
+
+The backend accepts up to five JPEG images and a prompt, validates account association and size, and sends those images to vision inference. It never submits a video file or audio to that endpoint. Descriptions and their exact selected timestamps are stored locally with the visual. A user can select another saved frame and ask a question in the viewer. Text is rendered as text, not HTML.
+
+### Import and playback
+
+Browse SD card transfers files through Bluetooth; the current firmware catalogue lists up to 100 photos/clips. For larger archives or faster import, select files with a card reader. Import the matching `.mjpeg`, `.wav`, and `.json` together to retain audio alignment. Earlier clips without JSON use estimated two-fps playback and disable automatic spoken explanations. JPEG photos also import directly. Camera/audio imports are limited to 32 MiB per file. Incomplete JPEG streams or inconsistent timing files are rejected.
+
+The viewer plays silent frames with their saved timing and has a separate audio player/transcript link. Audio can be linked or replaced from recordings belonging to the same account. Original video export is MJPEG plus a JSON timing sidecar; original audio remains downloadable through the audio recording.
+
 ## Code boundaries
 
 | Responsibility | Owner |
 | --- | --- |
-| BLE connection, queue and recording state | app.js, recording/bluetooth-session.js |
-| Versioned module descriptor and SD-check client | device-modules.js |
-| Capability-driven Device panel | chakshu-ui.js, device-modules.css |
-| Target-specific update checks and image validation | releases.js, ota.js |
-| Offline module availability | index.html, sw.js, enhancements.js |
-| Real hardware capture and storage | synap-firmware repository |
+| BLE connection, serialized queue and audio ownership | app.js, recording/bluetooth-session.js, device-identity.js |
+| Module descriptor and hardware checks | device-modules.js, chakshu-ui.js |
+| Camera/file transport | chakshu-transfer.js |
+| Account association, capture and audio links | chakshu-media.js |
+| Account-keyed media and frame storage | chakshu-store.js |
+| Library, playback and selected-frame descriptions | chakshu-library.js, chakshu-library.css |
+| Encrypted account device association and vision endpoint | backend/src/http/routes/chakshu.ts |
+| Timestamped audio transcription events | synap-backend.js, backend/src/http/routes/recordings.ts |
+| Firmware capture and SD worker | synap-firmware repository |
 
-The optional client consumes the app-owned GATT service. It pauses discovery/status reads while audio or OTA owns the connection and rejects stale connection results. Display names do not determine hardware compatibility. Older C3/S3 firmware falls back to its exact target identity; unknown modules do not gain camera/storage controls.
+Native media operations use the app-owned GATT queue. Media has explicit permission during confirmed audio recording; passive metadata reads retain their existing idle-only policy. Recovery, finalization, OTA, another tab's ownership and stale connections block media access. An SD take blocks starting live audio; online camera capture shares ordinary audio notifications.
 
-## Protocol v1
+## Protocols
 
-All UUIDs share suffix -0000-1000-8000-00805f9b34fb.
+The existing `4fa12350` descriptor and `4fa12351`–`53` SD-check protocol remain. Descriptor byte 14 now advertises the media extension version; byte 15 remains reserved. `4fa12354`/`55` provide request/response frame and file transfer. All UUIDs share suffix `-0000-1000-8000-00805f9b34fb`.
 
-| UUID prefix | Use |
-| --- | --- |
-| 4fa12350 | 20-byte capability descriptor, read |
-| 4fa12351 | Four-byte command [0xC8, 1, operation, requestId], write with response |
-| 4fa12352 | 20-byte operation result, read |
-| 4fa12353 | Last SD filename, read |
+See the [firmware media protocol and setup](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/CHAKSHU.md) for wire fields and limits.
 
-Operations: 1 recheck, 2 photo, 3 ten-second WAV, 4 ten-second silent MJPEG.
-Request IDs are 1–255; the client chooses a different ID from the last firmware result.
-An accepted operation is not automatically retried, and repeated IDs do not capture twice.
-Capacity fields use MiB, not marketed GB. The descriptor separates supported from initialized features.
+## Verification boundary
 
-Future work: SD file listing/download, continuous/offline audio, synchronized audio/video, Wi-Fi preview and cloud image/video understanding. The ten-second SD checks do not solve long background recordings.
-
-See [firmware setup and pin map](https://github.com/DivyanKavdia/synap-firmware/blob/feature/chakshu-module/docs/CHAKSHU.md) for first-flash instructions.
-
-
-### Wire fields (little endian)
-
-| Bytes | Capability (0xC7) | Check status (0xC9) |
-| --- | --- | --- |
-| 0–1 | Magic, schema=1 | Magic, schema=1 |
-| 2–3 | Module ID (S3=1, C3=2, Chakshu=3), control extension=1 | Operation, request ID |
-| 4–5 | Supported feature bits, uint16 | State (idle=0, busy=1, complete=2, failed=3), error |
-| 6–7 | Ready feature bits, uint16 | Ready mic/camera/SD bits, progress 0–100 |
-| 8–9 | Camera sensor PID, uint16 | Part of total MiB |
-| 10–11 | Sample rate, uint16 | Part of total MiB |
-| 12–13 | Flash MiB, PSRAM MiB | Part of free MiB |
-| 14–15 | Reserved | Part of free MiB |
-| 16–19 | Reserved | Written payload bytes, uint32 |
-
-Status bytes 8–11 and 12–15 are uint32 total/free MiB.
-Feature bits: audio=1, camera=2, SD=4, persistent settings=8, touch=16, battery=32, standby=64, silent MJPEG=128, SD WAV=256, photo=512.
-WAV written payload bytes exclude its 44-byte header.
-
-An ATT write response only confirms delivery to the characteristic. The client waits up to five seconds for a matching operation/request ID in the firmware result, reports an unconfirmed command, and never automatically repeats a capture.
+Run `npm test`, backend typechecking/tests, and `npm run test:browser -- chakshu chakshu-library`. Browser fixtures cover account gating/switching, JPEG transfers, local playback, separate audio/video, selected-frame inference and SD import. Backend tests exercise the real authenticated routes, encrypted association and rejection of other accounts. Firmware CI compiles C3, S3 and Chakshu. Camera/microphone quality, timing alignment, actual Bluetooth throughput and on-device flash still require hardware validation.

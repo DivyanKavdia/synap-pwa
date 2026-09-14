@@ -1,0 +1,617 @@
+/* Account association, capture and selected-frame inference. Audio retains its existing owner. */
+(function (root) {
+  'use strict';
+  const { Store, TARGET, windowFrames, explainWords, splitMJPEG } = root.SynapVisualStore;
+  const CACHE = 'synap-account-chakshu-v1:';
+  const uid = () => String(root.SynapAuth?.session?.()?.profile?.uid || '');
+  const delay = (ms) => new Promise((resolve) => root.setTimeout(resolve, ms));
+  let owner = '',
+    store = null,
+    devices = [],
+    error = '',
+    session = null,
+    working = false,
+    offline = false,
+    transfer = null,
+    context = null,
+    accountPending = false;
+  const controllers = new Set();
+  const voicePending = new Set();
+  let associatedConnection = null;
+  const MAX_VIDEO_BYTES = 32 * 1024 * 1024;
+  const notify = () => root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
+  const connected = () =>
+    root.SynapModules?.client?.module?.id === 3 ? root.SynapDevices?.connection : null;
+  const ready = () => Boolean(owner && devices.some((device) => device.target === TARGET));
+  function check(expected) {
+    if (!expected || uid() !== expected || owner !== expected)
+      throw Error('Account changed. Return to the capture owner to continue.');
+  }
+  async function api(path, body, expected = owner, method = 'POST') {
+    check(expected);
+    const controller = new AbortController();
+    controllers.add(controller);
+    const timer = setTimeout(() => controller.abort(), 120000);
+    try {
+      const response = await root.SynapAuth.authedFetch(path, {
+        method,
+        expectedUid: expected,
+        signal: controller.signal,
+        headers: { 'Content-Type': 'application/json' },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      check(expected);
+      const data = await response.json();
+      check(expected);
+      if (!response.ok) throw Error(data.error?.message || 'Chakshu request failed.');
+      return data;
+    } finally {
+      clearTimeout(timer);
+      controllers.delete(controller);
+    }
+  }
+  function requireAccess() {
+    check(owner);
+    if (!ready())
+      throw Error('Photo/video library unavailable. Associate Chakshu with this account first.');
+    return { owner, store };
+  }
+  function camera() {
+    requireAccess();
+    const next = connected();
+    if (!next?.deviceId) throw Error('Connect your associated Chakshu first.');
+    if (!devices.some((device) => device.deviceId === next.deviceId))
+      throw Error('Associate this Chakshu with your account first.');
+    if (root.SynapModules.client.module.mediaVersion !== 1)
+      throw Error(
+        'Update Chakshu firmware to enable camera transfers and paired video. SD files can still be imported.',
+      );
+    if (context !== next) {
+      context = next;
+      transfer = new root.SynapChakshuTransfer.Client(next);
+    }
+    return transfer;
+  }
+  function saveCache() {
+    localStorage.setItem(CACHE + owner, JSON.stringify(devices));
+  }
+  async function sync() {
+    const next = uid();
+    if (next !== owner) {
+      controllers.forEach((controller) => controller.abort());
+      const old = session;
+      if (old) {
+        old.cancelled = true;
+        old.controller.abort();
+        if (old.audioOwned) root.SynapAppControls.stopCapture(old.audioSession).catch(() => {});
+      }
+      session = null;
+      offline = false;
+      clearTimeout(offlineTimer);
+      owner = next;
+      devices = [];
+      store = next ? new Store(next) : null;
+      error = '';
+      accountPending = false;
+      if (next) {
+        try {
+          devices = JSON.parse(localStorage.getItem(CACHE + next) || '[]').filter(
+            (d) => d.target === TARGET,
+          );
+        } catch (_) {
+          devices = [];
+        }
+        const ownStore = store;
+        ownStore.recover().catch((e) => {
+          if (store === ownStore) {
+            error = e.message;
+            notify();
+          }
+        });
+      }
+      notify();
+    }
+    if (!owner || accountPending) return;
+    accountPending = true;
+    const expected = owner;
+    try {
+      const result = await api('/v1/devices', null, expected, 'GET');
+      devices = (result.devices || []).filter((device) => device.target === TARGET);
+      saveCache();
+      error = '';
+      const device = connected();
+      if (device?.deviceId && !devices.some((d) => d.deviceId === device.deviceId)) {
+        const result = await api(
+          '/v1/devices/chakshu',
+          { deviceId: device.deviceId, target: TARGET },
+          expected,
+          'PUT',
+        );
+        devices.push(result.device);
+        saveCache();
+      }
+    } catch (e) {
+      if (owner === expected)
+        error = ready()
+          ? 'Using saved account association. Cloud descriptions will retry when online.'
+          : e.message;
+    } finally {
+      if (owner === expected) {
+        accountPending = false;
+        notify();
+        if (
+          ready() &&
+          connected()?.deviceId &&
+          root.SynapModules.client.module.mediaVersion === 1 &&
+          !session &&
+          !working
+        )
+          pollOffline();
+      }
+    }
+  }
+  async function operation(action) {
+    if (working || session || offline) throw Error('Finish the current capture or transfer first.');
+    working = true;
+    error = '';
+    notify();
+    try {
+      return await action();
+    } catch (e) {
+      error = e.message;
+      throw e;
+    } finally {
+      working = false;
+      notify();
+    }
+  }
+  async function photo(withAudio = false) {
+    return operation(async () => {
+      const owned = requireAccess(),
+        device = connected(),
+        client = camera();
+      let audio = root.SynapAppControls.recordingState();
+      if (withAudio && !audio.active) audio = await root.SynapAppControls.startMediaAudio();
+      check(owned.owner);
+      const atMs = audio.active ? audio.offsetMs : 0;
+      const blob = await client.snapshot();
+      check(owned.owner);
+      const row = await owned.store.create({
+        kind: 'image',
+        deviceId: device.deviceId,
+        audioId: audio.active ? audio.recordingId : null,
+        audioOffsetMs: atMs,
+        name: 'Photo',
+        captureMode: 'photo',
+      });
+      await owned.store.append(row.id, { blob, atMs });
+      await owned.store.patch(row.id, { state: 'saved' });
+      notify();
+      return row.id;
+    });
+  }
+  async function describe(
+    id,
+    atMs = 0,
+    prompt = 'Explain what is visible here.',
+    scope = { owner, store },
+  ) {
+    check(scope.owner);
+    requireAccess();
+    const row = await scope.store.get(id);
+    if (!row) throw Error('This visual is unavailable.');
+    // Allow two following frames to arrive for an explicit live explanation.
+    // A stopped take or a stalled radio uses only the frames actually retained.
+    const deadline = Date.now() + 12000;
+    let allFrames = await scope.store.frames(id);
+    while (
+      /^explain\b/i.test(prompt) &&
+      session?.id === id &&
+      !session.cancelled &&
+      allFrames.filter((frame) => frame.atMs > atMs).length < 2 &&
+      Date.now() < deadline
+    ) {
+      await delay(250);
+      check(scope.owner);
+      allFrames = await scope.store.frames(id);
+    }
+    const frames = windowFrames(allFrames, atMs);
+    if (!frames.length) throw Error('No camera frame was saved close enough to this moment.');
+    const input = [];
+    for (const frame of frames) {
+      const bytes = new Uint8Array(await frame.blob.arrayBuffer());
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 8192)
+        binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      input.push({ atMs: frame.atMs, jpeg: btoa(binary) });
+    }
+    const reply = await api(
+      '/v1/chakshu/describe',
+      { deviceId: row.deviceId, prompt, frames: input },
+      scope.owner,
+    );
+    check(scope.owner);
+    const current = await scope.store.get(id);
+    if (!current) return;
+    const description = {
+      id: crypto.randomUUID(),
+      atMs,
+      prompt,
+      text: reply.description,
+      frameTimesMs: reply.frameTimesMs,
+      createdAt: new Date().toISOString(),
+    };
+    await scope.store.addDescription(id, description);
+    notify();
+    return description;
+  }
+  async function startLive(inference = true) {
+    if (session || working || offline) throw Error('Finish the current capture first.');
+    const owned = requireAccess(),
+      client = camera(),
+      deviceId = connected().deviceId;
+    const take = {
+      ...owned,
+      controller: new AbortController(),
+      cancelled: false,
+      audioOwned: !root.SynapAppControls.recordingState().active,
+      inference,
+      bytes: 0,
+      phase: 'starting',
+    };
+    session = take;
+    error = '';
+    notify();
+    try {
+      const audio = await root.SynapAppControls.startMediaAudio();
+      take.audioSession = audio.sessionId;
+      take.audioId = audio.recordingId;
+      check(take.owner);
+      if (take.cancelled) throw Error('Video start cancelled.');
+      const row = await take.store.create({
+        kind: 'video',
+        deviceId,
+        audioId: audio.recordingId,
+        name: 'Live video',
+        captureMode: 'online',
+        startedAt: audio.startedAt,
+      });
+      take.id = row.id;
+      take.phase = 'recording';
+      notify();
+      take.task = (async () => {
+        while (!take.cancelled) {
+          const audio = root.SynapAppControls.recordingState();
+          if (!audio.active || audio.recordingId !== take.audioId) break;
+          const atMs = audio.offsetMs;
+          const blob = await client.snapshot(take.controller.signal);
+          check(take.owner);
+          if (take.cancelled) break;
+          if (take.bytes + blob.size > MAX_VIDEO_BYTES) {
+            take.cancelled = true;
+            error = 'Video saved at the 32 MiB clip limit. Start another take to continue.';
+            break;
+          }
+          await take.store.append(take.id, { blob, atMs });
+          take.bytes += blob.size;
+          notify();
+          // One inference at a time; slow networks cannot pile up model requests.
+          if (take.inference && !take.analysis && Date.now() - (take.lastAnalysis || 0) >= 10000) {
+            take.lastAnalysis = Date.now();
+            take.analysis = describe(take.id, atMs, 'Briefly describe this current view.', take)
+              .catch((e) => {
+                if (owner === take.owner) {
+                  error = e.message;
+                  notify();
+                }
+              })
+              .finally(() => {
+                take.analysis = null;
+              });
+          }
+          await delay(1500);
+        }
+      })()
+        .catch((e) => {
+          if (!take.cancelled && owner === take.owner) {
+            error = e.message;
+            notify();
+          }
+        })
+        .finally(async () => {
+          if (take.audioOwned)
+            await root.SynapAppControls.stopCapture(take.audioSession).catch(() => {});
+          await take.store
+            .patch(take.id, { state: take.cancelled ? 'saved' : 'interrupted' })
+            .catch((e) => {
+              if (owner === take.owner) error = e.message;
+            });
+          if (session === take) session = null;
+          notify();
+        });
+    } catch (e) {
+      take.cancelled = true;
+      if (take.audioOwned && take.audioSession)
+        await root.SynapAppControls.stopCapture(take.audioSession);
+      if (session === take) session = null;
+      error = e.message;
+      notify();
+      throw e;
+    }
+  }
+  async function stop() {
+    const take = session;
+    if (take) {
+      take.cancelled = true;
+      take.controller.abort();
+      take.phase = 'saving';
+      notify();
+      await take.task;
+    } else if (offline) {
+      await camera().request(6);
+      await pollOffline();
+    }
+  }
+  async function startOffline() {
+    return operation(async () => {
+      camera();
+      if (root.SynapAppControls.recordingState().active)
+        throw Error('Stop audio capture before recording to SD.');
+      await transfer.request(5);
+      offline = true;
+      notify();
+      pollOffline();
+    });
+  }
+  let offlineTimer;
+  async function pollOffline() {
+    clearTimeout(offlineTimer);
+    const expected = owner;
+    try {
+      const response = await camera().request(9);
+      check(expected);
+      const state = JSON.parse(new TextDecoder().decode(response.bytes));
+      offline = state.active;
+      if (state.error) error = 'SD recording failed. Keep the card and check partial files.';
+      root.dispatchEvent(new CustomEvent('synap-chakshu-offline', { detail: state }));
+      notify();
+    } catch (e) {
+      if (owner !== expected) return;
+      if (offline)
+        error = 'SD recording continues on Chakshu, up to 60 seconds. Reconnect to check it.';
+      notify();
+    }
+    if (offline && connected()) offlineTimer = setTimeout(pollOffline, 2000);
+  }
+  async function catalogue() {
+    return operation(async () => {
+      const files = await camera().catalogue();
+      if (!Array.isArray(files)) throw Error('Invalid SD catalogue.');
+      return files;
+    });
+  }
+  async function importAudio(blob, deviceId, scope, onBegin) {
+    const bytes = new Uint8Array(await blob.arrayBuffer()),
+      view = new DataView(bytes.buffer);
+    const text = (at, n) => new TextDecoder().decode(bytes.subarray(at, at + n));
+    if (
+      bytes.length < 44 ||
+      text(0, 4) !== 'RIFF' ||
+      text(8, 4) !== 'WAVE' ||
+      text(12, 4) !== 'fmt ' ||
+      view.getUint16(20, true) !== 1 ||
+      view.getUint16(22, true) !== 1 ||
+      view.getUint32(24, true) !== 16000 ||
+      view.getUint16(34, true) !== 16 ||
+      text(36, 4) !== 'data' ||
+      view.getUint32(40, true) !== bytes.length - 44
+    )
+      throw Error('Use Chakshu’s complete mono 16 kHz PCM WAV file.');
+    check(scope.owner);
+    const journal = new root.DKAudioStore({
+      ...root.SynapRecordingJournal.options(),
+      metadata: () => ({
+        ownerUid: scope.owner,
+        rollingTranscription: true,
+        transcriptionWindowSeconds: 30,
+        uploadAudioProcessing: 'none',
+      }),
+    });
+    const id = await journal.begin('Chakshu video audio', { deviceId });
+    try {
+      // Attach the visual before any sealed audio window can trigger transcription.
+      await onBegin(id);
+      for (let at = 44, sequence = 0; at < bytes.length; at += 1600) {
+        check(scope.owner);
+        const payload = new Uint8Array(1600);
+        payload.set(bytes.subarray(at, Math.min(at + 1600, bytes.length)));
+        journal.append(id, { sequence: sequence++, chunk: 0, total: 1, payload });
+        if (sequence % 100 === 0) await journal.flush();
+      }
+      await journal.close(id);
+      root.dispatchEvent(
+        new CustomEvent('synap-desktop-capture-saved', { detail: { recordingId: id } }),
+      );
+      return id;
+    } catch (e) {
+      await journal.close(id, 'import-interrupted').catch(() => {});
+      throw e;
+    }
+  }
+  async function importFilesNow(files, deviceId = devices[0]?.deviceId) {
+    const scope = requireAccess();
+    let count = 0;
+    for (const file of files) {
+      if (!/\.(jpg|jpeg|mjpeg)$/i.test(file.name)) continue;
+      check(scope.owner);
+      if (file.size > MAX_VIDEO_BYTES) throw Error('Import camera files up to 32 MiB each.');
+      const image = /\.jpe?g$/i.test(file.name),
+        stem = file.name.replace(/\.[^.]+$/, ''),
+        timingFile = files.find((f) => f.name === stem + '.json');
+      const timing = timingFile ? JSON.parse(await timingFile.text()) : null;
+      if (
+        timing &&
+        (!Array.isArray(timing.frameTimesMs) ||
+          timing.frameTimesMs.some(
+            (t, i, a) => !Number.isFinite(t) || t < 0 || (i && t < a[i - 1]),
+          ))
+      )
+        throw Error('Invalid video frame timeline.');
+      const frames = splitMJPEG(new Uint8Array(await file.arrayBuffer()), timing?.frameTimesMs);
+      if (
+        timing &&
+        (timing.frameTimesMs.length !== frames.length ||
+          !Number.isFinite(timing.durationMs) ||
+          timing.durationMs < frames.at(-1).atMs)
+      )
+        throw Error('The video and frame timeline do not match.');
+      const audioFile = files.find((f) => f.name === stem + '.wav');
+      if (audioFile?.size > MAX_VIDEO_BYTES) throw Error('Import audio files up to 32 MiB each.');
+      const row = await scope.store.create({
+        kind: image ? 'image' : 'video',
+        deviceId,
+        name: file.name,
+        audioId: null,
+        captureMode: 'offline',
+        timingEstimated: !image && !timing,
+        sourceName: file.name,
+      });
+      try {
+        for (const frame of frames) {
+          check(scope.owner);
+          await scope.store.append(row.id, frame);
+        }
+        if (audioFile)
+          await importAudio(audioFile, deviceId, scope, (audioId) =>
+            scope.store.patch(row.id, { audioId }),
+          );
+        await scope.store.patch(row.id, {
+          state: 'saved',
+          durationMs: timing?.durationMs || frames.at(-1).atMs,
+        });
+      } catch (e) {
+        await scope.store.patch(row.id, { state: 'interrupted' });
+        throw e;
+      }
+      count++;
+    }
+    if (!count)
+      throw Error('Select a JPEG photo or MJPEG video, with its matching WAV and JSON files.');
+    notify();
+    return count;
+  }
+  async function importSD(path, progress) {
+    return operation(async () => {
+      const scope = requireAccess(),
+        client = camera(),
+        files = [];
+      const deviceId = connected().deviceId;
+      const add = async (name) => {
+        const blob = await client.file(name, undefined, progress);
+        files.push(new File([blob], name.split('/').pop()));
+      };
+      await add(path);
+      check(scope.owner);
+      if (path.endsWith('.mjpeg')) {
+        for (const extension of ['json', 'wav']) {
+          try {
+            await add(path.replace(/mjpeg$/, extension));
+          } catch (e) {
+            if (!/SD file unavailable/.test(e.message)) throw e;
+          }
+        }
+      }
+      check(scope.owner);
+      return importFilesNow(files, deviceId);
+    });
+  }
+  async function transcribed(event) {
+    const detail = event.detail;
+    if (!ready() || detail.ownerUid !== owner) return;
+    const scope = { owner, store },
+      rows = (await store.list()).filter(
+        (row) => row.kind === 'video' && row.audioId === detail.recordingId,
+      );
+    for (const row of rows)
+      for (const atMs of explainWords(detail.words)) {
+        if (row.timingEstimated) continue;
+        const key = 'voice:' + atMs;
+        const pendingKey = scope.owner + ':' + row.id + ':' + key;
+        const current = await scope.store.get(row.id);
+        if (current?.voiceRequests?.includes(key) || voicePending.has(pendingKey)) continue;
+        const frames = windowFrames(await scope.store.frames(row.id), atMs);
+        if (!frames.length) continue;
+        if (voicePending.has(pendingKey)) continue;
+        voicePending.add(pendingKey);
+        try {
+          await describe(row.id, atMs, 'Explain what is visible around this moment.', scope);
+          await scope.store.ackVoiceRequest(row.id, key);
+        } catch (e) {
+          if (owner === scope.owner) {
+            error = e.message;
+            notify();
+          }
+        } finally {
+          voicePending.delete(pendingKey);
+        }
+      }
+  }
+  const apiObject = {
+    sync,
+    photo,
+    startLive,
+    startOffline,
+    stop,
+    describe,
+    catalogue,
+    importSD,
+    importFiles: (files, deviceId) => operation(() => importFilesNow(files, deviceId)),
+    pollOffline,
+    get state() {
+      return {
+        owner,
+        available: ready(),
+        connected: Boolean(connected()),
+        cameraReady: root.SynapModules?.client?.module?.mediaVersion === 1,
+        devices,
+        error,
+        working,
+        offline,
+        session: session ? { id: session.id, phase: session.phase } : null,
+      };
+    },
+    get store() {
+      return store;
+    },
+    get busy() {
+      return working || offline || Boolean(session);
+    },
+  };
+  root.SynapChakshu = apiObject;
+  root.addEventListener('synap-audio-transcribed', (e) =>
+    transcribed(e).catch((error) => {
+      if (error.name !== 'AbortError') console.warn('Chakshu explanation deferred', error.message);
+    }),
+  );
+  root.addEventListener('synap-device-identified', sync);
+  root.addEventListener('synap-module-changed', () => {
+    const next = connected();
+    if (
+      next?.deviceId &&
+      (next !== associatedConnection || !devices.some((d) => d.deviceId === next.deviceId))
+    ) {
+      associatedConnection = next;
+      sync();
+    }
+    notify();
+  });
+  root.addEventListener('synap-gatt-disconnected', () => {
+    context = null;
+    transfer = null;
+    session?.controller.abort();
+    notify();
+  });
+  root.addEventListener('online', sync);
+  root.SynapAuth?.onChange(sync);
+  sync();
+})(globalThis);
