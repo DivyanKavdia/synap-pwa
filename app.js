@@ -55,7 +55,7 @@
   const AUDIO_STALL_TIMEOUT_MS = 12000;
   const FOREGROUND_STALL_GRACE_MS = 12000;
   const INCOMPLETE_FRAME_TIMEOUT_MS = 900;
-  const RECENT_FRAME_WINDOW = 512;
+  const RECENT_FRAME_WINDOW = 1024; // Includes the 600-frame pendant replay window.
   const AUTO_RECONNECT_DELAYS_MS = [1200, 2600, 5200, 10000, 15000, 20000, 30000, 30000];
   const MAX_AUTO_RECONNECT_ATTEMPTS = AUTO_RECONNECT_DELAYS_MS.length;
 
@@ -171,6 +171,7 @@
   let finalizeTimeout = null;
   let finalizing = false;
   let wakeLock = null;
+  let bluefyWakeLock = false;
   let recordingSessionId = 0;
   const recordingControlOwnerId = globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
   let finalizedSessionId = 0;
@@ -196,6 +197,11 @@
   let lastObservedSequence = null;
   let lastFrameCleanupAt = 0;
   let lastAudioAt = 0;
+  let lastCompleteAudioAt = 0;
+  let lastCompleteSequence = null;
+  let backgroundCapture = null;
+  let backgroundRecoveryPromise = null;
+  let recordingCounterAmbiguous = false;
   let foregroundAt = performance.now();
 
   let sessionStats = createEmptyStats();
@@ -738,6 +744,7 @@
       openingCapture = null;
     }
     if (!currentRecordingId) throw new Error("Interrupted recording journal is unavailable.");
+    backgroundCapture = null; // The reconnect handshake owns recovery now.
     cleanupStaleFrames(true);
     pendingFrames.clear();
     completedSequences.clear();
@@ -798,6 +805,11 @@
   }
 
   function bindReconnectRecovery() {
+    const backgroundHint = document.getElementById("backgroundRecordingHint");
+    if (backgroundHint && (/Bluefy|iPhone|iPad|iPod/i.test(navigator.userAgent || "") ||
+        typeof navigator.bluetooth?.setScreenDimEnabled === "function")) {
+      backgroundHint.hidden = false;
+    }
     const preference = document.getElementById("autoReconnectInput");
     preference.checked = reconnectRequested();
     reconnectMonitoringReady = true;
@@ -820,24 +832,29 @@
       else { manualDisconnect = false;recoverRememberedConnection("preference-enabled", true); syncRememberedMonitoring(); }
     });
     document.addEventListener("visibilitychange", function () {
-      if (document.visibilityState !== "visible") { clearReconnectTimer(false); stopRememberedMonitoring(); return; }
+      if (document.visibilityState !== "visible") { checkpointBackgroundRecording(); clearReconnectTimer(false); stopRememberedMonitoring(); return; }
       reconnectPageHidden = false;
       syncRememberedMonitoring();
       foregroundAt = performance.now();
       window.dispatchEvent(new CustomEvent('synap-recording-foreground'));
+      restoreBackgroundRecording();
       recoverRememberedConnection("foreground", true);
-      // Keep the existing subscriptions. Foregrounding alone is not a reason
-      // to probe the native bridge or tear down an otherwise connected link.
     });
     window.addEventListener("pageshow", function (event) {
       reconnectPageHidden = false; syncRememberedMonitoring();
+      if (document.visibilityState === "visible") restoreBackgroundRecording();
       if (event.persisted) recoverRememberedConnection("page-restored", true);
     });
     navigator.bluetooth?.addEventListener?.("availabilitychanged", function (event) {
       if (event.value) { advertisementUnavailable.delete(bluetoothDevice); recoverRememberedConnection("bluetooth-available", true); syncRememberedMonitoring(); }
     });
     window.addEventListener("pagehide", function () {
+      checkpointBackgroundRecording();
       reconnectPageHidden = true; clearReconnectTimer(false); stopRememberedMonitoring();
+    });
+    document.addEventListener("freeze", checkpointBackgroundRecording);
+    document.addEventListener("resume", function () {
+      if (document.visibilityState === "visible") restoreBackgroundRecording();
     });
     window.addEventListener("synap-intentional-sleep", function (event) {
       if (event.detail?.active) {
@@ -848,6 +865,107 @@
       syncRememberedMonitoring();
     });
     syncRememberedMonitoring();
+  }
+
+  function setAudioDelivery(value) {
+    if (document.body.dataset.audioDelivery === value) return;
+    document.body.dataset.audioDelivery = value;
+    window.dispatchEvent(new CustomEvent("synap-audio-delivery-changed"));
+  }
+
+  function checkpointBackgroundRecording() {
+    if (currentRecordingId) journal?.flush().catch(handleStorageError);
+    if (!recordingConfirmed || finalizing || recordingStopRequested || backgroundCapture) return;
+    backgroundCapture = {
+      session: recordingSessionId,
+      enteredAt: Date.now(),
+      lastSequence: globalThis.SynapDisconnectProtection?.lastSequence?.() ?? lastCompleteSequence,
+      progressAt: Date.now(),
+      frames: sessionStats.completeFrames,
+      gap: false,
+      returned: false,
+      attempted: false
+    };
+    log("Recording page backgrounded", { frames: sessionStats.completeFrames, session: recordingSessionId });
+  }
+
+  function restoreBackgroundRecording() {
+    const checkpoint = backgroundCapture;
+    if (!checkpoint || checkpoint.session !== recordingSessionId || !isCurrentSession(checkpoint.session)) return;
+    checkpoint.returned = true;
+    // Reconnection owns its existing RESUME handshake. A retained BLE link
+    // requires a separate, explicitly acknowledged replay only after an outage.
+    if (recordingReconnectPending || finalizing || recordingStopRequested || !isGattConnected()) return;
+    const absentMs = Math.max(0, Date.now() - checkpoint.enteredAt);
+    if (Date.now() - checkpoint.progressAt >= 32768 * 50) {
+      log("Background interval exceeded the unambiguous audio counter window", { absentMs });
+      backgroundCapture = null;
+      recordingCounterAmbiguous = true;
+      toast("Recording was interrupted while the app was away. Saving received audio; start a new take.", "error");
+      void stopRecording();
+      return;
+    }
+    if (checkpoint.gap || performance.now() - lastCompleteAudioAt > 1000 ||
+        (absentMs > 1000 && checkpoint.frames === sessionStats.completeFrames)) {
+      void recoverBackgroundAudio(checkpoint);
+    }
+    // Keep the checkpoint until the first complete frame after foregrounding:
+    // native notification callbacks may be delivered after visibilitychange.
+  }
+
+  function recordCompleteAudio(sequence) {
+    lastCompleteAudioAt = performance.now();
+    lastCompleteSequence = sequence;
+    setAudioDelivery("receiving");
+    const checkpoint = backgroundCapture;
+    if (!checkpoint || checkpoint.session !== recordingSessionId || checkpoint.attempted) return;
+    checkpoint.progressAt = Date.now();
+    if (checkpoint.lastSequence !== null) {
+      const forward = (sequence - checkpoint.lastSequence + 65536) & 65535;
+      if (forward > 1 && forward < 32768) checkpoint.gap = true;
+    }
+    if (!checkpoint.gap) checkpoint.lastSequence = sequence;
+    if (checkpoint.returned && !recordingReconnectPending) {
+      if (checkpoint.gap) void recoverBackgroundAudio(checkpoint);
+      else backgroundCapture = null;
+    }
+  }
+
+  function recoverBackgroundAudio(checkpoint) {
+    if (checkpoint.attempted || backgroundRecoveryPromise || recordingReconnectPending ||
+        appState !== "recording" || recordingStopRequested || !isGattConnected()) return;
+    checkpoint.attempted = true;
+    const sessionId = recordingSessionId, epoch = connectionEpoch, target = audioCharacteristic;
+    const ownsRecovery = () => isCurrentSession(sessionId) && epoch === connectionEpoch &&
+      appState === "recording" && !recordingStopRequested && !recordingReconnectPending &&
+      target === audioCharacteristic && isGattConnected();
+    setAudioDelivery("recovering");
+    const work = (async function () {
+      try {
+        await journal?.flush();
+        if (!ownsRecovery()) return;
+        // Reattach only after missing-audio evidence, never on a healthy app switch.
+        await queueGattOperation(() => {
+          if (!ownsRecovery()) throw new DOMException("Recording changed.", "AbortError");
+          return target.startNotifications();
+        }, "Restore background audio notifications");
+        if (!ownsRecovery()) return;
+        const replayed = await globalThis.SynapDisconnectProtection?.replay?.(checkpoint.lastSequence ?? 0xffff, ownsRecovery);
+        log("Background audio recovery", { replayed: Boolean(replayed), sequence: checkpoint.lastSequence,
+          capacityMs: globalThis.SynapDisconnectProtection?.capacityMs() || 0 });
+        if (!replayed && ownsRecovery()) toast("Audio was interrupted while the app was away. Keep Synap visible; update the pendant for short-gap recovery.", "error");
+      } catch (error) {
+        if (ownsRecovery() && error.name !== "AbortError") log("Background audio recovery failed", friendlyError(error));
+      } finally {
+        if (ownsRecovery()) setAudioDelivery(performance.now() - lastCompleteAudioAt > 1500 ? "waiting" : "receiving");
+      }
+    })();
+    backgroundRecoveryPromise = work;
+    void work.finally(() => {
+      if (backgroundRecoveryPromise === work) backgroundRecoveryPromise = null;
+      if (backgroundCapture === checkpoint) backgroundCapture = null;
+    });
+    return work;
   }
 
   function clearReconnectTimer(resetAttempts) {
@@ -1579,6 +1697,7 @@
       recordingStartedAt = performance.now();
       foregroundAt = recordingStartedAt;
       lastAudioAt = recordingStartedAt;
+      lastCompleteAudioAt = recordingStartedAt;
       clearStartTimeout();
     }
     if (recordingReconnectPending) {
@@ -1589,6 +1708,7 @@
       startTimer();
       setAppState("recording");
       log("Recording confirmed", { source: source, session: recordingSessionId });
+      if (document.visibilityState !== "visible") checkpointBackgroundRecording();
     }
   }
 
@@ -1647,6 +1767,7 @@
 
   async function finalizeRecording(reason, sessionId = recordingSessionId) {
     if (!isCurrentSession(sessionId) || finalizing) return;
+    if (recordingCounterAmbiguous) reason = "background-audio-interrupted";
     finalizedSessionId = sessionId;
     finalizing = true;
     clearReconnectTimer(true);
@@ -1744,6 +1865,12 @@
     lastObservedSequence = null;
     lastFrameCleanupAt = 0;
     lastAudioAt = 0;
+    lastCompleteAudioAt = 0;
+    lastCompleteSequence = null;
+    backgroundCapture = null;
+    backgroundRecoveryPromise = null;
+    recordingCounterAmbiguous = false;
+    setAudioDelivery("idle");
     sessionStats = createEmptyStats();
     recordingConfirmed = false;
     recordingStartedAt = 0;
@@ -1764,6 +1891,16 @@
   // Audio packet assembly
 
   function handleAudioNotification(event) {
+    if (recordingCounterAmbiguous) return;
+    if (backgroundCapture && Date.now() - backgroundCapture.progressAt >= 32768 * 50) {
+      // Do not reinterpret a counter after an unobserved half-cycle as an old
+      // packet and overwrite this take. Save before accepting another stream.
+      backgroundCapture = null;
+      recordingCounterAmbiguous = true;
+      toast("Audio delivery was interrupted for too long. Saving received audio; start a new take.", "error");
+      void stopRecording();
+      return;
+    }
     const original = event?.target?.value;
     const normalizer = globalThis.SynapAudioCodecV3?.normalizePacket;
     const values = typeof normalizer === "function"
@@ -1957,6 +2094,7 @@
       counts[frame.transport] = (counts[frame.transport] || 0) + 1;
     }
     sessionStats.pcmBytes += pcm.length;
+    recordCompleteAudio(frame.sequence);
 
     globalThis.SynapAudioQuality?.observe(pcm);
     updateAudioLevel(pcm);
@@ -2058,15 +2196,20 @@
   function updateTimer() {
     if (!recordingConfirmed || !recordingStartedAt) return;
 
-    const elapsed = performance.now() - recordingStartedAt;
+    // This clock measures actual complete audio, not time spent in a suspended
+    // browser. Timeline gaps remain explicit in the stored recording.
+    const elapsed = sessionStats.completeFrames * 50;
     const clock = formatClock(elapsed);
     if (ui.timer.textContent !== clock) ui.timer.textContent = clock;
     const now = performance.now();
+    if (appState === "recording" && !recordingReconnectPending && !backgroundRecoveryPromise) {
+      setAudioDelivery(now - lastCompleteAudioAt > 1500 ? "waiting" : "receiving");
+    }
     if (appState === "recording" && document.visibilityState === "visible" &&
         now - foregroundAt > FOREGROUND_STALL_GRACE_MS &&
-        now - lastAudioAt > AUDIO_STALL_TIMEOUT_MS) {
+        now - lastCompleteAudioAt > AUDIO_STALL_TIMEOUT_MS && !backgroundRecoveryPromise) {
       log("Audio stalled while foregrounded; stopping safely", {
-        stalledMs: Math.round(now-lastAudioAt), session: recordingSessionId
+        stalledMs: Math.round(now-lastCompleteAudioAt), session: recordingSessionId
       });
       toast("Audio stream stalled. Saving what was received.", "error");
       stopRecording();
@@ -2100,7 +2243,25 @@
   }
 
   async function acquireWakeLock() {
-    if (!("wakeLock" in navigator) || wakeLock) return;
+    if (wakeLock || bluefyWakeLock) return;
+
+    // Bluefy exposes its own screen-dimming control on iOS. This prevents
+    // automatic screen lock; it does not grant background JavaScript execution.
+    if (typeof navigator.bluetooth?.setScreenDimEnabled === "function") {
+      try {
+        const sessionId = recordingSessionId;
+        await navigator.bluetooth.setScreenDimEnabled(false);
+        if (!firmwareBusy && (!isCurrentSession(sessionId) ||
+            (appState !== "starting" && appState !== "recording"))) {
+          await navigator.bluetooth.setScreenDimEnabled(true);
+          return;
+        }
+        bluefyWakeLock = true;
+        log("Bluefy screen dimming disabled during recording");
+        return;
+      } catch (error) { log("Bluefy screen control unavailable", friendlyError(error)); }
+    }
+    if (!("wakeLock" in navigator)) return;
 
     try {
       const sessionId = recordingSessionId;
@@ -2122,6 +2283,11 @@
   }
 
   async function releaseWakeLock() {
+    if (bluefyWakeLock) {
+      bluefyWakeLock = false;
+      try { await navigator.bluetooth.setScreenDimEnabled(true); }
+      catch (error) { log("Bluefy screen control release failed", friendlyError(error)); }
+    }
     if (!wakeLock) return;
 
     try {
@@ -3817,10 +3983,13 @@
       active,
       sessionId: active ? recordingControlOwnerId + ':' + recordingSessionId : null,
       source: 'pendant',
-      phase: finalizing ? 'saving' : recordingStopRequested ? 'stopping' : recordingReconnectPending ? 'interrupted' : 'recording',
+      phase: finalizing ? 'saving' : recordingStopRequested ? 'stopping' : recordingReconnectPending ||
+        ['waiting','recovering'].includes(document.body.dataset.audioDelivery) ? 'interrupted' : 'recording',
       canStop: active && !finalizing && !firmwareBusy &&
         (appState === 'recording' || appState === 'starting' || (recordingReconnectPending && appState === 'disconnected')),
-      canMark: active && appState === 'recording' && !recordingReconnectPending && !finalizing && !recordingStopRequested,
+      canMark: active && appState === 'recording' && !recordingReconnectPending && !finalizing && !recordingStopRequested &&
+        document.body.dataset.audioDelivery === 'receiving',
+      receivedMs: sessionStats.completeFrames * 50,
       startedAt: active ? Math.round(Date.now() - (performance.now() - recordingStartedAt)) : null
     };
   }

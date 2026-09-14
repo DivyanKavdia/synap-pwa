@@ -104,6 +104,7 @@ test('capture metrics batch frame updates and the clock only writes changed seco
   const c={metricsTimer:null,window:{setTimeout(fn){timers.push(fn);return timers.length}},renderMetrics(){renders++},recordingConfirmed:true,recordingStartedAt:1,performance:{now:()=>1501},ui:{timer:{get textContent(){return text},set textContent(v){text=v;writes++}}},formatClock:()=> '00:01',appState:'starting'};
   vm.createContext(c);vm.runInContext(slice('  function updateMetrics()', '  function renderMetrics()'),c);
   for(let i=0;i<20;i++)c.updateMetrics();assert.equal(timers.length,1);timers[0]();assert.equal(renders,1);
+  c.sessionStats={completeFrames:20};
   vm.runInContext(slice('  function updateTimer()', '  function formatClock('),c);for(let i=0;i<5;i++)c.updateTimer();assert.equal(writes,0);
 });
 test('appearance leaves processing locks to runtime compatibility; leases exclude overlapping work',async()=>{
@@ -128,6 +129,7 @@ test('appearance leaves processing locks to runtime compatibility; leases exclud
 });
 test('long captures accept a wrapped firmware counter with bounded duplicate memory',()=>{
   const c={PCM_BYTES_PER_FRAME:1600,RECENT_FRAME_WINDOW:512,Uint8Array,completedSequences:new Set(),journal:{},sessionStats:{completeFrames:0,pcmBytes:0},updateAudioLevel(){},updateMetrics(){},log(){}};
+  c.recordCompleteAudio=()=>{};
   vm.createContext(c);vm.runInContext(slice('  function completeFrame(', '  function cleanupStaleFrames('),c);
   const pcm=new Uint8Array(1600);
   for(let frame=0;frame<65538;frame++){

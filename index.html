@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="brand.css?v=1.0.0-glance1" data-synap-brand="brain1">
   <link rel="stylesheet" href="polish.css?v=1.0.0-glance1">
   <link rel="stylesheet" href="brain.css?v=1.0.0-actions1">
-  <link rel="stylesheet" href="compact.css?v=1.0.0-compact-workspace1" data-synap-compact="refresh1">
+  <link rel="stylesheet" href="compact.css?v=1.0.0-background1" data-synap-compact="refresh1">
   <link rel="stylesheet" href="settings.css?v=1.0.0-compact-workspace1">
   <link rel="stylesheet" href="library-tools.css?v=1.0.0-compact-workspace1">
   <script src="theme.js?v=1.0.0-navigation1"></script>
@@ -160,6 +160,7 @@
     <section class="settings-card settings-device-card">
       <div class="settings-device-top"><div class="settings-device-copy"><p class="settings-label">Pendant</p><h3 id="setupDeviceId">No pendant selected</h3><p class="settings-device-status"><span class="settings-status-dot" aria-hidden="true"></span><span id="setupDeviceStatus">Not connected</span></p></div><button id="chooseDeviceButton" class="button button-secondary" type="button">Change device</button></div>
       <p id="disconnectProtectionStatus" class="settings-hint" hidden></p><p id="reconnectStatus" class="reconnect-status" role="status" hidden></p>
+      <p id="backgroundRecordingHint" class="settings-hint" hidden>Allow your pendant in Bluefy’s Allowed BLE peripheral manager. iOS can still suspend audio delivery; keep synap visible for continuous recording.</p>
       <div id="firmwareSettings" class="settings-firmware">
         <div class="settings-firmware-copy"><h4 id="firmwareTitle">Firmware</h4><p id="otaStatus" role="status">Connect to check</p></div>
         <div class="settings-firmware-actions"><button id="otaReleaseCheck" type="button" aria-label="Check firmware update">Check for update</button><button id="otaLatest" class="button button-primary" type="button" hidden>Update</button><button id="otaCancel" type="button" hidden>Cancel</button></div>
@@ -223,7 +224,7 @@
 <script src="runtime-compat.js?v=1.0.0-controls1"></script>
 <script src="recording/bluetooth-session.js?v=1.0.0-recording-core1"></script>
 <script src="recording/timeline.js?v=1.0.0-recording-core1"></script>
-<script src="audio-store.js?v=1.0.0-source-audio1"></script>
+<script src="audio-store.js?v=1.0.0-background1"></script>
 <script src="memory-ready-events.js?v=1.0.0-maintenance1"></script>
 <script src="processing-queue.js?v=1.0.0-maintenance1"></script>
 <script src="recording/journal.js?v=1.0.0-source-audio1"></script>
@@ -241,7 +242,7 @@
 <script src="moments.js?v=1.0.0-transcripts2"></script>
 <script src="audio-quality.js?v=1.0.0-source-audio1"></script>
 <script src="meeting-tools.js?v=1.0.0-actions3"></script>
-<script src="disconnect-protection.js?v=1.0.0-meetings2"></script>
+<script src="disconnect-protection.js?v=1.0.0-background1"></script>
 <script src="experience-recovery.js?v=1.0.0-maintenance1"></script>
 <script src="library-tools.js?v=1.0.0-library1"></script>
 <script src="google-auth.js?v=1.0.0-readiness1"></script>
@@ -249,9 +250,9 @@
 <script src="ai-providers.js?v=1.0.0-maintenance1"></script>
 <script src="synap-backend.js?v=1.0.0-source-audio1"></script>
 <script src="first-memory.js?v=1.0.0-compact-workspace1"></script>
-<script src="app.js?v=1.0.0-source-audio1"></script>
-<script src="recording-notifications.js?v=1.0.0-readiness1"></script>
-<script src="enhancements.js?v=1.0.0-source-audio1"></script>
+<script src="app.js?v=1.0.0-background1"></script>
+<script src="recording-notifications.js?v=1.0.0-background1"></script>
+<script src="enhancements.js?v=1.0.0-background1"></script>
 <script src="processing-pipeline-ui.js?v=1.0.0-pipeline1"></script>
 <script src="memory-ui-fix.js?v=1.0.0-moments1"></script>
 <script src="synap-account-ui.js?v=1.0.0-compact-workspace1"></script>
@@ -269,7 +270,7 @@
 <script src="dashboard-ui.js?v=1.0.0-compact-workspace1"></script>
 <script src="compact-layout.js?v=1.0.0-workspace1"></script>
 <script src="runtime-ui.js?v=1.0.0-controls1"></script>
-<script src="capture-ui.js?v=1.0.0-readiness1"></script>
+<script src="capture-ui.js?v=1.0.0-background1"></script>
 <script src="product-ui.js?v=1.0.0-actions1"></script>
 <script src="provenance-links.js?v=1.0.0-actions3"></script>
 <script src="productivity-tools.js?v=1.0.0-compact2"></script>

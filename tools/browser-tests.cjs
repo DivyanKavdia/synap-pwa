@@ -7,6 +7,7 @@ const suites = [
   ['layout'],
   ['first-memory'],
   ['audio-storage'],
+  ['background-recording'],
   ['workflow', { SYNAP_WORKFLOW_OUTPUT: 'artifacts/workflows' }],
   ['ui', { SYNAP_UI_OUTPUT: 'artifacts/workflows/ui' }],
   ['transcript', { SYNAP_TRANSCRIPT_OUTPUT: 'artifacts/workflows/transcripts' }],

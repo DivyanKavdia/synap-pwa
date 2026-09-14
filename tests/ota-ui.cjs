@@ -27,7 +27,7 @@ const block=(from,to)=>source.slice(source.indexOf(from),source.indexOf(to));
   assert.equal(stateNode('setupDeviceStatus').textContent,'Recording');assert(card.ui.chooseDeviceButton.disabled);
   // OTA owns a wake lock even without an active recording session.
   let released=0;const lock={release:async()=>released++,addEventListener(){}};
-  const c={navigator:{wakeLock:{request:async()=>lock}},wakeLock:null,firmwareBusy:true,recordingSessionId:0,
+  const c={navigator:{wakeLock:{request:async()=>lock}},wakeLock:null,bluefyWakeLock:false,firmwareBusy:true,recordingSessionId:0,
     isCurrentSession:()=>false,appState:'updating',log(){},friendlyError:e=>e.message};vm.createContext(c);
   vm.runInContext(block('  async function acquireWakeLock()','  async function releaseWakeLock()'),c);
   await c.acquireWakeLock();assert.equal(c.wakeLock,lock);assert.equal(released,0);
