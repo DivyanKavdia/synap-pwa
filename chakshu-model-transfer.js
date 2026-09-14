@@ -39,7 +39,8 @@
       total: SIZE,
       maxData: v.getUint16(16, true),
       sd: Boolean(v.getUint8(18)),
-      supported: Boolean(v.getUint8(19)),
+      supported: Boolean(v.getUint8(19) & 1),
+      embedded: Boolean(v.getUint8(19) & 2),
     };
   }
   async function verify(bytes) {
@@ -129,9 +130,14 @@
       throw Error('Installation paused. Reconnect if needed, then press Resume installation.');
     }
     async install(bytes, signal, progress = () => {}) {
-      await verify(bytes); // No BEGIN or SD writes before the browser validates the model.
       signal?.throwIfAborted();
       let status = await this.read();
+      if (status.embedded) {
+        progress(status);
+        return status;
+      }
+      await verify(bytes); // No BEGIN or SD writes before the browser validates the model.
+      signal?.throwIfAborted();
       if (!status.supported) throw Error('Restart Chakshu to enable model installation.');
       if (!status.sd) throw Error(errors[2]);
       if (status.state === 3) {
@@ -171,6 +177,7 @@
     }
     async restart() {
       const status = await this.read();
+      if (status.embedded) throw Error('The voice model is already included in Chakshu firmware.');
       if (status.state !== 3) throw Error('Finish installing the voice model first.');
       await this.send(4, status.session);
       return this.wait(status.session, (next) => {

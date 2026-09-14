@@ -46,7 +46,7 @@ module.exports = function pendantFixture() {
   }
   let voiceSequence=0, voiceAction=0, voiceEnabled=true, voiceLease=0, voiceResult=0;
   let modelState=0,modelOffset=0,modelSession=0,modelBegins=0,modelFailure=0;
-  function modelStatus(){const v=new DataView(new ArrayBuffer(20));[0xCE,1,modelState,0].forEach((n,i)=>v.setUint8(i,n));v.setUint32(4,modelSession,true);v.setUint32(8,modelOffset,true);v.setUint32(12,2177224,true);v.setUint16(16,480,true);v.setUint8(18,sdAvailable?1:0);v.setUint8(19,1);return v;}
+  function modelStatus(){const embedded=location.search.includes('flash-model'),v=new DataView(new ArrayBuffer(20));[0xCE,1,embedded?3:modelState,0].forEach((n,i)=>v.setUint8(i,n));v.setUint32(4,modelSession,true);v.setUint32(8,embedded?2177224:modelOffset,true);v.setUint32(12,2177224,true);v.setUint16(16,480,true);v.setUint8(18,sdAvailable?1:0);v.setUint8(19,embedded?2:1);return v;}
   function voiceStatus(){const v=new DataView(new ArrayBuffer(20));[0xCD,1,voiceEnabled?1:5,voiceEnabled?1:0].forEach((x,i)=>v.setUint8(i,x));v.setUint32(4,voiceSequence,true);v.setUint8(8,voiceAction);v.setUint8(9,voiceResult);return v;}
   function emitVoice(){const c=chars.get(uuid('57'));c.value=voiceStatus();c.dispatchEvent(new Event('characteristicvaluechanged'));}
   let mediaOperation=0,mediaId=0,mediaState=0,mediaError=0,sdAvailable=true,mediaWrites=0;

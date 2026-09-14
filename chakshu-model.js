@@ -33,27 +33,33 @@
     const install = document.getElementById('chakshuModelInstall');
     if (!install) return;
     const connected = current(binding),
+      embedded = connected && remote?.embedded,
       active = connected && [1, 2].includes(remote?.state);
+    install.hidden = Boolean(embedded);
     install.disabled = running || !connected || !remote?.supported || !idle() || remote.state === 3;
     install.textContent = active ? 'Resume installation' : 'Install voice model';
     const cancel = document.getElementById('chakshuModelCancel');
-    cancel.hidden = !running && !active;
+    cancel.hidden = Boolean(embedded) || (!running && !active);
     cancel.disabled = !connected;
     const restart = document.getElementById('chakshuModelRestart');
-    restart.hidden = remote?.state !== 3;
+    restart.hidden = Boolean(embedded) || remote?.state !== 3;
     restart.disabled = running || !connected || !idle();
     const progress = document.getElementById('chakshuModelProgress');
-    progress.hidden = !running && !active && remote?.state !== 3;
+    progress.hidden = Boolean(embedded) || (!running && !active && remote?.state !== 3);
     progress.value = remote ? Math.floor((remote.offset * 100) / remote.total) : 0;
     document.getElementById('chakshuModelStatus').textContent =
       message ||
-      (remote?.state === 3
-        ? 'Voice model installed. Restart Chakshu to activate it.'
-        : active
-          ? `Installation paused at ${progress.value}%. Resume within 15 minutes, or cancel.`
-          : connected && remote
-            ? 'Install once over Bluetooth. Keep this page open and Chakshu powered with its SD card inserted.'
-            : 'Connect your associated Chakshu to install the voice model.');
+      (embedded
+        ? 'Voice model included in firmware and stored in internal flash. No SD card required. Future firmware updates include the model.'
+        : remote?.state === 3
+          ? 'Voice model installed. Restart Chakshu to activate it.'
+          : active
+            ? `Installation paused at ${progress.value}%. Resume within 15 minutes, or cancel.`
+            : connected && remote
+              ? 'Update Chakshu firmware to install the model in internal flash without an SD card. This older firmware also supports installation to SD below.'
+              : 'Connect your associated Chakshu to install the voice model.');
+    const manual = document.getElementById('chakshuModelManual');
+    if (manual) manual.hidden = Boolean(embedded);
   }
   async function sync() {
     if (binding && !current(binding)) {
@@ -129,6 +135,7 @@
     }
   }
   function install() {
+    if (remote?.embedded) return;
     task = perform(async (b, signal) => {
       message = 'Downloading and checking the voice model (2.18 MB)…';
       render();

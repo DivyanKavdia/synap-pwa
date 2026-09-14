@@ -39,9 +39,9 @@
     const labels = [
       'Starting local model…',
       'Listening for “Hi Chakshu”.',
-      'Install the voice model below, then restart Chakshu.',
+      'Update Chakshu firmware to install the voice model, or use the older SD installer below.',
       'Not enough memory for the voice model. Restart Chakshu.',
-      'Voice model could not load. Reinstall the matching model pack and restart.',
+      'Voice model could not load. Restart Chakshu; if this persists, update its firmware.',
       'Voice controls are off.',
     ];
     document.getElementById('chakshuVoiceStatus').textContent =
