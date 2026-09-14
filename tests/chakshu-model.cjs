@@ -9,7 +9,7 @@ test('model download checks exact size and SHA-256 before any device write', asy
   await assert.rejects(protocol.verify(new Uint8Array(protocol.SIZE)), /integrity/);
   assert.throws(() => protocol.decode(new DataView(new ArrayBuffer(20))), /Update/);
 });
-function fixture() {
+function fixture(embedded = false) {
   let state = 0,
     offset = 0,
     id = 0,
@@ -43,13 +43,13 @@ function fixture() {
   vm.runInNewContext(fs.readFileSync('chakshu-model-transfer.js', 'utf8'), realm);
   function status() {
     const v = new DataView(new ArrayBuffer(20));
-    [0xce, 1, state, 0].forEach((n, i) => v.setUint8(i, n));
+    [0xce, 1, embedded ? 3 : state, 0].forEach((n, i) => v.setUint8(i, n));
     v.setUint32(4, id, true);
-    v.setUint32(8, offset, true);
+    v.setUint32(8, embedded ? protocol.SIZE : offset, true);
     v.setUint32(12, protocol.SIZE, true);
     v.setUint16(16, 480, true);
-    v.setUint8(18, 1);
-    v.setUint8(19, 1);
+    v.setUint8(18, embedded ? 0 : 1);
+    v.setUint8(19, embedded ? 2 : 1);
     return v;
   }
   const transport = {
@@ -127,4 +127,17 @@ test('cancel releases a paused session, and account changes stop further writes'
   f.changeAccount();
   await assert.rejects(f.client.install(new Uint8Array(protocol.SIZE)), /Account changed/);
   assert.equal(f.writes, writes);
+});
+test('firmware-installed model is available without SD and never starts a separate upload or restart', async () => {
+  const f = fixture(true),
+    status = await f.client.connect();
+  assert.equal(status.embedded, true);
+  assert.equal(status.sd, false);
+  assert.equal(status.supported, false);
+  assert.equal(status.state, 3);
+  assert.equal((await f.client.install()).embedded, true);
+  await f.client.cancel();
+  await assert.rejects(f.client.restart(), /already included/);
+  assert.equal(f.begins, 0);
+  assert.equal(f.writes, 0);
 });

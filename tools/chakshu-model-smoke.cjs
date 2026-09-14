@@ -9,24 +9,26 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
   const origin = 'http://127.0.0.1:' + server.address().port,
     browser = await launchChromium();
   try {
-    for (const model of [false, true]) {
+    for (const model of [false, true, 'flash']) {
       const context = await browser.newContext({
           viewport: { width: 320, height: 900 },
           serviceWorkers: 'block',
         }),
         associations = new Map(),
         descriptions = [];
-      let goodDownload = false;
+      let goodDownload = false,
+        downloads = 0;
       await context.route('**/*', (r) =>
         new URL(r.request().url()).origin === origin ? r.continue() : r.abort(),
       );
-      await context.route('**/models/*/srmodels.bin', (route) =>
-        route.fulfill({
+      await context.route('**/models/*/srmodels.bin', (route) => {
+        downloads++;
+        return route.fulfill({
           status: 200,
           headers: { 'Access-Control-Allow-Origin': '*' },
           body: Buffer.alloc(2177224, goodDownload ? 0 : 1),
-        }),
-      );
+        });
+      });
       await context.route('**/v1/**', async (route) => {
         const req = route.request(),
           url = new URL(req.url()),
@@ -103,9 +105,15 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
         errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.setDefaultTimeout(20000);
-      await page.goto(origin + '/?chakshu-media&voice' + (model ? '&model' : ''));
+      await page.goto(
+        origin +
+          '/?chakshu-media&voice' +
+          (model ? '&model' : '') +
+          (model === 'flash' ? '&flash-model' : ''),
+      );
       await page.waitForFunction(() => document.body.dataset.startup === 'ready');
       assert(await page.locator('#chakshuVoice').isHidden());
+      if (model === 'flash') await page.evaluate(() => bleFixture.setSdAvailable(false));
       await page.locator('#headerPendantStatus').click();
       await page.waitForFunction(
         () => SynapChakshu.state.available && document.body.dataset.state === 'idle',
@@ -119,6 +127,29 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
             .textContent.includes('Update Chakshu firmware first'),
         );
         assert(await page.locator('#chakshuModelInstall').isDisabled());
+      } else if (model === 'flash') {
+        await page.waitForFunction(() =>
+          document.getElementById('chakshuModelStatus').textContent.includes('internal flash'),
+        );
+        for (const id of ['Install', 'Cancel', 'Restart', 'Progress', 'Manual'])
+          assert(await page.locator('#chakshuModel' + id).isHidden());
+        // Model storage and recognizer status arrive through separate GATT reads.
+        await page.waitForFunction(() => !document.getElementById('chakshuVoiceEnabled').disabled);
+        await page.locator('#chakshuVoiceEnabled').click();
+        await page.waitForFunction(() => SynapChakshuVoice.state?.status === 5);
+        await page.locator('#chakshuVoiceEnabled').click();
+        await page.waitForFunction(() => SynapChakshuVoice.state?.status === 1);
+        await page.evaluate(() => SynapChakshuModel.install());
+        assert.equal(downloads, 0);
+        assert.equal(await page.evaluate(() => bleFixture.model.begins), 0);
+        assert.equal(await page.evaluate(() => SynapChakshuModel.busy), false);
+        assert.equal(
+          await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+          false,
+        );
+        fs.mkdirSync('artifacts/workflows/chakshu-model', { recursive: true });
+        await page.locator('#chakshuVoice').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: 'artifacts/workflows/chakshu-model/internal-flash-320.png' });
       } else {
         await page.waitForFunction(() => !document.getElementById('chakshuModelInstall').disabled);
         await page.locator('#chakshuModelInstall').click();
