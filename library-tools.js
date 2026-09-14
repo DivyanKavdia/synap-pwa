@@ -60,7 +60,6 @@
     $('selectRecordingsButton').textContent=selecting?'Done':'Select';
     $('selectRecordingsButton').setAttribute('aria-pressed',String(selecting));
     $('selectRecordingsButton').disabled=busy||(!selecting&&!records.length);
-    if($('importAudioButton'))$('importAudioButton').disabled=busy;
     $('librarySelectionBar').hidden=!selecting;
     $('librarySelectedCount').textContent=count+' selected';
     $('selectAllRecordingsLabel').textContent='Select all '+eligible.length;
@@ -140,18 +139,6 @@
     control.addEventListener('change',()=>{filter=control.value;selected.clear();config.render();});
     $('clearRecordingFilters').addEventListener('click',()=>{reset();config.render();});
     $('selectRecordingsButton').addEventListener('click',()=>{selecting=!selecting;selected.clear();announce('');paint();});
-    $('importAudioButton')?.addEventListener('click',()=>{if(!busy)$('importAudioFile').click();});
-    $('importAudioFile')?.addEventListener('change',async event=>{
-      const file=event.target.files?.[0];event.target.value='';
-      if(!file||busy)return;
-      busy=true;paint();announce('Importing original audio…');
-      try{
-        const recording=await config.importAudio(file);
-        reset();$('librarySearch').value='';
-        announce('Imported '+recording.name+'. Select it and choose Process to create a transcript and memories.');
-      }catch(error){announce(error.message||'Could not import audio. The original file is unchanged.',true);}
-      finally{busy=false;await config.refresh();paint();}
-    });
     $('selectAllRecordings').addEventListener('change',event=>{selected.clear();if(event.target.checked)matches.filter(selectable).forEach(r=>selected.add(String(r.id)));paint();});
     $('processSelectedRecordings').addEventListener('click',()=>processIds([...selected]));
     $('deleteSelectedRecordings').addEventListener('click',()=>requestDelete([...selected]));
