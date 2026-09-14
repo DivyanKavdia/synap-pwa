@@ -3953,6 +3953,7 @@
     const active = recordingConfirmed && (finalizing || isCurrentSession(recordingSessionId));
     return {
       active,
+      settling: finalizing || ['stopping', 'saving'].includes(appState),
       recordingId: active ? currentRecordingId : null,
       offsetMs: active ? journal.timelineOffsetMs(currentRecordingId) : 0,
       sessionId: active ? recordingControlOwnerId + ':' + recordingSessionId : null,
@@ -3983,6 +3984,13 @@
   }
 
   async function startMediaAudio() {
+    // A completed journal may no longer have a session ID while capture cleanup
+    // is still running. Starting the next media take must wait for its owner.
+    const settleDeadline = Date.now() + 15000;
+    while (recordingState().settling) {
+      if (Date.now() >= settleDeadline) throw Error('Audio is still saving. Please wait before changing capture mode.');
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
     if (!requireReady() || !requireAppOwnership() || !isGattConnected() || firmwareBusy)
       throw Error('Connect Chakshu and finish setup first.');
     if (!recordingState().active) {

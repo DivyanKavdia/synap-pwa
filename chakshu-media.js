@@ -287,7 +287,11 @@
     // STOP acknowledgement schedules journal finalization in app.js. Wait for
     // that durable boundary before allowing startMediaAudio to choose a take.
     const deadline = Date.now() + 15000;
-    while (root.SynapAppControls.recordingState().sessionId === sessionId) {
+    while (true) {
+      const audio = root.SynapAppControls.recordingState();
+      // The journal can clear its ID while the capture owner is still releasing
+      // resources and refreshing saved recordings. Wait for that transition too.
+      if (audio.sessionId !== sessionId && !audio.settling) break;
       if (Date.now() >= deadline)
         throw Error('Audio is still saving. Please wait before changing capture mode.');
       await delay(50);

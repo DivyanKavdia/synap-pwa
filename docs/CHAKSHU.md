@@ -10,6 +10,16 @@ Connect the device through the normal pendant picker. The Device panel reads fir
 
 The initial firmware supports XIAO ESP32S3 Sense with 8 MB flash / 8 MB OPI PSRAM and probes the installed card. It does not assume the 2 GB card is empty, delete files or auto-format it.
 
+## Browse and work with photos and videos
+
+In **Library → Photos & video**, search titles, notes and saved descriptions, filter by media type, or select **Favourites**. Titles, notes and favourites are saved in this browser for the signed-in account and remain available after reconnecting or reopening the PWA. Other accounts cannot see these items.
+
+Open a photo to zoom the view, add a title or notes, link a saved audio recording, ask a question, or choose **Read text in view**. Text reading uses the same cloud vision service as descriptions; it does not create an audio transcript. The original JPEG remains available to download.
+
+Open a video to play its saved frames, move one frame at a time, or select a moment on the timeline. Saved descriptions have **View at…** buttons that return to their frame. Describing a moment keeps the current position and sends only that frame and up to two nearby frames on either side.
+
+**Save frame as photo** copies the selected JPEG into its own library item with the original video timestamp and audio link. Deleting the source video leaves both the extracted photo and its separate audio recording intact. Video playback is silent; the linked audio has its own player and transcript. Audio-only takes remain separate from video soundtracks.
+
 ## Account photo/video library
 
 Library → Photos & video shows **Unavailable** until a Chakshu device is associated with the signed-in account. Connecting an identified Chakshu while signed in saves that association in the backend. The library stays available after disconnection and can use the cached association offline. C3/S3 and unknown hardware do not unlock it. A public device ID is an account preference, not proof of exclusive hardware ownership.

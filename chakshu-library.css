@@ -28,7 +28,10 @@
 .visual-library select,
 .visual-library input,
 .visual-dialog input,
+.visual-dialog textarea,
 .visual-dialog select {
+  box-sizing: border-box;
+  min-width: 0;
   max-width: 100%;
   padding: 10px;
   border: 1px solid var(--border, #dedee8);
@@ -69,6 +72,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
 }
 .visual-grid {
   display: grid;
@@ -104,6 +110,7 @@
   grid-column: 1/-1;
 }
 .visual-dialog {
+  box-sizing: border-box;
   width: min(680px, calc(100vw - 24px));
   max-height: 90dvh;
   overflow: auto;
@@ -146,7 +153,11 @@
   line-height: 1.55;
 }
 .visual-dialog #visualDescriptions p {
+  margin: 8px 0 0;
+}
+.visual-dialog #visualDescriptions article {
   padding: 12px;
+  margin: 12px 0;
   background: var(--surface-2, #f4f3f9);
   border-radius: 12px;
 }
@@ -186,6 +197,58 @@
 
 .visual-help {
   margin: 12px 0;
+}
+.visual-browse {
+  border-top: 1px solid var(--border, #dedee8);
+  margin-top: 18px;
+  padding-top: 18px;
+}
+.visual-browse > label,
+.visual-edit label {
+  display: block;
+  font-size: 0.85rem;
+  margin: 10px 0 6px;
+}
+#visualSearch,
+.visual-edit input,
+.visual-edit textarea {
+  width: 100%;
+  font: inherit;
+}
+.visual-edit textarea {
+  resize: vertical;
+}
+.visual-edit {
+  border: 1px solid var(--border, #dedee8);
+  border-radius: 12px;
+  padding: 12px;
+  margin: 16px 0;
+}
+.visual-edit summary {
+  cursor: pointer;
+}
+#visualSaveDetails {
+  margin-top: 8px;
+}
+.visual-library button[aria-pressed='true'],
+.visual-dialog button[aria-pressed='true'] {
+  background: var(--accent, #7462cd);
+  border-color: var(--accent, #7462cd);
+  color: #fff;
+}
+.visual-stage {
+  overflow: auto;
+  max-height: 48vh;
+  border-radius: 10px;
+  background: #20202b;
+}
+.visual-stage.zoomed img {
+  width: 200%;
+  max-width: none;
+  max-height: none;
+}
+.visual-dialog .visual-actions > button {
+  max-width: 100%;
 }
 .visual-library .visual-help summary {
   font-size: 0.82rem;

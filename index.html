@@ -19,12 +19,12 @@
   <link rel="stylesheet" href="brand.css?v=1.0.0-glance1" data-synap-brand="brain1">
   <link rel="stylesheet" href="polish.css?v=1.0.0-glance1">
   <link rel="stylesheet" href="brain.css?v=1.0.0-actions1">
-  <link rel="stylesheet" href="compact.css?v=1.0.0-chakshu-voice2" data-synap-compact="refresh1">
+  <link rel="stylesheet" href="compact.css?v=1.0.0-chakshu-gallery1" data-synap-compact="refresh1">
   <link rel="stylesheet" href="settings.css?v=1.0.0-compact-workspace1">
   <link rel="stylesheet" href="library-tools.css?v=1.0.0-compact-workspace1">
   <script src="theme.js?v=1.0.0-navigation1"></script>
-<link rel="stylesheet" href="meeting-tools.css?v=1.0.0-meetings2"><link rel="stylesheet" href="device-modules.css?v=1.0.0-chakshu-voice2">
-<link rel="stylesheet" href="chakshu-library.css?v=1.0.0-chakshu-voice2">
+<link rel="stylesheet" href="meeting-tools.css?v=1.0.0-meetings2"><link rel="stylesheet" href="device-modules.css?v=1.0.0-chakshu-gallery1">
+<link rel="stylesheet" href="chakshu-library.css?v=1.0.0-chakshu-gallery1">
 </head>
 <body data-startup="loading" data-state="disconnected" class="synap-refresh">
   <a class="skip-link" href="#today">Skip to your day</a>
@@ -135,10 +135,15 @@
       <figure id="visualLive" hidden><img id="visualLiveFrame" alt="Latest camera frame"><figcaption id="visualLiveDescription" aria-live="polite"></figcaption></figure>
       <div class="visual-actions"><button id="visualStop" type="button" hidden>Stop video</button><button id="visualExplainLive" type="button" hidden>Explain this moment</button></div>
       <p id="visualConnectionStatus" role="status"></p>
-      <div class="visual-actions"><button id="visualSD" type="button">Browse SD card</button><button id="visualImport" type="button">Import SD files</button><label>Show <select id="visualFilter"><option value="all">Photos &amp; video</option><option value="image">Photos</option><option value="video">Video</option></select></label></div>
+      <div class="visual-actions"><button id="visualSD" type="button">Browse SD card</button><button id="visualImport" type="button">Import SD files</button></div>
       <input id="visualFiles" type="file" accept=".jpg,.jpeg,.mjpeg,.wav,.json" multiple hidden>
       <p>Saved in this browser · only audio is transcribed.</p><details class="visual-help"><summary>Descriptions &amp; SD imports</summary><p>Descriptions send selected camera frames to synap Cloud. For SD video, import the matching MJPEG, WAV and JSON files together.</p></details>
       <div id="visualSDList" class="visual-sd-list"></div>
+      <div class="visual-browse" role="search" aria-label="Photo and video library">
+        <label for="visualSearch">Search photos &amp; videos</label><input id="visualSearch" type="search" maxlength="300" placeholder="Titles, notes or descriptions…" autocomplete="off">
+        <div class="visual-actions"><label>Show <select id="visualFilter"><option value="all">Photos &amp; video</option><option value="image">Photos</option><option value="video">Videos</option></select></label><button id="visualFavourites" type="button" aria-pressed="false">Favourites</button><button id="visualClearSearch" type="button" hidden>Clear filters</button></div>
+        <p id="visualCount" role="status"></p>
+      </div>
     </div>
     <p id="visualStatus" role="status"></p><div id="visualGrid" class="visual-grid" hidden></div>
   </details>
@@ -273,17 +278,19 @@
 </dialog>
 <dialog id="visualDialog" class="visual-dialog" aria-labelledby="visualTitle">
   <header><h2 id="visualTitle">Photo</h2><button id="visualClose" type="button" aria-label="Close photo or video">Close</button></header>
-  <img id="visualPreview" alt="Selected Chakshu camera frame"><p id="visualInfo"></p>
-  <input id="visualSeek" type="range" min="0" max="0" value="0" aria-label="Select video frame"><div class="visual-actions"><button id="visualPlay" type="button">Play video</button><span id="visualTime"></span></div>
+  <div id="visualStage" class="visual-stage"><img id="visualPreview" alt="Selected Chakshu camera frame"></div><p id="visualInfo"></p>
+  <input id="visualSeek" type="range" min="0" max="0" value="0" aria-label="Select video frame"><div class="visual-actions"><button id="visualPreviousFrame" type="button">Previous frame</button><button id="visualPlay" type="button">Play video</button><button id="visualNextFrame" type="button">Next frame</button><span id="visualTime"></span></div>
+  <div class="visual-actions"><button id="visualZoom" type="button" aria-pressed="false">Zoom view</button><button id="visualSaveFrame" type="button" hidden>Save frame as photo</button><button id="visualFavourite" type="button" aria-pressed="false">Add to favourites</button></div>
+  <details class="visual-edit"><summary>Title &amp; notes</summary><label for="visualName">Title</label><input id="visualName" maxlength="160"><label for="visualNotes">Notes</label><textarea id="visualNotes" maxlength="2000" rows="3" placeholder="What would you like to remember?"></textarea><button id="visualSaveDetails" type="button">Save details</button></details>
   <audio id="visualAudio" controls hidden></audio><a id="visualAudioSource" hidden>Open audio transcript</a>
   <div class="visual-actions"><label>Linked audio <select id="visualAudioLink"></select></label><button id="visualSaveLink" type="button">Save audio link</button></div>
   <label for="visualPrompt">Ask about this view</label><input id="visualPrompt" placeholder="Describe what is visible here." maxlength="1000">
-  <button id="visualDescribe" type="button">Describe selected moment</button><p id="visualDetailStatus" role="status"></p><div id="visualDescriptions"></div>
+  <div class="visual-actions"><button id="visualDescribe" type="button">Describe selected moment</button><button id="visualReadText" type="button">Read text in view</button></div><p id="visualDetailStatus" role="status"></p><div id="visualDescriptions"></div>
   <div class="visual-actions"><button id="visualDownload" type="button">Download original</button><button id="visualDelete" type="button">Delete visual from this browser</button></div>
 </dialog>
-<script src="device-identity.js?v=1.0.0-chakshu-voice2"></script>
+<script src="device-identity.js?v=1.0.0-chakshu-gallery1"></script>
 <script>(function(){function renderSynapDeviceId(){var el=document.getElementById('setupDeviceId');if(!el)return;try{var key=(globalThis.SynapDevices&&globalThis.SynapDevices.KEY)||'synap-device-associations-v1';var data=JSON.parse(localStorage.getItem(key)||'null');var devices=Array.isArray(data&&data.devices)?data.devices.slice():[];devices.sort(function(a,b){return String(b.lastConnectedAt||'').localeCompare(String(a.lastConnectedAt||''));});var id=devices[0]&&devices[0].deviceId?String(devices[0].deviceId):'';el.textContent=id?id.toLowerCase():'No pendant selected';el.title=id;el.dataset.deviceId=id;}catch(e){el.textContent='No pendant selected';el.title='';el.dataset.deviceId='';}}document.addEventListener('DOMContentLoaded',function(){renderSynapDeviceId();var status=document.getElementById('setupDeviceStatus');if(status)new MutationObserver(renderSynapDeviceId).observe(status,{childList:true,subtree:true,characterData:true});document.getElementById('settingsButton')?.addEventListener('click',function(){setTimeout(renderSynapDeviceId,80)});});globalThis.renderSynapDeviceId=renderSynapDeviceId;})();</script>
-<script src="device-modules.js?v=1.0.0-chakshu-voice2"></script>
+<script src="device-modules.js?v=1.0.0-chakshu-gallery1"></script>
 <script src="chakshu-ui.js?v=1.0.0-chakshu1"></script>
 <script src="runtime-compat.js?v=1.0.0-controls1"></script>
 <script src="recording/bluetooth-session.js?v=1.0.0-recording-core1"></script>
@@ -313,11 +320,11 @@
 <script src="google-auth.js?v=1.0.0-readiness1"></script>
 <script src="processing-recovery.js?v=1.0.0-maintenance1"></script>
 <script src="ai-providers.js?v=1.0.0-maintenance1"></script>
-<script src="synap-backend.js?v=1.0.0-chakshu-voice2"></script>
+<script src="synap-backend.js?v=1.0.0-chakshu-gallery1"></script>
 <script src="first-memory.js?v=1.0.0-compact-workspace1"></script>
-<script src="app.js?v=1.0.0-chakshu-voice2"></script>
+<script src="app.js?v=1.0.0-chakshu-gallery1"></script>
 <script src="recording-notifications.js?v=1.0.0-background1"></script>
-<script src="enhancements.js?v=1.0.0-chakshu-voice2"></script>
+<script src="enhancements.js?v=1.0.0-chakshu-gallery1"></script>
 <script src="processing-pipeline-ui.js?v=1.0.0-pipeline1"></script>
 <script src="memory-ui-fix.js?v=1.0.0-moments1"></script>
 <script src="synap-account-ui.js?v=1.0.0-compact-workspace1"></script>
@@ -335,17 +342,17 @@
 <script src="dashboard-ui.js?v=1.0.0-compact-workspace1"></script>
 <script src="compact-layout.js?v=1.0.0-workspace1"></script>
 <script src="runtime-ui.js?v=1.0.0-controls1"></script>
-<script src="capture-ui.js?v=1.0.0-chakshu-voice2"></script>
+<script src="capture-ui.js?v=1.0.0-chakshu-gallery1"></script>
 <script src="product-ui.js?v=1.0.0-actions1"></script>
 <script src="provenance-links.js?v=1.0.0-actions3"></script>
 <script src="productivity-tools.js?v=1.0.0-compact2"></script>
 <script src="desktop-capture.js?v=1.0.0-source-audio1"></script>
 <script src="interaction-surfaces.js?v=1.0.0-workspace1"></script>
-<script src="chakshu-store.js?v=1.0.0-chakshu-voice2"></script>
-<script src="chakshu-transfer.js?v=1.0.0-chakshu-voice2"></script>
-<script src="chakshu-media.js?v=1.0.0-chakshu-voice2"></script>
-<script src="chakshu-voice.js?v=1.0.0-chakshu-voice2"></script>
-<script src="chakshu-model-transfer.js?v=1.0.0-chakshu-voice2"></script>
-<script src="chakshu-model.js?v=1.0.0-chakshu-voice2"></script>
-<script src="chakshu-library.js?v=1.0.0-chakshu-voice2"></script>
+<script src="chakshu-store.js?v=1.0.0-chakshu-gallery1"></script>
+<script src="chakshu-transfer.js?v=1.0.0-chakshu-gallery1"></script>
+<script src="chakshu-media.js?v=1.0.0-chakshu-gallery1"></script>
+<script src="chakshu-voice.js?v=1.0.0-chakshu-gallery1"></script>
+<script src="chakshu-model-transfer.js?v=1.0.0-chakshu-gallery1"></script>
+<script src="chakshu-model.js?v=1.0.0-chakshu-gallery1"></script>
+<script src="chakshu-library.js?v=1.0.0-chakshu-gallery1"></script>
 </body></html>

@@ -1,7 +1,27 @@
 'use strict';
 const { test } = require('node:test'),
   assert = require('node:assert/strict');
-const { windowFrames, explainWords, splitMJPEG } = require('../chakshu-store.js');
+const { windowFrames, explainWords, splitMJPEG, filterMedia } = require('../chakshu-store.js');
+test('gallery search combines titles, notes and descriptions with kind and favourite filters', () => {
+  const rows = [
+    {
+      id: 'photo',
+      kind: 'image',
+      name: 'Station sign',
+      notes: 'Return platform',
+      favourite: true,
+      descriptions: [{ text: 'Train to Mumbai' }],
+    },
+    { id: 'video', kind: 'video', name: 'Mumbai walk', notes: 'Near station' },
+    { id: 'old', kind: 'image' },
+  ];
+  const ids = (options) => filterMedia(rows, options).map((r) => r.id);
+  assert.deepEqual(ids({ query: '  STATION Mumbai ' }), ['photo', 'video']);
+  assert.deepEqual(ids({ query: 'return mumbai', kind: 'image', favourites: true }), ['photo']);
+  assert.deepEqual(ids({ kind: 'video', favourites: true }), []);
+  assert.deepEqual(ids({ query: '<script>' }), []);
+  assert.deepEqual(ids({}), ['photo', 'video', 'old']);
+});
 const { decode, Client } = require('../chakshu-transfer.js');
 test('explain uses only the closest frame and at most two neighbours on each side', () => {
   const frames = Array.from({ length: 100 }, (_, i) => ({ atMs: i * 500, index: i }));
