@@ -725,6 +725,9 @@ body:is([data-state='idle'], [data-state='recording'], [data-state='starting'])
   display: none;
 }
 #settingsDialog .desktop-capture-card {
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
   margin: 0;
   padding: 12px 14px;
   border-radius: 14px;
@@ -732,6 +735,7 @@ body:is([data-state='idle'], [data-state='recording'], [data-state='starting'])
   box-shadow: none;
 }
 #settingsDialog .desktop-capture-card button {
+  flex: 0 0 auto;
   min-height: 44px;
   background: var(--action);
   color: var(--on-action);

@@ -261,6 +261,24 @@ async function run() {
           'correcting to the saved value clears the pending change',
         );
         await page.locator('#settingsProcessingOptions > summary').click();
+        const backendUrl = await page.locator('#synapBackendUrlInput').inputValue();
+        await page.locator('#synapConnectionDetails').evaluate((node) => {
+          node.hidden = false;
+          node.open = true;
+        });
+        await page.locator('#synapBackendUrlInput').fill('http://example.invalid');
+        await page.locator('#settingsSaveButton').click();
+        assert(
+          await page.locator('#settingsDialog').evaluate((node) => node.open),
+          'invalid account configuration cannot close Settings or claim a successful save',
+        );
+        assert.equal(await page.locator('#synapAccountStatus').getAttribute('data-kind'), 'error');
+        assert(await page.locator('#settingsSaveButton').isVisible());
+        await page.locator('#synapBackendUrlInput').fill(backendUrl);
+        await page.locator('#synapConnectionDetails').evaluate((node) => {
+          node.hidden = true;
+          node.open = false;
+        });
         await page.locator('#settingsTab-device').click();
         await page.locator('#closeSettingsButton').click();
         await page.locator('#settingsButton').click();

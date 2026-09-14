@@ -848,16 +848,14 @@ async function run() {
           const rows = await page
             .locator('.recording-card:not([open]) > .recording-row')
             .evaluateAll((nodes) =>
-              nodes
-                .filter((node) => !node.querySelector('.recording-row-preview:not([hidden])'))
-                .map((node) => ({
-                  row: node.getBoundingClientRect().height,
-                  card: node.parentElement.getBoundingClientRect().height,
-                })),
+              nodes.map((node) => ({
+                row: node.getBoundingClientRect().height,
+                card: node.parentElement.getBoundingClientRect().height,
+              })),
             );
-          assert(rows.length, 'density check has ordinary closed recording rows');
+          assert(rows.length, 'density check has closed recording rows');
           assert(
-            rows.every((rect) => rect.row >= 44 && rect.card <= 94),
+            rows.every((rect) => rect.row >= 44 && rect.card - rect.row <= 3),
             `recordings use compact rows without padded outer cards: ${JSON.stringify(rows)}`,
           );
           await page.screenshot({

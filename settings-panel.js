@@ -46,8 +46,13 @@
     if (status)
       status.textContent = dirty ? 'Unsaved settings changes. Use Save changes to apply them.' : '';
   }
-  function saved() {
-    savedDraft = draft();
+  function saved(fields = draftFields) {
+    const current = JSON.parse(draft());
+    const baseline = JSON.parse(savedDraft || draft());
+    draftFields.forEach((id, index) => {
+      if (fields.includes(id)) baseline[index] = current[index];
+    });
+    savedDraft = JSON.stringify(baseline);
     updateSave();
   }
   function discardDraft() {

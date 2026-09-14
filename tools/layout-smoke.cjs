@@ -89,6 +89,12 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
           failures.push(`${width}/${mode}: welcome is too tall`);
         if (home.find((x) => x.selector === '#myActionsContent').height >= 215)
           failures.push(`${width}/${mode}: short Actions panel reserves empty space`);
+        if (width >= 1100) {
+          const actions = home.find((x) => x.selector === '#myActions');
+          const library = home.find((x) => x.selector === '#library');
+          if (Math.abs(actions.y - library.y) > 1 || actions.x + actions.width > library.x)
+            failures.push(`${width}/${mode}: desktop Actions and Library must share a row`);
+        }
         await page.locator('#settingsButton').click();
         for (const section of ['device', 'memory', 'appearance', 'support']) {
           await page.locator('#settingsTab-' + section).click();

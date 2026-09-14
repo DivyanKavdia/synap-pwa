@@ -136,6 +136,7 @@
             backendUrl: backendInput ? backendInput.value : settings.backendUrl,
             clientId: clientInput ? clientInput.value : settings.clientId
           });
+          root.SynapSettingsPanel?.saved(['synapBackendUrlInput', 'synapClientIdInput']);
         } catch (error) {
           status(error.message, 'error');
           revealConnection(true);
@@ -188,7 +189,7 @@
       });
     }
 
-    form.addEventListener('submit', function () {
+    form.addEventListener('submit', function (event) {
       savePrefs({ provider: provider.value });
       if (provider.value !== 'synap') return;
       try {
@@ -196,10 +197,14 @@
           backendUrl: backendInput ? backendInput.value : settings.backendUrl,
           clientId: clientInput ? clientInput.value : settings.clientId
         });
+        root.SynapSettingsPanel?.saved(['synapBackendUrlInput', 'synapClientIdInput']);
         revealConnection(false);
         maybeProcessPending(auth.session());
       } catch (error) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
         status(error.message, 'error');
+        revealConnection(true);
       }
     }, true);
 
