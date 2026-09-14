@@ -209,6 +209,7 @@ async function run() {
         await page.locator('#settingsDialog').evaluate((node) => (node.scrollTop = 400));
         await hit(page, '#headerCaptureToggle');
         await hit(page, '#closeSettingsButton');
+        await hit(page, '#settingsSaveButton');
         await page.screenshot({ path: path.join(out, `settings-${mode}-${width}.png`) });
         await page.locator('#settingsButton').click();
         await page.waitForTimeout(100);
@@ -237,6 +238,31 @@ async function run() {
           ),
           false,
         );
+        await page.locator('#settingsButton').click();
+        await page.locator('#settingsTab-memory').click();
+        await page.locator('#settingsProcessingOptions > summary').click();
+        await page.locator('#providerInput').selectOption('custom');
+        await page.locator('#endpointInput').fill('http://example.invalid/upload');
+        await page.locator('#settingsSaveButton').click();
+        assert(
+          await page.locator('#settingsDialog').evaluate((node) => node.open),
+          'invalid settings keep the editor open',
+        );
+        assert.equal(
+          await page.locator('#endpointInput').inputValue(),
+          'http://example.invalid/upload',
+          'validation keeps the draft for correction',
+        );
+        assert(await page.locator('#settingsSaveButton').isVisible());
+        await page.locator('#endpointInput').fill('');
+        await page.locator('#providerInput').selectOption('synap');
+        assert(
+          !(await page.locator('#settingsSaveButton').isVisible()),
+          'correcting to the saved value clears the pending change',
+        );
+        await page.locator('#settingsProcessingOptions > summary').click();
+        await page.locator('#settingsTab-device').click();
+        await page.locator('#closeSettingsButton').click();
         await page.locator('#settingsButton').click();
         await page.keyboard.press('Escape');
         assert(!(await page.locator('#settingsDialog').evaluate((node) => node.open)));

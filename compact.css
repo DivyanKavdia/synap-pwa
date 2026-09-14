@@ -923,6 +923,8 @@ body.synap-refresh #myActions [data-actions-panel][hidden]{display:none!importan
 .synap-refresh #myActions #peopleMemory>.section-heading{justify-content:flex-end;margin:0 0 6px!important}
 .synap-refresh #myActions #peopleMemory>.section-heading:not(:has(#peopleBrowseToggle:not([hidden]))){display:none}
 .synap-refresh #myActions :is(.ask-form,.followup-tabs){margin-top:0}
+.synap-refresh #myActions #askAnswer:has(>.brain-empty:only-child){margin-top:8px;padding-top:0;border-top:0}
+.synap-refresh #myActions #askAnswer>.brain-empty:only-child{padding:4px 0}
 .synap-refresh #myActions .ask-suggestions{flex-wrap:nowrap;overflow-x:auto;gap:6px}
 .synap-refresh #myActions .ask-suggestions button{flex-shrink:0;white-space:nowrap}
 .synap-refresh #myActions #peopleMemory[data-people-expanded="true"] .people-grid{max-height:none;overflow:visible;scrollbar-gutter:auto}
