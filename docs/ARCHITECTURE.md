@@ -158,3 +158,7 @@ radio/audio testing and production monitoring remain separate release gates.
 
 See [recording architecture audit](RECORDING_AUDIT.md) for findings, changes,
 validation evidence and the physical-device acceptance boundary.
+
+## Chakshu visual capture
+
+The account-gated photo/video library lives in `chakshu-library.js` with orchestration in `chakshu-media.js`, byte transfer in `chakshu-transfer.js`, and separate account-keyed IndexedDB storage in `chakshu-store.js`. Audio stays in the existing recording lifecycle. The backend association/vision router accepts only selected JPEG frames; video never enters ASR. See [Chakshu](CHAKSHU.md) for capture, timing, import and offline limits.

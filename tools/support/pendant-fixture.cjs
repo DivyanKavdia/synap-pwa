@@ -31,12 +31,24 @@ module.exports = function pendantFixture() {
     v.setUint16(18, firmwareBuild, true);
     return v;
   };
+  let transferReply=new DataView(new ArrayBuffer(16)),transferBytes=new Uint8Array(),offlineRecording=false;
+  function cameraJPEG(){const c=document.createElement('canvas');c.width=160;c.height=120;const ctx=c.getContext('2d');ctx.fillStyle='#776ac4';ctx.fillRect(0,0,160,120);ctx.fillStyle='#fff';ctx.fillRect(20,20,80,50);return Uint8Array.from(atob(c.toDataURL('image/jpeg').split(',')[1]),x=>x.charCodeAt(0));}
+  function transferCommand(bytes){const v=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),op=bytes[1],id=v.getUint32(2,true),offset=v.getUint32(6,true);let payload=new Uint8Array(),total=0;
+    if(op===1)transferBytes=cameraJPEG();
+    if(op===7)transferBytes=new TextEncoder().encode(JSON.stringify([{path:'/synap/abcdef01-00000001.jpg',bytes:1200}]));
+    if(op===3)transferBytes=cameraJPEG();
+    if(op===5)offlineRecording=true;if(op===6)offlineRecording=false;
+    if(op===2||op===4)payload=transferBytes.slice(offset,offset+480);
+    total=transferBytes.length;
+    if(op===9)payload=new TextEncoder().encode(JSON.stringify({active:offlineRecording,state:offlineRecording?1:2,error:0,progress:20,path:'/synap/abcdef01-00000001.mjpeg'}));
+    transferReply=new DataView(new ArrayBuffer(16+payload.length));[0xCB,1,1,0].forEach((n,i)=>transferReply.setUint8(i,n));transferReply.setUint32(4,id,true);transferReply.setUint32(8,total,true);transferReply.setUint32(12,offset,true);new Uint8Array(transferReply.buffer).set(payload,16);
+  }
   let mediaOperation=0,mediaId=0,mediaState=0,mediaError=0,sdAvailable=true,mediaWrites=0;
   function moduleDescriptor() {
     const v=new DataView(new ArrayBuffer(20));
     [0xC7,1,3,1].forEach((x,i)=>v.setUint8(i,x));
     v.setUint16(4,911,true);v.setUint16(6,sdAvailable?911:651,true);
-    v.setUint16(8,0x3660,true);v.setUint16(10,16000,true);v.setUint8(12,8);v.setUint8(13,8);return v;
+    v.setUint16(8,0x3660,true);v.setUint16(10,16000,true);v.setUint8(12,8);v.setUint8(13,8);v.setUint8(14,location.search.includes('chakshu-media')?1:0);return v;
   }
   function mediaStatus() {
     const v=new DataView(new ArrayBuffer(20));
@@ -132,6 +144,7 @@ module.exports = function pendantFixture() {
     readValue() {
       return operation(async () => {
         if (this.id === uuid('50')) return moduleDescriptor();
+        if (this.id === uuid('55')) return transferReply;
         if (this.id === uuid('52')) return mediaStatus();
         if (this.id === uuid('53')) return new DataView(new TextEncoder().encode(mediaPath()).buffer);
         if (this.id === uuid('49')) return otaStatus();
@@ -163,6 +176,7 @@ module.exports = function pendantFixture() {
     }
     writeValueWithResponse(value) {
       return operation(async () => {
+        if (this.id===uuid('54')) { transferCommand(value); return; }
         if (this.id===uuid('51')) {
           mediaWrites++;mediaOperation=value[2];mediaId=value[3];
           mediaError=state===2?1:!sdAvailable&&mediaOperation!==1?3:0;
@@ -274,7 +288,7 @@ module.exports = function pendantFixture() {
     [uuid('4c'), new Characteristic(uuid('4c'))],
     [uuid('4e'), new Characteristic(uuid('4e'))],
   ]);
-  if(chakshu)for(const id of ['50','51','52','53','4b'])chars.set(uuid(id),new Characteristic(uuid(id)));
+  if(chakshu)for(const id of ['50','51','52','53','54','55','4b'])chars.set(uuid(id),new Characteristic(uuid(id)));
   if (buffered) chars.set(uuid('4f'), new Characteristic(uuid('4f')));
   if (ota) for (const id of ['48', '49', '4b']) chars.set(uuid(id), new Characteristic(uuid(id)));
   const service = {

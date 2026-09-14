@@ -187,6 +187,7 @@ export function recordingRoutes(): Router {
           state: completed.state,
           sha256: digest,
           transcript_ready: completed.state === 'transcribed',
+          words: completed.sealedWords ? openJson(req.dek, completed.sealedWords, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'words')) : [],
         });
         return;
       }
@@ -249,6 +250,7 @@ export function recordingRoutes(): Router {
         state: completed.state,
         sha256: digest,
         transcript_ready: true,
+        words: completed.sealedWords ? openJson(req.dek, completed.sealedWords, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'words')) : [],
       });
     }),
   );

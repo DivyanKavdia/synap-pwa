@@ -60,7 +60,7 @@ async function connect({id=A, local=storage(), stale=false, mismatch=false}={}) 
     DEVICE_STATE:{CONNECTED_IDLE:1,STREAMING:2,ERROR:3},deviceStatus:{state:1,error:0},deviceAssociation:null,deviceIdentityMessage:'',
     stopRememberedMonitoring(){},syncRememberedMonitoring(){},clearReconnectTimer(){},setReconnectCapability(){},setAppState(s){c.state=s;},log(){},toast(){},
     cleanupCharacteristics(){c.connectionEpoch++;c.deviceAssociation=null;},attachBluetoothDevice(d){c.bluetoothDevice=d;},
-    withTimeout:p=>p,isGattConnected:()=>Boolean(c.bluetoothDevice?.gatt.connected),queueGattOperation:f=>f(),optionalGattAllowed:()=>true,
+    withTimeout:p=>p,isGattConnected:()=>Boolean(c.bluetoothDevice?.gatt.connected),queueGattOperation:f=>f(),optionalGattAllowed:()=>true,mediaGattAllowed:()=>true,
     handleAudioNotification(){},handleStatusNotification(){},delay:async()=>{},writeCommand:async()=>{},readControlStatus:async()=>{},
     reconnectAttempts:0,localStorage:local,friendlyError:e=>e.message,scheduleAutoReconnect(){}};
   if(mismatch)new devices.Registry(local).associate(B,{id:device.id});

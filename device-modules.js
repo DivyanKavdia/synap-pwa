@@ -24,7 +24,7 @@
     const supported=value.getUint16(4,true),ready=value.getUint16(6,true);
     if (ready&~supported) throw Error('Invalid module readiness flags.');
     return Object.freeze({...profile,supported,ready,sensor:value.getUint16(8,true),
-      sampleRate:value.getUint16(10,true),flashMiB:value.getUint8(12),psramMiB:value.getUint8(13),legacy:false});
+      sampleRate:value.getUint16(10,true),flashMiB:value.getUint8(12),psramMiB:value.getUint8(13),mediaVersion:value.getUint8(14),legacy:false});
   }
   function legacy(identity) {
     const match=/^SYNAP-FW:([^:]+):(?:synap-os1-build\d+|\d+\.\d+\.\d+):\d+$/.exec(identity);
@@ -107,6 +107,7 @@
       } finally { this.pending=false;if(!this.closed)this.changed(this); }
     }
     async run(operation) {
+      if(root.SynapChakshu?.busy)throw Error('Finish the current photo/video capture or transfer first.');
       if(![1,2,3,4].includes(operation)||this.module?.id!==3)throw Error('Connect Chakshu first.');
       if(this.pending || this.busy)throw Error('Wait for the current hardware check.');
       if(this.context.canUse?.()===false)throw Error(ERRORS[1]);
