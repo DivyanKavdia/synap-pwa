@@ -133,7 +133,8 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
         );
         for (const id of ['Install', 'Cancel', 'Restart', 'Progress', 'Manual'])
           assert(await page.locator('#chakshuModel' + id).isHidden());
-        assert(await page.locator('#chakshuVoiceEnabled').isEnabled());
+        // Model storage and recognizer status arrive through separate GATT reads.
+        await page.waitForFunction(() => !document.getElementById('chakshuVoiceEnabled').disabled);
         await page.locator('#chakshuVoiceEnabled').click();
         await page.waitForFunction(() => SynapChakshuVoice.state?.status === 5);
         await page.locator('#chakshuVoiceEnabled').click();
