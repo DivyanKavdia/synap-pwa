@@ -67,7 +67,13 @@
   min-width: 0;
   line-height: 1.5;
 }
-#library :is(#selectRecordingsButton, #clearRecordingFilters) {
+#library
+  :is(
+    #selectRecordingsButton,
+    #clearRecordingFilters,
+    #showMoreRecordingsButton,
+    #showLessRecordingsButton
+  ) {
   min-height: 44px;
   padding: 8px 10px;
   border: 1px solid var(--border);

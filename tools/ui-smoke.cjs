@@ -858,6 +858,8 @@ async function run() {
             rows.every((rect) => rect.row >= 44 && rect.card - rect.row <= 3),
             `recordings use compact rows without padded outer cards: ${JSON.stringify(rows)}`,
           );
+          const more = await page.locator('#showMoreRecordingsButton').boundingBox();
+          assert(more.height >= 44, 'Library pagination keeps a full-size touch target');
           await page.screenshot({
             path: path.join(output, `workspace-library-${mode}-${width}.png`),
           });

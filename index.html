@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="brain.css?v=1.0.0-actions1">
   <link rel="stylesheet" href="compact.css?v=1.0.0-compact-workspace1" data-synap-compact="refresh1">
   <link rel="stylesheet" href="settings.css?v=1.0.0-compact-workspace1">
-  <link rel="stylesheet" href="library-tools.css?v=1.0.0-compact2">
+  <link rel="stylesheet" href="library-tools.css?v=1.0.0-compact-workspace1">
   <script src="theme.js?v=1.0.0-navigation1"></script>
 <link rel="stylesheet" href="meeting-tools.css?v=1.0.0-meetings2"></head>
 <body data-startup="loading" data-state="disconnected" class="synap-refresh">
@@ -141,7 +141,7 @@
   <p id="libraryActionStatus" class="library-action-status" role="status" hidden></p>
   <div id="emptyRecordings" class="empty-state"><span class="empty-state-icon" aria-hidden="true"><svg><use href="#i-wave"/></svg></span><h3>No recordings</h3><p>Use the microphone above to start recording.</p></div>
   <div id="recordingsList" class="recordings-list"></div>
-  <div id="libraryPagination" hidden><p id="libraryCountLabel"></p><button id="showMoreRecordingsButton" type="button">Show more</button><button id="showLessRecordingsButton" type="button" hidden>Show less</button></div>
+  <div id="libraryPagination" class="library-pagination" hidden><p id="libraryCountLabel"></p><div class="library-page-actions"><button id="showMoreRecordingsButton" type="button">Show more</button><button id="showLessRecordingsButton" type="button" hidden>Show less</button></div></div>
 </section><section id="processing" hidden><p id="queueStatus">Ready.</p><button id="runQueueButton" type="button">Process pending memories</button><button id="pauseQueueButton" type="button">Pause</button></section></main><footer><span>synap</span><span id="appVersion">1.0.0</span></footer></div>
 <nav class="wireframe-tabs brain-tabs" aria-label="Primary"><a href="#today" class="active" aria-current="page"><svg><use href="#i-spark"/></svg><span>Today</span></a><a href="#memoryWeekPanel"><svg><use href="#i-calendar"/></svg><span>Weekly</span></a><a href="#library"><svg><use href="#i-library"/></svg><span>Library</span></a></nav><div id="toastRegion"></div>
 <dialog id="settingsDialog" class="modal" aria-labelledby="settingsTitle">

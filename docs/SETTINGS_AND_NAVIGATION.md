@@ -28,8 +28,9 @@ Save changes appears in the sticky header only when fields saved by the form hav
 changed. Reverting them hides the action. Switching tabs keeps drafts; closing
 without saving restores the opening values. Appearance, provider, reconnect and
 notification controls retain their own immediate persistence. A successful form
-save updates the baseline before closing. Keyboard focus and main scroll restore
-as before.
+save updates the baseline before closing. Invalid processing endpoints or cloud
+configuration keep the editor open with the draft available for correction.
+Keyboard focus and main scroll restore as before.
 
 On wide screens Actions and Library share a row and align at their top edges.
 Short action panels use their content height; long lists and answers keep a bounded
