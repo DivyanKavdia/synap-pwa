@@ -31,6 +31,7 @@ const server=createStaticServer(path.resolve(__dirname,'..'));
       assert.match(await page.locator('#chakshuFile').textContent(),/\.wav$/);
       for(const op of [2,4]) {
         await page.locator('[data-chakshu-operation="'+op+'"]').click();
+        await page.waitForFunction(op=>SynapModules.client?.status?.operation===op&&SynapModules.busy&&!SynapModules.client.pending,op);
         await page.evaluate(async()=>{bleFixture.finishMedia();await SynapModules.refresh();});
         await page.waitForFunction(()=>!SynapModules.busy);
         assert.match(await page.locator('#chakshuFile').textContent(),op===2?/\.jpg$/:/\.mjpeg$/);
