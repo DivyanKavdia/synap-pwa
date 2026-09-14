@@ -39,6 +39,21 @@ final class CaptureTests: XCTestCase {
         XCTAssertThrowsError(try assembler.receive(packets(1)[0], at: 1700))
     }
 
+    func testS3ReplayCanFinishOldPCMChunksAfterANewerLiveFrame() throws {
+        var assembler = AudioAssembler(now: 0), restored: AudioFrame?
+        for sequence in [UInt16(0), 599] {
+            for packet in packets(sequence) { _ = try assembler.receive(packet, at: 1) }
+        }
+        for packet in packets(1, value: -2345) {
+            if let frame = try assembler.receive(packet, at: 1.1) { restored = frame }
+        }
+        XCTAssertEqual(restored?.logical, 1)
+        XCTAssertEqual(restored?.pcm.u16(0), UInt16(bitPattern: Int16(-2345)))
+        XCTAssertEqual(assembler.receivedFrames, 3)
+        XCTAssertEqual(assembler.missingFrames, 597)
+        XCTAssertEqual(assembler.lastCompleteRaw, 599)
+    }
+
     func testADPCMMatchesExistingFirmwareAndBrowserGoldenVector() throws {
         let url = try XCTUnwrap(Bundle.module.url(forResource: "audio-vectors", withExtension: "json", subdirectory: "Fixtures"))
         let vector = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: url))

@@ -102,7 +102,9 @@ public struct AudioAssembler: Codable {
         } else { logical = highestLogical - Int64(lastRaw &- raw) }
         lastPacketAt = time
         guard logical >= 0, logical >= highestLogical - 1023, !completed.contains(logical) else { return nil }
-        pending = pending.filter { $0.value.logical >= highestLogical - 63 }
+        // A live frame can arrive before an older S3 replay frame. Keep partial
+        // chunks for the full accepted history, not just the newest live frames.
+        pending = pending.filter { $0.value.logical >= highestLogical - 1023 }
         var frame = pending[raw] ?? Pending(version: data[1], parts: Array(repeating: nil, count: Int(data[5])), logical: logical)
         guard frame.version == data[1], frame.parts.count == Int(data[5]) else {
             invalidPackets += 1; throw CaptureError.conflictingPacket
