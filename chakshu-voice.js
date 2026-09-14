@@ -39,7 +39,7 @@
     const labels = [
       'Starting local model…',
       'Listening for “Hi Chakshu”.',
-      'Install the voice model on the SD card, then restart Chakshu.',
+      'Install the voice model below, then restart Chakshu.',
       'Not enough memory for the voice model. Restart Chakshu.',
       'Voice model could not load. Reinstall the matching model pack and restart.',
       'Voice controls are off.',

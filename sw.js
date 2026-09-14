@@ -3,11 +3,11 @@ const APP_VERSION='1.0.0';
 /* app.js owns the client compatibility revision used for update signalling. */
 const CLIENT_REVISION='1.0.0-audio2';
 /* Refresh the installed shell without changing audio protocol compatibility. */
-const UI_RECOVERY_REVISION='1.0.0-chakshu-voice1';
-const CACHE_REVISION='1.0.0-shell98-chakshu-voice';
+const UI_RECOVERY_REVISION='1.0.0-chakshu-voice2';
+const CACHE_REVISION='1.0.0-shell99-chakshu-model';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
-  './chakshu-voice.js','./chakshu-store.js','./chakshu-transfer.js','./chakshu-media.js','./chakshu-library.js','./chakshu-library.css',
+  './chakshu-model-transfer.js','./chakshu-model.js','./chakshu-voice.js','./chakshu-store.js','./chakshu-transfer.js','./chakshu-media.js','./chakshu-library.js','./chakshu-library.css',
   './device-modules.js','./chakshu-ui.js','./device-modules.css',
   './recording/screen-wake-lock.js',
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings.css','./library-tools.js','./library-tools.css',
