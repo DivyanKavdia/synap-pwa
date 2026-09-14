@@ -8,8 +8,8 @@
   const PATH='4fa12353-0000-1000-8000-00805f9b34fb';
   const FLAGS=Object.freeze({audio:1,camera:2,sd:4,settings:8,touch:16,battery:32,standby:64,video:128,sdAudio:256,photo:512});
   const PROFILES=Object.freeze({
-    1:Object.freeze({id:1,target:'esp32s3-fh4r2-qspi-4m',name:'Synap S3',board:'ESP32-S3 SuperMini'}),
-    2:Object.freeze({id:2,target:'esp32c3-supermini-4m',name:'Synap C3',board:'ESP32-C3 SuperMini'}),
+    1:Object.freeze({id:1,target:'esp32s3-fh4r2-qspi-4m',name:'synap S3',board:'ESP32-S3 SuperMini'}),
+    2:Object.freeze({id:2,target:'esp32c3-supermini-4m',name:'synap C3',board:'ESP32-C3 SuperMini'}),
     3:Object.freeze({id:3,target:'xiao-esp32s3-sense-8m',name:'Chakshu',board:'XIAO ESP32S3 Sense'})
   });
   const ERRORS=['','Finish the current recording or firmware update first.','Unsupported hardware check.',
