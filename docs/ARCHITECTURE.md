@@ -5,6 +5,8 @@ renders locally saved memory. The managed backend authenticates the owner,
 stores encrypted sources, runs transcription/memory extraction, and answers
 questions using retrieved evidence. Firmware is a separate repository.
 
+Chakshu module detection and camera/SD checks use `device-modules.js` and `chakshu-ui.js`. They consume the existing app-owned GATT queue and are described in [Chakshu integration](CHAKSHU.md). Audio keeps the existing recording journal and cloud pipeline; SD check files are reviewed directly from the card.
+
 ## Find the owner
 
 | Responsibility                                                       | Source                                                                         |

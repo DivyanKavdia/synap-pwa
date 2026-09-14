@@ -3,6 +3,7 @@
   'use strict';
   const TARGET='esp32s3-fh4r2-qspi-4m';
   const TARGETS=Object.freeze({
+    'xiao-esp32s3-sense-8m':Object.freeze({target:'xiao-esp32s3-sense-8m',chip:9,flashBytes:8388608,psramBytes:8388608,partition:'default_8MB',maxSize:0x330000,marker:'SYNAP-CHAKSHU-OTA-ID-V3',manifestPath:'targets/xiao-esp32s3-sense-8m/latest.json',releasePrefix:'targets/xiao-esp32s3-sense-8m/'}),
     [TARGET]:Object.freeze({target:TARGET,chip:9,flashBytes:4194304,psramBytes:2097152,partition:'default',maxSize:0x140000,marker:'SYNAP-ESP32S3-OTA-ID-V3',manifestPath:'latest.json',releasePrefix:''}),
     'esp32c3-supermini-4m':Object.freeze({target:'esp32c3-supermini-4m',chip:5,flashBytes:4194304,psramBytes:0,partition:'default',maxSize:0x140000,marker:'SYNAP-ESP32C3-OTA-ID-V3',manifestPath:'targets/esp32c3-supermini-4m/latest.json',releasePrefix:'targets/esp32c3-supermini-4m/'})
   });

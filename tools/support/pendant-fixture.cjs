@@ -9,8 +9,9 @@ module.exports = function pendantFixture() {
   const buffered = location.search.includes('buffered');
   const connectedReplay = location.search.includes('background');
   const recoveryCapacity = connectedReplay && location.search.includes('c3') ? 25 : 600;
+  const chakshu=location.search.includes('chakshu');
   const ota = location.search.includes('ota');
-  const target = location.search.includes('c3') ? 'esp32c3-supermini-4m' : 'esp32s3-fh4r2-qspi-4m';
+  const target = chakshu ? 'xiao-esp32s3-sense-8m' : location.search.includes('c3') ? 'esp32c3-supermini-4m' : 'esp32s3-fh4r2-qspi-4m';
   let firmwareBuild = 1200,
     otaState = 1,
     otaSession = 0,
@@ -30,6 +31,22 @@ module.exports = function pendantFixture() {
     v.setUint16(18, firmwareBuild, true);
     return v;
   };
+  let mediaOperation=0,mediaId=0,mediaState=0,mediaError=0,sdAvailable=true,mediaWrites=0;
+  function moduleDescriptor() {
+    const v=new DataView(new ArrayBuffer(20));
+    [0xC7,1,3,1].forEach((x,i)=>v.setUint8(i,x));
+    v.setUint16(4,911,true);v.setUint16(6,sdAvailable?911:651,true);
+    v.setUint16(8,0x3660,true);v.setUint16(10,16000,true);v.setUint8(12,8);v.setUint8(13,8);return v;
+  }
+  function mediaStatus() {
+    const v=new DataView(new ArrayBuffer(20));
+    [0xC9,1,mediaOperation,mediaId,mediaState,mediaError,sdAvailable?7:3,mediaState===2?100:0].forEach((x,i)=>v.setUint8(i,x));
+    v.setUint32(8,sdAvailable?1900:0,true);v.setUint32(12,sdAvailable?1800:0,true);
+    v.setUint32(16,mediaState===2&&mediaOperation!==1?(mediaOperation===3?320000:12000):0,true);return v;
+  }
+  function mediaPath() {
+    return mediaState===2&&mediaOperation!==1?'/synap/12345678-00000001.'+({2:'jpg',3:'wav',4:'mjpeg'}[mediaOperation]):'';
+  }
   let armed = false,
     waiting = false,
     finishing = false,
@@ -114,6 +131,9 @@ module.exports = function pendantFixture() {
     }
     readValue() {
       return operation(async () => {
+        if (this.id === uuid('50')) return moduleDescriptor();
+        if (this.id === uuid('52')) return mediaStatus();
+        if (this.id === uuid('53')) return new DataView(new TextEncoder().encode(mediaPath()).buffer);
         if (this.id === uuid('49')) return otaStatus();
         if (this.id === uuid('4b'))
           return new DataView(
@@ -143,6 +163,11 @@ module.exports = function pendantFixture() {
     }
     writeValueWithResponse(value) {
       return operation(async () => {
+        if (this.id===uuid('51')) {
+          mediaWrites++;mediaOperation=value[2];mediaId=value[3];
+          mediaError=state===2?1:!sdAvailable&&mediaOperation!==1?3:0;
+          mediaState=mediaError?3:1;return;
+        }
         if (this.id === uuid('47') && value[0] === 0 && holdStop) {
           holdStop = false;
           await new Promise(resolve => { releaseStop = resolve; });
@@ -249,6 +274,7 @@ module.exports = function pendantFixture() {
     [uuid('4c'), new Characteristic(uuid('4c'))],
     [uuid('4e'), new Characteristic(uuid('4e'))],
   ]);
+  if(chakshu)for(const id of ['50','51','52','53','4b'])chars.set(uuid(id),new Characteristic(uuid(id)));
   if (buffered) chars.set(uuid('4f'), new Characteristic(uuid('4f')));
   if (ota) for (const id of ['48', '49', '4b']) chars.set(uuid(id), new Characteristic(uuid(id)));
   const service = {
@@ -371,6 +397,9 @@ module.exports = function pendantFixture() {
     get: () => (bluetoothAvailable ? bluetooth : undefined),
   });
   window.bleFixture = {
+    get mediaWrites(){return mediaWrites;},
+    setSdAvailable(value){sdAvailable=value;},
+    finishMedia(error=0){mediaError=error;mediaState=error?3:2;},
     blockAudio(value) { blockAudio = value; },
     get replayCommands() { return replayCommands; },
     get audioSubscriptions() { return audioSubscriptions; },

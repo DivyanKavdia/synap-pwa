@@ -11,6 +11,7 @@ Synap is a browser-based companion for the Synap pendant. It receives live audio
 - Product version: **1.0.0**
 - Primary pendant: ESP32-S3 SuperMini / ESP32-S3FH4R2
 - Secondary target: ESP32-C3 SuperMini
+- Third module: **Chakshu / XIAO ESP32S3 Sense** — onboard mic, camera and SD checks ([guide](docs/CHAKSHU.md))
 - Control protocol: **v2**
 - Audio transport: **v2 uncompressed PCM16 preferred; v3 ADPCM fallback for small Bluetooth MTUs**
 - OTA protocol: **v3**

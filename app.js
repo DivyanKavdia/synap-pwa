@@ -1626,6 +1626,7 @@
   }
 
   async function startRecording() {
+    if (globalThis.SynapModules?.busy) { toast("Wait for Chakshu to finish its SD hardware check.", "error"); return; }
     if (firmwareBusy) return;
     if (globalThis.SynapDesktopCapture?.state?.().active) {
       toast("Stop the online meeting capture before starting the pendant.", "error");
@@ -3310,7 +3311,7 @@
       return info.deviceId;
     };
     let discoveryBusy=false, discoveryTask=null, updateRequested=false, preparing=false;
-    const eligible = ()=>appLockHeld && isGattConnected() && !connectInProgress && !recordingConfirmed &&
+    const eligible = ()=>!globalThis.SynapModules?.busy && appLockHeld && isGattConnected() && !connectInProgress && !recordingConfirmed &&
       !finalizing && !currentRecordingId && !openingCapture && !unsavedAudio &&
       !globalThis.SynapDesktopCapture?.state()?.active &&
       !["starting","stopping","saving"].includes(appState);
@@ -3966,7 +3967,7 @@
   }
 
   function canReload() {
-    return !(firmwareBusy || recordingConfirmed || finalizing || openingCapture ||
+    return !(globalThis.SynapModules?.busy || firmwareBusy || recordingConfirmed || finalizing || openingCapture ||
       currentRecordingId || unsavedAudio || recordingReconnectPending ||
       globalThis.SynapDesktopCapture?.state()?.active ||
       ['starting', 'stopping', 'saving', 'updating'].includes(appState));
