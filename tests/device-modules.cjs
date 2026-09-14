@@ -58,3 +58,20 @@ test('a disconnect during discovery never updates another connection or rejects 
   const pending=client.refresh();client.close();release();
   assert.equal(await pending,false);assert.equal(client.module,null);
 });
+
+test('an ATT write response is not mistaken for firmware acceptance or successful capture',async()=>{
+  let result=status(),written=0;
+  const empty=new DataView(new ArrayBuffer(0));
+  const client=new Client({canUse:()=>true,queue:action=>action(),service:{getCharacteristic:async uuid=>({
+    readValue:async()=>uuid===UUID?descriptor():uuid.includes('352-')?result:empty,
+    writeValueWithResponse:async()=>{written++;}
+  })}});
+  await client.refresh();await client.run(2);
+  assert.equal(client.busy,true);
+  await client.refresh();assert.equal(client.busy,true,'wait for matching application result');
+  client.expected.deadline=0;
+  await client.refresh();
+  assert.equal(client.busy,false);
+  assert.match(client.error,/did not confirm/);
+  assert.equal(written,1,'never automatically repeat a capture after ambiguous acceptance');
+});

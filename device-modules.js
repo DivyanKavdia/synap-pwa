@@ -46,9 +46,9 @@
     constructor(context,changed=()=>{}) {
       this.context=context;this.changed=changed;this.module=null;this.status=null;this.path='';
       this.closed=false;this.pending=false;this.commandPending=false;this.characteristics={};
-      this.nextId=1;this.pathKey='';this.error='';this.available=false;
+      this.nextId=1;this.expected=null;this.pathKey='';this.error='';this.available=false;
     }
-    get busy() { return this.commandPending || this.status?.state===1; }
+    get busy() { return this.commandPending || Boolean(this.expected) || this.status?.state===1; }
     close() { this.closed=true;this.characteristics={}; }
     async characteristic(uuid) {
       if (!this.characteristics[uuid]) this.characteristics[uuid]=await this.context.queue(
@@ -72,7 +72,17 @@
       this.module=decode(value);this.available=true;
     }
     async updateStatus() {
-      this.status=decodeStatus(await this.read(STATUS));
+      const reported=decodeStatus(await this.read(STATUS));
+      if(this.expected) {
+        if(reported.id===this.expected.id && reported.operation===this.expected.operation) this.expected=null;
+        else if(Date.now()<this.expected.deadline && reported.state!==1) return;
+        else {
+          this.expected=null;this.status=reported;
+          throw Error(reported.state===1?'Another hardware check is already running on Chakshu.':
+            'Chakshu did not confirm this check. Refresh status before trying again.');
+        }
+      }
+      this.status=reported;
       this.nextId=(this.status.id%255)+1;
       if (this.status.state!==1) {
         const key=this.status.id+':'+this.status.operation;
@@ -112,6 +122,7 @@
         await this.context.queue(()=>characteristic.writeValueWithResponse(new Uint8Array([0xC8,1,operation,id])),'Start Chakshu hardware check');
         this.ensure();
         // Keep the UI locked until a read confirms acceptance or failure.
+        this.expected={operation,id,deadline:Date.now()+5000};
         this.status={...this.status,operation,id,state:1,progress:0,error:0,bytes:0};
         this.pathKey='';this.error='';
       } catch(error) { this.error=error.message;throw error; }
