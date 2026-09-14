@@ -845,6 +845,21 @@ async function run() {
             () => document.getElementById('recordingsCount').textContent === '9',
           );
           await page.locator('.brain-tabs a[href="#library"]').click();
+          const rows = await page
+            .locator('.recording-card:not([open]) > .recording-row')
+            .evaluateAll((nodes) =>
+              nodes
+                .filter((node) => !node.querySelector('.recording-row-preview:not([hidden])'))
+                .map((node) => ({
+                  row: node.getBoundingClientRect().height,
+                  card: node.parentElement.getBoundingClientRect().height,
+                })),
+            );
+          assert(rows.length, 'density check has ordinary closed recording rows');
+          assert(
+            rows.every((rect) => rect.row >= 44 && rect.card <= 94),
+            `recordings use compact rows without padded outer cards: ${JSON.stringify(rows)}`,
+          );
           await page.screenshot({
             path: path.join(output, `workspace-library-${mode}-${width}.png`),
           });

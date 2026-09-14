@@ -196,7 +196,7 @@ body.synap-refresh{background:var(--bg);font:15px/1.6 ui-sans-serif,-apple-syste
 .synap-refresh .ask-form button{min-height:44px;font-size:14px!important;background:var(--action);color:var(--on-action);border-radius:11px}
 .synap-refresh :is(.ask-suggestions button,.answer-sources button){min-height:44px;font-size:12px!important;background:var(--surface)}
 .synap-refresh .answer-copy p{font-size:15px!important;line-height:1.75!important}
-.synap-refresh .recording-card{border:1px solid var(--border);background:var(--bg);border-radius:15px!important;box-shadow:none;overflow:visible}
+.synap-refresh .recording-card{padding:0!important;border:1px solid var(--border);background:var(--bg);border-radius:15px!important;box-shadow:none;overflow:visible}
 .synap-refresh .recording-row{min-height:74px!important;padding:16px!important;gap:12px}
 .synap-refresh .recording-row-name{font-size:15px!important;font-weight:600}
 .synap-refresh .recording-row-meta{font-size:12px!important;line-height:1.55;color:var(--muted)}
@@ -352,7 +352,7 @@ body.synap-refresh :is(#otaReleaseCheck,#otaLatest,#otaCancel,#otaProgress)[hidd
 @media(min-width:1100px){
  .synap-refresh .day-shortcuts a{justify-content:flex-start;padding:12px}
  .synap-refresh .day-shortcuts .shortcut-arrow{display:block;width:13px;margin-left:auto}
- .synap-refresh .recordings-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}
+ .synap-refresh .recordings-list{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;align-items:start}
  .synap-refresh .recording-card[open]{grid-column:1/-1}
 }
 @media(max-width:640px){
@@ -796,7 +796,7 @@ body.synap-refresh :is(#capture,#insights,#myActions,#library,#synapWeeklyReview
 .synap-refresh .day-brief .daily-focus>.workspace-body{padding-top:0}
 .synap-refresh .focus-tabs{padding:3px;gap:3px}
 .synap-refresh .focus-tabs~section{padding-top:6px;min-height:0}
-.synap-refresh .recording-row{min-height:60px!important;padding:10px!important}
+.synap-refresh .recording-row{box-sizing:border-box;min-height:64px!important;padding:10px 12px!important;align-items:center}
 .synap-refresh .recording-row-preview{-webkit-line-clamp:1;margin-top:3px;font-size:12px;line-height:1.4}
 .synap-refresh .recording-row-icon{width:30px;height:30px;border-radius:9px}
 .synap-refresh .recordings-list,.synap-refresh .insights-list{gap:6px}
@@ -915,7 +915,7 @@ body.synap-refresh :is(#capture,#insights,#myActions,#library,#synapWeeklyReview
 .synap-refresh #myActions .actions-tabs>[role="tab"]{width:100%;min-width:0;min-height:46px;margin:0;padding:9px 3px!important;border:0;border-bottom:3px solid transparent;border-radius:0;background:transparent;color:var(--muted);font:inherit;font-size:12px!important;line-height:1.25;letter-spacing:0;font-weight:600;cursor:pointer}
 .synap-refresh #myActions .actions-tabs>[aria-selected="true"]{border-bottom-color:var(--accent);color:var(--accent);box-shadow:none}
 .synap-refresh #myActions .actions-tabs>[role="tab"]:focus-visible{outline-offset:-4px}
-.synap-refresh #myActions .actions-content{box-sizing:border-box;height:clamp(220px,34svh,300px);padding:12px;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable;overflow-anchor:none}
+.synap-refresh #myActions .actions-content{box-sizing:border-box;height:auto;max-height:clamp(240px,48svh,440px);padding:12px;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable;overflow-anchor:none}
 body.synap-refresh #myActions [data-actions-panel]{display:block;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;min-height:0;scroll-margin-top:100px}
 body.synap-refresh #myActions [data-actions-panel][hidden]{display:none!important}
 .synap-refresh #myActions :is(.ask-head,.focus-heading),.synap-refresh #myActions #followupInbox>.section-heading{display:none!important}
@@ -1210,4 +1210,9 @@ body.synap-refresh #memoryWorkspace {
   font-size: 12px;
   color: var(--muted);
   cursor: pointer;
+}
+
+@media(min-width:760px){
+ .synap-refresh .memory-workspace-tabs{display:flex;gap:4px;padding:4px 12px}
+ .synap-refresh .memory-workspace-tabs button{padding:8px 20px}
 }

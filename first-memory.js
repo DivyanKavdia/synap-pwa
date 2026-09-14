@@ -49,10 +49,10 @@
     const processing = model?.tone === 'active';
     $('firstMemoryTitle').textContent = saved
       ? 'Bring your first memory to life.'
-      : 'Your next conversation, remembered.';
+      : 'Remember your next conversation.';
     $('firstMemoryCopy').textContent = saved
-      ? 'Your recording is in Library. Create a memory to find its decisions, next steps, and original words.'
-      : 'Stay in the conversation. synap helps you return to what was decided and what happens next.';
+      ? 'Your audio is saved in Library. Create a memory to find its decisions and next steps.'
+      : 'Record a conversation. Return to its decisions and next steps.';
     const primary = $('firstMemoryRecord');
     primary.textContent = saved
       ? processing
@@ -85,7 +85,7 @@
           saving: 'Saving meeting…',
           'save-failed': 'Retry saving meeting',
         }[desktop.phase] || 'Stop & save meeting'
-      : 'Record an online meeting';
+      : 'Record a meeting';
     meeting.disabled =
       busy ||
       !startupReady ||
@@ -103,7 +103,7 @@
               ? model?.error || 'You can listen to the original recording in Library at any time.'
               : root.navigator?.bluetooth
                 ? 'Double-tap either pendant to start or stop. Keep synap open during recording.'
-                : 'Pendant recording needs a browser with Web Bluetooth. You can still explore the sample here.';
+                : 'To use your pendant, open synap in a browser with Web Bluetooth.';
     $('firstMemoryAccount').textContent = root.SynapAuth?.isSignedIn()
       ? 'Memory settings'
       : 'Sign in for cloud memories';

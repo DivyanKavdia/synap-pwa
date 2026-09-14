@@ -55,6 +55,7 @@
     style.textContent = `
 html,body{max-width:100%;overflow-x:clip}
 main{display:block!important}
+@media(min-width:1100px){body.synap-refresh main{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:12px;align-items:start}body.synap-refresh main>*{grid-column:1/-1}body.synap-refresh main>:is(#myActions,#library).workspace-tile{grid-column:auto!important;margin:0!important}body.synap-refresh #memoryWorkspace{margin-bottom:0!important}}
 body[data-synap-view] #today,
 body[data-synap-view] #insights,
 body[data-synap-view] #myActions,

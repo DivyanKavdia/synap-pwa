@@ -3516,7 +3516,10 @@
     ui.settingsForm.addEventListener("submit", function (event) {
       event.preventDefault();
       try {
-        if (saveSettings()) ui.settingsDialog.close();
+        if (saveSettings()) {
+          window.SynapSettingsPanel?.saved();
+          ui.settingsDialog.close();
+        }
       } catch (error) {
         toast("Could not save preferences: " + friendlyError(error), "error");
       }

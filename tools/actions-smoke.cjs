@@ -62,6 +62,8 @@ async function run() {
           'panels are not separate cards',
         );
         await page.locator('#askInput').fill('Keep this draft while I check my actions');
+        const shortPanel = await page.locator('#myActionsContent').boundingBox();
+        assert(shortPanel.height < 215, 'a short Ask panel does not reserve a fixed empty area');
         await page.evaluate(() => {
           window.qaActionNodes = [
             ...document.querySelectorAll('#myActions [data-actions-panel],#askForm,#askInput'),

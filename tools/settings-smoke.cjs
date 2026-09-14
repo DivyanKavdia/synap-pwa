@@ -26,7 +26,7 @@ async function run() {
   const browser = await launchChromium();
   try {
     for (const mode of ['light', 'dark'])
-      for (const width of [320, 390, 1440]) {
+      for (const width of [320, 390, 768, 1440]) {
         const context = await browser.newContext({
           viewport: { width, height: 900 },
           reducedMotion: 'reduce',
@@ -114,7 +114,33 @@ async function run() {
           'Appearance',
           'Support',
         ]);
+        assert(
+          !(await page.locator('#settingsSaveButton').isVisible()),
+          'no save bar for unchanged preferences',
+        );
+        const firstCard = await page.locator('.settings-device-card').boundingBox();
+        assert(firstCard.y < 220, `device controls start near the header: ${firstCard.y}px`);
+        const notification = await page.locator('#recordingNotificationInput').boundingBox();
+        const settingsViewport = await page.locator('#settingsDialog').boundingBox();
+        assert(
+          notification.y + notification.height < settingsViewport.y + settingsViewport.height,
+          'all listening preferences fit without scrolling',
+        );
+        await page.locator('#settingsTab-appearance').click();
+        await page.locator('[data-palette-choice="blue"]').click();
+        assert(
+          !(await page.locator('#settingsSaveButton').isVisible()),
+          'instant appearance preferences need no save',
+        );
+        await page.locator('#settingsTab-device').click();
         await page.screenshot({ path: path.join(out, `settings-device-${mode}-${width}.png`) });
+        await page.locator('#wakeLockInput').uncheck();
+        assert(await page.locator('#settingsSaveButton').isVisible());
+        await page.locator('#wakeLockInput').check();
+        assert(
+          !(await page.locator('#settingsSaveButton').isVisible()),
+          'reverting a draft removes Save',
+        );
         await page.locator('#wakeLockInput').uncheck();
         await page.evaluate(() => {
           window.settingsOriginalInput = document.getElementById('wakeLockInput');
@@ -197,6 +223,11 @@ async function run() {
           `return to original reading position: ${before.scroll} → ${returnedScroll}`,
         );
         await page.locator('#settingsButton').click();
+        assert(
+          await page.locator('#wakeLockInput').isChecked(),
+          'closing discards the unsaved draft',
+        );
+        assert(!(await page.locator('#settingsSaveButton').isVisible()));
         await page.locator('#wakeLockInput').uncheck();
         await page.locator('#settingsSaveButton').click();
         await page.waitForFunction(() => !document.querySelector('#settingsDialog').open);
