@@ -1,20 +1,30 @@
-# Original audio uploads and speaker continuity
+# Source audio and speaker continuity
 
-New Synap Cloud processing windows upload the original journal WAV. Automatic
-RNNoise, filtering, normalization and resampling are disabled. Cloud ASR
-receives the complete uploaded WAV with no silence cropping. Only an entirely
-zero-valued window is recognized as digital silence without a model request;
-quiet samples are not gated away. See the [pipeline audit](AUDIO_PIPELINE_AUDIT.md).
+New Synap Cloud uploads use the original saved PCM WAV. The app does not run
+RNNoise, filters, gain, normalization or silence removal before upload. The
+backend passes the entire stored upload to ASR, including very quiet samples
+and pauses, with the original recording offset. Only an entirely zero PCM window
+can skip ASR; its exact cloud source is retained and its transcript is empty.
 
-An explicit **Preview clearer audio** request can still create a separate
-RNNoise copy. Its bounded correction preserves the original sign and at least
-70% amplitude apart from rounding; it does not replace capture or automatic
-upload audio. Synthetic checks do not establish improved transcription accuracy.
+Noise reduction remains an explicit preview/export action. It creates a
+separate copy and does not replace the capture, cloud source or transcript.
 
-Upload bodies are persisted before sending and reused after retry/reload.
-Legacy cached bodies retain their exact bytes because an earlier request may
-already have been accepted by the cloud. Existing cloud audio is not changed
-or automatically retranscribed. A fresh recording uses the original-audio path.
+Before a request is sent, its exact body is saved for retries. A pending request
+created by an older app may already contain processed audio accepted by the
+server. That cached body is retained to avoid a conflicting digest on retry.
+New request bodies are marked `source-pcm-v1` in local segment metadata; old
+cached bodies are not relabeled. `stored-upload-v1` on a newly transcribed cloud
+segment means ASR used the stored upload without Synap trimming or amplitude gating
+(or the exact-zero shortcut returned an empty transcript).
+Existing cloud recordings/transcripts are not automatically overwritten.
+
+The upload compatibility entry point `prepareForUpload` now returns the original
+Blob without starting a Worker, including during a partial app update. The
+provider also bypasses enhancement directly, protecting both update orders.
+WAV validation still rejects malformed sample alignment before upload/storage.
+
+See the [complete audio path audit](AUDIO_PIPELINE_AUDIT.md) for transport, memory,
+compatibility, evidence and hardware acceptance limits.
 
 ## Rejected transcription requests
 
@@ -73,9 +83,8 @@ speech-like signals, short tails, silence, cancellation, bounded attenuation,
 and offline loading. Upload tests preserve exact request bodies across retries.
 Speaker tests cover swapped ASR labels, ambiguous matches, service failures,
 different embedding models, overlaps, and incomplete annotations. Browser
-workflows verify automatic preparation returns the original without DSP while
-simulated BLE recording continues. Cloud request tests compare every uploaded
-WAV byte after encrypted storage and on each ASR fallback.
+workflows verify uncompressed PCM from notifications through IndexedDB, WAV,
+upload selection and playback, and exercise explicit preview enhancement.
 
 Primary references: [RNNoise design and limitations](https://jmvalin.ca/demo/rnnoise/)
 and [Gemini transcription and diarization](https://ai.google.dev/gemini-api/docs/transcribe).

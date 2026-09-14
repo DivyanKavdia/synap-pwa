@@ -237,19 +237,19 @@
     if(meta?.transcriptionBlob){await validate(meta.transcriptionBlob);return meta.transcriptionBlob;}
     await validate(original);
     if(!meta || meta.uploadedToBackend || !store.atomic)return original;
-    // New uploads contain the journal WAV exactly. A legacy persisted request
-    // above is retained because the backend may already have accepted its hash.
-    const copy=original;
+    // New requests always use the saved source. A pre-upgrade cached body may
+    // already be accepted remotely: keep it unchanged for idempotent retries.
     if(signal?.aborted)throw new DOMException('Upload cancelled.','AbortError');
-    await validate(copy);
-    // Persist the exact original body before sending it so interrupted requests
-    // and older app tabs cannot change an already accepted source on retry.
+    // Persist the exact request body before sending it: retries after a reload
+    // must keep the same digest even if capture or app versions have changed.
     const selected=await store.atomic(['segments'],function(stores,result,transaction){
       const get=stores.segments.get(key);
       get.onsuccess=function(){
         if(!get.result){transaction.abort();return;}
-        const selected=get.result.transcriptionBlob||copy;
-        stores.segments.put({...get.result,transcriptionBlob:selected});result(selected);
+        const selected=get.result.transcriptionBlob||original;
+        const policy=get.result.transcriptionBlob
+          ? (get.result.transcriptionAudioPolicy||'legacy-prepared') : 'source-pcm-v1';
+        stores.segments.put({...get.result,transcriptionBlob:selected,transcriptionAudioPolicy:policy});result(selected);
       };
     });
     await validate(selected);

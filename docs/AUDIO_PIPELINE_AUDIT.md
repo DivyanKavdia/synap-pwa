@@ -1,75 +1,111 @@
-# Pendant audio pipeline audit — 14 September 2026
+# Audio path: capture once, preserve the source
 
-The earlier pipeline applied a firmware high-pass filter, optional automatic
-RNNoise on the upload body, and cloud silence cropping. Those automatic
-transformations are removed. New pendant recordings now follow one path:
-unfiltered microphone PCM → BLE ADPCM → one app decode → original PCM journal
-and WAV upload → unchanged WAV at ASR.
+The default path is now microphone → unconditioned PCM16 → Bluetooth → local
+PCM journal → identical WAV upload → cloud storage → the full stored WAV to ASR. Entirely zero windows retain their
+source and receive an empty transcript without a model call.
+Noise reduction is an explicit preview/export copy only.
 
-This is **not lossless microphone capture**. The firmware still converts 32-bit
-I2S slots to PCM16 and uses lossy IMA ADPCM for Bluetooth. After that single
-decode, new upload and ASR bodies preserve every stored sample.
+## Audit findings and changes
 
-## Transformation map
-
-| Boundary / owner | Before this change | Current behavior / verification |
+| Stage | Previous behavior | Current behavior |
 | --- | --- | --- |
-| C3/S3 I2S capture, `acquireAudioFrame` | Slot conversion, then a 70 Hz high-pass with persistent state; first sample replaced with zero | Slot conversion only. Removed filter and its state, including recovery/reset hooks. Native tests run the real function for both materialized targets and preserve all 65,536 PCM16 values, nonzero low slot bits, odd partial reads, generation changes and driver restart. |
-| Firmware transport and recovery | 800 samples encoded into 404-byte IMA ADPCM frames; recovery stores those compressed frames | Unchanged codec, pacing, packet format and bounded recovery. Compression is lossy. No added denoiser, gate, gain or VAD. |
-| App BLE ingress, `audio-codec-v3.js` | Reassemble each compressed frame, decode to 1,600 PCM bytes, expose four packet views | Decode once. Generated frames travel through production packet views, real IndexedDB and browser playback; stored integer samples must match exactly. |
-| Journal / export, `audio-store.js` | Persist decoded PCM, compact 30-second windows; insert explicit silence for unrecovered frame positions | Preserve that timeline and its missing-frame diagnostics. Reject invalid PCM sample/frame lengths before compaction deletes packets. WAV lengths and view offsets are checked. |
-| Cloud upload selection, `synap-backend.js` | RNNoise Worker at 48 kHz with up/down sampling, latency compensation and a bounded correction to the source | New uploads select the journal WAV itself. No automatic Worker, filtering, normalization or resampling. Validate and freeze exact upload bytes before sending. Metadata records `uploadAudioProcessing: none`. |
-| Old app compatibility, `audio-enhancement.js` | `prepareForUpload` could start a model | The entry point now returns the original Blob without DSP. Only an explicit user request can generate a separate enhancement preview/export. |
-| Cloud intake and stored retries | Raw bytes were accepted without complete PCM validation | Validate before storage/model calls, verify declared SHA-256 and preserve the immutable accepted source. Previously stored malformed audio fails before another ASR request. |
-| Encrypted cloud source | Envelope encryption and later decryption | No audio transformation. Route regression checks the model request against the exact uploaded WAV after encrypted persistence. |
-| ASR, `transcribe.ts` | Trim sufficiently long silent edges, then adjust returned offsets | Send the complete source WAV unchanged on the first attempt and every fallback/review. Word offsets use only the segment's original position. A read-only exact-zero check avoids hallucinating text for wholly zero-filled windows; even ±1 PCM samples remain eligible for ASR. |
-| Cloud audio export, `source.ts` | Reconstruct positions from timestamp-to-byte rounding | Strict PCM parsing and sample-aligned positions. Fractional legacy times can no longer insert a half sample. Timeline gaps remain explicit. |
-| Speaker identity branch | Extract short non-overlapping speech excerpts, convert PCM to model floats and normalize embedding vectors | Remains a separate metadata branch. `speaker-service/app.py` returns embeddings, never a replacement audio file. It cannot rewrite journal, upload or playback audio. |
-| Browser playback / quality observation | Native WAV playback and read-only signal statistics | No custom playback DSP. Integer PCM must match; the native decoder is checked within one PCM16 step to allow float normalization differences. |
+| Firmware capture | Signed I2S conversion followed by a stateful 70 Hz high-pass filter | Signed I2S conversion only; filter and state removed on C3 and S3 |
+| Bluetooth | Every frame encoded as lossy IMA ADPCM | Uncompressed PCM16 preferred at MTU ≥185; ADPCM retained below that threshold |
+| Firmware recovery | Compressed frames retained in a volatile ring | Original PCM retained; only a constrained-link send invokes ADPCM |
+| App journal/playback | Stores PCM decoded from received packets; gaps preserve time | Same behavior, with per-format frame counts retained through compaction/recovery |
+| App cloud upload | Conditional local RNNoise with up to a 12-second budget; cloud could receive a different waveform from playback | New uploads send original WAV bytes and persist the exact retry body |
+| Cloud ASR | Samples with magnitude ≤2 treated as silence; silent windows skipped and long silent boundaries trimmed | Every WAV with any nonzero sample is sent unchanged; entirely zero windows retain their source and skip ASR |
+| Explicit enhancement | Local model preview/export | Remains a separate copy; never selected automatically for a new upload |
+| Speaker identification | Extracts speaker-specific excerpts for embeddings | Separate derived work; does not replace source WAV or ASR audio |
+| Desktop meetings | Browser echo cancellation, noise suppression, automatic gain, mixing and resampling | Noise suppression and automatic gain disabled; echo cancellation retained to avoid recapturing the meeting speaker output; mix/resample still required |
 
-## Why BLE compression remains
+Voice enrollment already requests browser noise suppression, gain control and
+echo cancellation off. Browser/device drivers and the microphone's internal
+ADC/filtering are outside the firmware DSP path.
 
-At 16 kHz mono PCM16, payload is 32,000 bytes/s. The existing codec uses
-404 bytes per 50 ms frame, or 8,080 bytes/s, before packet headers. Changing to
-raw PCM would nearly quadruple notification traffic and recovery memory.
-The current recovery allocation is up to 600 compressed frames on an S3 with
-PSRAM and 100 on sufficiently provisioned internal RAM, including the C3.
-The codec also resets its quantizer state per frame; it introduces quantization
-error and is not ruled out as a contributor to perceptual quality in other takes.
+These processing layers were confirmed in code; their removal does not establish
+that they caused every reported fault. The supplied robotic recording had an
+independent, confirmed one-byte PCM alignment error. The pending alignment fix
+is retained in this change set: malformed source data is rejected and preserved
+for explicit recovery. See [the recording investigation](ROBOTIC_AUDIO_2026-09-14.md).
+Earlier missing Bluetooth frames and received near-silent samples remain distinct
+conditions; neither can be reconstructed by removing processing.
 
-This release removes stacked preprocessing without simultaneously changing
-radio throughput, recovery capacity or the wire protocol. A lossless transport
-change needs a separate throughput and recording comparison on physical C3/S3
-devices. No physical Bluetooth throughput result is claimed here.
+## Uncompressed transport and hardware budgets
 
-## Existing recordings and other capture paths
+The existing protocol-v2 wire format already supports uncompressed little-endian
+PCM16, so control commands, status packet length, sample rate, frame duration and
+older PWA compatibility remain unchanged. Protocol v3 is the ADPCM fallback.
+Both formats decode to 800 mono samples per 50 ms frame.
 
-- A previously persisted `transcriptionBlob` is reused, even if an older release
-  enhanced it. A timed-out request might already be accepted remotely; replacing
-  its bytes would conflict with the immutable source hash. No old recording is
-  silently overwritten, reprocessed, renamed or deleted.
-- Existing firmware keeps its previous capture behavior until it is updated.
-  The PWA cannot undo filtering already applied on a pendant.
-- Manual enhancement creates a separate copy and is outside the canonical
-  recording/upload path. It does not replace source or automatically retrain a
-  voice profile.
-- Desktop meeting capture is a separate system-audio-plus-microphone mixer. Its
-  browser echo cancellation, noise suppression, gain and resampling remain in
-  `desktop-capture.js`; they are not in the C3/S3 path. Voice-profile enrollment
-  separately requests browser processing disabled.
+| Resource | C3 SuperMini | S3 SuperMini with PSRAM |
+| --- | --- | --- |
+| Preferred source stream | 16 kHz × 16-bit mono PCM, 256 kb/s | Same |
+| PCM at MTU 185 / 247 / 517 | 10 / 7 / 4 notifications per frame | Same |
+| Fallback at MTU 32–184 | 404-byte ADPCM frames, 64.64 kb/s | Same |
+| MTU below 32 | Recording refused | Recording refused |
+| Volatile PCM recovery | 25 frames, 1.25 s, ~40 KB | 600 frames, 30 s, ~965 KB |
+| Allocation fallback | Recovery unavailable when internal free heap is insufficient | Uses the C3-sized pool if PSRAM allocation fails and internal heap permits |
 
-## Incident evidence and remaining checks
+Rates exclude BLE headers and retries. The PCM threshold bounds notification
+count; it is an implementation policy, **not a measured radio bandwidth test**.
+A large MTU alone cannot guarantee that a particular phone sustains the stream.
+Normal pacing remains 45 ms/frame; recovery catch-up uses 30 ms only with at most
+five fragments/frame. Retry, queue-drop, packet-gap and disconnect evidence stay
+visible. The format is selected at START or RESUME; there is no hidden switch
+within an active connection. A reconnect with a different MTU can change format,
+which is reflected in the saved frame counts.
 
-The supplied WAV had one leading zero byte before otherwise complete PCM. Its
-repaired payload matches all 384 codec frames exactly. See the
-[recording investigation](ROBOTIC_AUDIO_2026-09-14.md). This confirms a sample
-alignment failure, but does not identify where that byte was inserted or prove
-that a filter/denoiser caused it.
+The microphone provides 24 significant bits in a 32-bit I2S slot. Existing
+conversion retains the upper 16 signed bits; it discards eight lower significant
+bits and does not add digital gain. Uncompressed PCM16 is lossless from that
+conversion onward on received frames, not a claim of raw 24-bit capture.
+24-bit transport would require a different app/storage/ASR format contract and
+50% more audio bandwidth than PCM16. The microphone's internal filters remain.
+[INMP441 manufacturer datasheet](https://product.tdk.com/system/files/dam/doc/product/sw_piezo/mic/mems-mic/data_sheet/inmp441.pdf).
 
-Removing the high-pass exposes microphone DC and low-frequency rumble. Quiet
-input remains quiet; software cannot recover a missing physical microphone
-signal. The remaining device check is a short recording after updating both
-the app and pendant, comparing in-app playback with the exported original WAV,
-then a longer continuity run with the diagnostic log. Unit, browser and firmware
-build tests establish software contracts, not subjective audio quality or
-physical radio/power stability.
+## Storage, retries and observability
+
+- Raw packets retain their actual transport (`pcm16` or `adpcm`). Complete-frame
+  counts survive journal compaction and crash recovery. Recording details show
+  uncompressed, compressed or mixed audio; older unlabelled frames stay unknown.
+- Connection health shows PCM16 or ADPCM and the actual MTU/fragment count.
+  Firmware diagnostics flags add `0x40` for no capture DSP and `0x80` for selected
+  PCM transport; the existing 48-byte diagnostic layout is preserved.
+- Local upload metadata marks new request bodies `source-pcm-v1`. Pre-upgrade
+  cached request bodies remain unchanged because the cloud may have accepted
+  them before the phone saw a response. They are not relabelled as unprocessed.
+- SHA-256 checks, authenticated encrypted storage, strict WAV validation and
+  timestamp-to-sample alignment remain. ASR input is the decrypted stored upload, except the exact-zero shortcut above.
+  `stored-upload-v1` on new cloud transcriptions records this backend policy.
+- Missing frames become timeline gaps with explicit missing-audio counts. They
+  are never presented as microphone silence or as recovered speech.
+- Quiet windows containing even one ±1 sample reach ASR unchanged, including all
+  silent boundaries. Only an entirely zero window skips the model; its source
+  stays stored. This keeps the latest exact-zero safeguard without an amplitude
+  threshold or silence cropping.
+
+## Verification and acceptance
+
+Native tests exercise production capture on both materialized boards: all 65,536
+signed PCM16 values, quiet/DC input, non-aligned partial I2S reads, driver recovery
+and cancellation. Transport tests exercise all 65,536 possible MTUs, exact PCM
+bytes, unchanged ADPCM golden bytes, pacing, congestion and connection races.
+Recovery tests compare every retained/replayed PCM sample and verify allocation,
+rollover, token ownership, STOP drain and bounded overflow. Both real board builds
+use Arduino ESP32 3.3.5; S3 uses Adafruit NeoPixel 1.15.2.
+
+Browser tests carry generated raw notifications through IndexedDB, compaction,
+WAV creation, upload selection and native playback at the packet budgets for
+MTUs 185/247/517. PCM byte comparisons are exact; native playback allows the
+browser's PCM-to-float full-scale convention. Backend request tests compare every
+ASR input byte, including ±1/±2 samples and silent boundaries, and preserve
+original window timestamps. Provider retry tests preserve the same input.
+
+Physical acceptance is still required: update app and firmware, record C3 and S3
+for 10–15 minutes, verify PCM16 in Connection health, listen to both local and
+cloud-source downloads, and inspect capture drops, notification rejects and gap
+counts. Include quiet speech, brief RF interruptions, STOP drain and battery/USB
+power. Verify the firmware update retains the `synap-os1-build#` naming and the
+correct target. Host tests and successful board builds cannot certify RF
+throughput, microphone wiring, acoustics or sound quality on physical devices.

@@ -118,6 +118,7 @@
       groups.get(packet.sequence).push(packet);
     }
     let incomplete = 0;
+    const transportFrames = {};
     for (const sequence of [...groups.keys()].sort((a, b) => a - b)) {
       const unique = new Map(groups.get(sequence).map((p) => [p.chunk, p]));
       const parts = [...unique.values()].sort((a, b) => a.chunk - b.chunk);
@@ -125,7 +126,7 @@
       if (
         !total ||
         parts.length !== total ||
-        parts.some((p, i) => p.chunk !== i || p.total !== total) ||
+        parts.some((p, i) => p.chunk !== i || p.total !== total || p.transport !== parts[0].transport) ||
         parts.reduce((n, p) => n + p.payload.byteLength, 0) !== PCM_BYTES_PER_FRAME
       ) {
         incomplete++;
@@ -138,6 +139,9 @@
         offset += p.payload.byteLength;
       }
       complete.set(sequence, frame);
+      const transport = parts[0].transport;
+      if (transport === 'pcm16' || transport === 'adpcm')
+        transportFrames[transport] = (transportFrames[transport] || 0) + 1;
     }
     const keys = [...groups.keys()].sort((a, b) => a - b);
     const firstSequence = keys.length ? keys[0] : -1,
@@ -161,6 +165,7 @@
       incomplete,
       missing,
       completeFrames: complete.size,
+      ...(Object.keys(transportFrames).length ? { transportFrames } : {}),
       completeSequences: [...complete.keys()],
       packets: packets.length,
       frameGroups: groups.size,
@@ -362,6 +367,7 @@
         total: packet.total,
         segmentIndex: Math.floor(sequence / SEGMENT_FRAMES),
         payload: packet.payload.slice(),
+        ...(packet.transport ? { transport: packet.transport } : {}),
       });
       this.bufferedCount++;
       if (!this.timer)
@@ -490,6 +496,7 @@
           missing: meta.missing || 0,
           packets: meta.packets || 0,
           completeFrames: meta.frameCount || 0,
+          ...(meta.transportFrames ? { transportFrames: meta.transportFrames } : {}),
           timelineFrames:
             meta.timelineFrameCount || Math.floor(pcm.byteLength / PCM_BYTES_PER_FRAME),
         };
@@ -575,6 +582,7 @@
             compacted: true,
             pcmBlob,
             frameCount: data.completeFrames,
+            ...(data.transportFrames ? { transportFrames: data.transportFrames } : {}),
             timelineFrameCount: data.frames.length,
             incomplete: data.incomplete,
             missing: data.missing,
@@ -652,6 +660,11 @@
         incomplete += scan.incomplete;
         capturedFrames += scan.completeFrames;
       }
+      const transportFrames = {};
+      const addTransport = counts => {
+        for (const kind of ['pcm16', 'adpcm'])
+          if (counts?.[kind]) transportFrames[kind] = (transportFrames[kind] || 0) + counts[kind];
+      };
       let complete = 0,
         missing = 0,
         timelineFrames = 0;
@@ -660,6 +673,7 @@
         for (let index = 0; index <= lastIndex; index++) {
           const segment = byIndex.get(index);
           if (segment?.pcmBlob) {
+            addTransport(segment.transportFrames);
             complete += segment.frameCount || 0;
             missing += segment.missing || 0;
             timelineFrames += segment.timelineFrameCount || 0;
@@ -672,6 +686,7 @@
             startSequence: start,
             endSequence: end,
           });
+          addTransport(data.transportFrames);
           complete += data.completeFrames;
           missing += data.missing;
           timelineFrames += data.frames.length;
@@ -696,6 +711,7 @@
             sizeBytes: timelineFrames ? 44 + timelineFrames * PCM_BYTES_PER_FRAME : 0,
             stats: {
               completeFrames: complete,
+              ...(Object.keys(transportFrames).length ? { transportFrames } : {}),
               incompleteFrames: incomplete,
               packetsReceived: packets,
               missingFrames: missing,

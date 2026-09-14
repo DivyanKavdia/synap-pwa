@@ -84,3 +84,16 @@ test('starting capture during diagnostic discovery cancels the remaining read',a
   await h.api.readPendantDiagnostics();assert.deepEqual(h.calls,['Find pendant diagnostics']);
   assert.equal(h.c.diagnosticLines.length,0);
 });
+
+test('only a firmware capability flag can establish unfiltered capture',()=>{
+  const {api}=harness();
+  assert.equal(api.decodePendantDiagnostics(packet()).firmwareDsp,'unknown');
+  const current=packet();current.setUint8(2,0x47);
+  assert.equal(api.decodePendantDiagnostics(current).firmwareDsp,'none');
+  assert.equal(api.decodePendantDiagnostics(current).realMic,true);
+  assert.equal(api.decodePendantDiagnostics(current).audioTransport,'adpcm');
+  current.setUint8(2,0xC7);
+  assert.equal(api.decodePendantDiagnostics(current).audioTransport,'pcm16');
+  const legacy=packet(1);legacy.setUint8(2,0x47);
+  assert.equal(api.decodePendantDiagnostics(legacy).firmwareDsp,'unknown');
+});

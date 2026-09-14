@@ -42,7 +42,7 @@ async function start(options={}){
   try{
     display=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
     check();
-    mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
+    mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:false,autoGainControl:false},video:false});
     check();
     const displayAudio=display.getAudioTracks();
     if(!displayAudio.length)throw new Error('Share a tab/window with audio enabled. No meeting audio was provided.');

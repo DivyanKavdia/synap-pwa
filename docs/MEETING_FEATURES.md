@@ -3,8 +3,8 @@
 ## What changes
 
 - Short disconnect recovery is negotiated with compatible firmware using a per-page token and a last-complete-frame cursor. It preserves one journal and original frame sequence numbers. STOP drains pending frames before sealing. Settings shows the available recovery duration. Old firmware keeps its existing reconnect behavior.
-- New cloud uploads use the original journal WAV, without automatic RNNoise or other audio transformation. Explicit enhancement previews remain separate copies.
-- Cloud transcription receives the complete WAV without trimming or changing word offsets. Only wholly zero-valued windows skip ASR; quiet samples remain intact.
+- New cloud uploads use saved source WAV bytes. RNNoise is available only for an explicit preview/export copy.
+- Cloud ASR receives the entire stored WAV, including silence and very quiet samples. No amplitude threshold skips a window and no trim changes its offsets. Only an entirely zero source skips ASR and retains an empty transcript.
 - Speaker names can be supplemented with an explicitly confirmed sample for an existing remembered voice. Names alone and automatic matches never train a profile. Up to three distinct reference samples are kept encrypted; conflicting/model-incompatible samples are rejected. Matching retains the existing threshold and separation rules, using the best two references when available.
 - New memory extraction includes chronological topic chapters, unanswered questions, actual actions and explicit spoken reminder suggestions with source times. Relative dates use capture context; uncertain dates remain null. Suggestions do not schedule notifications or contact people.
 - Library → recording → Meeting details exposes chapter playback, decisions, actions, unanswered questions and saved audio-quality observations. Summary text remains the executive recap when structured detail is available.

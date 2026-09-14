@@ -53,9 +53,9 @@ memory are preserved. The preview lasts for the page session and supports up to
 20 minutes of mono PCM16 WAV at 16 or 48 kHz, returning 16 kHz mono WAV with delay
 compensation.
 
-The model and Worker are cached offline. Enhancement runs only when explicitly
-requested; managed uploads use the original journal WAV without processing. See
-[original audio uploads](AUTOMATIC_SPEECH.md)
+The model and Worker are cached offline. Short-window speech-preservation checks
+fall back to the original if a transformed copy is unsafe. Managed uploads use the original saved WAV without this treatment; see
+[source audio and speaker continuity](AUTOMATIC_SPEECH.md)
 and [model provenance](../vendor/audio-enhancement/README.md). Enhancement cannot
 reconstruct clipped, missing or overlapping speech, and synthetic fixtures do
 not establish improved recognition accuracy.

@@ -81,8 +81,8 @@ idempotent START, yielding notification retries and bounded STOP drain are
 meaningful safeguards. Native regressions exercise the production functions for
 both generated targets; **51 tests passed** in this audit.
 
-The S3 can buffer up to 30 seconds in PSRAM. Internal-memory fallback is up to
-5 seconds and depends on successful allocation; C3 cannot be assumed to have a
+The S3 can buffer up to 30 seconds in PSRAM. With the uncompressed pipeline, internal-memory fallback is up to
+1.25 seconds and depends on successful allocation; C3 cannot be assumed to have a
 30-second buffer. The 60-second firmware handshake and five-minute browser
 reconnect window are retry bounds, not audio retention guarantees.
 

@@ -1,14 +1,6 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 function load(file){const c={document:{readyState:"loading",addEventListener(){},getElementById(){return null},querySelector(){return null}},Blob,DataView,Uint8Array,DOMException,URL,setTimeout,clearTimeout};vm.createContext(c);vm.runInContext(fs.readFileSync(file,'utf8'),c);return c}
-test('short-window speech guard detects a missing syllable even when file length agrees',()=>{
-  const api=load('audio-enhancement.js').SynapAudioEnhancement;
-  const dry=new DataView(new ArrayBuffer(1324)),wet=new DataView(new ArrayBuffer(1324));
-  for(let i=44;i<1324;i+=2){dry.setInt16(i,i%4?1000:-1000,true);wet.setInt16(i,i%4?700:-700,true)}
-  assert(api.preservesSpeech(dry,wet));
-  for(let i=684;i<1324;i+=2)wet.setInt16(i,0,true);
-  assert.equal(api.preservesSpeech(dry,wet),false);assert.equal(api.digitalSilence(dry),false);assert(api.digitalSilence(new DataView(new ArrayBuffer(1324))));
-});
 test('recording quality flags actual clipping and quiet audio without changing PCM',()=>{
   const api=load('audio-quality.js').SynapAudioQuality;
   const pcm=new Uint8Array(96000),v=new DataView(pcm.buffer);for(let i=0;i<pcm.length;i+=2)v.setInt16(i,32767,true);

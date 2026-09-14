@@ -104,7 +104,12 @@ function harness() {
       body: { dataset: { state: 'disconnected' } },
     },
     navigator: {
-      mediaDevices: { getDisplayMedia: () => displayPrompt.promise, getUserMedia: async () => mic },
+      mediaDevices: { getDisplayMedia: () => displayPrompt.promise, getUserMedia: async constraints => {
+        assert.equal(constraints.audio.noiseSuppression, false);
+        assert.equal(constraints.audio.autoGainControl, false);
+        assert.equal(constraints.audio.echoCancellation, true);
+        return mic;
+      } },
     },
     AudioContext,
     MediaStream: class {},

@@ -66,6 +66,7 @@ async function transcribeOne(
     language: recording.language,
     transcribedAt: new Date().toISOString(),
     transcriptionReview:result.review,
+    transcriptionAudioPolicy:'stored-upload-v1',
     sealedTranscript: sealText(
       dek,
       result.text,

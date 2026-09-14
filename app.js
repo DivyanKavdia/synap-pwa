@@ -235,6 +235,7 @@
       invalidPackets: 0,
       duplicatePackets: 0,
       completeFrames: 0,
+      transportFrames: {},
       incompleteFrames: 0,
       missingFrames: 0,
       pcmBytes: 0,
@@ -468,9 +469,9 @@
 
     if (deviceStatus.mtu) {
       ui.transportMetric.textContent =
-        String(deviceStatus.mtu);
+        deviceStatus.chunksPerFrame ? (deviceStatus.audioTransport === "pcm16" ? "PCM16" : "ADPCM") : "—";
       ui.transportDetail.textContent =
-        "MTU · " +
+        "MTU " + deviceStatus.mtu + " · " +
         deviceStatus.chunksPerFrame +
         " chunks/frame";
     } else {
@@ -1413,7 +1414,10 @@
       headerBytes: value.getUint8(9),
       sampleRate: value.getUint16(10, true),
       samplesPerFrame: value.getUint16(12, true),
-      payloadBytes: value.getUint16(14, true)
+      payloadBytes: value.getUint16(14, true),
+      // Existing v2/v3 status layouts encode the total frame size through the
+      // balanced fragment count and payload size; no new handshake is needed.
+      audioTransport: value.getUint8(8) * value.getUint16(14, true) >= PCM_BYTES_PER_FRAME ? 'pcm16' : 'adpcm'
     };
 
     if (receivedStatus.state > 3 || receivedStatus.headerBytes !== AUDIO_HEADER_BYTES ||
@@ -1440,7 +1444,8 @@
       attCapacity: deviceStatus.attCapacity,
       chunks: deviceStatus.chunksPerFrame,
       payload: deviceStatus.payloadBytes,
-      sampleRate: deviceStatus.sampleRate
+      sampleRate: deviceStatus.sampleRate,
+      audioTransport: deviceStatus.audioTransport
     });
 
     updateMetrics();
@@ -1764,10 +1769,11 @@
     const values = typeof normalizer === "function"
       ? normalizer(original, event?.target || audioCharacteristic)
       : [original];
-    for (const value of values) handleNormalizedAudioValue(value);
+    const transport = original?.byteLength >= 2 && original.getUint8(1) === 3 ? 'adpcm' : 'pcm16';
+    for (const value of values) handleNormalizedAudioValue(value, transport);
   }
 
-  function handleNormalizedAudioValue(value) {
+  function handleNormalizedAudioValue(value, transport = "unknown") {
     if (!value || value.byteLength < AUDIO_HEADER_BYTES) {
       sessionStats.invalidPackets += 1;
       return;
@@ -1835,6 +1841,7 @@
 
       frame = {
         sequence: sequence,
+        transport: transport,
         totalChunks: totalChunks,
         chunks: new Array(totalChunks),
         receivedChunks: 0,
@@ -1845,7 +1852,7 @@
       pendingFrames.set(sequence, frame);
     }
 
-    if (frame.totalChunks !== totalChunks) {
+    if (frame.totalChunks !== totalChunks || frame.transport !== transport) {
       pendingFrames.delete(sequence);
       sessionStats.invalidPackets += 1;
       log("Chunk count changed inside frame", {
@@ -1869,7 +1876,7 @@
     );
 
     if (journal && currentRecordingId) {
-      try {journal.append(currentRecordingId, {sequence, chunk:chunkIndex, total:totalChunks, payload});}
+      try {journal.append(currentRecordingId, {sequence, chunk:chunkIndex, total:totalChunks, payload, transport});}
       catch(error){handleStorageError(error);return;}
     }
 
@@ -1945,6 +1952,10 @@
     }
     globalThis.SynapDisconnectProtection?.received(frame.sequence);
     sessionStats.completeFrames += 1;
+    if (frame.transport === 'pcm16' || frame.transport === 'adpcm') {
+      const counts = sessionStats.transportFrames || (sessionStats.transportFrames = {});
+      counts[frame.transport] = (counts[frame.transport] || 0) + 1;
+    }
     sessionStats.pcmBytes += pcm.length;
 
     globalThis.SynapAudioQuality?.observe(pcm);
@@ -2913,6 +2924,13 @@
       const notice = document.createElement("p");
       notice.className = "recording-audio-gap";
       notice.textContent = "Audio incomplete: " + gaps.label + ". The silent gaps contain no received audio; transcription and enhancement cannot restore missing speech.";
+      card.appendChild(notice);
+    }
+    const transportLabel = globalThis.SynapAudioQuality?.transportLabel(recording.stats);
+    if (transportLabel) {
+      const notice = document.createElement('p');
+      notice.className = 'recording-transport-detail';
+      notice.textContent = transportLabel;
       card.appendChild(notice);
     }
     const qualityWarnings = globalThis.SynapAudioQuality?.describe(recording.audioQuality) || [];
