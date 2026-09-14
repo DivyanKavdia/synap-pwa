@@ -32,6 +32,8 @@ if (selected.some((name) => !suites.some(([suite]) => suite === name))) {
   );
   process.exit(1);
 }
+// Finish independent journeys to retain all screenshots when one layout fails.
+const failures = [];
 for (const [name, env] of suites) {
   if (selected.length && !selected.includes(name)) continue;
   console.log(`Running ${name}${env?.SYNAP_RECOVERY_FIXTURE ? ' (buffered recovery)' : ''}`);
@@ -41,5 +43,10 @@ for (const [name, env] of suites) {
     stdio: 'inherit',
   });
   if (result.error) console.error(result.error.message);
-  if (result.status !== 0) process.exit(result.status || 1);
+  if (result.status !== 0) failures.push(name);
+}
+
+if (failures.length) {
+  console.error('Failed browser suites: ' + failures.join(', '));
+  process.exitCode = 1;
 }

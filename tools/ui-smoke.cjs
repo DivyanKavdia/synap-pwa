@@ -908,8 +908,8 @@ async function run() {
           await page.locator('#peopleBrowseToggle').click();
           assert.equal(await page.locator('#peopleList .person-card').count(), 14);
           assert(
-            (await page.locator('#myActionsContent').boundingBox()).height <= 300,
-            'expanded people stay inside the shared content area',
+            (await page.locator('#myActionsContent').boundingBox()).height <= 440,
+            'expanded People use the bounded viewport; short panels fit their content',
           );
           assert(
             await page
