@@ -285,6 +285,14 @@
   window.addEventListener("synap-pendant-diagnostics", function (event) {
     log("Pendant diagnostics", event.detail);
   });
+  window.addEventListener("synap-capture-diagnostic", function (event) {
+    log("Chakshu capture failed", {
+      ...event.detail,
+      module: globalThis.SynapModules?.client?.module,
+      audioState: deviceStatus,
+      audioStats: sessionStats
+    });
+  });
   window.addEventListener("synap-audio-signal", function (event) {
     log(event.detail.nearSilent ? "Audio signal nearly silent" : "Audio signal returned", {
       ...event.detail, recordingId: currentRecordingId, visibility: document.visibilityState
@@ -3993,15 +4001,38 @@
     }
     if (!requireReady() || !requireAppOwnership() || !isGattConnected() || firmwareBusy)
       throw Error('Connect Chakshu and finish setup first.');
-    if (!recordingState().active) {
-      if (appState !== 'idle') throw Error('Finish the current recording first.');
-      await startRecording();
+    let ownedSession = null;
+    try {
+      if (!recordingState().active) {
+        if (appState !== 'idle') throw Error('Finish the current recording first.');
+        const previous = recordingSessionId;
+        const starting = startRecording();
+        // startRecording claims its session before its first await. A later
+        // cancelled/replacement take must never become ours to stop.
+        if (recordingSessionId !== previous) ownedSession = recordingSessionId;
+        await starting;
+      }
       const deadline = Date.now() + 10000;
-      while (!recordingState().active && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+      let expected = recordingState().sessionId;
+      while (Date.now() < deadline) {
+        const state = recordingState();
+        if (ownedSession !== null && !isCurrentSession(ownedSession)) break;
+        if (expected && state.sessionId !== expected) break;
+        if (state.active && state.receivedMs > 0) return state;
+        if (!['starting', 'recording'].includes(appState) || !isGattConnected()) break;
+        expected ||= state.sessionId;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      // A STREAMING status is an acknowledgement, not evidence of microphone
+      // data. Do not create an empty video with a non-working soundtrack.
+      const message = 'No audio samples arrived from Chakshu. Check Device → Chakshu and copy the Diagnostic log.';
+      log(message, { deviceStatus, stats: sessionStats });
+      throw Error(message);
+    } catch (error) {
+      if (ownedSession !== null && isCurrentSession(ownedSession))
+        await stopRecording().catch(() => {});
+      throw error;
     }
-    const state = recordingState();
-    if (!state.active) throw Error('Chakshu did not start its audio stream.');
-    return state;
   }
   globalThis.SynapAppControls = Object.freeze({toggleCapture,toggleConnection,recordingState,stopCapture,canReload,startMediaAudio});
 

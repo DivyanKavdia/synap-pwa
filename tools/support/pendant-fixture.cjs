@@ -32,6 +32,7 @@ module.exports = function pendantFixture() {
     return v;
   };
   let transferReply=new DataView(new ArrayBuffer(16)),transferBytes=new Uint8Array(),offlineRecording=false;
+  let delayCameraReply=false,uninitializedMediaReads=0;
   function cameraJPEG(){const c=document.createElement('canvas');c.width=160;c.height=120;const ctx=c.getContext('2d');ctx.fillStyle='#776ac4';ctx.fillRect(0,0,160,120);ctx.fillStyle='#fff';ctx.fillRect(20,20,80,50);return Uint8Array.from(atob(c.toDataURL('image/jpeg').split(',')[1]),x=>x.charCodeAt(0));}
   function transferCommand(bytes){const v=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),op=bytes[1],id=v.getUint32(2,true),offset=v.getUint32(6,true);let payload=new Uint8Array(),total=0;
     if(op===1)transferBytes=cameraJPEG();
@@ -149,7 +150,7 @@ module.exports = function pendantFixture() {
     readValue() {
       return operation(async () => {
         if (this.id === uuid('50')) return moduleDescriptor();
-        if (this.id === uuid('55')) return transferReply;
+        if (this.id === uuid('55')) {if(transferReply.getUint8(0)===0)uninitializedMediaReads++;return transferReply;}
         if (this.id === uuid('56')) return voiceStatus();
         if (this.id === uuid('59')) return modelStatus();
         if (this.id === uuid('52')) return mediaStatus();
@@ -197,7 +198,13 @@ module.exports = function pendantFixture() {
           return;
         }
         if (this.id===uuid('56')) { if(value[2]===0||value[2]===1)voiceEnabled=value[2]===1;if(value[2]===2)voiceLease=Date.now();if(value[2]===3)voiceLease=0;return; }
-        if (this.id===uuid('54')) { transferCommand(value); return; }
+        if (this.id===uuid('54')) {
+          if(value[1]===1&&delayCameraReply){
+            delayCameraReply=false;transferReply=new DataView(new ArrayBuffer(16));
+            const request=value.slice();setTimeout(()=>transferCommand(request),150);
+          }else transferCommand(value);
+          return;
+        }
         if (this.id===uuid('51')) {
           mediaWrites++;mediaOperation=value[2];mediaId=value[3];
           mediaError=state===2?1:!sdAvailable&&mediaOperation!==1?3:0;
@@ -439,6 +446,8 @@ module.exports = function pendantFixture() {
     modelFailAt(offset){modelFailure=offset;},
     get model(){return {state:modelState,offset:modelOffset,begins:modelBegins};},
     get mediaWrites(){return mediaWrites;},
+    delayNextCameraReply(){delayCameraReply=true;},
+    get uninitializedMediaReads(){return uninitializedMediaReads;},
     setSdAvailable(value){sdAvailable=value;},
     finishMedia(error=0){mediaError=error;mediaState=error?3:2;},
     blockAudio(value) { blockAudio = value; },

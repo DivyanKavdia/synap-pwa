@@ -70,6 +70,33 @@ function response(id, total, offset, payload = [], state = 1) {
   new Uint8Array(v.buffer).set(payload, 16);
   return v;
 }
+test('first camera request waits through empty, uninitialized and stale worker replies', async () => {
+  const source = new Uint8Array([255, 216, 1, 2, 255, 217]);
+  let last, reads = 0, captures = 0;
+  const initial = [new DataView(new ArrayBuffer(0)), new DataView(new ArrayBuffer(16)), response(0, 0, 0)];
+  const client = new Client({
+    queue: action => action(),
+    service: { getCharacteristic: async uuid => uuid.includes('354-') ? {
+      writeValueWithResponse: async bytes => {
+        const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        last = { op: bytes[1], id: v.getUint32(2, true), offset: v.getUint32(6, true) };
+        if (last.op === 1) captures++;
+      },
+    } : { readValue: async () => {
+      reads++;
+      return initial.shift() || response(last.id, source.length, last.offset,
+        last.op === 2 ? source.slice(last.offset, last.offset + 3) : []);
+    } } },
+  });
+  const photo = await client.snapshot();
+  assert.deepEqual(new Uint8Array(await photo.arrayBuffer()), source);
+  assert.equal(captures, 1, 'polling must not trigger duplicate exposures');
+  assert.equal(reads, 6);
+  assert.throws(() => decode(new DataView(new ArrayBuffer(15)), 1), /Invalid/);
+  const malformed = new DataView(new ArrayBuffer(16));
+  malformed.setUint8(1, 99);
+  assert.throws(() => decode(malformed, 1), /Invalid/);
+});
 test('transfer ignores old replies, validates offsets and rejects changed file sizes', async () => {
   assert.equal(decode(response(1, 4, 0), 2), null);
   assert.equal(decode(response(2, 4, 0, [], 0), 2), null);
