@@ -110,3 +110,32 @@ test('native string, null and code-only failures retain useful diagnostics',asyn
     assert.match(failure.detail.message,message);assert.equal(failure.detail.name,'Error');
   }
 });
+
+test('simultaneous startup discovery and subscriptions keep their own native deadlines',async()=>{
+  const h=harness();h.c.appState='idle';h.c.recordingConfirmed=false;
+  let finishDiscovery,subscribed=0;
+  const discovery=h.c.queueGattOperation(()=>new Promise(resolve=>{finishDiscovery=resolve}),'Find firmware status');
+  // These callers enqueue in the same turn, before discovery enters the native bridge.
+  const subscribe=h.c.queueGattOperation(()=>{subscribed++;return 'subscribed'},'Subscribe pendant events');
+  const result=Promise.all([discovery,subscribe]).then(value=>({value}),error=>({error}));
+  await tick();await h.expire(5000);
+  assert.equal(h.disconnects,0,'waiting for healthy discovery must not disconnect an idle pendant');
+  assert.equal(subscribed,0);
+  finishDiscovery('characteristic');
+  assert.deepEqual(await result,{value:['characteristic','subscribed']});
+});
+
+test('a startup backlog can exceed one deadline while every native request is healthy',async()=>{
+  const h=harness();h.c.appState='idle';h.c.recordingConfirmed=false;
+  const finishes=[],order=[];
+  const requests=['Find module characteristic','Find pendant events','Find firmware status'].map(label=>
+    h.c.queueGattOperation(()=>new Promise(resolve=>{order.push(label);finishes.push(resolve)}),label));
+  const result=Promise.all(requests).then(value=>({value}),error=>({error}));
+  for(let i=0;i<3;i++){
+    await tick();await h.expire(6000);
+    assert.equal(h.disconnects,0,'18 seconds of progressing setup is not a stuck native request');
+    assert.equal(order.length,i+1,'only one native request owns ATT');
+    finishes[i](i);await tick();
+  }
+  assert.deepEqual(await result,{value:[0,1,2]});
+});

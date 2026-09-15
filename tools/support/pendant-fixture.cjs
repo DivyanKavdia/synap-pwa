@@ -351,13 +351,17 @@ module.exports = function pendantFixture() {
   if(chakshu&&location.search.includes('model'))for(const id of ['58','59'])chars.set(uuid(id),new Characteristic(uuid(id)));
   if (buffered) chars.set(uuid('4f'), new Characteristic(uuid('4f')));
   if (ota) for (const id of ['48', '49', '4b']) chars.set(uuid(id), new Characteristic(uuid(id)));
-  let nextDiscoveryDelay = null, discoveryBusy = false;
+  let discoveryBusy = false;
+  const discoveryDelays = new Map(), discoveries = [];
+  if (location.search.includes('slow-startup'))
+    for (const id of ['50', '4e', '48', '49']) discoveryDelays.set(uuid(id), 3200);
   const service = {
     getCharacteristic: (id) =>
       operation(async () => {
-        if (nextDiscoveryDelay?.id === id) {
-          const ms = nextDiscoveryDelay.ms;
-          nextDiscoveryDelay = null;
+        discoveries.push({ id, at: performance.now() });
+        if (discoveryDelays.has(id)) {
+          const ms = discoveryDelays.get(id);
+          discoveryDelays.delete(id);
           discoveryBusy = true;
           try { await new Promise(resolve => setTimeout(resolve, ms)); }
           finally { discoveryBusy = false; }
@@ -479,7 +483,8 @@ module.exports = function pendantFixture() {
     get: () => (bluetoothAvailable ? bluetooth : undefined),
   });
   window.bleFixture = {
-    delayNextDiscovery(id, ms) { nextDiscoveryDelay = { id: uuid(id), ms }; },
+    delayNextDiscovery(id, ms) { discoveryDelays.set(uuid(id), ms); },
+    get discoveries() { return discoveries; },
     get discoveryBusy() { return discoveryBusy; },
     emptyVoiceStatus(value){emptyVoiceRead=value;},
     voice(action){voiceSequence++;voiceAction=action;voiceResult=voiceEnabled&&Date.now()-voiceLease<6000?2:0;emitVoice();return voiceSequence;},

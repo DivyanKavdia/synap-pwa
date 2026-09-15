@@ -3,7 +3,7 @@
   'use strict';
 
   class BluetoothSession {
-    static revision = '1.0.0-chakshu-core1';
+    static revision = '1.0.0-chakshu-core2';
 
     static normalizeError(reason) {
       if (reason && typeof reason.message === 'string') return reason;
@@ -29,21 +29,24 @@
       return error;
     }
 
-    constructor({ connection, connected, withTimeout, timeoutMs, onFailure = () => {} }) {
+    constructor({ connection, connected, withTimeout, timeoutMs, onFailure = () => {}, onSlowOperation = () => {} }) {
       this.connection = connection;
       this.connected = connected;
       this.withTimeout = withTimeout;
       this.timeoutMs = timeoutMs;
       this.onFailure = onFailure;
+      this.onSlowOperation = onSlowOperation;
       this.pending = Promise.resolve();
       this.generation = 0;
       this.active = null;
+      this.entries = new Set();
     }
 
     reset() {
       this.generation++;
       this.pending = Promise.resolve();
       this.active = null;
+      this.entries.clear();
     }
 
     run(action, label = 'Bluetooth operation', { timeoutMs = this.timeoutMs } = {}) {
@@ -55,10 +58,19 @@
       const ready = new Promise((resolve) => {
         begin = resolve;
       });
-      const entry = { label, owner, timeoutMs };
-      // A command queued behind discovery must respect that discovery's native
-      // deadline. Its shorter command timeout starts only when it owns ATT.
-      const waitMs = Math.max(timeoutMs, this.active?.timeoutMs || this.timeoutMs);
+      const now = () => root.performance?.now() ?? Date.now();
+      const entry = { label, owner, timeoutMs, startedAt: null, timedOut: false };
+      // Several startup consumers enqueue in the same turn. Account for every
+      // earlier request, including those that have not entered the bridge yet.
+      // Each still gets its own native deadline; this is only the queue budget.
+      const queuedAt = now();
+      let aheadMs = 0;
+      for (const earlier of this.entries) {
+        aheadMs += earlier.startedAt === null ? earlier.timeoutMs :
+          Math.max(0, earlier.timeoutMs - (queuedAt - earlier.startedAt));
+      }
+      const waitMs = Math.max(timeoutMs, aheadMs);
+      this.entries.add(entry);
       const current = () => {
         const active = this.connection();
         return (
@@ -69,16 +81,22 @@
         );
       };
       const operation = this.pending.then(async () => {
-        if (expired) return;
-        if (!current()) throw new Error('Bluetooth connection changed.');
-        started = true;
-        this.active = entry;
-        begin();
         try {
+          if (expired) return;
+          if (!current()) throw new Error('Bluetooth connection changed.');
+          started = true;
+          entry.startedAt = now();
+          this.active = entry;
+          begin();
           const result = await action();
           if (!current()) throw new Error('Bluetooth connection changed.');
+          const queuedMs = Math.round(entry.startedAt - queuedAt),
+            nativeMs = Math.round(now() - entry.startedAt);
+          if (queuedMs >= 1500 || nativeMs >= 1500)
+            this.onSlowOperation({ operation: label, queuedMs, nativeMs });
           return result;
         } finally {
+          this.entries.delete(entry);
           if (this.active === entry) this.active = null;
         }
       });
@@ -96,12 +114,14 @@
         .catch((reason) => {
           const error = BluetoothSession.normalizeError(reason);
           expired = true;
+          if (error.name === 'TimeoutError' && this.active === entry) entry.timedOut = true;
           this.onFailure(error, {
             label,
             owner,
             started,
             current: current(),
             blockedBy: !started ? this.active?.label : undefined,
+            blockedByTimedOut: !started && Boolean(this.active?.timedOut),
           });
           throw error;
         });

@@ -58,6 +58,33 @@ test('absent, truncated and unknown-version diagnostics cannot fabricate link ev
   assert.equal(api.decodePendantDiagnostics(unavailable).disconnectText,'No disconnect since boot');
 });
 
+test('NimBLE HCI reasons retain their namespace and distinguish a host disconnect from radio timeout',()=>{
+  const {api}=harness(),v=packet();
+  for(const [reason,text] of [[0x213,'Remote host ended connection'],[0x208,'Link supervision timeout'],
+    [0x216,'Local host ended connection'],[0x222,'Link response timeout'],[0x23b,'Unacceptable connection parameters']]){
+    v.setUint16(32,reason,true);const data=api.decodePendantDiagnostics(v);
+    assert.equal(data.disconnectReason,reason);assert.equal(data.disconnectText,text);
+  }
+  v.setUint16(32,0x113,true);assert.equal(api.decodePendantDiagnostics(v).disconnectText,'BLE reason 0x113');
+});
+
+test('Chakshu boot and last-link evidence decodes alongside unchanged recording counters',()=>{
+  const {api}=harness(),base=packet(),v=new DataView(new ArrayBuffer(72));
+  new Uint8Array(v.buffer).set(new Uint8Array(base.buffer,base.byteOffset,base.byteLength));
+  v.setUint8(1,3);v.setUint8(2,0xc3);
+  v.setUint32(48,1320,true);v.setUint32(52,480,true);v.setUint32(56,7300,true);
+  v.setUint16(60,24,true);v.setUint16(62,0,true);v.setUint16(64,600,true);
+  v.setUint8(66,2);v.setUint8(67,3);v.setUint32(68,3400,true);
+  const data=api.decodePendantDiagnostics(v);
+  assert.equal(data.bootReadyMs,1320);assert.equal(data.mediaBootMs,480);
+  assert.equal(data.lastLinkDurationMs,7300);assert.equal(data.linkDurationMs,3400);
+  assert.equal(data.lastLinkIntervalMs,30);assert.equal(data.lastLinkSupervisionMs,6000);
+  assert.equal(data.lastLinkStage,'audio-subscribed');assert.equal(data.linkStage,'status-requested');
+  assert.equal(data.firmwareDsp,'none');assert.equal(data.audioTransport,'pcm16');
+  assert.equal(data.captured,120);assert.equal(data.freeHeap,96000);
+  v.setUint8(66,5);assert.throws(()=>api.decodePendantDiagnostics(v),/Unsupported pendant link stage/);
+});
+
 test('firmware diagnostics survive subsequent app logs and are included in Copy diagnostics',async()=>{
   const h=harness();await h.api.readPendantDiagnostics();
   assert.deepEqual(h.calls,['Find pendant diagnostics','Read pendant diagnostics']);

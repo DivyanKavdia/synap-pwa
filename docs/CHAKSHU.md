@@ -100,3 +100,16 @@ The microphone button starts/stops audio, the camera button takes a photo, and t
 Video requests use QVGA frames on the new firmware, while standalone photos and SD captures remain VGA. The preview reports camera transfer percentage. Bluefy read latency still limits the achieved frame rate; this is a sequence of timestamped JPEGs, not a guaranteed continuous-motion video stream. Stopping video cancels its pending camera read and preserves completed frames and received audio. An AbortError at that exact Stop boundary alone does not establish a failed camera or a disconnected link.
 
 Update Chakshu firmware and reconnect after updating this page. A PWA reload does not change the firmware already running on the pendant.
+
+## Startup stability audit
+
+Shell 117 fixes startup queue timeouts that could disconnect a healthy pendant,
+defers automatic firmware discovery for five seconds, and keeps passive checks
+out of manual camera/video capture. Slow Bluetooth requests log queue and native
+durations separately. Chakshu diagnostics v3 includes measured boot/media time,
+the previous link's duration and parameters, and the stage reached before a drop.
+
+The matching firmware removes a duplicate data-length request and keeps the
+central's connection parameters. See the
+[full startup audit](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/chakshu-startup-audit.md)
+for evidence, validation and physical-device limits.

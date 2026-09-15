@@ -223,7 +223,7 @@
     }
     async run(operation) {
       if (root.SynapChakshu?.busy)
-        throw Error('Finish the current capture or model installation first.');
+        throw Error('Finish the current capture first.');
       if (![1, 2, 3, 4].includes(operation) || !capabilities.isChakshu(this.module))
         throw Error('Connect Chakshu first.');
       if (this.pending || this.busy) throw Error('Wait for the current hardware check.');

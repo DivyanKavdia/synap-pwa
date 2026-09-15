@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio2";
-  const APP_SHELL_REVISION = "1.0.0-shell116-chakshu";
+  const APP_SHELL_REVISION = "1.0.0-shell117-chakshu";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -1485,6 +1485,7 @@
 
   function optionalGattAllowed() {
     return !connectInProgress && appState === 'idle' &&
+      !globalThis.SynapChakshu?.busy &&
       !firmwareBusy && !recordingConfirmed && !recordingReconnectPending &&
       !finalizing && !currentRecordingId && !openingCapture && !unsavedAudio;
   }
@@ -1500,7 +1501,8 @@
     connected: isGattConnected,
     withTimeout,
     timeoutMs: COMMAND_TIMEOUT_MS,
-    onFailure: handleGattFailure
+    onFailure: handleGattFailure,
+    onSlowOperation: detail => log("Bluetooth operation timing", detail)
   });
 
   function queueGattOperation(action, label = "Bluetooth operation") {
@@ -1509,10 +1511,14 @@
     return bluetoothSession.run(action, label, { timeoutMs: label.startsWith("Find ") ? 10000 : COMMAND_TIMEOUT_MS });
   }
 
-  function handleGattFailure(error, { label, owner, started, current, blockedBy }) {
+  function handleGattFailure(error, { label, owner, started, current, blockedBy, blockedByTimedOut }) {
     log("GATT operation failed", { operation: label, name: error.name, message: error.message,
-      nativeReason: error.nativeReason, connected: isGattConnected(), queued: !started, blockedBy, session: recordingSessionId });
+      nativeReason: error.nativeReason, connected: isGattConnected(), queued: !started, blockedBy, blockedByTimedOut, session: recordingSessionId });
     if (error.name !== "TimeoutError" || !current) return;
+    if (!started && !blockedByTimedOut) {
+      log("Bluetooth queue busy; preserving connection", { operation: label, blockedBy });
+      return;
+    }
     const captureAlive = recordingConfirmed && appState === "recording" &&
       (document.visibilityState === "hidden" || performance.now() - lastAudioAt < AUDIO_STALL_TIMEOUT_MS);
     if (captureAlive) {
@@ -1520,7 +1526,7 @@
     } else {
       // A queued request can reveal an older native operation that timed out
       // during recording and still blocks the link after that recording ended.
-      disconnectGatt("GATT timeout: " + label, owner.device);
+      disconnectGatt("GATT timeout: " + (blockedBy || label), owner.device);
     }
   }
 
@@ -3626,7 +3632,16 @@
         announce("Update check: "+friendlyError(error));
       }finally{discoveryBusy=false;checkButton.textContent="Check for update";if(!firmwareBusy)discoveryControls.forEach(control=>control.disabled=false);}
     }
-    checkFirmwareRelease=()=>inspect().catch(error=>log('Firmware check',friendlyError(error)));
+    let automaticFirmwareCheckTimer = null;
+    checkFirmwareRelease=()=>{
+      clearTimeout(automaticFirmwareCheckTimer);
+      // Leave initial ATT discovery to audio, recovery and camera capabilities.
+      // Manual update checks remain immediate; passive checks need quiet idle time.
+      automaticFirmwareCheckTimer=setTimeout(()=>{
+        automaticFirmwareCheckTimer=null;
+        inspect().catch(error=>log('Firmware check',friendlyError(error)));
+      },5000);
+    };
     document.getElementById("otaReleaseCheck").addEventListener("click",()=>inspect(true));
     // Discovery runs after connection and on the existing interval, not on app focus.
     setInterval(()=>checkFirmwareRelease(),60000);
