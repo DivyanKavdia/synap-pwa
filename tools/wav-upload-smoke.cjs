@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict'), path = require('node:path');
 const { createStaticServer, launchChromium } = require('./support/browser-fixture.cjs');
 const server = createStaticServer(path.resolve(__dirname, '..'));
+setTimeout(() => { console.error('WAV upload test exceeded 120 seconds');process.exit(1); }, 120000).unref();
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + server.address().port;
@@ -10,6 +11,8 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
     ? await require('playwright').webkit.launch() : await launchChromium();
   try {
     const page = await browser.newPage();
+    page.on('console', message => console.log('browser:', message.text()));
+    page.on('pageerror', error => console.error(error.stack));
     await page.route('**/*', r => new URL(r.request().url()).origin === origin ? r.continue() : r.abort());
     await page.route('**/__upload', r => r.fulfill({ contentType: 'text/html', body:
       '<!doctype html><script src="/audio-store.js"></script><script src="/recording/journal.js"></script><script src="/recording/timeline.js"></script><script src="/processing-queue.js"></script><script src="/synap-backend.js"></script>' }));
@@ -23,15 +26,16 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
         store.append(id, { sequence, chunk: 0, total: 1, payload, transport: 'pcm16' });
         if (sequence % 20 === 19) await store.flush();
       }
-      await store.close(id);return id;
+      console.log('Packets saved');await store.close(id);console.log('Recording sealed');return id;
     });
     // Reload requires reading the browser's durable Blob, not a retained JS object.
-    await page.reload();
+    console.log('Reloading saved recording');await page.reload();
     const result = await page.evaluate(async id => {
-      const store = new DKAudioStore(), uploads = [];
+      console.log('Preparing saved upload');const store = new DKAudioStore(), uploads = [];
       globalThis.SynapAuth = {
         isSignedIn: () => true, session: () => ({ profile: { uid: 'fixture' } }),
         async authedFetch(path, init) {
+          console.log('Request', path);
           if (path.includes('/segments/')) {
             uploads.push(new Uint8Array(init.body));
             return new Response('{}', { status: uploads.length === 1 ? 503 : 200 });
@@ -50,7 +54,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
         if (bytes.length !== source.length || bytes.some((b, i) => b !== source[i])) throw Error('Upload changed source');
       }
       await DKAudioCodec.validateWav(new Blob([source]));
-      const nativeRead = Blob.prototype.arrayBuffer;
+      console.log('Checking FileReader fallback');const nativeRead = Blob.prototype.arrayBuffer;
       try {
         Blob.prototype.arrayBuffer = async () => new ArrayBuffer(0);
         const copy = new Uint8Array(await DKAudioCodec.readBlob(new Blob([source])));
