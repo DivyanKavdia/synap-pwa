@@ -154,3 +154,15 @@ test('Stop freezes elapsed time while recovered audio duration can grow',()=>{
   assert.equal(t.c.ui.timer.textContent,'00:10');t.advance(30000);t.c.sessionStats.completeFrames=200;t.c.updateTimer();
   assert.equal(t.c.ui.timer.textContent,'00:10');assert.equal(t.c.document.body.dataset.receivedAudioClock,'00:10');
 });
+
+test('pendant Stop freezes the clock once while repeated drain acknowledgements arrive',()=>{
+  const t=activity();let drain;
+  t.c.window.addEventListener=(name,fn)=>{drain=fn;};
+  t.c.clearStartTimeout=()=>{};t.c.setAppState=state=>{t.c.appState=state;};
+  const start=source.indexOf('    window.addEventListener("synap-recording-draining"');
+  vm.runInContext(source.slice(start,source.indexOf('\n    });',start)+8),t.c);
+  drain();const clock=t.c.ui.timer.textContent;
+  assert.equal(t.c.recordingStopRequested,true);assert.equal(t.c.appState,'stopping');
+  t.advance(30000);drain();assert.equal(t.c.ui.timer.textContent,clock);
+  assert.equal(t.c.recordingStoppedAt,10000);
+});

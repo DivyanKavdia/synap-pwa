@@ -3757,6 +3757,8 @@
   }
 
   function bindEvents() {
+    if (eventsBound) return;
+    eventsBound = true;
     let hardwareSignature = '';
     window.addEventListener('synap-module-changed', function () {
       const client = globalThis.SynapModules?.client, info = client?.module;
@@ -3769,9 +3771,14 @@
         log('Connected hardware capabilities', hardware);
       }
     });
-    if (eventsBound) return;
-    eventsBound = true;
-    window.addEventListener("synap-recording-draining",()=>{if(recordingConfirmed&&!finalizing){recordingStopRequested=true;clearStartTimeout();setAppState("stopping");}});
+    window.addEventListener("synap-recording-draining", () => {
+      if (!recordingConfirmed || finalizing) return;
+      recordingStopRequested = true;
+      if (recordingStoppedAt === null) recordingStoppedAt = performance.now();
+      clearStartTimeout();
+      setAppState("stopping");
+      updateTimer();
+    });
     bindCoreControls();
     document.querySelectorAll("[data-day-step]").forEach(function (button) {
       button.addEventListener("click", function () { moveDay(Number(button.dataset.dayStep)); });
