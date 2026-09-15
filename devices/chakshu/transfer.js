@@ -3,6 +3,10 @@
   'use strict';
   const COMMAND = '4fa12354-0000-1000-8000-00805f9b34fb',
     DATA = '4fa12355-0000-1000-8000-00805f9b34fb';
+  // Large camera reads can outlast the recorder's short command deadline on
+  // native browser bridges. Keep the read bounded and owned by the same queue;
+  // cancellation never permits Stop to overlap an unresolved native operation.
+  const READ_TIMEOUT_MS = 10000;
   const delay = (ms) => new Promise((resolve) => root.setTimeout(resolve, ms));
   function decode(value, id) {
     // Released firmware starts with a zeroed 16-byte response. Its worker (and
@@ -79,14 +83,18 @@
       const startedAt = Date.now();
       let stage = 'Find Chakshu camera controls',
         id;
-      const run = (action, label) => {
+      const run = (action, label, options) => {
         stage = label;
-        return queue(async () => {
-          signal?.throwIfAborted();
-          const value = await action();
-          signal?.throwIfAborted();
-          return value;
-        }, label);
+        return queue(
+          async () => {
+            signal?.throwIfAborted();
+            const value = await action();
+            signal?.throwIfAborted();
+            return value;
+          },
+          label,
+          options,
+        );
       };
       try {
         signal?.throwIfAborted();
@@ -113,7 +121,9 @@
         while (Date.now() < deadline) {
           signal?.throwIfAborted();
           const reply = decode(
-            await run(() => this.data.readValue(), 'Read Chakshu camera response'),
+            await run(() => this.data.readValue(), 'Read Chakshu camera response', {
+              timeoutMs: READ_TIMEOUT_MS,
+            }),
             id,
           );
           if (reply) return reply;
@@ -187,6 +197,6 @@
       });
     }
   }
-  root.SynapChakshuTransfer = { Client, decode, revision: '1.0.0-chakshu-core3' };
+  root.SynapChakshuTransfer = { Client, decode, revision: '1.0.0-chakshu-core4' };
   if (typeof module !== 'undefined') module.exports = root.SynapChakshuTransfer;
 })(globalThis);

@@ -1,7 +1,7 @@
 /* Product-facing capture controls. Core BLE/recording behavior remains in app.js. */
 (function () {
   'use strict';
-  globalThis.SynapCaptureUIRevision = '1.0.0-chakshu-core3';
+  globalThis.SynapCaptureUIRevision = '1.0.0-chakshu-core4';
   const TAGLINE = 'Stay present. Keep the memory.';
   const PUBLIC_VERSION = '1.0.0';
   const logoSource = () =>
@@ -207,7 +207,8 @@
       const ready = document.body.dataset.startup === 'ready';
       const interrupted = document.body.dataset.recordingInterrupted === 'true';
       const delivery = document.body.dataset.audioDelivery || 'idle';
-      const waiting = delivery === 'waiting' || delivery === 'recovering';
+      const delayed = delivery === 'delayed';
+      const waiting = delivery === 'waiting' || delivery === 'recovering' || delayed;
       const recording = RECORDING_STATES.has(state);
       const finishing = state === 'stopping' || document.body.dataset.recordingFinishing === 'true';
       const canStop = !stop.disabled;
@@ -223,9 +224,11 @@
         ? (document.body.dataset.receivedAudioClock || '00:00') + ' audio received · finishing…'
         : delivery === 'recovering'
           ? 'Recovering audio…'
-          : waiting
-            ? 'No audio arriving'
-            : (document.body.dataset.receivedAudioClock || '00:00') + ' audio received';
+          : delayed
+            ? (document.body.dataset.receivedAudioClock || '00:00') + ' audio received · delayed'
+            : waiting
+              ? 'No audio arriving'
+              : (document.body.dataset.receivedAudioClock || '00:00') + ' audio received';
       reception.dataset.waiting = String(waiting);
       if (sessionBar.hidden) feedback.textContent = '';
       status.classList.toggle('is-connected', connected);
@@ -241,15 +244,17 @@
                 ? 'Updating'
                 : interrupted
                   ? 'Paused'
-                  : recording && waiting
-                    ? 'Waiting'
-                    : recording
-                      ? 'Listening'
-                      : connected
-                        ? 'Connected'
-                        : state === 'connecting'
-                          ? 'Connecting'
-                          : 'Connect';
+                  : recording && delayed
+                    ? 'Audio delayed'
+                    : recording && waiting
+                      ? 'Waiting'
+                      : recording
+                        ? 'Listening'
+                        : connected
+                          ? 'Connected'
+                          : state === 'connecting'
+                            ? 'Connecting'
+                            : 'Connect';
       status.disabled = connect.disabled;
       status.setAttribute('aria-label', connected ? 'Disconnect pendant' : 'Connect pendant');
       toggle.classList.toggle('is-connected', connected || state === 'updating');

@@ -35,7 +35,7 @@ module.exports = function pendantFixture() {
     return v;
   };
   let transferReply=new DataView(new ArrayBuffer(16)),transferBytes=new Uint8Array(),offlineRecording=false;
-  let delayCameraReply=false,uninitializedMediaReads=0;
+  let delayCameraReply=false,uninitializedMediaReads=0,cameraReadDelay=0;
   function cameraJPEG(){const c=document.createElement('canvas');c.width=160;c.height=120;const ctx=c.getContext('2d');ctx.fillStyle='#776ac4';ctx.fillRect(0,0,160,120);ctx.fillStyle='#fff';ctx.fillRect(20,20,80,50);return Uint8Array.from(atob(c.toDataURL('image/jpeg').split(',')[1]),x=>x.charCodeAt(0));}
   function transferCommand(bytes){const v=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),op=bytes[1],id=v.getUint32(2,true),offset=v.getUint32(6,true);let payload=new Uint8Array(),total=0;
     if(op===1)transferBytes=cameraJPEG();
@@ -73,7 +73,7 @@ module.exports = function pendantFixture() {
     finishing = false,
     owner = [],
     buffer = [],
-    sendTimer = null;
+    sendTimer = null, sendIntervalMs = 15;
   let retained = [], replayAck = 0, replayCommands = 0, blockAudio = false, audioSubscriptions = 0, restoreOnSubscribe = false;
   let stopDisconnect = null,
     echoStop = false,
@@ -160,7 +160,10 @@ module.exports = function pendantFixture() {
     readValue() {
       return operation(async () => {
         if (this.id === uuid('50')) return moduleDescriptor();
-        if (this.id === uuid('55')) {if(transferReply.getUint8(0)===0)uninitializedMediaReads++;return transferReply;}
+        if (this.id === uuid('55')) {
+          if(cameraReadDelay){const ms=cameraReadDelay;cameraReadDelay=0;await new Promise(resolve=>setTimeout(resolve,ms));}
+          if(transferReply.getUint8(0)===0)uninitializedMediaReads++;return transferReply;
+        }
         if (this.id === uuid('56')) return emptyVoiceRead?new DataView(new ArrayBuffer(0)):voiceStatus();
         if (this.id === uuid('59')) return modelStatus();
         if (this.id === uuid('52')) return mediaStatus();
@@ -449,7 +452,7 @@ module.exports = function pendantFixture() {
         control.value = status();
         control.dispatchEvent(new Event('characteristicvaluechanged'));
       }
-    }, 15);
+    }, sendIntervalMs);
   }
   function frame() {
     if (buffered) {
@@ -494,10 +497,12 @@ module.exports = function pendantFixture() {
     get model(){return {state:modelState,offset:modelOffset,begins:modelBegins};},
     get mediaWrites(){return mediaWrites;},
     delayNextCameraReply(){delayCameraReply=true;},
+    delayNextCameraRead(ms){cameraReadDelay=ms;},
     get uninitializedMediaReads(){return uninitializedMediaReads;},
     setSdAvailable(value){sdAvailable=value;},
     finishMedia(error=0){mediaError=error;mediaState=error?3:2;},
     blockAudio(value) { blockAudio = value; },
+    setAudioSendInterval(ms) { sendIntervalMs=ms;if(sendTimer)startSender(); },
     loseNotifications() { blockAudio=true;restoreOnSubscribe=true; },
     pendantStop() {
       clearInterval(audioTimer);finishing=true;

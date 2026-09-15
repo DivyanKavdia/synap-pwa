@@ -660,10 +660,15 @@ async function until(page, predicate, arg) {
         'saved photo keeps the exact selected JPEG after source deletion',
       );
       // A preview and viewer both release their images when the account changes.
+      const photoDisconnects = await page.evaluate(() => bleFixture.appDisconnects);
+      // Bluefy can return a healthy camera read after the old 3.5-second deadline.
+      if (width === 390) await page.evaluate(() => bleFixture.delayNextCameraRead(6000));
       await page.evaluate(() => SynapChakshuPreview.photo());
       await page.waitForFunction(
         () => document.getElementById('capturePreviewImage').naturalWidth === 160,
       );
+      assert.equal(await page.evaluate(() => bleFixture.appDisconnects), photoDisconnects,
+        'a slow idle photo read must not disconnect the camera');
       // Keep this viewer open while the account changes: all media URLs and fields must clear.
       // A second account on the same browser cannot see the first account's library.
       await page.evaluate(async () => {

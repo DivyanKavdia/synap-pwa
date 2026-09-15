@@ -41,17 +41,16 @@ Camera errors identify control discovery, data discovery, command write or
 response read. Diagnostics retain that stage, request ID, byte offset and elapsed
 time, and distinguish a queued timeout from an operation running on Bluetooth.
 The queue gives each operation its own execution deadline after bounded waiting.
+Shell 119 gives camera response reads ten seconds instead of using the
+recorder's 3.5-second control deadline. A cancelled native read retains queue
+ownership until it settles; Stop cannot overlap it. An idle read that never
+settles still causes bounded connection recovery.
 Native bridge failures reported as strings retain their message in the preview
 and diagnostic log. Startup diagnostics also identify the loaded recorder,
 camera and capture UI revisions, so an old cached module is distinguishable
 from a failure in the current build.
 
 Module and event discovery wait until identity, audio/control subscriptions and recovery negotiation finish. The app releases optional setup explicitly after that handshake, including after a reconnect.
-
-Voice discovery waits until the connection handshake is complete. Commands and
-their lease can be restored during a confirmed recording after reconnecting.
-Failed setup attempts also respect the two-second
-poll interval; media progress cannot cause an immediate retry burst.
 
 Photos and video are stored in a separate, account-keyed IndexedDB library **on the current browser**. They are not cloud-synced. Audio follows the existing local/cloud processing flow. Account changes close viewers, revoke object URLs, abort pending descriptions, and stop owned online captures. Interrupted visual captures remain accessible under their original owner. Deleting a visual does not delete linked audio. Download originals before clearing browser data.
 
@@ -122,3 +121,16 @@ have bounded retries; central rejection or replacement does not cause a loop.
 See the
 [full startup audit](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/chakshu-startup-audit.md)
 for evidence, validation and physical-device limits.
+
+The [build-1243 camera and audio follow-up audit](CHAKSHU_TRANSPORT_AUDIT.md)
+distinguishes the app's camera deadline from radio supervision failures and
+documents the remaining slow-audio uncertainty. Shell 119 shows **Audio delayed**
+when a visible recording has received less than half its elapsed audio after
+the foreground grace period, even when packets keep arriving. Stop remains
+available; moment marking returns when reception catches up. Slow-audio logs
+include camera activity and rejected diagnostic response versions.
+
+Reload the app after saving any active take to load the new recorder and
+diagnostics decoder. Updating pendant firmware does not replace JavaScript
+already running in an open page. Firmware 1243 remains the firmware for this
+app follow-up; local voice recognition stays disabled.

@@ -42,32 +42,40 @@
       service,
       canUse,
       canUseMedia,
-      queue(action, label) {
+      queue(action, label, options) {
         // Passive consumers must not occupy the queue during capture or recovery.
         if (!canUse()) return Promise.reject(deferred());
-        return queue(async () => {
-          assertConnection();
-          if (connection !== context) throw Error('Pendant connection changed.');
-          if (!canUse()) throw deferred();
-          const value = await action();
-          assertConnection();
-          if (connection !== context) throw Error('Pendant connection changed.');
-          return value;
-        }, label);
+        return queue(
+          async () => {
+            assertConnection();
+            if (connection !== context) throw Error('Pendant connection changed.');
+            if (!canUse()) throw deferred();
+            const value = await action();
+            assertConnection();
+            if (connection !== context) throw Error('Pendant connection changed.');
+            return value;
+          },
+          label,
+          options,
+        );
       },
     };
     // Active camera capture uses the same serialized native queue, with an
     // explicit policy that permits audio streaming but excludes recovery/OTA.
-    context.mediaQueue = (action, label) => {
+    context.mediaQueue = (action, label, options) => {
       if (!canUseMedia()) return Promise.reject(deferred());
-      return queue(async () => {
-        assertConnection();
-        if (connection !== context || !canUseMedia()) throw deferred();
-        const value = await action();
-        assertConnection();
-        if (connection !== context) throw Error('Pendant connection changed.');
-        return value;
-      }, label);
+      return queue(
+        async () => {
+          assertConnection();
+          if (connection !== context || !canUseMedia()) throw deferred();
+          const value = await action();
+          assertConnection();
+          if (connection !== context) throw Error('Pendant connection changed.');
+          return value;
+        },
+        label,
+        options,
+      );
     };
     connection = context;
     try {

@@ -139,3 +139,56 @@ test('a startup backlog can exceed one deadline while every native request is he
   }
   assert.deepEqual(await result,{value:[0,1,2]});
 });
+
+// Exercise the media client's deadline through the real device policy and
+// native queue, rather than passing a longer timeout directly to the queue.
+function camera(h) {
+  const Client=require('../devices/chakshu/transfer.js').Client;
+  let request,finishRead,reads=0,writes=0;
+  const service={async getCharacteristic(uuid){
+    if(uuid.startsWith('4fa12354'))return {
+      properties:{writeWithoutResponse:true},
+      async writeValueWithoutResponse(bytes){writes++;request=new DataView(bytes.buffer);}
+    };
+    return {readValue(){
+      reads++;
+      const reply=new DataView(new ArrayBuffer(16));
+      [0xcb,1,1,0].forEach((v,i)=>reply.setUint8(i,v));
+      reply.setUint32(4,request.getUint32(2,true),true);
+      return new Promise(resolve=>{finishRead=()=>resolve(reply)});
+    }};
+  }};
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'..','devices/identity.js'),'utf8'),h.c);
+  h.c.SynapDevices.publishService(service,h.c.queueGattOperation,()=>{},()=>true,()=>true);
+  return {client:new Client(h.c.SynapDevices.connection),finish:()=>finishRead(),
+    get reads(){return reads},get writes(){return writes}};
+}
+test('a camera read taking six seconds survives while idle, without retrying its command',async()=>{
+  const h=harness();h.c.appState='idle';h.c.recordingConfirmed=false;
+  const f=camera(h),result=f.client.request(2,960).then(value=>({value}),error=>({error}));
+  await tick();assert.equal(f.reads,1);
+  await h.expire(6000);f.finish();
+  assert.equal((await result).error,undefined);
+  assert.equal(h.disconnects,0);assert.equal(f.writes,1);
+});
+test('cancelling a slow camera read keeps native ownership until Stop can run safely',async()=>{
+  const h=harness(),f=camera(h),controller=new AbortController();let stops=0;
+  const read=f.client.request(2,960,'',controller.signal);
+  const failed=assert.rejects(read,{name:'AbortError'});await tick();
+  controller.abort();h.c.appState='stopping';
+  const stop=h.c.queueGattOperation(()=>{stops++;},'Control command 0x0');
+  const result=stop.then(value=>({value}),error=>({error}));
+  await h.expire(6000);
+  assert.equal(stops,0,'Stop must not overlap the unresolved native read');
+  f.finish();await failed;
+  assert.equal((await result).error,undefined);assert.equal(stops,1);
+  assert.equal(f.writes,1);assert.equal(h.disconnects,0);
+});
+test('a camera read that never returns still recovers the idle link within ten seconds',async()=>{
+  const h=harness();h.c.appState='idle';h.c.recordingConfirmed=false;
+  const f=camera(h),pending=f.client.request(2,960);
+  const failed=assert.rejects(pending,{name:'TimeoutError'});await tick();
+  await h.expire(9999);assert.equal(h.disconnects,0);
+  await h.expire(1);await failed;assert.equal(h.disconnects,1);assert.equal(f.writes,1);
+  f.finish();await tick();
+});

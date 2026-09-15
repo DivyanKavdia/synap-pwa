@@ -58,6 +58,28 @@ test('absent, truncated and unknown-version diagnostics cannot fabricate link ev
   assert.equal(api.decodePendantDiagnostics(unavailable).disconnectText,'No disconnect since boot');
 });
 
+test('the recorder reads v4 diagnostics during slow audio and reports incompatible response metadata',async()=>{
+  const {c}=harness('recording'),logs=[];
+  const value=new DataView(new ArrayBuffer(84));
+  value.setUint8(0,0xd6);value.setUint8(1,4);value.setUint8(2,0xc7);
+  value.setUint32(4,200,true);value.setUint16(76,600,true);
+  c.SynapDevices.connection.service.getCharacteristic=async()=>({readValue:async()=>value});
+  c.queueGattOperation=async action=>action();c.friendlyError=error=>error.message;
+  c.log=(message,detail)=>logs.push({message,detail});c.APP_SHELL_REVISION='current-shell';
+  c.SynapPowerLifecycle={firmwareBuild:1243};
+  const app=read('app.js');
+  vm.runInContext(app.slice(app.indexOf('  async function snapshotStalledAudio('),
+    app.indexOf('  function clearReconnectTimer(')),c);
+  await c.snapshotStalledAudio(()=>true);
+  assert.equal(logs[0].message,'Stalled audio firmware counters');
+  assert.equal(logs[0].detail.captured,200);assert.equal(logs[0].detail.linkSupervisionMs,6000);
+  value.setUint8(1,99);await c.snapshotStalledAudio(()=>true);
+  assert.equal(logs[1].message,'Stalled audio diagnostics unavailable');
+  assert.equal(logs[1].detail.response.version,99);assert.equal(logs[1].detail.response.bytes,84);
+  assert.equal(logs[1].detail.shellRevision,'current-shell');assert.equal(logs[1].detail.firmwareBuild,1243);
+  await c.snapshotStalledAudio(()=>false);assert.equal(logs.length,2,'stale capture cannot read diagnostics');
+});
+
 test('NimBLE HCI reasons retain their namespace and distinguish a host disconnect from radio timeout',()=>{
   const {api}=harness(),v=packet();
   for(const [reason,text] of [[0x213,'Remote host ended connection'],[0x208,'Link supervision timeout'],

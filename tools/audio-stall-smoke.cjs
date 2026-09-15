@@ -9,7 +9,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
   const origin = 'http://127.0.0.1:' + server.address().port,
     browser = await launchChromium();
   try {
-    for (const mode of ['repair', 'no-audio', 'pendant-stop', 'stop-disconnect', 'stalled-repair', 'slow-fragments', 'slow-discovery', 'drain-progress', 'stop-retry', 'stop-write-reconnect']) {
+    for (const mode of ['repair', 'no-audio', 'pendant-stop', 'stop-disconnect', 'stalled-repair', 'slow-fragments', 'slow-delivery', 'slow-discovery', 'drain-progress', 'stop-retry', 'stop-write-reconnect']) {
       if (process.argv.length > 2 && !process.argv.slice(2).includes(mode)) continue;
       const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
       await context.route('**/*', (route) =>
@@ -24,6 +24,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       await page.waitForFunction(() => document.body.dataset.startup === 'ready');
       await page.locator('#headerPendantStatus').click();
       await page.waitForFunction(() => document.body.dataset.state === 'idle' && bleFixture.armed);
+      if (mode === 'slow-delivery') await page.evaluate(() => bleFixture.setAudioSendInterval(400));
       if (mode === 'no-audio' || mode === 'stalled-repair' || mode === 'slow-fragments')
         await page.evaluate(() => bleFixture.blockAudio(true));
       if (mode === 'slow-fragments') await page.evaluate(async () => {
@@ -89,6 +90,20 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
         assert.equal(await page.evaluate(() => bleFixture.starts), 1);
         await page.locator('#headerCaptureToggle').click();
         await page.waitForFunction(() => document.body.dataset.state === 'idle');
+      } else if (mode === 'slow-delivery') {
+        await page.waitForFunction(() => document.body.dataset.audioDelivery === 'delayed');
+        assert.equal(await page.locator('.header-status-text').textContent(), 'Audio delayed');
+        assert.match(await page.locator('#audioReceptionStatus').textContent(), /audio received · delayed$/);
+        assert(await page.locator('#markMoment').isDisabled());
+        assert.equal(await page.evaluate(() => SynapAppControls.recordingState().canStop), true);
+        assert.equal(await page.evaluate(() => bleFixture.appDisconnects), 0);
+        await page.evaluate(() => bleFixture.setAudioSendInterval(15));
+        await page.waitForFunction(() => bleFixture.pendingFrames === 0 &&
+          document.body.dataset.audioDelivery === 'receiving');
+        assert.equal(await page.locator('.header-status-text').textContent(), 'Listening');
+        assert(await page.locator('#markMoment').isEnabled());
+        await page.locator('#headerCaptureToggle').click();
+        await page.waitForFunction(() => document.body.dataset.state === 'idle');
       } else if (mode === 'slow-fragments') {
         await page.evaluate(async () => {
           for (let sequence = 0; sequence < 2; sequence++) for (let chunk = 0; chunk < 10; chunk++) {
@@ -149,7 +164,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       }));
       assert.equal(saved.starts, 1);
       assert.equal(saved.records.length, 1, 'one original journal');
-      assert.equal(saved.records[0].stopReason, ['repair', 'slow-fragments', 'slow-discovery', 'drain-progress', 'stop-retry', 'stop-write-reconnect'].includes(mode) ? 'normal' : 'stop-unconfirmed');
+      assert.equal(saved.records[0].stopReason, ['repair', 'slow-fragments', 'slow-delivery', 'slow-discovery', 'drain-progress', 'stop-retry', 'stop-write-reconnect'].includes(mode) ? 'normal' : 'stop-unconfirmed');
       if (mode === 'no-audio' || mode === 'stalled-repair') assert.equal(saved.records[0].stats.completeFrames, 0);
       else if (mode === 'slow-fragments') {
         assert.equal(saved.records[0].stats.completeFrames, 2);

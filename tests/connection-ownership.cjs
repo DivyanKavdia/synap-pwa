@@ -136,6 +136,7 @@ test('capture metrics batch frame updates and the clock only writes changed seco
   vm.createContext(c);vm.runInContext(slice('  function updateMetrics()', '  function renderMetrics()'),c);
   for(let i=0;i<20;i++)c.updateMetrics();assert.equal(timers.length,1);timers[0]();assert.equal(renders,1);
   c.sessionStats={completeFrames:20};
+  vm.runInContext(slice('  function audioIsBehind(', '  function checkpointBackgroundRecording('),c);
   vm.runInContext(slice('  function updateTimer()', '  function formatClock('),c);for(let i=0;i<5;i++)c.updateTimer();assert.equal(writes,0);
 });
 test('appearance leaves processing locks to runtime compatibility; leases exclude overlapping work',async()=>{

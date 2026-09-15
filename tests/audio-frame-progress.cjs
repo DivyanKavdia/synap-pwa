@@ -84,6 +84,16 @@ test('slow but progressing PCM fragments finish with every original byte', () =>
   assert.equal(t.c.sessionStats.incompleteFrames, 0);
   assert.deepEqual(t.c.completedPcmFrames[0], t.pcm);
 });
+test('idle callbacks do not pollute recording counters, but malformed active audio is counted', () => {
+  const t = collector();
+  for (const state of ['idle', 'disconnected', 'recording', 'starting', 'stopping']) {
+    t.c.appState = state;
+    t.c.sessionStats.invalidPackets = 0;
+    t.c.handleNormalizedAudioValue(new DataView(new ArrayBuffer(0)));
+    t.c.handleNormalizedAudioValue(new DataView(new ArrayBuffer(8)));
+    assert.equal(t.c.sessionStats.invalidPackets, ['idle', 'disconnected'].includes(state) ? 0 : 2, state);
+  }
+});
 test('duplicate fragments cannot keep an abandoned PCM frame alive', () => {
   const t = collector();
   t.send(0);

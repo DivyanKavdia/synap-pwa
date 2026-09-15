@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio2";
-  const APP_SHELL_REVISION = "1.0.0-shell118-chakshu";
+  const APP_SHELL_REVISION = "1.0.0-shell119-chakshu";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -891,6 +891,13 @@
     window.dispatchEvent(new CustomEvent("synap-audio-delivery-changed"));
   }
 
+  function audioIsBehind(now = performance.now()) {
+    const elapsed = now - recordingStartedAt;
+    return document.visibilityState === "visible" && !recordingReconnectPending &&
+      !backgroundRecoveryPromise && now - foregroundAt >= 10000 && elapsed >= 10000 &&
+      sessionStats.completeFrames * 50 < elapsed / 2;
+  }
+
   function checkpointBackgroundRecording() {
     if (currentRecordingId) journal?.flush().catch(handleStorageError);
     if (!recordingConfirmed || finalizing || recordingStopRequested || backgroundCapture) return;
@@ -934,7 +941,7 @@
   function recordCompleteAudio(sequence) {
     lastCompleteAudioAt = performance.now();
     lastCompleteSequence = sequence;
-    setAudioDelivery("receiving");
+    setAudioDelivery(audioIsBehind(lastCompleteAudioAt) ? "delayed" : "receiving");
     const checkpoint = backgroundCapture;
     if (!checkpoint || checkpoint.session !== recordingSessionId || checkpoint.attempted) return;
     checkpoint.progressAt = Date.now();
@@ -993,6 +1000,7 @@
     const current = globalThis.SynapDevices?.connection;
     const decode = globalThis.SynapEnhancements?.decodePendantDiagnostics;
     if (!current || !decode || !ownsRecovery()) return;
+    let response;
     try {
       const characteristic = await queueGattOperation(() => ownsRecovery()
         ? current.service.getCharacteristic("4fa1234d-0000-1000-8000-00805f9b34fb") : null,
@@ -1000,9 +1008,15 @@
       if (!characteristic || !ownsRecovery()) return;
       const value = await queueGattOperation(() => ownsRecovery() ? characteristic.readValue() : null,
         "Read stalled audio diagnostics");
+      if (value) response = { bytes: value.byteLength,
+        marker: value.byteLength > 0 ? value.getUint8(0) : null,
+        version: value.byteLength > 1 ? value.getUint8(1) : null };
       if (value && ownsRecovery()) log("Stalled audio firmware counters", decode(value));
     } catch (error) {
-      if (ownsRecovery()) log("Stalled audio diagnostics unavailable", friendlyError(error));
+      if (ownsRecovery()) log("Stalled audio diagnostics unavailable", {
+        message: friendlyError(error), response, shellRevision: APP_SHELL_REVISION,
+        firmwareBuild: globalThis.SynapPowerLifecycle?.firmwareBuild || null
+      });
     }
   }
 
@@ -1505,10 +1519,13 @@
     onSlowOperation: detail => log("Bluetooth operation timing", detail)
   });
 
-  function queueGattOperation(action, label = "Bluetooth operation") {
+  function queueGattOperation(action, label = "Bluetooth operation", options = {}) {
     // Service/characteristic discovery can take several seconds on native
     // Bluetooth bridges. Keep control writes/reads on their shorter deadline.
-    return bluetoothSession.run(action, label, { timeoutMs: label.startsWith("Find ") ? 10000 : COMMAND_TIMEOUT_MS });
+    // Media can supply its own read budget without extending Stop/control writes.
+    return bluetoothSession.run(action, label, {
+      timeoutMs: options.timeoutMs ?? (label.startsWith("Find ") ? 10000 : COMMAND_TIMEOUT_MS)
+    });
   }
 
   function handleGattFailure(error, { label, owner, started, current, blockedBy, blockedByTimedOut }) {
@@ -2094,6 +2111,9 @@
   }
 
   function handleNormalizedAudioValue(value, transport = "unknown") {
+    // These counters describe a recording. Empty/late notifications while idle
+    // must not appear as corrupt audio in an unrelated camera failure report.
+    if (appState !== "recording" && appState !== "starting" && appState !== "stopping") return;
     if (!value || value.byteLength < AUDIO_HEADER_BYTES) {
       sessionStats.invalidPackets += 1;
       return;
@@ -2110,14 +2130,6 @@
         length: value.byteLength
       });
       updateMetrics();
-      return;
-    }
-
-    if (
-      appState !== "recording" &&
-      appState !== "starting" &&
-      appState !== "stopping"
-    ) {
       return;
     }
 
@@ -2388,24 +2400,27 @@
     const clock = formatClock(elapsed);
     if (ui.timer.textContent !== clock) ui.timer.textContent = clock;
     const now = performance.now();
+    const behind = audioIsBehind(now);
     if (appState === "recording" && document.visibilityState === "visible" &&
         !recordingReconnectPending && !recordingStopRequested && !backgroundRecoveryPromise &&
-        now - foregroundAt >= 10000 && now - lastCompleteAudioAt < 1500 &&
-        sessionStats.completeFrames > 0 && sessionStats.completeFrames * 50 < elapsed / 2 &&
+        behind && now - lastCompleteAudioAt < 1500 && sessionStats.completeFrames > 0 &&
         !slowAudioDiagnosticAttempted) {
       // Some complete frames can trickle through forever without the no-audio
       // watchdog firing. Capture one firmware snapshot to distinguish a slow
       // microphone from congested notifications or discarded browser packets.
       slowAudioDiagnosticAttempted = true;
+      const media = globalThis.SynapChakshu?.state;
       log("Audio arriving below capture rate", { elapsedMs: Math.round(elapsed),
         receivedMs: sessionStats.completeFrames * 50, audioStats: sessionStats,
-        audioState: deviceStatus, firmwareBuild: globalThis.SynapPowerLifecycle?.firmwareBuild || null });
+        audioState: deviceStatus, firmwareBuild: globalThis.SynapPowerLifecycle?.firmwareBuild || null,
+        camera: { active: Boolean(media?.working || media?.session),
+          phase: media?.session?.phase || null, transfer: media?.transferProgress || null } });
       const session = recordingSessionId, epoch = connectionEpoch;
       void snapshotStalledAudio(() => isCurrentSession(session) && epoch === connectionEpoch &&
         appState === "recording" && !recordingStopRequested && !recordingReconnectPending && isGattConnected());
     }
     if (appState === "recording" && !recordingReconnectPending && !backgroundRecoveryPromise) {
-      setAudioDelivery(now - lastCompleteAudioAt > 1500 ? "waiting" : "receiving");
+      setAudioDelivery(now - lastCompleteAudioAt > 1500 ? "waiting" : behind ? "delayed" : "receiving");
     }
     if (appState === "recording" && document.visibilityState === "visible" &&
         !recordingReconnectPending && !recordingStopRequested &&
@@ -4197,7 +4212,7 @@
       sessionId: active ? recordingControlOwnerId + ':' + recordingSessionId : null,
       source: 'pendant',
       phase: finalizing ? 'saving' : recordingStopRequested ? 'stopping' : recordingReconnectPending ||
-        ['waiting','recovering'].includes(document.body.dataset.audioDelivery) ? 'interrupted' : 'recording',
+        ['waiting','recovering','delayed'].includes(document.body.dataset.audioDelivery) ? 'interrupted' : 'recording',
       canStop: active && !finalizing && !firmwareBusy &&
         (appState === 'recording' || appState === 'starting' || (recordingReconnectPending && appState === 'disconnected')),
       canMark: active && appState === 'recording' && !recordingReconnectPending && !finalizing && !recordingStopRequested &&

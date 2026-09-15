@@ -93,7 +93,13 @@ test('continuing slow audio records firmware evidence once without replaying a p
   t.c.log=(message,detail)=>logs.push({message,detail});
   for(let i=0;i<15;i++){t.advance(1000);t.frame(42+i);t.c.updateTimer();}
   await t.done();assert.equal(snapshots,1);assert.equal(t.calls.subscribe,0);assert.equal(t.calls.stop,0);
+  assert.equal(t.c.document.body.dataset.audioDelivery,'delayed');
   assert(logs.some(row=>row.message==='Audio arriving below capture rate'&&row.detail.audioState.mtu===185));
+  const events=t.calls.events;t.frame(57);t.c.updateTimer();
+  assert.equal(t.calls.events,events,'trickling packets must not flash Listening between timer updates');
+  t.c.sessionStats.completeFrames=500;t.frame(58);t.c.updateTimer();
+  assert.equal(t.c.document.body.dataset.audioDelivery,'receiving','caught-up audio restores normal status');
+  assert.equal(snapshots,1,'catch-up does not issue another diagnostic request');
 });
 test('healthy, hidden and reconnecting audio do not trigger slow-delivery diagnostic reads',()=>{
   for(const mode of ['healthy','hidden','reconnecting']){
