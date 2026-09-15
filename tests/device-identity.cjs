@@ -75,7 +75,7 @@ async function connect({id=A, local=storage(), stale=false, mismatch=false, resu
     reconnectAttempts:0,localStorage:local,friendlyError:e=>e.message,scheduleAutoReconnect(){}};
   if(mismatch)new devices.Registry(local).associate(B,{id:device.id});
   c.renderDeviceSetup=()=>assert.equal(c.connectInProgress,false,'refresh device controls after connection setup finishes');
-  vm.createContext(c);vm.runInContext(rememberSource+connectSource,c);await c.connectPendant({recoveryAttempt:resuming});return c;
+  c.CustomEvent=class{constructor(type){this.type=type;}};(c.globalThis||c).dispatchEvent=()=>{};vm.createContext(c);vm.runInContext(rememberSource+connectSource,c);await c.connectPendant({recoveryAttempt:resuming});return c;
 }
 test('resumed connection supports camera and optional controls after that recording is saved',async()=>{
   const c=await connect({resuming:true});assert.equal(c.state,'recording');

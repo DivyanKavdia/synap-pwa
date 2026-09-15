@@ -12,7 +12,7 @@ function harness(){
     dispatchEvent(event){for(const fn of listeners.get(event.type)||[])fn(event)},
     setTimeout(fn,ms){timers.set(++timerId,{fn,ms});return timerId},clearTimeout(id){timers.delete(id)},
     MutationObserver:class{constructor(fn){observers.push(fn)}observe(){}},
-    appState:'idle',firmwareBusy:false,recordingConfirmed:false,recordingReconnectPending:false,finalizing:false,currentRecordingId:null,openingCapture:null,unsavedAudio:false,
+    appState:'idle',connectInProgress:false,firmwareBusy:false,recordingConfirmed:false,recordingReconnectPending:false,finalizing:false,currentRecordingId:null,openingCapture:null,unsavedAudio:false,
     gattQueue:Promise.resolve(),connectionEpoch:0,recordingSessionId:1,COMMAND_TIMEOUT_MS:3500,
     isGattConnected:()=>true,withTimeout:p=>p,log(){},SynapRecordingBridge:{},
     bluetoothDevice:{gatt:{disconnect(){calls.push('disconnect')}}}
@@ -48,6 +48,15 @@ test('optional event setup stays deferred throughout recording and reconnect, th
   const retry=[...h.timers.values()].find(t=>t.ms===150);assert(retry,'returning to idle retries deferred setup');
   retry.fn();await h.c.SynapEventChannel.attach();
   assert.equal(h.c.SynapEventChannel.mode,'event');assert.equal(h.calls.filter(x=>x==='notify').length,1);
+});
+test('initial connection defers optional discovery and explicitly releases it after handshake',async()=>{
+  const h=harness();h.state('connecting',{connectInProgress:true});h.publish();
+  await h.c.SynapEventChannel.attach();assert.equal(h.calls.length,0);
+  h.state('idle');await h.c.SynapEventChannel.attach();assert.equal(h.calls.length,0,'idle UI is not handshake completion');
+  h.c.connectInProgress=false;
+  h.c.dispatchEvent(new h.c.CustomEvent('synap-gatt-ready'));
+  const retry=[...h.timers.values()].find(t=>t.ms===150);assert(retry);retry.fn();
+  await h.c.SynapEventChannel.attach();assert.equal(h.c.SynapEventChannel.mode,'event');
 });
 test('optional work already in the queue rechecks capture ownership before touching GATT',async()=>{
   const h=harness();h.publish();let finish;
@@ -95,11 +104,31 @@ test('firmware without EVENT falls back once without a subscription retry loop',
   const count=h.timers.size;await h.c.SynapEventChannel.attach();assert.equal(h.timers.size,count);
 });
 test('recording retries cover the recovery window while idle retries remain bounded',()=>{
-  const timers=[],c={manualDisconnect:false,autoReconnectEnabled:()=>true,bluetoothDevice:{},reconnectAttempts:8,MAX_AUTO_RECONNECT_ATTEMPTS:8,reconnectTimer:null,recordingReconnectPending:false,AUTO_RECONNECT_DELAYS_MS:[1200,2600,5200,10000,15000,20000,30000,30000],log(){},window:{setTimeout(fn,ms){timers.push({fn,ms});return 1}}};
+  const timers=[],c={manualDisconnect:false,autoReconnectEnabled:()=>true,bluetoothDevice:{},reconnectAttempts:8,reconnectNotBefore:0,MAX_AUTO_RECONNECT_ATTEMPTS:8,reconnectTimer:null,recordingReconnectPending:false,AUTO_RECONNECT_DELAYS_MS:[1200,2600,5200,10000,15000,20000,30000,30000],log(){},window:{setTimeout(fn,ms){timers.push({fn,ms});return 1}}};
   vm.createContext(c);vm.runInContext(slice('  function scheduleAutoReconnect()', '  async function connectPendant('),c);
   c.scheduleAutoReconnect();assert.equal(timers.length,0);
+  assert(c.reconnectNotBefore>Date.now(),'exhausted automatic retries also quiet advertising recovery');
   c.recordingReconnectPending=true;c.scheduleAutoReconnect();assert.equal(timers[0].ms,30000);
   c.reconnectTimer=null;c.manualDisconnect=true;c.scheduleAutoReconnect();assert.equal(timers.length,1);
+});
+test('advertisements cannot cancel backoff or reset the failed-connection attempt counter',async()=>{
+  let now=10000,connections=0;const timers=[];
+  const c={Date:{now:()=>now},manualDisconnect:false,firmwareBusy:false,autoReconnectEnabled:()=>true,
+    bluetoothDevice:{},reconnectAttempts:0,reconnectNotBefore:0,MAX_AUTO_RECONNECT_ATTEMPTS:8,reconnectTimer:null,
+    recordingReconnectPending:false,AUTO_RECONNECT_DELAYS_MS:[1200,2600,5200],log(){},
+    connectInProgress:false,reloadRecoveryRunning:false,reconnectPageHidden:false,currentRecordingId:null,
+    reconnectRequested:()=>true,isGattConnected:()=>false,finalizing:false,document:{visibilityState:'visible'},
+    connectPendant:()=>{connections++;},window:{setTimeout(fn,ms){timers.push({fn,ms});return timers.length;}}};
+  vm.createContext(c);vm.runInContext(slice('  function scheduleAutoReconnect()', '  async function connectPendant('),c);
+  vm.runInContext(slice('  async function recoverRememberedConnection(', '  function bindReconnectRecovery('),c);
+  for(let attempt=1;attempt<=3;attempt++) {
+    c.scheduleAutoReconnect();assert.equal(c.reconnectAttempts,attempt);
+    const timer=timers.at(-1);assert.equal(c.reconnectNotBefore,now+timer.ms);
+    for(let beacon=0;beacon<5;beacon++)await c.recoverRememberedConnection('pendant-advertising',true);
+    assert.equal(connections,attempt-1,'advertisement waits for the scheduled retry');
+    now+=timer.ms;timer.fn();assert.equal(connections,attempt);
+  }
+  assert.deepEqual(timers.map(t=>t.ms),[1200,2600,5200]);
 });
 test('capture metrics batch frame updates and the clock only writes changed seconds',()=>{
   const timers=[];let renders=0,writes=0,text='00:01';

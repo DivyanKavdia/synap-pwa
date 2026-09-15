@@ -185,7 +185,9 @@
     }
     refresh() {
       if (this.refreshPromise) return this.refreshPromise;
-      this.refreshPromise = this.refreshOnce().finally(() => { this.refreshPromise = null; });
+      this.refreshPromise = this.refreshOnce().finally(() => {
+        this.refreshPromise = null;
+      });
       return this.refreshPromise;
     }
     async refreshOnce() {
@@ -277,6 +279,9 @@
     }, delay);
   }
   root.addEventListener?.('synap-gatt-service-ready', (event) => attach(event.detail));
+  root.addEventListener?.('synap-gatt-ready', () => {
+    if (client) schedule(150);
+  });
   root.addEventListener?.('synap-gatt-disconnected', () => {
     client?.close();
     client = null;

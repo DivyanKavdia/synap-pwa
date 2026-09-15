@@ -3,7 +3,7 @@
   'use strict';
 
   class BluetoothSession {
-    static revision = '1.0.0-chakshu-transport4';
+    static revision = '1.0.0-chakshu-transport5';
 
     static normalizeError(reason) {
       if (reason && typeof reason.message === 'string') return reason;
@@ -15,6 +15,15 @@
               ? 'Bluetooth request failed (code ' + reason.code + ').'
               : 'Bluetooth request failed.');
       const error = new Error(message);
+      // Some native bridges reject with a number, null or an undocumented
+      // object. Retain bounded diagnostics instead of reducing all to Error.
+      try {
+        error.nativeReason = {
+          type: typeof reason,
+          value: String(reason).slice(0, 200),
+          keys: reason && typeof reason === 'object' ? Object.keys(reason).slice(0, 12) : [],
+        };
+      } catch (_) {}
       if (reason?.name) error.name = reason.name;
       if (reason?.code != null) error.code = reason.code;
       return error;

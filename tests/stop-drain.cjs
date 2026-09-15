@@ -37,7 +37,7 @@ test('a Stop click and reconnect finishing share one drain per connection and re
 function stopWatch() {
   let now=1000,id=0;const timers=new Map(),saved=[],disconnects=[];
   const c={recordingStopWatch:null,recordingStopRequested:true,recordingSessionId:3,
-    finalizing:false,appState:'stopping',sessionStats:{completeFrames:2,packetsReceived:8},
+    finalizing:false,appState:'stopping',recordingReconnectPending:false,connectInProgress:false,sessionStats:{completeFrames:2,packetsReceived:8},
     document:{body:{dataset:{}}},performance:{now:()=>now},log(){},toast(){},
     isCurrentSession:session=>session===c.recordingSessionId,
     isGattConnected:()=>c.appState!=='disconnected',
@@ -59,6 +59,62 @@ test('Stop has one no-progress deadline across connection cleanup and reconnecti
 test('Stop saves received audio even when reconnect never succeeds',()=>{
   const t=stopWatch();t.c.watchRecordingStop(3);t.c.appState='disconnected';t.tick(8000);
   assert.equal(t.saved.length,1);assert.equal(t.disconnects.length,0);
+});
+test('Stop allows a native reconnect handshake to recover audio without resetting its absolute deadline',()=>{
+  const t=stopWatch();t.c.watchRecordingStop(3);t.tick(1000);
+  t.c.recordingReconnectPending=true;t.c.appState='connecting';t.tick(11000);
+  assert.equal(t.saved.length,0,'a 12-second reconnect must keep the journal open');
+  t.c.recordingReconnectPending=false;t.c.appState='stopping';t.tick(250);
+  t.tick(7000);assert.equal(t.saved.length,0,'the resumed drain gets time for its first frame');
+  t.c.sessionStats.completeFrames++;t.tick(7000);assert.equal(t.saved.length,0);
+  t.c.sessionStats.completeFrames++;t.tick(9000);assert.equal(t.saved.length,1,'35-second absolute limit still applies');
+});
+
+function stopDrain(mode) {
+  let connected=true,writes=0,reads=0;const saved=[],disconnects=[],interrupted=[];
+  const c={appState:'recording',connectionEpoch:1,recordingStoppedAt:null,recordingStopRequested:false,
+    manualDisconnect:false,CMD_STOP:0,performance:{now:()=>100},sessionStats:{completeFrames:399,packetsReceived:1597},
+    deviceStatus:{state:2,error:0},DEVICE_STATE:{CONNECTED_IDLE:1},
+    SynapDisconnectProtection:{isDraining:()=>false,capacityMs:()=>mode==='no-recovery'?0:30000},
+    isCurrentSession:id=>id===3,setAppState:state=>{c.appState=state;},updateTimer(){},clearStartTimeout(){},watchRecordingStop(){},
+    delay:async()=>{},isGattConnected:()=>connected,log(){},friendlyError:String,
+    markRecordingInterrupted:id=>interrupted.push(id),disconnectGatt:reason=>{disconnects.push(reason);connected=false;},
+    finalizeRecording:async(reason,id)=>saved.push({reason,id}),scheduleFinalize:(ms,reason,id)=>saved.push({reason,id}),
+    writeCommand:async()=>{
+      writes++;
+      if(mode==='lost'){connected=false;throw Error('Link lost');}
+      if(mode==='rejected'||mode==='no-recovery'||writes===1)throw Error('Bluetooth request failed.');
+    },readControlStatus:async()=>{reads++;c.deviceStatus.state=1;return true;}};
+  vm.createContext(c);vm.runInContext(block('  async function drainRecordingStop(', '  function clearRecordingStopWatch('),c);
+  return {c,saved,disconnects,interrupted,get writes(){return writes;},get reads(){return reads;}};
+}
+test('a rejected Stop write retries and saves only after the pendant acknowledges idle',async()=>{
+  const t=stopDrain('transient');await t.c.drainRecordingStop(3,1);
+  assert.equal(t.writes,2);assert.equal(t.reads,1);assert.equal(t.disconnects.length,0);
+  assert.deepEqual(t.saved,[{reason:'normal',id:3}]);
+});
+test('persistent Stop failure preserves the journal for reconnect instead of sealing before disconnect',async()=>{
+  const t=stopDrain('rejected');await t.c.drainRecordingStop(3,1);
+  assert.equal(t.writes,3);assert.equal(t.disconnects.length,1);
+  assert.deepEqual(t.interrupted,[3]);assert.deepEqual(t.saved,[]);
+});
+test('a Stop write rejected by link loss leaves finalization to recovery and its bounded watchdog',async()=>{
+  const t=stopDrain('lost');await t.c.drainRecordingStop(3,1);
+  assert.equal(t.writes,1);assert.deepEqual(t.saved,[]);
+});
+test('firmware without recovery saves received audio after bounded Stop retries',async()=>{
+  const t=stopDrain('no-recovery');await t.c.drainRecordingStop(3,1);
+  assert.equal(t.writes,3);assert.deepEqual(t.saved,[{reason:'stop-unconfirmed',id:3}]);
+});
+test('control commands use advertised write-without-response and retain compatibility with write-only firmware',async()=>{
+  for(const supportsWithoutResponse of [true,false]) {
+    const calls=[];const c={PROTOCOL_VERSION:2,Uint8Array,isGattConnected:()=>true,log(){},queueGattOperation:fn=>fn(),
+      controlCharacteristic:{properties:{write:true,writeWithoutResponse:supportsWithoutResponse},
+        writeValueWithResponse:async v=>calls.push(['response',...v]),
+        writeValueWithoutResponse:async v=>calls.push(['no-response',...v])}};
+    vm.createContext(c);vm.runInContext(block('  async function writeCommand(', '  async function readControlStatus('),c);
+    await c.writeCommand(0);assert.deepEqual(calls,[[supportsWithoutResponse?'no-response':'response',0,2]]);
+  }
 });
 
 test('drain progress gets time to recover buffers but cannot extend the absolute deadline',()=>{

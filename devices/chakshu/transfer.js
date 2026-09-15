@@ -186,6 +186,6 @@
       });
     }
   }
-  root.SynapChakshuTransfer = { Client, decode, revision: '1.0.0-chakshu-transport4' };
+  root.SynapChakshuTransfer = { Client, decode, revision: '1.0.0-chakshu-transport5' };
   if (typeof module !== 'undefined') module.exports = root.SynapChakshuTransfer;
 })(globalThis);

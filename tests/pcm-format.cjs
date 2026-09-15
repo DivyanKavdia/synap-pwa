@@ -162,3 +162,23 @@ test('unreadable stored PCM cannot become an empty or truncated upload', async (
   await assert.rejects(store.segment('r', 0), { code: 'audio_read' });
   assert.equal(blob.size, 1600);
 });
+
+test('a legacy Blob with broken whole-file reads is recovered only from complete bounded slices',async()=>{
+  const source=new Uint8Array(640000);for(let i=0;i<source.length;i++)source[i]=i%251;
+  const blob=new Blob([source]);blob.arrayBuffer=async()=>new ArrayBuffer(0);
+  assert.deepEqual(new Uint8Array(await DKAudioCodec.readBlob(blob)),source);
+  const slice=blob.slice.bind(blob);
+  blob.slice=(start,end)=>{const part=slice(start,end);if(start===65536)part.arrayBuffer=async()=>new ArrayBuffer(0);return part;};
+  await assert.rejects(DKAudioCodec.readBlob(blob),{code:'audio_read',expectedBytes:640000});
+});
+test('stored byte buffers export exactly and validate the full timeline length',async()=>{
+  const source=new Uint8Array(640000);for(let i=0;i<638400;i++)source[i]=i%251;
+  const meta={index:0,pcmBuffer:source.buffer,frameCount:399,timelineFrameCount:400,incomplete:1};
+  const store=new DKAudioStore();store.get=async()=>meta;store.all=async()=>[meta];
+  const segment=await store.segment('take',0);
+  assert.equal(segment.completeFrames,399);assert.equal(segment.incomplete,1);
+  for(const blob of [segment.blob,await store.blob({id:'take'})])
+    assert.deepEqual(new Uint8Array(await blob.arrayBuffer()).subarray(44),source);
+  meta.pcmBuffer=source.buffer.slice(0,-1600);
+  await assert.rejects(store.segment('take',0),{code:'audio_integrity'});
+});

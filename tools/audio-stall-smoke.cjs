@@ -9,7 +9,8 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
   const origin = 'http://127.0.0.1:' + server.address().port,
     browser = await launchChromium();
   try {
-    for (const mode of ['repair', 'no-audio', 'pendant-stop', 'stop-disconnect', 'stalled-repair', 'slow-fragments', 'slow-discovery', 'drain-progress']) {
+    for (const mode of ['repair', 'no-audio', 'pendant-stop', 'stop-disconnect', 'stalled-repair', 'slow-fragments', 'slow-discovery', 'drain-progress', 'stop-retry', 'stop-write-reconnect']) {
+      if (process.argv.length > 2 && !process.argv.slice(2).includes(mode)) continue;
       const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
       await context.route('**/*', (route) =>
         new URL(route.request().url()).origin === origin ? route.continue() : route.abort(),
@@ -51,7 +52,17 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       await page.waitForFunction(() => document.body.dataset.state === 'recording');
       if (!['no-audio', 'stalled-repair', 'slow-fragments', 'drain-progress'].includes(mode))
         await page.waitForFunction(() => SynapAppControls.recordingState().receivedMs >= 500);
-      if (mode === 'slow-discovery') {
+      if (mode === 'stop-retry' || mode === 'stop-write-reconnect') {
+        await page.evaluate(mode=>{
+          localStorage.setItem('dk-pendant-auto-reconnect','on');
+          bleFixture.rejectNextStops(mode==='stop-retry'?1:3);
+        },mode);
+        await page.locator('#headerCaptureToggle').click();
+        await page.waitForFunction(() => document.body.dataset.state === 'idle' &&
+          !SynapAppControls.recordingState().active);
+        assert.equal(await page.evaluate(() => bleFixture.appDisconnects),mode==='stop-retry'?0:1);
+        assert.equal(await page.evaluate(() => new DKAudioStore().all('recordings').then(rows=>rows[0].stats.missingFrames)),0);
+      } else if (mode === 'slow-discovery') {
         assert.equal(await page.evaluate(() => window.slowDiscoveryError), undefined);
         assert.equal(await page.evaluate(() => bleFixture.appDisconnects), 0);
         await page.waitForFunction(() => SynapAppControls.recordingState().receivedMs >= 1000);
@@ -138,7 +149,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       }));
       assert.equal(saved.starts, 1);
       assert.equal(saved.records.length, 1, 'one original journal');
-      assert.equal(saved.records[0].stopReason, ['repair', 'slow-fragments', 'slow-discovery', 'drain-progress'].includes(mode) ? 'normal' : 'stop-unconfirmed');
+      assert.equal(saved.records[0].stopReason, ['repair', 'slow-fragments', 'slow-discovery', 'drain-progress', 'stop-retry', 'stop-write-reconnect'].includes(mode) ? 'normal' : 'stop-unconfirmed');
       if (mode === 'no-audio' || mode === 'stalled-repair') assert.equal(saved.records[0].stats.completeFrames, 0);
       else if (mode === 'slow-fragments') {
         assert.equal(saved.records[0].stats.completeFrames, 2);

@@ -66,7 +66,7 @@ const server = createStaticServer(root);
       await page.waitForTimeout(800);
       assert.equal(await page.evaluate(() => bleFixture.stopWrites),stopsBefore+1,
         'acknowledged drain is not flooded with STOP writes: '+await page.evaluate(() => document.querySelector('#diagnosticsLog').textContent));
-      assert(await page.evaluate(() => document.querySelector('#diagnosticsLog').textContent.includes('Write-with-response rejected')));
+      assert.equal(await page.evaluate(() => bleFixture.responseStopAttempts),0,'advertised command writes avoid the broken ATT response path');
       await page.evaluate(() => bleFixture.holdReplay(false));
       await page.waitForFunction(() => document.body.dataset.state === 'idle');
       await page.evaluate(() => bleFixture.emulateStopEcho(false));

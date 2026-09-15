@@ -278,7 +278,7 @@ const waitState = (page, state) =>
               if (
                 this.name === 'segments' &&
                 value.recordingId === 'qa-blocked' &&
-                value.pcmBlob &&
+                (value.pcmBuffer || value.pcmBlob) &&
                 qaRejectOldCompaction
               )
                 request.addEventListener('success', () => this.transaction.abort());
@@ -340,7 +340,7 @@ const waitState = (page, state) =>
       assert(!before.bad.sealed);
       assert(before.good.sealed);
       assert.equal(before.packets, 8);
-      assert(!before.segment.pcmBlob, 'an aborted compaction must keep its raw packets');
+      assert(!before.segment.pcmBuffer && !before.segment.pcmBlob, 'an aborted compaction must keep its raw packets');
       assert.equal(
         before.next.recordingId,
         'qa-good',

@@ -242,7 +242,7 @@
     }
   }
   root.SynapChakshuVoice = {
-    revision: '1.0.0-chakshu-transport4',
+    revision: '1.0.0-chakshu-transport5',
     decode,
     get state() {
       return state;

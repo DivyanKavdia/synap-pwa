@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio2";
-  const APP_SHELL_REVISION = "1.0.0-shell114-chakshu";
+  const APP_SHELL_REVISION = "1.0.0-shell115-chakshu";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -1020,14 +1020,24 @@
       manualDisconnect ||
       !autoReconnectEnabled() ||
       !bluetoothDevice ||
-      (reconnectAttempts >= MAX_AUTO_RECONNECT_ATTEMPTS && !recordingReconnectPending) ||
       reconnectTimer
     ) {
       return;
     }
+    if (reconnectAttempts >= MAX_AUTO_RECONNECT_ATTEMPTS && !recordingReconnectPending) {
+      // Periodic remembered-device recovery can still find a later wake, but
+      // an advertising device that repeatedly fails must get a quiet interval.
+      reconnectNotBefore = Math.max(reconnectNotBefore, Date.now() + 30000);
+      return;
+    }
 
     const attempt = reconnectAttempts + 1;
-    const wait = AUTO_RECONNECT_DELAYS_MS[Math.min(reconnectAttempts, MAX_AUTO_RECONNECT_ATTEMPTS - 1)];
+    const wait = Math.max(AUTO_RECONNECT_DELAYS_MS[Math.min(reconnectAttempts, MAX_AUTO_RECONNECT_ATTEMPTS - 1)],
+      reconnectNotBefore - Date.now());
+    // Advertisements must respect this backoff too. Otherwise each beacon
+    // cancels the timer and all failed connections remain labelled attempt 1.
+    reconnectAttempts = attempt;
+    reconnectNotBefore = Math.max(reconnectNotBefore, Date.now() + wait);
 
     log("Automatic reconnect scheduled", {
       attempt: attempt,
@@ -1038,7 +1048,6 @@
     reconnectTimer = window.setTimeout(function () {
       reconnectTimer = null;
       if (document.visibilityState === "hidden" || manualDisconnect || !autoReconnectEnabled() || firmwareBusy || isGattConnected()) return;
-      reconnectAttempts = attempt;
       connectPendant({ silent: true, autoReconnect: true, recoveryAttempt: true });
     }, wait);
   }
@@ -1316,7 +1325,10 @@
       connectInProgress = false;
       renderDeviceSetup();
       if (globalThis.document?.body) delete document.body.dataset.autoReconnecting;
-      if (isGattConnected()) setReconnectCapability("Pendant connection ready");
+      if (isGattConnected()) {
+        setReconnectCapability("Pendant connection ready");
+        globalThis.dispatchEvent(new CustomEvent('synap-gatt-ready'));
+      }
       syncRememberedMonitoring();
       if (isGattConnected()) checkFirmwareRelease?.();
     }
@@ -1472,9 +1484,9 @@
   }
 
   function optionalGattAllowed() {
-    return !firmwareBusy && !recordingConfirmed && !recordingReconnectPending &&
-      !finalizing && !currentRecordingId && !openingCapture && !unsavedAudio &&
-      !["starting", "recording", "stopping", "saving", "updating"].includes(appState);
+    return !connectInProgress && appState === 'idle' &&
+      !firmwareBusy && !recordingConfirmed && !recordingReconnectPending &&
+      !finalizing && !currentRecordingId && !openingCapture && !unsavedAudio;
   }
 
   function mediaGattAllowed() {
@@ -1499,7 +1511,7 @@
 
   function handleGattFailure(error, { label, owner, started, current, blockedBy }) {
     log("GATT operation failed", { operation: label, name: error.name, message: error.message,
-      connected: isGattConnected(), queued: !started, blockedBy, session: recordingSessionId });
+      nativeReason: error.nativeReason, connected: isGattConnected(), queued: !started, blockedBy, session: recordingSessionId });
     if (error.name !== "TimeoutError" || !current) return;
     const captureAlive = recordingConfirmed && appState === "recording" &&
       (document.visibilityState === "hidden" || performance.now() - lastAudioAt < AUDIO_STALL_TIMEOUT_MS);
@@ -1521,21 +1533,20 @@
     await queueGattOperation(async function () {
       beforeWrite?.();
       const properties = characteristic.properties;
-      if (properties.write && typeof characteristic.writeValueWithResponse === "function") {
-        try { return await characteristic.writeValueWithResponse(value); }
-        catch (error) {
-          if (error.name !== "NotSupportedError" || !properties.writeWithoutResponse ||
-              typeof characteristic.writeValueWithoutResponse !== "function") throw error;
-          log("Write-with-response rejected; using advertised write-without-response", {
-            command, name: error.name, message: error.message
-          });
-          // START/STOP/GET_STATUS are idempotent. Status, not the write result, is the ACK.
-          return characteristic.writeValueWithoutResponse(value);
-        }
-      }
+      // These two-byte commands are idempotent and have an application status
+      // acknowledgement. Avoid an ATT write response competing with audio.
       if (properties.writeWithoutResponse &&
           typeof characteristic.writeValueWithoutResponse === "function") {
-        return characteristic.writeValueWithoutResponse(value);
+        try { return await characteristic.writeValueWithoutResponse(value); }
+        catch (error) {
+          if (error?.name !== 'NotSupportedError' || !properties.write ||
+              typeof characteristic.writeValueWithResponse !== 'function' ||
+              characteristic !== controlCharacteristic || !isGattConnected()) throw error;
+          beforeWrite?.();
+        }
+      }
+      if (properties.write && typeof characteristic.writeValueWithResponse === "function") {
+        return characteristic.writeValueWithResponse(value);
       }
       return characteristic.writeValue(value);
     }, "Control command 0x" + command.toString(16));
@@ -1830,38 +1841,50 @@
     updateTimer();
     clearStartTimeout();
     watchRecordingStop(sessionId);
-
-    try {
-      for (let attempt = 0; ownsStop(); attempt += 1) {
-        if (!ownsStop()) return;
-        if (!isGattConnected()) break;
+    let failures = 0;
+    for (let attempt = 0; ownsStop(); attempt += 1) {
+      // The disconnect callback resumes this journal. Its Stop deadline stays
+      // armed even if that callback or a new connection never arrives.
+      if (!isGattConnected()) return;
+      try {
         // Once the recovery service confirms Stop, let it drain. Rewriting
         // Stop competes with the same audio transfer we are waiting to save.
         if (!globalThis.SynapDisconnectProtection?.isDraining?.())
           await writeCommand(CMD_STOP);
         await delay(attempt<3?150:700);
         if (!ownsStop()) return;
-        await readControlStatus();
+        const read = await readControlStatus();
         if (!ownsStop()) return;
         if (deviceStatus.state === DEVICE_STATE.CONNECTED_IDLE &&
             deviceStatus.error === 0) {
           scheduleFinalize(100, "normal", sessionId);
           return;
         }
+        if (!read) throw new Error('Stop status could not be read.');
+        failures = 0;
         log("Waiting for recording drain", { attempt: attempt + 1,
           firmwareDraining: Boolean(globalThis.SynapDisconnectProtection?.isDraining?.()),
           receivedFrames: sessionStats.completeFrames, receivedPackets: sessionStats.packetsReceived });
+      } catch (error) {
+        if (!ownsStop()) return;
+        log("Stop request not acknowledged", { attempt: ++failures, error: friendlyError(error) });
+        if (!isGattConnected()) return;
+        // A settled native rejection does not prove STOP was ignored. Retry
+        // this idempotent command, then require idle/draining acknowledgement.
+        if (failures < 3 && error?.name !== 'TimeoutError') {
+          await delay(500);
+          continue;
+        }
+        if (!manualDisconnect && globalThis.SynapDisconnectProtection?.capacityMs() > 0) {
+          markRecordingInterrupted(sessionId);
+          disconnectGatt("Reconnecting to finish recording Stop");
+          return;
+        }
+        disconnectGatt("Recording stop was not acknowledged");
+        await finalizeRecording("stop-unconfirmed", sessionId);
+        return;
       }
-      if (!ownsStop()) return;
-      log("Stop unconfirmed; disconnecting to stop the peripheral");
-      toast("Stop was not confirmed. Disconnected safely; saving received audio.", "error");
-    } catch (error) {
-      if (!ownsStop()) return;
-      log("Stop failed; disconnecting safely", friendlyError(error));
     }
-    // Never display Ready while the pendant might still be streaming.
-    if (isGattConnected()) disconnectGatt("Recording stop was not acknowledged");
-    await finalizeRecording("stop-unconfirmed", sessionId);
   }
 
   function clearRecordingStopWatch() {
@@ -1889,7 +1912,11 @@
         watch.frames = sessionStats.completeFrames;
         watch.progressAt = now;
       }
-      if (now - watch.startedAt < 35000 && now - watch.progressAt < 8000) return;
+      const recovering = recordingReconnectPending;
+      if (watch.recovering && !recovering) watch.progressAt = now;
+      watch.recovering = recovering;
+      const noProgressMs = recovering ? 20000 : 8000;
+      if (now - watch.startedAt < 35000 && now - watch.progressAt < noProgressMs) return;
       clearRecordingStopWatch();
       log("Recording Stop deadline reached", { session: sessionId,
         elapsedMs: Math.round(now - watch.startedAt), receivedFrames: watch.frames,

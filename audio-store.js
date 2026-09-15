@@ -48,10 +48,21 @@
   async function readBlob(blob) {
     const valid = (value) => value instanceof ArrayBuffer && value.byteLength === blob.size;
     let buffer;
+    const failures = [];
+    const failed = (reader, error) =>
+      failures.push({
+        reader,
+        name: error?.name || '',
+        message: error?.message || '',
+        bytes: buffer?.byteLength ?? null,
+      });
     try {
       buffer = await blob.arrayBuffer();
       if (valid(buffer)) return buffer;
-    } catch (_) {}
+      failed('arrayBuffer');
+    } catch (error) {
+      failed('arrayBuffer', error);
+    }
     // Some native browser readers can return fewer bytes than Blob.size.
     // Retry through the independent FileReader API before touching a DataView.
     if (typeof root.FileReader === 'function') {
@@ -64,7 +75,25 @@
           reader.readAsArrayBuffer(blob);
         });
         if (valid(buffer)) return buffer;
-      } catch (_) {}
+        failed('FileReader');
+      } catch (error) {
+        failed('FileReader', error);
+      }
+    }
+    // Older journals contain persisted Blobs. A failed whole-Blob reader may
+    // still support bounded slices. Require every byte; never pad a short read.
+    const chunkBytes = 64 * 1024;
+    if (blob.size > chunkBytes) {
+      try {
+        const bytes = new Uint8Array(blob.size);
+        for (let start = 0; start < blob.size; start += chunkBytes) {
+          const part = await readBlob(blob.slice(start, Math.min(blob.size, start + chunkBytes)));
+          bytes.set(new Uint8Array(part), start);
+        }
+        return bytes.buffer;
+      } catch (error) {
+        failed('slices', error);
+      }
     }
     throw Object.assign(
       new Error(
@@ -75,8 +104,24 @@
         retryable: true,
         expectedBytes: blob.size,
         actualBytes: buffer?.byteLength ?? null,
+        readFailures: failures,
       },
     );
+  }
+  function hasPcm(segment) {
+    return segment?.pcmBuffer !== undefined || Boolean(segment?.pcmBlob);
+  }
+  async function readPcm(segment) {
+    const buffer =
+      segment.pcmBuffer !== undefined ? segment.pcmBuffer : await readBlob(segment.pcmBlob);
+    if (!(buffer instanceof ArrayBuffer)) throw audioError('invalid stored PCM');
+    pcmBytes([buffer]);
+    if (
+      segment.timelineFrameCount != null &&
+      buffer.byteLength !== segment.timelineFrameCount * PCM_BYTES_PER_FRAME
+    )
+      throw audioError('incomplete stored PCM timeline');
+    return new Uint8Array(buffer);
   }
   // Read only chunk headers. Validation must stay bounded for long recordings
   // and must never silently drop a byte or guess how damaged PCM was aligned.
@@ -366,7 +411,7 @@
         s.recordings.delete(id);
         s.packets.add({ recordingId: id, sequence: 0, chunk: 0, payload: new Uint8Array(1) });
         s.packets.delete([id, 0, 0]);
-        s.segments.add({ recordingId: id, index: 0, pcmBlob: new Blob([new Uint8Array(1)]) });
+        s.segments.add({ recordingId: id, index: 0, pcmBuffer: new ArrayBuffer(1) });
         s.segments.delete([id, 0]);
         s.jobs.add({ id, recordingId: id, dedupe: id });
         s.jobs.delete(id);
@@ -453,7 +498,7 @@
         .then(async () => {
           await this.flush();
           const meta = await this.get('segments', [recordingId, index]);
-          if (meta?.pcmBlob) return;
+          if (hasPcm(meta)) return;
           const packets = await this.all('packets', 'segment', [recordingId, index]);
           const start = index * SEGMENT_FRAMES;
           const data = assemble(packets, {
@@ -538,8 +583,8 @@
           packets: 0,
           completeFrames: meta.frameCount || 0,
         };
-      if (meta?.pcmBlob) {
-        const pcm = new Uint8Array(await readBlob(meta.pcmBlob));
+      if (hasPcm(meta)) {
+        const pcm = await readPcm(meta);
         return {
           blob: wav([pcm]),
           frames: [],
@@ -620,8 +665,19 @@
       // A PCM snapshot must not permanently replace those recoverable holes.
       if (!final && (data.missing || data.incomplete)) return false;
       // Validate before the transaction can delete the raw packet evidence.
-      pcmBytes(data.frames, PCM_BYTES_PER_FRAME);
-      const pcmBlob = new Blob(data.frames, { type: 'application/octet-stream' });
+      const bytes = pcmBytes(data.frames, PCM_BYTES_PER_FRAME);
+      // Store bytes directly in IndexedDB. Persisted Blob backing files can be
+      // unreadable in a native web view even after its transaction succeeds.
+      // Each segment is bounded to 30 seconds, so this copy is at most 960 kB.
+      const pcm = new Uint8Array(bytes);
+      let offset = 0;
+      for (const frame of data.frames) {
+        pcm.set(
+          new Uint8Array(frame.buffer || frame, frame.byteOffset || 0, frame.byteLength),
+          offset,
+        );
+        offset += frame.byteLength;
+      }
       const consumed = new Set(data.completeSequences || []);
       await this.atomic(['segments', 'packets', 'jobs'], (s, result, tx, abort) => {
         const req = s.segments.get([recordingId, index]);
@@ -631,7 +687,7 @@
             ...current,
             closed: true,
             compacted: true,
-            pcmBlob,
+            pcmBuffer: pcm.buffer,
             frameCount: data.completeFrames,
             ...(data.transportFrames ? { transportFrames: data.transportFrames } : {}),
             timelineFrameCount: data.frames.length,
@@ -641,10 +697,8 @@
             firstSequence: data.firstSequence,
             lastSequence: data.lastSequence,
           });
-          // WebKit may dispatch pending IDB callbacks while serializing a
-          // Blob, when this transaction is temporarily inactive. Queue no
-          // dependent requests until the Blob write succeeds. All changes
-          // still commit together, so a failure keeps the original packets.
+          // Delete represented packets only after the byte write succeeds.
+          // Both changes commit together; an abort keeps the raw packets.
           saved.onsuccess = () => {
             try {
               const cursor = s.packets
@@ -707,7 +761,7 @@
         incomplete = 0,
         capturedFrames = 0;
       for (const segment of segments) {
-        if (segment.pcmBlob) {
+        if (hasPcm(segment)) {
           lastSequence = Math.max(lastSequence, segment.lastSequence ?? -1);
           packets += segment.packets || 0;
           incomplete += segment.incomplete || 0;
@@ -734,7 +788,7 @@
         const lastIndex = Math.floor(lastSequence / SEGMENT_FRAMES);
         for (let index = 0; index <= lastIndex; index++) {
           const segment = byIndex.get(index);
-          if (segment?.pcmBlob) {
+          if (hasPcm(segment)) {
             addTransport(segment.transportFrames);
             complete += segment.frameCount || 0;
             missing += segment.missing || 0;
@@ -839,8 +893,8 @@
       );
       const pcm = [];
       for (const segment of segments) {
-        if (segment.pcmBlob) {
-          pcm.push(new Uint8Array(await readBlob(segment.pcmBlob)));
+        if (hasPcm(segment)) {
+          pcm.push(await readPcm(segment));
           continue;
         }
         const packets = await this.all('packets', 'segment', [record.id, segment.index]);

@@ -142,7 +142,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell114-chakshu'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell115-chakshu'/);
 });
 
 test('the settings form offers the encrypted cloud provider and a sign-in control', () => {
@@ -520,17 +520,19 @@ test('uploads are idempotent and finalize retries use deterministic metadata', (
   assert.doesNotMatch(backendSource, /ended_at:new Date\([^\n]*Date\.now\(\)/);
 });
 
-test('the v2 finalize request body is identical across retries', async () => {
+test('finalize retries are identical and count whole missing windows in byte-buffer journals', async () => {
   const finalizeCalls = [];
   const recording = {
     id: '11111111-1111-4111-8111-111111111111',
     createdAt: '2026-09-06T03:11:00.000Z',
-    durationMs: 20000,
+    durationMs: 80000,
     rememberMarkers: [],
   };
   const store = {
     get: async (name) => (name === 'recordings' ? recording : null),
-    all: async (name) => (name === 'segments' ? [{ frameCount: 400 }] : []),
+    all: async (name) => (name === 'segments' ? [
+      {frameCount:600}, {frameCount:0,pcmBuffer:new ArrayBuffer(960000)}, {frameCount:400}
+    ] : []),
     atomic: async () => undefined,
   };
   const response = (data, status = 200) => ({
@@ -583,7 +585,8 @@ test('the v2 finalize request body is identical across retries', async () => {
   assert.equal(finalizeCalls[0].key, recording.id + ':consolidate:finalize-v2');
   assert.equal(finalizeCalls[0].key, finalizeCalls[1].key);
   assert.equal(finalizeCalls[0].body, finalizeCalls[1].body);
-  assert.equal(JSON.parse(finalizeCalls[0].body).ended_at, '2026-09-06T03:11:20.000Z');
+  assert.equal(JSON.parse(finalizeCalls[0].body).ended_at, '2026-09-06T03:12:20.000Z');
+  assert.equal(JSON.parse(finalizeCalls[0].body).segment_count,3);
 });
 
 test('legacy idempotency failures self-heal once without resetting unrelated failed work', async () => {

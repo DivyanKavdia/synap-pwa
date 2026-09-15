@@ -63,7 +63,7 @@ function harness({ initial = packet(), resuming = false, ackStop = true, delayed
   c.bluetoothDevice = { id: 'pendant', gatt: {
     connected: false, async connect() { this.connected = true; return this; }, getPrimaryService: async () => service,
   } };
-  vm.createContext(c);
+  c.CustomEvent=class{constructor(type){this.type=type;}};(c.globalThis||c).dispatchEvent=()=>{};vm.createContext(c);
   vm.runInContext(slice('  async function connectPendant(', '  async function disconnectPendant(') +
     slice('  async function writeCommand(', '  // Recording lifecycle'), c);
   return { c, commands, logs, control, connect: () => c.connectPendant({ silent: true }) };

@@ -126,14 +126,14 @@ const server = createStaticServer(require('node:path').resolve(__dirname, '..'))
       append(store, id, 820, 980);
       await settle(store);
       const before = {
-        compacted: Boolean((await store.get('segments', [id, 0]))?.pcmBlob),
+        compacted: Boolean((await store.get('segments', [id, 0]))?.compacted),
         packets: (await store.all('packets', 'segment', [id, 0])).length,
         jobs: (await store.all('jobs')).filter(job => job.segmentIndex === 0).length,
       };
       append(store, id, 98, 599);
       await settle(store);
       const after = {
-        compacted: Boolean((await store.get('segments', [id, 0]))?.pcmBlob),
+        compacted: Boolean((await store.get('segments', [id, 0]))?.compacted),
         liveWindow: store.rollingIndex.get(id),
       };
       append(store, id, 600, 819);

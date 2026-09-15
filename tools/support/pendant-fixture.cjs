@@ -78,6 +78,8 @@ module.exports = function pendantFixture() {
   let stopDisconnect = null,
     echoStop = false,
     rejectStopResponse = false,
+    rejectStops = 0,
+    responseStopAttempts = 0,
     stopWrites = 0,
     pauseReplay = false,
     idleOnReconnect = false,
@@ -149,7 +151,7 @@ module.exports = function pendantFixture() {
     constructor(id) {
       super();
       this.id = id;
-      this.properties = { write: true, read: true, notify: true };
+      this.properties = { write: true, read: true, notify: true, writeWithoutResponse: id === uuid('47') };
       this.value = null;
     }
     startNotifications() {
@@ -196,6 +198,9 @@ module.exports = function pendantFixture() {
       });
     }
     writeValueWithResponse(value) {
+      return this.write(value, true);
+    }
+    write(value, withResponse) {
       return operation(async () => {
         if(this.id===uuid('58')){
           const v=new DataView(value.buffer,value.byteOffset,value.byteLength),op=value[0];
@@ -279,7 +284,9 @@ module.exports = function pendantFixture() {
           return;
         }
         if (value[0] === 0) {
-          if (rejectStopResponse) { rejectStopResponse=false;throw new DOMException('GATT Error Unknown.','NotSupportedError'); }
+          if(withResponse)responseStopAttempts++;
+          if(rejectStops>0){rejectStops--;throw undefined;}
+          if (rejectStopResponse && withResponse) { rejectStopResponse=false;throw new DOMException('GATT Error Unknown.','NotSupportedError'); }
           stopWrites++;
         }
         if (buffered && value[0] === 0 && state === 2 && !waiting) {
@@ -330,7 +337,7 @@ module.exports = function pendantFixture() {
         this.dispatchEvent(new Event('characteristicvaluechanged'));
       });
     }
-    writeValueWithoutResponse(value) { return this.writeValueWithResponse(value); }
+    writeValueWithoutResponse(value) { return this.write(value, false); }
   }
   const audio = new Characteristic(uuid('46')),
     control = new Characteristic(uuid('47'));
@@ -529,6 +536,8 @@ module.exports = function pendantFixture() {
       return buffer.length;
     },
     emulateStopEcho(value) { echoStop=value;rejectStopResponse=value;control.properties.writeWithoutResponse=value; },
+    rejectNextStops(count) { rejectStops=count; },
+    get responseStopAttempts() { return responseStopAttempts; },
     get stopWrites() { return stopWrites; },
     get recoveryWaiting() {
       return waiting;

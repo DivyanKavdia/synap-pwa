@@ -335,7 +335,7 @@
   function finalize(processor, job, signal) {
     return processor.store.get('recordings', job.recordingId).then(function (recording) {
       return processor.store.all('segments', 'recording', job.recordingId).then(function (segments) {
-        var counted = segments.filter(function (segment) { return segment.frameCount || segment.pcmBlob; }).length;
+        var counted = segments.filter(function (segment) { return segment.frameCount || segment.pcmBuffer || segment.pcmBlob; }).length;
         return request('/v1/recordings/' + encodeURIComponent(job.recordingId) + '/finalize', {
           method: 'POST', signal: signal,
           headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey(job, 'finalize-v2') },

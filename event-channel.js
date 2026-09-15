@@ -66,6 +66,7 @@ function retryWhenAllowed(){
   if(connection&&mode!=='event'&&mode!=='legacy-control'&&(!connection.canUse||connection.canUse())){attempts=0;schedule(150)}
 }
 root.addEventListener('synap-recording-foreground',retryWhenAllowed);
+root.addEventListener('synap-gatt-ready',retryWhenAllowed);
 function observeState(){
   if(document.body&&root.MutationObserver)new MutationObserver(retryWhenAllowed).observe(document.body,{attributes:true,attributeFilter:['data-state']});
 }

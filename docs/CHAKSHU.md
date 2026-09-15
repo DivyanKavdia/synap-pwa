@@ -46,6 +46,8 @@ and diagnostic log. Startup diagnostics also identify the loaded recorder,
 camera, voice and capture UI revisions, so an old cached module is distinguishable
 from a failure in the current build.
 
+Module and event discovery wait until identity, audio/control subscriptions and recovery negotiation finish. The app releases optional setup explicitly after that handshake, including after a reconnect.
+
 Voice discovery waits until the connection handshake is complete. Commands and
 their lease can be restored during a confirmed recording after reconnecting.
 Failed setup attempts also respect the two-second
