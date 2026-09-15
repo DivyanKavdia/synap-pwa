@@ -344,9 +344,17 @@ module.exports = function pendantFixture() {
   if(chakshu&&location.search.includes('model'))for(const id of ['58','59'])chars.set(uuid(id),new Characteristic(uuid(id)));
   if (buffered) chars.set(uuid('4f'), new Characteristic(uuid('4f')));
   if (ota) for (const id of ['48', '49', '4b']) chars.set(uuid(id), new Characteristic(uuid(id)));
+  let nextDiscoveryDelay = null, discoveryBusy = false;
   const service = {
     getCharacteristic: (id) =>
-      operation(() => {
+      operation(async () => {
+        if (nextDiscoveryDelay?.id === id) {
+          const ms = nextDiscoveryDelay.ms;
+          nextDiscoveryDelay = null;
+          discoveryBusy = true;
+          try { await new Promise(resolve => setTimeout(resolve, ms)); }
+          finally { discoveryBusy = false; }
+        }
         if (!chars.has(id)) throw new DOMException('No optional characteristic', 'NotFoundError');
         return chars.get(id);
       }),
@@ -464,6 +472,8 @@ module.exports = function pendantFixture() {
     get: () => (bluetoothAvailable ? bluetooth : undefined),
   });
   window.bleFixture = {
+    delayNextDiscovery(id, ms) { nextDiscoveryDelay = { id: uuid(id), ms }; },
+    get discoveryBusy() { return discoveryBusy; },
     emptyVoiceStatus(value){emptyVoiceRead=value;},
     voice(action){voiceSequence++;voiceAction=action;voiceResult=voiceEnabled&&Date.now()-voiceLease<6000?2:0;emitVoice();return voiceSequence;},
     replayVoice:emitVoice,

@@ -3,6 +3,23 @@
   'use strict';
 
   class BluetoothSession {
+    static revision = '1.0.0-chakshu-transport4';
+
+    static normalizeError(reason) {
+      if (reason && typeof reason.message === 'string') return reason;
+      const message =
+        typeof reason === 'string' && reason
+          ? reason
+          : reason?.description ||
+            (reason?.code != null
+              ? 'Bluetooth request failed (code ' + reason.code + ').'
+              : 'Bluetooth request failed.');
+      const error = new Error(message);
+      if (reason?.name) error.name = reason.name;
+      if (reason?.code != null) error.code = reason.code;
+      return error;
+    }
+
     constructor({ connection, connected, withTimeout, timeoutMs, onFailure = () => {} }) {
       this.connection = connection;
       this.connected = connected;
@@ -20,7 +37,7 @@
       this.active = null;
     }
 
-    run(action, label = 'Bluetooth operation') {
+    run(action, label = 'Bluetooth operation', { timeoutMs = this.timeoutMs } = {}) {
       const owner = this.connection(),
         generation = this.generation;
       let expired = false,
@@ -29,7 +46,10 @@
       const ready = new Promise((resolve) => {
         begin = resolve;
       });
-      const entry = { label, owner };
+      const entry = { label, owner, timeoutMs };
+      // A command queued behind discovery must respect that discovery's native
+      // deadline. Its shorter command timeout starts only when it owns ATT.
+      const waitMs = Math.max(timeoutMs, this.active?.timeoutMs || this.timeoutMs);
       const current = () => {
         const active = this.connection();
         return (
@@ -60,11 +80,12 @@
       // still needs its full native deadline, particularly camera reads.
       return this.withTimeout(
         Promise.race([ready, operation]),
-        this.timeoutMs,
+        waitMs,
         label + ' waiting for Bluetooth',
       )
-        .then(() => this.withTimeout(operation, this.timeoutMs, label))
-        .catch((error) => {
+        .then(() => this.withTimeout(operation, timeoutMs, label))
+        .catch((reason) => {
+          const error = BluetoothSession.normalizeError(reason);
           expired = true;
           this.onFailure(error, {
             label,

@@ -6,7 +6,7 @@ const events={},frames=[],offsets=[500,950,1450],links=['insights','library','pr
 links.forEach(l=>l.classList={toggle(k,on){l.active=on;}});
 const sections=offsets.map((_,i)=>({getBoundingClientRect:()=>({top:offsets[i]-c.window.scrollY})}));
 let resize;
-const c={document:{querySelectorAll:()=>links,querySelector:selector=>selector==='.topbar'?{getBoundingClientRect:()=>({bottom:78})}:selector==='main'?{}:sections[links.findIndex(l=>l.attrs.href===selector)],documentElement:{scrollHeight:2400}},
+const c={APP_SHELL_REVISION:'test-shell',document:{querySelectorAll:()=>links,querySelector:selector=>selector==='.topbar'?{getBoundingClientRect:()=>({bottom:78})}:selector==='main'?{}:sections[links.findIndex(l=>l.attrs.href===selector)],documentElement:{scrollHeight:2400}},
   window:{scrollY:0,innerHeight:700,location:{hash:'#insights'},addEventListener(t,f){events[t]=f;},requestAnimationFrame:f=>frames.push(f)},ResizeObserver:class{constructor(f){resize=f;}observe(){}}};
 vm.runInNewContext(block,c);c.bindSectionNavigation();
 function flush(){while(frames.length)frames.shift()();}

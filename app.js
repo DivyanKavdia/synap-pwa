@@ -5,6 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio2";
+  const APP_SHELL_REVISION = "1.0.0-shell114-chakshu";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -1135,7 +1136,7 @@
       log("GATT connected");
 
       const service =
-        await queueGattOperation(function () { return gattServer.getPrimaryService(SERVICE_UUID); });
+        await queueGattOperation(function () { return gattServer.getPrimaryService(SERVICE_UUID); }, "Find pendant service");
       assertConnection();
       log("Pendant service resolved");
       let connectedDeviceId = null;
@@ -1156,10 +1157,10 @@
       }
 
       audioCharacteristic =
-        await queueGattOperation(function () { return service.getCharacteristic(AUDIO_CHAR_UUID); });
+        await queueGattOperation(function () { return service.getCharacteristic(AUDIO_CHAR_UUID); }, "Find pendant audio");
       assertConnection();
       controlCharacteristic =
-        await queueGattOperation(function () { return service.getCharacteristic(CONTROL_CHAR_UUID); });
+        await queueGattOperation(function () { return service.getCharacteristic(CONTROL_CHAR_UUID); }, "Find pendant controls");
       assertConnection();
       log("Audio and control characteristics resolved");
 
@@ -1491,7 +1492,9 @@
   });
 
   function queueGattOperation(action, label = "Bluetooth operation") {
-    return bluetoothSession.run(action, label);
+    // Service/characteristic discovery can take several seconds on native
+    // Bluetooth bridges. Keep control writes/reads on their shorter deadline.
+    return bluetoothSession.run(action, label, { timeoutMs: label.startsWith("Find ") ? 10000 : COMMAND_TIMEOUT_MS });
   }
 
   function handleGattFailure(error, { label, owner, started, current, blockedBy }) {
@@ -3682,11 +3685,14 @@
 
     try {
       const showUpdate = function (event) {
-        if (event.data && event.data.type === "APP_VERSION" && (event.data.revision || event.data.version) !== APP_REVISION) {
-          const notice = document.getElementById("updateNotice");
+        if (!event.data || event.data.type !== "APP_VERSION") return;
+        const notice = document.getElementById("updateNotice");
+        const changed = (event.data.revision || event.data.version) !== APP_REVISION ||
+          (event.data.shellRevision && event.data.shellRevision !== APP_SHELL_REVISION);
+        if (changed) {
           notice.hidden = false;
           notice.textContent = "App update ready. Finish recording, then reload.";
-        }
+        } else if (notice.textContent.includes("App update ready")) notice.hidden = true;
       };
       const checkVersion = function () {
         if (navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({ type: "GET_VERSION" });
@@ -4217,7 +4223,7 @@
       throw error;
     }
   }
-  globalThis.SynapAppControls = Object.freeze({toggleCapture,toggleConnection,recordingState,stopCapture,canReload,startMediaAudio});
+  globalThis.SynapAppControls = Object.freeze({toggleCapture,toggleConnection,recordingState,stopCapture,canReload,startMediaAudio,shellRevision:APP_SHELL_REVISION});
 
   function setStartup(state, message) {
     document.body.dataset.startup = state;
@@ -4303,6 +4309,13 @@
     showRecoveryNotice();
     log("Application started", {
       version: APP_VERSION,
+      shellRevision: APP_SHELL_REVISION,
+      components: {
+        bluetooth: globalThis.SynapBluetoothSession?.revision || "unknown",
+        camera: globalThis.SynapChakshuTransfer?.revision || "unknown",
+        voice: globalThis.SynapChakshuVoice?.revision || "unknown",
+        capture: globalThis.SynapCaptureUIRevision || "unknown"
+      },
       protocol: PROTOCOL_VERSION,
       secureContext: window.isSecureContext,
       webBluetooth: Boolean(navigator.bluetooth),

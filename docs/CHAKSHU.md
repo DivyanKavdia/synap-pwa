@@ -41,6 +41,15 @@ Camera errors identify control discovery, data discovery, command write or
 response read. Diagnostics retain that stage, request ID, byte offset and elapsed
 time, and distinguish a queued timeout from an operation running on Bluetooth.
 The queue gives each operation its own execution deadline after bounded waiting.
+Native bridge failures reported as strings retain their message in the preview
+and diagnostic log. Startup diagnostics also identify the loaded recorder,
+camera, voice and capture UI revisions, so an old cached module is distinguishable
+from a failure in the current build.
+
+Voice discovery waits until the connection handshake is complete. Commands and
+their lease can be restored during a confirmed recording after reconnecting.
+Failed setup attempts also respect the two-second
+poll interval; media progress cannot cause an immediate retry burst.
 
 Photos and video are stored in a separate, account-keyed IndexedDB library **on the current browser**. They are not cloud-synced. Audio follows the existing local/cloud processing flow. Account changes close viewers, revoke object URLs, abort pending descriptions, and stop owned online captures. Interrupted visual captures remain accessible under their original owner. Deleting a visual does not delete linked audio. Download originals before clearing browser data.
 

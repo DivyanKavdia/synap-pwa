@@ -84,3 +84,29 @@ test('a queued timeout identifies its blocker and recovers a link that became id
   assert(h.logs.some(entry=>entry.detail?.blockedBy==='Read old status'));
   finish();await tick();assert.equal(writes,0);
 });
+test('Start waits for slow native discovery without disconnecting or overlapping ATT',async()=>{
+  const h=harness();h.c.appState='idle';h.c.recordingConfirmed=false;
+  let finish,started=0;
+  const discovery=h.c.queueGattOperation(()=>new Promise(resolve=>{finish=resolve}),'Find voice control');
+  await tick();h.c.appState='starting';
+  const start=h.c.queueGattOperation(()=>{started++;},'Start recording');
+  const settled=Promise.all([discovery,start]);
+  await h.expire(5000);
+  assert.equal(h.disconnects,0);assert.equal(started,0);
+  finish('characteristic');await settled;
+  assert.equal(started,1);assert.equal(h.disconnects,0);
+});
+test('discovery still has a bounded deadline when the native bridge never replies',async()=>{
+  const h=harness();h.c.appState='idle';
+  const pending=h.c.queueGattOperation(()=>new Promise(()=>{}),'Find voice control');
+  const failed=assert.rejects(pending,{name:'TimeoutError'});
+  await tick();await h.expire(10000);await failed;assert.equal(h.disconnects,1);
+});
+test('native string, null and code-only failures retain useful diagnostics',async()=>{
+  for(const [reason,message] of [['Operation failed (code 2).',/code 2/],[null,/Bluetooth request failed/],[{code:6},/code 6/]]){
+    const h=harness();
+    await assert.rejects(h.c.queueGattOperation(()=>Promise.reject(reason),'Read camera response'),message);
+    const failure=h.logs.find(row=>row.message==='GATT operation failed');
+    assert.match(failure.detail.message,message);assert.equal(failure.detail.name,'Error');
+  }
+});

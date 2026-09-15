@@ -58,8 +58,9 @@
     };
     // Active camera capture uses the same serialized native queue, with an
     // explicit policy that permits audio streaming but excludes recovery/OTA.
-    context.mediaQueue = (action, label) =>
-      queue(async () => {
+    context.mediaQueue = (action, label) => {
+      if (!canUseMedia()) return Promise.reject(deferred());
+      return queue(async () => {
         assertConnection();
         if (connection !== context || !canUseMedia()) throw deferred();
         const value = await action();
@@ -67,6 +68,7 @@
         if (connection !== context) throw Error('Pendant connection changed.');
         return value;
       }, label);
+    };
     connection = context;
     try {
       root.dispatchEvent(new CustomEvent('synap-gatt-service-ready', { detail: context }));

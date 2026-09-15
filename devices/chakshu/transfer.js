@@ -120,7 +120,14 @@
           await delay(60);
         }
         throw Error('Camera request timed out. Reconnect and refresh its status.');
-      } catch (error) {
+      } catch (reason) {
+        const error =
+          root.SynapBluetoothSession?.normalizeError(reason) ||
+          (reason && typeof reason.message === 'string'
+            ? reason
+            : new Error(
+                typeof reason === 'string' && reason ? reason : 'Camera Bluetooth request failed.',
+              ));
         if (error.name !== 'AbortError')
           root.dispatchEvent?.(
             new CustomEvent('synap-capture-diagnostic', {
@@ -179,6 +186,6 @@
       });
     }
   }
-  root.SynapChakshuTransfer = { Client, decode };
+  root.SynapChakshuTransfer = { Client, decode, revision: '1.0.0-chakshu-transport4' };
   if (typeof module !== 'undefined') module.exports = root.SynapChakshuTransfer;
 })(globalThis);

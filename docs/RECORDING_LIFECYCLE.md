@@ -146,3 +146,13 @@ complete frames keep arriving. The log includes received/elapsed time, packet
 statistics and negotiated transport settings. It does not replay or interrupt
 that progressing stream. The snapshot helps distinguish capture failure,
 notification congestion and browser-side packet loss on the physical device.
+
+Service and characteristic discovery have a ten-second native deadline; control
+reads and writes retain 3.5 seconds. A queued Start respects the longer deadline
+of discovery already running, then gets its own command deadline. A true native
+timeout retains queue ownership until the operation settles or the connection
+resets. This accommodates slow Bluetooth bridges without overlapping ATT work.
+
+App update detection compares the loaded shell revision as well as Bluetooth
+compatibility. A newer shell shows the reload notice even when the audio protocol
+is unchanged. Reload remains disabled until the current take is safely saved.

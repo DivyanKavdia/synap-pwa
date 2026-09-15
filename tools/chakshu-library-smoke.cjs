@@ -388,7 +388,16 @@ async function until(page, predicate, arg) {
         );
       }
       await page.evaluate(() => bleFixture.voice(4));
-      await page.waitForFunction(() => SynapAppControls.recordingState().active);
+      await page.waitForFunction(() => SynapAppControls.recordingState().active).catch(async error => {
+        console.log(await page.evaluate(() => ({
+          state: document.body.dataset.state,
+          voice: SynapChakshuVoice.state,
+          leaseAge: Date.now() - bleFixture.voiceLease,
+          voiceStatus: document.getElementById('chakshuVoiceStatus').textContent,
+          diagnostics: document.getElementById('diagnosticsLog').textContent.slice(-6000)
+        })));
+        throw error;
+      });
       const voiceAudio = await page.evaluate(() => SynapAppControls.recordingState().recordingId);
       await page.evaluate(() => bleFixture.replayVoice());
       assert.equal(

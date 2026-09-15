@@ -9,7 +9,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
   const origin = 'http://127.0.0.1:' + server.address().port,
     browser = await launchChromium();
   try {
-    for (const mode of ['repair', 'no-audio', 'pendant-stop', 'stop-disconnect', 'stalled-repair', 'slow-fragments']) {
+    for (const mode of ['repair', 'no-audio', 'pendant-stop', 'stop-disconnect', 'stalled-repair', 'slow-fragments', 'slow-discovery', 'drain-progress']) {
       const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
       await context.route('**/*', (route) =>
         new URL(route.request().url()).origin === origin ? route.continue() : route.abort(),
@@ -36,11 +36,40 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
           replay: () => new Promise(resolve => { window.finishStalledReplay = resolve; }),
         };
       });
+      if (mode === 'slow-discovery') {
+        await page.evaluate(() => {
+          bleFixture.delayNextDiscovery('56', 5000);
+          const connection = SynapDevices.connection;
+          window.slowDiscovery = connection.queue(() => connection.service.getCharacteristic(
+            '4fa12356-0000-1000-8000-00805f9b34fb'), 'Find voice control');
+          window.slowDiscovery.catch(error => { window.slowDiscoveryError = error.message; });
+        });
+        await page.waitForFunction(() => bleFixture.discoveryBusy);
+      }
+      if (mode === 'drain-progress') await page.evaluate(() => bleFixture.holdReplay(true));
       await page.locator('#headerCaptureToggle').click();
       await page.waitForFunction(() => document.body.dataset.state === 'recording');
-      if (mode !== 'no-audio' && mode !== 'stalled-repair' && mode !== 'slow-fragments')
+      if (!['no-audio', 'stalled-repair', 'slow-fragments', 'drain-progress'].includes(mode))
         await page.waitForFunction(() => SynapAppControls.recordingState().receivedMs >= 500);
-      if (mode === 'repair') {
+      if (mode === 'slow-discovery') {
+        assert.equal(await page.evaluate(() => window.slowDiscoveryError), undefined);
+        assert.equal(await page.evaluate(() => bleFixture.appDisconnects), 0);
+        await page.waitForFunction(() => SynapAppControls.recordingState().receivedMs >= 1000);
+        await page.waitForFunction(() => /^00:0[1-9] audio received$/.test(document.getElementById('audioReceptionStatus').textContent));
+        await page.locator('#headerCaptureToggle').click();
+        await page.waitForFunction(() => document.body.dataset.state === 'idle');
+      } else if (mode === 'drain-progress') {
+        await page.waitForFunction(() => bleFixture.pendingFrames >= 50);
+        await page.locator('#headerCaptureToggle').click();
+        await page.waitForFunction(() => document.body.dataset.state === 'stopping');
+        const frozenClock = await page.locator('#timer').textContent();
+        assert.match(await page.locator('#audioReceptionStatus').textContent(), /^00:00 audio received/);
+        await page.evaluate(() => bleFixture.holdReplay(false));
+        await page.waitForFunction(() => document.body.dataset.state === 'stopping' &&
+          /^00:0[1-9] audio received · finishing/.test(document.getElementById('audioReceptionStatus').textContent));
+        assert.equal(await page.locator('#timer').textContent(), frozenClock);
+        await page.waitForFunction(() => document.body.dataset.state === 'idle');
+      } else if (mode === 'repair') {
         await page.evaluate(() => bleFixture.loseNotifications());
         await page.waitForFunction(
           () => bleFixture.replayCommands === 1 && bleFixture.pendingFrames === 0,
@@ -105,7 +134,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       }));
       assert.equal(saved.starts, 1);
       assert.equal(saved.records.length, 1, 'one original journal');
-      assert.equal(saved.records[0].stopReason, ['repair', 'slow-fragments'].includes(mode) ? 'normal' : 'stop-unconfirmed');
+      assert.equal(saved.records[0].stopReason, ['repair', 'slow-fragments', 'slow-discovery', 'drain-progress'].includes(mode) ? 'normal' : 'stop-unconfirmed');
       if (mode === 'no-audio' || mode === 'stalled-repair') assert.equal(saved.records[0].stats.completeFrames, 0);
       else if (mode === 'slow-fragments') {
         assert.equal(saved.records[0].stats.completeFrames, 2);

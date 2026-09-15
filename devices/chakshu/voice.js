@@ -127,7 +127,7 @@
       close();
     if (pending) return;
     // Media progress events update controls often; poll at most every two seconds.
-    if (binding?.started && Date.now() - lastPoll < 1900) {
+    if (Date.now() - lastPoll < 1900) {
       render();
       return;
     }
@@ -140,6 +140,13 @@
       !root.SynapCapabilities.hasVoice(root.SynapModules?.client?.module)
     ) {
       render();
+      return;
+    }
+    // Local command delivery can be restored during a confirmed recording,
+    // but must wait for the connection/start/Stop handshake to finish.
+    if (!context.canUseMedia()) {
+      render();
+      timer = setTimeout(sync, 2000);
       return;
     }
     pending = true;
@@ -201,10 +208,14 @@
             ? 'Could not read voice status. Update Chakshu firmware, then reconnect.'
             : e.message;
     } finally {
+      // Failures also consume a poll interval. Media progress must not cause a
+      // burst of retries when the native bridge rejects a request immediately.
+      lastPoll = context === root.SynapDevices?.connection ? Date.now() : 0;
       pending = false;
       render();
       if (context === root.SynapDevices?.connection && api()?.state.available)
         timer = setTimeout(sync, 2000);
+      else if (root.SynapDevices?.connection) void sync();
     }
   }
   async function enabled(value) {
@@ -231,6 +242,7 @@
     }
   }
   root.SynapChakshuVoice = {
+    revision: '1.0.0-chakshu-transport4',
     decode,
     get state() {
       return state;
