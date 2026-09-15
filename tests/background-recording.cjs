@@ -103,8 +103,8 @@ function protection({supported=true,acknowledge=true,ack=0}={}) {
   const value=()=>{const v=new DataView(new ArrayBuffer(16));v.setUint8(0,0x52);v.setUint8(1,1);
     v.setUint8(2,1+(state.armed?2:0)+(state.waiting?4:0)+(state.finishing?8:0)+(supported?16:0));
     v.setUint8(3,state.ack);v.setUint16(4,600,true);v.setUint32(8,state.generation,true);v.setUint32(12,state.hash,true);return v;};
-  let pending=0,reads=0;
-  const characteristic={addEventListener(){},removeEventListener(){},async startNotifications(){},
+  let pending=0,reads=0,listener=null;
+  const characteristic={addEventListener(type,fn){listener=fn;},removeEventListener(){listener=null;},async startNotifications(){},
     async readValue(){reads++;if(pending && --pending===0)state.ack=(state.ack+1)&255;return value();},
     async writeValueWithResponse(bytes){calls.push(bytes[0]);
       if(bytes[0]===1){owner.splice(0,owner.length,...bytes.slice(1));state.armed=true;let hash=2166136261;for(const b of owner)hash=Math.imul(hash^b,16777619)>>>0;state.hash=hash;}
@@ -113,7 +113,7 @@ function protection({supported=true,acknowledge=true,ack=0}={}) {
   const c={console,Uint8Array,DataView,Promise,DOMException,CustomEvent:class{},document:{getElementById:()=>null},
     setTimeout:fn=>queueMicrotask(fn),crypto:{getRandomValues:v=>v.fill(9)},dispatchEvent(){}};
   vm.createContext(c);vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../disconnect-protection.js'),'utf8'),c);
-  return {api:c.SynapDisconnectProtection,calls,state,get reads(){return reads;},
+  return {api:c.SynapDisconnectProtection,calls,state,get reads(){return reads;},notify(){listener?.({target:{value:value()}});},
     async connect(){await this.api.discover({getCharacteristic:async()=>characteristic},fn=>Promise.resolve().then(fn),()=>{});await this.api.arm();}};
 }
 
@@ -122,6 +122,16 @@ test('connected replay waits for its own acknowledgement, including acknowledgem
     assert.equal(await t.api.replay(41),true);assert(t.reads>=reads+4);assert.deepEqual(t.calls,[1,3]);
     assert.equal(t.state.ack,(ack+1)&255);
   }
+});
+
+test('Stop drain acknowledgements belong to the current recovery token and reset between takes',async()=>{
+  const t=protection();await t.connect();assert.equal(t.api.isDraining(),false);
+  t.state.finishing=true;t.notify();assert.equal(t.api.isDraining(),true);
+  t.state.hash^=1;t.notify();assert.equal(t.api.isDraining(),false);
+  t.state.hash^=1;t.state.waiting=true;t.notify();assert.equal(t.api.isDraining(),false);
+  t.state.waiting=false;t.notify();assert.equal(t.api.isDraining(),true);
+  t.api.resetRecording();assert.equal(t.api.isDraining(),false);
+  t.notify();t.api.detach();assert.equal(t.api.isDraining(),false);
 });
 
 test('old firmware and a finishing or disconnected stream cannot claim connected replay',async()=>{

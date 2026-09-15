@@ -40,6 +40,13 @@ Recovery is negotiated with an owner token, expires after 60 seconds and has a b
 
 `recording/bluetooth-session.js` serializes native requests and rejects stale generations. A timed-out native operation retains its queue position until it settles. `app.js` decides whether the timeout requires a disconnect. START rechecks the recording owner and Stop intent immediately before sending, so a queued START cannot execute after cancellation.
 
+Stop has one drain operation per recording/connection, including a click arriving
+during reconnect. Once the recovery service acknowledges draining for the armed
+token, the PWA polls status without repeating STOP. A two-byte command echo from
+older Chakshu firmware triggers one GET_STATUS/read repair; it never counts as an
+idle acknowledgement. The journal stays open until real idle/error handling or
+the existing bounded failure path seals it.
+
 `audio-store.js` journals packets before compaction, preserves missing frames as explicit time gaps, and owns close/delete barriers. Concurrent close calls coalesce; failed saves retain recoverable data. A late packet before the recording origin cannot replace frame zero. The storage write probe creates and deletes its temporary rows in one transaction. Connecting and updating firmware do not depend on recording storage being writable.
 
 Managed jobs are pinned to their capture account and abort on account changes. Legacy unowned recordings are assigned on first managed sync. Local browser storage itself is not an operating-system user boundary. Cloud restore preserves existing local recordings and never invents playable audio. Each window's source and processing result survive retries; final processing requires every expected window, not merely the expected count. Derived memory and its ready checkpoint publish atomically under a worker lease.
@@ -68,6 +75,8 @@ It refuses uncertain data and existing output files. It creates a separate copy 
 | Disconnected with peripheral reason/reset or uptime restart                       | Compare firmware reason, power/reset evidence, captured frames and notification failures                                                                 |
 | No disconnect but no incoming audio while the page is hidden                      | Browser suspension is possible; compare visibility and replay before treating it as a radio fault                                                        |
 | Missing frame counts                                                              | Actual timeline gaps, distinct from received silence; missing speech is not reconstructable                                                              |
+| Repeated two-byte status reads after STOP on build1231                            | The writable control characteristic retained command bytes during drain; update Chakshu firmware. The PWA requests a fresh status while preserving the journal |
+| Repeated drain waits with few complete frames                                    | Compare received packet/frame counts and firmware notification rejections; a live radio or STREAMING status alone does not prove useful audio delivery |
 | Complete frames with very small sample values                                     | Check microphone input/wiring/acoustics; do not label it packet loss                                                                                     |
 | Odd PCM data length or strict WAV failure                                         | Preserve the source and inspect alignment; do not repeatedly retry ASR                                                                                   |
 

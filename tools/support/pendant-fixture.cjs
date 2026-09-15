@@ -76,6 +76,9 @@ module.exports = function pendantFixture() {
     sendTimer = null;
   let retained = [], replayAck = 0, replayCommands = 0, blockAudio = false, audioSubscriptions = 0;
   let stopDisconnect = null,
+    echoStop = false,
+    rejectStopResponse = false,
+    stopWrites = 0,
     pauseReplay = false,
     idleOnReconnect = false,
     invalidRecoveryReads = 0;
@@ -185,7 +188,7 @@ module.exports = function pendantFixture() {
               releaseRead = resolve;
             });
           }
-          return status();
+          return echoStop && finishing && this.value?.byteLength === 2 ? this.value : status();
         }
         return this.id === uuid('4c')
           ? new DataView(new TextEncoder().encode('SYNAP-ABCDEF123456'+(chakshu1227?'\0':'')).buffer)
@@ -275,6 +278,10 @@ module.exports = function pendantFixture() {
           }
           return;
         }
+        if (value[0] === 0) {
+          if (rejectStopResponse) { rejectStopResponse=false;throw new DOMException('GATT Error Unknown.','NotSupportedError'); }
+          stopWrites++;
+        }
         if (buffered && value[0] === 0 && state === 2 && !waiting) {
           if (stopDisconnect === 'before') {
             stopDisconnect = null;
@@ -284,6 +291,7 @@ module.exports = function pendantFixture() {
           }
           clearInterval(audioTimer);
           finishing = true;
+          if(echoStop)this.value=new DataView(value.slice().buffer);
           const recovery = chars.get(uuid('4f'));
           recovery.value = recoveryStatus();
           recovery.dispatchEvent(new Event('characteristicvaluechanged'));
@@ -322,6 +330,7 @@ module.exports = function pendantFixture() {
         this.dispatchEvent(new Event('characteristicvaluechanged'));
       });
     }
+    writeValueWithoutResponse(value) { return this.writeValueWithResponse(value); }
   }
   const audio = new Characteristic(uuid('46')),
     control = new Characteristic(uuid('47'));
@@ -503,6 +512,8 @@ module.exports = function pendantFixture() {
     get pendingFrames() {
       return buffer.length;
     },
+    emulateStopEcho(value) { echoStop=value;rejectStopResponse=value;control.properties.writeWithoutResponse=value; },
+    get stopWrites() { return stopWrites; },
     get recoveryWaiting() {
       return waiting;
     },
