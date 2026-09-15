@@ -102,7 +102,7 @@ test('transfer ignores old replies, validates offsets and rejects changed file s
   assert.equal(decode(response(2, 4, 0, [], 0), 2), null);
   let native = 0,
     max = 0,
-    last;
+    last, changed = false;
   const file = Uint8Array.from([255, 216, 255, 217]);
   const client = new Client({
     service: {
@@ -118,7 +118,7 @@ test('transfer ignores old replies, validates offsets and rejects changed file s
               readValue: async () =>
                 response(
                   last.id,
-                  4,
+                  changed && last.op === 2 ? 5 : 4,
                   last.offset,
                   last.op === 2 ? [...file.slice(last.offset, last.offset + 2)] : [],
                 ),
@@ -136,8 +136,48 @@ test('transfer ignores old replies, validates offsets and rejects changed file s
   });
   assert.deepEqual(new Uint8Array(await (await client.snapshot()).arrayBuffer()), file);
   assert.equal(max, 1);
-  let calls = 0;
-  client.request = async () =>
-    ++calls === 1 ? { total: 4 } : { total: 5, offset: 0, bytes: new Uint8Array(2) };
+  changed = true;
   await assert.rejects(client.snapshot(), /changed/);
+});
+test('background status, photos and SD catalogue serialize complete transfers without replacing their source',async()=>{
+  const photo=Uint8Array.from([255,216,1,2,255,217]);
+  const files=[{path:'/synap/abcdef01-00000001.jpg',bytes:6}];
+  let source=new Uint8Array(),last,active=0,maximum=0;
+  const ops=[];
+  const client=new Client({
+    mediaQueue:async action=>{active++;maximum=Math.max(maximum,active);try{return await action();}finally{active--; }},
+    service:{getCharacteristic:async uuid=>uuid.includes('354-')?{
+      writeValueWithResponse:async bytes=>{
+        await new Promise(setImmediate);
+        const v=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+        last={op:bytes[1],id:v.getUint32(2,true),offset:v.getUint32(6,true)};ops.push(last.op);
+        if(last.op===1)source=photo;
+        if(last.op===7)source=new TextEncoder().encode(JSON.stringify(files));
+      },
+    }:{readValue:async()=>response(last.id,source.length,last.offset,
+      last.op===9?new TextEncoder().encode('{"active":false}'):
+      [2,4].includes(last.op)?source.slice(last.offset,last.offset+3):[]) }},
+  });
+  const [status,first,catalogue,second]=await Promise.all([
+    client.request(9),client.snapshot(),client.catalogue(),client.snapshot(),
+  ]);
+  assert.equal(JSON.parse(new TextDecoder().decode(status.bytes)).active,false);
+  assert.deepEqual(new Uint8Array(await first.arrayBuffer()),photo);
+  assert.deepEqual(catalogue,files);
+  assert.deepEqual(new Uint8Array(await second.arrayBuffer()),photo);
+  assert.deepEqual(ops.slice(0,6),[9,1,2,2,7,8]);
+  assert.equal(maximum,1);
+});
+test('cancelled camera work waiting behind a request never reaches the pendant and does not block the next request',async()=>{
+  let release,last;const writes=[];
+  const client=new Client({queue:action=>action(),service:{getCharacteristic:async uuid=>uuid.includes('354-')?{
+    writeValueWithResponse:async bytes=>{last=new DataView(bytes.buffer).getUint32(2,true);writes.push(bytes[1]);
+      if(writes.length===1)await new Promise(resolve=>release=resolve);},
+  }:{readValue:async()=>response(last,0,0)}}});
+  const first=client.request(9);
+  while(!release)await new Promise(setImmediate);
+  const controller=new AbortController(),photo=client.snapshot(controller.signal);
+  const cancelled=assert.rejects(photo,{name:'AbortError'});
+  controller.abort();release();await first;await cancelled;
+  await client.request(9);assert.deepEqual(writes,[9,9]);
 });

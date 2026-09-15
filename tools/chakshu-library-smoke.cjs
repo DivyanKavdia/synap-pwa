@@ -99,7 +99,7 @@ async function until(page, predicate, arg) {
       });
       page.setDefaultTimeout(20000);
       // Mobile reproduces installed 1227's NimBLE char-array ID and SD path.
-      await page.goto(origin + '/?chakshu-media&voice' + (width === 390 ? '&chakshu1227&ota' : ''));
+      await page.goto(origin + '/?chakshu-media&voice' + (width === 390 ? '&chakshu1227&ota&orphan-transport' : ''));
       await page.waitForFunction(() => document.body.dataset.startup === 'ready');
       assert.equal(await page.locator('#visualAccess').textContent(), 'Unavailable');
       assert(await page.locator('#headerPhoto').isDisabled());
@@ -120,6 +120,15 @@ async function until(page, predicate, arg) {
           throw e;
         });
       if(width===390) {
+        await page.waitForFunction(() => document.body.dataset.state === 'idle');
+        const recovery = await page.evaluate(() => ({
+          log: document.getElementById('diagnosticsLog').textContent,
+          disconnects: bleFixture.appDisconnects, starts: bleFixture.starts,
+        }));
+        assert.match(recovery.log, /Rejected invalid streaming transport/);
+        assert.match(recovery.log, /Recovered orphaned stream; requesting clean stop/);
+        assert.equal(recovery.disconnects, 0, 'the logged MTU 23 state recovers without a disconnect loop');
+        assert.equal(recovery.starts, 0, 'recovery returns to idle without starting a new take');
         const info=await page.evaluate(async()=>{
           const context=SynapDevices.connection;
           const client=new SynapOTA.Client({getService:async()=>context.service,queue:context.queue,
@@ -149,6 +158,18 @@ async function until(page, predicate, arg) {
       await page.locator('#headerCaptureToggle').click();
       await page.waitForFunction(() => SynapAppControls.recordingState().active);
       const beforeVideo = await page.evaluate(() => SynapAppControls.recordingState().recordingId);
+      if (width === 390) {
+        // Reconnect while recording, then finish that take by starting a video.
+        // Camera service ownership must outlive the interrupted audio journal.
+        await page.evaluate(() => {
+          localStorage.setItem('dk-pendant-auto-reconnect', 'on');
+          bleFixture.disconnect();
+        });
+        await page.waitForFunction(() => document.body.dataset.recordingInterrupted === 'true');
+        await page.waitForFunction(() => document.body.dataset.state === 'recording' &&
+          !document.body.hasAttribute('data-auto-reconnecting') && SynapChakshu.state.cameraReady);
+        assert.equal(await page.evaluate(() => SynapAppControls.recordingState().recordingId), beforeVideo);
+      }
       await page.evaluate(() => bleFixture.delayNextCameraReply());
       await page.locator('#headerVideo').click();
       await until(page, async () => {

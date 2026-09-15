@@ -49,21 +49,25 @@ test('GATT identity read supports old firmware but rejects malformed data, read 
 const app = fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
 const connectSource = app.slice(app.indexOf('  async function connectPendant('), app.indexOf('  async function disconnectPendant('));
 const rememberSource = app.slice(app.indexOf('  function rememberDeviceAssociation('), app.indexOf('  function renderDeviceSetup('));
-async function connect({id=A, local=storage(), stale=false, mismatch=false}={}) {
+async function connect({id=A, local=storage(), stale=false, mismatch=false, resuming=false, cancelOnRead=false, expireOnRead=false}={}) {
   const characteristic = {addEventListener(){},startNotifications:async()=>{}};
   const device={id:'browser-id',name:'dk-pendant',gatt:{connected:false,
     async connect(){this.connected=true;return this;},disconnect(){this.connected=false;},
     async getPrimaryService(){return {getCharacteristic:async uuid=>{
       if(uuid!==devices.UUID)return characteristic;
       if(id===null)throw Object.assign(Error('old firmware'),{name:'NotFoundError'});
-      return {readValue:async()=>{if(stale)c.connectionEpoch++;return value(id);}};
+      return {readValue:async()=>{if(stale)c.connectionEpoch++;if(cancelOnRead)c.autoReconnect=false;if(expireOnRead)c.finalizedSessionId=1;return value(id);}};
     }};}}};
   const c={console,globalThis:{SynapDevices:devices},checkFirmwareRelease:null,connectInProgress:false,finalizing:false,
     ui:{settingsDialog:{open:false}},
     needsDeviceSelection:false,bluetoothDevice:device,manualDisconnect:false,connectionEpoch:0,gattServer:null,
-    recordingReconnectPending:false,disconnectGatt:(reason,d=device)=>d.gatt.disconnect(),
+    recordingReconnectPending:resuming,disconnectGatt:(reason,d=device)=>d.gatt.disconnect(),
+    recordingSessionId:1,finalizedSessionId:0,currentRecordingId:resuming?'take-1':null,openingCapture:null,
+    recordingResumeBluetoothId:device.id,recordingResumeDeviceId:A,recordingStopRequested:false,autoReconnect:true,
+    isCurrentSession:id=>id===c.recordingSessionId&&id!==c.finalizedSessionId,reconnectRequested:()=>c.autoReconnect,
+    prepareRecordingTransportResume:async()=>{},completeRecordingTransportResume(){c.recordingReconnectPending=false;c.state='recording';},
     navigator:{bluetooth:{}},SERVICE_UUID:'service',AUDIO_CHAR_UUID:'audio',CONTROL_CHAR_UUID:'control',CMD_STOP:0,CMD_GET_STATUS:2,
-    DEVICE_STATE:{CONNECTED_IDLE:1,STREAMING:2,ERROR:3},deviceStatus:{state:1,error:0},deviceAssociation:null,deviceIdentityMessage:'',
+    DEVICE_STATE:{CONNECTED_IDLE:1,STREAMING:2,ERROR:3},deviceStatus:{state:resuming?2:1,error:0},deviceAssociation:null,deviceIdentityMessage:'',
     stopRememberedMonitoring(){},syncRememberedMonitoring(){},clearReconnectTimer(){},setReconnectCapability(){},setAppState(s){c.state=s;},log(){},toast(){},
     cleanupCharacteristics(){c.connectionEpoch++;c.deviceAssociation=null;},attachBluetoothDevice(d){c.bluetoothDevice=d;},
     withTimeout:p=>p,isGattConnected:()=>Boolean(c.bluetoothDevice?.gatt.connected),queueGattOperation:f=>f(),optionalGattAllowed:()=>true,mediaGattAllowed:()=>true,
@@ -71,8 +75,31 @@ async function connect({id=A, local=storage(), stale=false, mismatch=false}={}) 
     reconnectAttempts:0,localStorage:local,friendlyError:e=>e.message,scheduleAutoReconnect(){}};
   if(mismatch)new devices.Registry(local).associate(B,{id:device.id});
   c.renderDeviceSetup=()=>assert.equal(c.connectInProgress,false,'refresh device controls after connection setup finishes');
-  vm.createContext(c);vm.runInContext(rememberSource+connectSource,c);await c.connectPendant();return c;
+  vm.createContext(c);vm.runInContext(rememberSource+connectSource,c);await c.connectPendant({recoveryAttempt:resuming});return c;
 }
+test('resumed connection supports camera and optional controls after that recording is saved',async()=>{
+  const c=await connect({resuming:true});assert.equal(c.state,'recording');
+  const context=devices.connection;
+  c.finalizedSessionId=1;c.currentRecordingId=null;
+  assert.equal(await context.mediaQueue(()=> 'photo'),'photo');
+  assert.equal(await context.queue(()=> 'voice status'),'voice status');
+  c.recordingSessionId=2;c.currentRecordingId='video-soundtrack';
+  assert.equal(await context.mediaQueue(()=> 'video frame'),'video frame');
+  // Disabling future auto-reconnect does not cancel a healthy restored link.
+  c.autoReconnect=false;
+  assert.equal(await context.mediaQueue(()=> 'photo'),'photo');
+  c.connectionEpoch++;
+  let touched=false;
+  await assert.rejects(context.mediaQueue(()=>{touched=true;}),/Connection changed/);
+  assert.equal(touched,false,'a real connection replacement still rejects stale camera work');
+});
+test('cancellation and recording expiry still invalidate a resume during discovery',async()=>{
+  for(const option of ['cancelOnRead','expireOnRead']) {
+    const c=await connect({resuming:true,[option]:true});
+    assert.equal(c.state,'disconnected',option);assert.equal(c.deviceAssociation,null);
+    assert.equal(c.isGattConnected(),false);
+  }
+});
 test('actual connect handler enrolls only an acknowledged connection; missing or failed identity is never marked complete', async () => {
   let c=await connect();assert.equal(c.state,'idle');assert.equal(c.deviceAssociation.deviceId,A);assert.match(c.deviceIdentityMessage,/Connected/);
   c=await connect({id:A+'\0'});assert.equal(c.state,'idle');assert.equal(c.deviceAssociation.deviceId,A);
