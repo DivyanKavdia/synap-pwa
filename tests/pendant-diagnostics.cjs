@@ -96,6 +96,27 @@ test('firmware diagnostics survive subsequent app logs and are included in Copy 
   assert.match(h.health.textContent,/3 drops · 4 notify rejects/);
 });
 
+test('supervision diagnostics distinguish a submitted request from the actual negotiated timeout',()=>{
+  const {api}=harness(),base=packet(),v=new DataView(new ArrayBuffer(100),8,84);
+  new Uint8Array(v.buffer,v.byteOffset,v.byteLength).set(new Uint8Array(base.buffer,base.byteOffset,base.byteLength));
+  v.setUint8(1,4);v.setUint16(64,72,true);v.setUint8(67,3);
+  v.setUint16(72,24,true);v.setUint16(74,0,true);v.setUint16(76,72,true);
+  v.setUint8(78,1);v.setUint8(79,3);v.setUint16(80,0,true);v.setUint16(82,15,true);
+  let data=api.decodePendantDiagnostics(v);
+  assert.equal(data.linkIntervalMs,30);assert.equal(data.linkLatency,0);
+  assert.equal(data.linkSupervisionMs,720);assert.equal(data.lastLinkSupervisionMs,720);
+  assert.equal(data.linkParamRequests,1);assert.equal(data.lastLinkParamRequests,3);
+  assert.equal(data.linkParamRequestCode,0);assert.equal(data.lastLinkParamRequestCode,15);
+  v.setUint16(76,600,true);data=api.decodePendantDiagnostics(v);
+  assert.equal(data.linkSupervisionMs,6000);assert.equal(data.lastLinkSupervisionMs,720);
+  v.setUint8(78,0);v.setUint16(80,65535,true);
+  assert.equal(api.decodePendantDiagnostics(v).linkParamRequestCode,null);
+  for(const length of [72,80,83,85]){
+    const bad=new DataView(new ArrayBuffer(length));bad.setUint8(0,0xd6);bad.setUint8(1,4);
+    assert.throws(()=>api.decodePendantDiagnostics(bad),/Unsupported/);
+  }
+});
+
 test('diagnostic reads cannot add GATT traffic while recording or updating',async()=>{
   for(const state of ['starting','recording','stopping','saving','updating','connecting','disconnected']){
     const h=harness(state);await h.api.readPendantDiagnostics();assert.equal(h.calls.length,0,state);

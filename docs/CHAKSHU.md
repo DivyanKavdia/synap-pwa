@@ -109,7 +109,16 @@ out of manual camera/video capture. Slow Bluetooth requests log queue and native
 durations separately. Chakshu diagnostics v3 includes measured boot/media time,
 the previous link's duration and parameters, and the stage reached before a drop.
 
-The matching firmware removes a duplicate data-length request and keeps the
-central's connection parameters. See the
+The build-1242 follow-up log then exposed repeated link supervision timeouts
+with a negotiated timeout of only 720 ms. Shell 118 decodes diagnostics v4:
+`linkSupervisionMs` is the currently observed timeout; `linkParamRequestCode:0`
+means only that a request was submitted. `lastLinkSupervisionMs` and
+`lastLinkParamRequestCode` retain the previous connection's evidence.
+
+The matching firmware keeps the host-owned data-length negotiation and requests
+the standard S3's six-second supervision timeout once, deferred outside the
+connect callback, if the observed timeout is shorter. Immediate busy responses
+have bounded retries; central rejection or replacement does not cause a loop.
+See the
 [full startup audit](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/chakshu-startup-audit.md)
 for evidence, validation and physical-device limits.
