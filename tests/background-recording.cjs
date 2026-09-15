@@ -17,7 +17,7 @@ function activity() {
     recordingSessionId:1,currentRecordingId:'same-take',recordingConfirmed:true,recordingStartedAt:100,recordingStoppedAt:null,
     recordingStopRequested:false,recordingReconnectPending:false,finalizing:false,connectionEpoch:1,
     appState:'recording',lastCompleteAudioAt:10000,lastCompleteSequence:41,lastObservedSequence:41,
-    backgroundCapture:null,backgroundRecoveryPromise:null,foregroundAt:10000,
+    backgroundCapture:null,backgroundRecoveryPromise:null,foregroundAt:10000,foregroundRecoveryAttempted:false,
     AUDIO_STALL_TIMEOUT_MS:12000,FOREGROUND_STALL_GRACE_MS:12000,sessionStats:{completeFrames:40},
     audioCharacteristic:target,journal:{async flush(){calls.flush++;}},
     SynapDisconnectProtection:{lastSequence:()=>c.lastCompleteSequence,capacityMs:()=>30000,
@@ -164,5 +164,20 @@ test('pendant Stop freezes the clock once while repeated drain acknowledgements 
   drain();const clock=t.c.ui.timer.textContent;
   assert.equal(t.c.recordingStopRequested,true);assert.equal(t.c.appState,'stopping');
   t.advance(30000);drain();assert.equal(t.c.ui.timer.textContent,clock);
-  assert.equal(t.c.recordingStoppedAt,10000);
+  assert.equal(t.c.recordingStoppedAt,10000);assert.equal(t.calls.stop,2,'pendant drain starts the bounded Stop owner');
+});
+
+test('foreground audio loss gets one bounded replay attempt without restarting capture',async()=>{
+  const t=activity();t.advance(4100);t.c.updateTimer();await t.done();
+  assert.deepEqual(t.calls.replay,[41]);assert.equal(t.calls.subscribe,1);assert.equal(t.calls.stop,0);
+  t.advance(4000);t.c.updateTimer();await t.done();assert.equal(t.calls.subscribe,1);
+  t.advance(4000);t.c.updateTimer();assert.equal(t.calls.stop,1);
+});
+
+test('Stop cancels a queued foreground repair before it can touch the new recording',async()=>{
+  const t=activity(),jobs=[];
+  t.c.queueGattOperation=fn=>new Promise((resolve,reject)=>jobs.push(()=>Promise.resolve().then(fn).then(resolve,reject)));
+  t.advance(4100);t.c.updateTimer();await settle();
+  t.c.recordingStopRequested=true;t.c.appState='stopping';await jobs.shift()();await t.done();
+  assert.equal(t.calls.subscribe,0);assert.deepEqual(t.calls.replay,[]);
 });

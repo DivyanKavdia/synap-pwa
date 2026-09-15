@@ -33,3 +33,44 @@ test('a Stop click and reconnect finishing share one drain per connection and re
   pending[0]();await Promise.all([first,same]);assert.equal(c.recordingStopOperation.epoch,8);
   pending[1]();await replacement;assert.equal(c.recordingStopOperation,null);
 });
+
+function stopWatch() {
+  let now=1000,id=0;const timers=new Map(),saved=[],disconnects=[];
+  const c={recordingStopWatch:null,recordingStopRequested:true,recordingSessionId:3,
+    finalizing:false,appState:'stopping',sessionStats:{completeFrames:2,packetsReceived:8},
+    document:{body:{dataset:{}}},performance:{now:()=>now},log(){},toast(){},
+    isCurrentSession:session=>session===c.recordingSessionId,
+    isGattConnected:()=>c.appState!=='disconnected',
+    disconnectGatt:reason=>{disconnects.push(reason);c.appState='disconnected';},
+    clearReconnectTimer(){},finalizeRecording:async(reason,session)=>{saved.push({reason,session});},
+    clearInterval:key=>timers.delete(key),window:{setInterval(fn){timers.set(++id,fn);return id;}}};
+  vm.createContext(c);vm.runInContext(block('  function clearRecordingStopWatch()', '  function scheduleFinalize('),c);
+  return {c,saved,disconnects,timers,tick(ms){now+=ms;for(const fn of [...timers.values()])fn();}};
+}
+
+test('Stop has one no-progress deadline across connection cleanup and reconnection',()=>{
+  const t=stopWatch();t.c.watchRecordingStop(3);t.tick(3900);
+  t.c.appState='disconnected';t.tick(1000);t.c.appState='stopping';t.c.watchRecordingStop(3);
+  assert.equal(t.timers.size,1);t.tick(3100);
+  assert.deepEqual(t.saved,[{reason:'stop-unconfirmed',session:3}]);
+  assert.equal(t.disconnects.length,1);assert.equal(t.timers.size,0);
+});
+
+test('Stop saves received audio even when reconnect never succeeds',()=>{
+  const t=stopWatch();t.c.watchRecordingStop(3);t.c.appState='disconnected';t.tick(8000);
+  assert.equal(t.saved.length,1);assert.equal(t.disconnects.length,0);
+});
+
+test('drain progress gets time to recover buffers but cannot extend the absolute deadline',()=>{
+  const t=stopWatch();t.c.watchRecordingStop(3);
+  for(let i=0;i<4;i++){t.c.sessionStats.completeFrames++;t.tick(7000);assert.equal(t.saved.length,0);}
+  t.c.sessionStats.completeFrames++;t.tick(7000);assert.equal(t.saved.length,1);
+});
+
+test('Stop watchdog cannot finalize a new recording or interfere with a storage save',()=>{
+  for(const mode of ['new','saving']){
+    const t=stopWatch();t.c.watchRecordingStop(3);
+    if(mode==='new')t.c.recordingSessionId=4;else t.c.finalizing=true;
+    t.tick(35000);assert.equal(t.saved.length,0);assert.equal(t.timers.size,0);
+  }
+});

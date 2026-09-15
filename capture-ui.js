@@ -208,6 +208,7 @@
       const delivery = document.body.dataset.audioDelivery || 'idle';
       const waiting = delivery === 'waiting' || delivery === 'recovering';
       const recording = RECORDING_STATES.has(state);
+      const finishing = state === 'stopping' || document.body.dataset.recordingFinishing === 'true';
       const canStop = !stop.disabled;
       const connected = ACTIVE_STATES.has(state);
       const busy = BUSY_STATES.has(state);
@@ -216,9 +217,10 @@
         document.body.dataset.recordingInterrupted !== 'true';
       mark.hidden = state !== 'recording';
       mark.disabled = marking || state !== 'recording' || interrupted || waiting;
-      reception.hidden = !recording;
-      reception.textContent =
-        delivery === 'recovering'
+      reception.hidden = !recording && !finishing;
+      reception.textContent = finishing
+        ? (document.body.dataset.receivedAudioClock || '00:00') + ' audio received · finishing…'
+        : delivery === 'recovering'
           ? 'Recovering audio…'
           : waiting
             ? 'No audio arriving'
@@ -230,23 +232,27 @@
       const label = status.querySelector('.header-status-text');
       if (label)
         label.textContent =
-          state === 'updating'
-            ? 'Updating'
-            : interrupted
-              ? 'Paused'
-              : recording && waiting
-                ? 'Waiting'
-                : recording
-                  ? 'Listening'
-                  : connected
-                    ? 'Connected'
-                    : state === 'connecting'
-                      ? 'Connecting'
-                      : 'Connect';
+          state === 'saving'
+            ? 'Saving'
+            : finishing
+              ? 'Finishing'
+              : state === 'updating'
+                ? 'Updating'
+                : interrupted
+                  ? 'Paused'
+                  : recording && waiting
+                    ? 'Waiting'
+                    : recording
+                      ? 'Listening'
+                      : connected
+                        ? 'Connected'
+                        : state === 'connecting'
+                          ? 'Connecting'
+                          : 'Connect';
       status.disabled = connect.disabled;
       status.setAttribute('aria-label', connected ? 'Disconnect pendant' : 'Connect pendant');
       toggle.classList.toggle('is-connected', connected || state === 'updating');
-      toggle.classList.toggle('is-recording', recording || canStop);
+      toggle.classList.toggle('is-recording', recording || canStop || finishing);
       toggle.disabled =
         !ready ||
         (!canStop &&
@@ -254,13 +260,16 @@
             busy ||
             state === 'unsupported' ||
             (connected && start.disabled)));
-      const action = canStop
-        ? interrupted
-          ? 'Save received recording'
-          : 'Stop listening'
-        : !connected
-          ? 'Connect and start listening'
-          : 'Start listening';
+      const action =
+        finishing && !canStop
+          ? 'Finishing recording'
+          : canStop
+            ? interrupted
+              ? 'Save received recording'
+              : 'Stop listening'
+            : !connected
+              ? 'Connect and start listening'
+              : 'Start listening';
       toggle.setAttribute('aria-label', action);
       toggle.title = action;
       const media = window.SynapChakshu?.state,
@@ -365,6 +374,7 @@
           'data-startup',
           'data-recording-interrupted',
           'data-audio-delivery',
+          'data-recording-finishing',
           'data-received-audio-clock',
         ],
       });

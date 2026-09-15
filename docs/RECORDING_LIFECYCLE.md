@@ -118,3 +118,12 @@ rolling work, then seals. Concurrent close callers share one operation. A failed
 close retains its timeline and packets for retry; successful close releases the
 timeline. Deletion waits for rolling work and queued writes before removing rows,
 so those writes cannot recreate deleted audio afterward.
+
+
+## Missing delivery and bounded Stop
+
+The elapsed timer measures time since recording was confirmed; received duration measures complete PCM frames. A connected radio with no complete frames is shown as waiting, not as successful audio capture. After four seconds without complete frames in the foreground, the recorder makes one notification/replay repair attempt per recording. It keeps the same journal and never issues another START. Stop or a changed connection cancels queued repair work. A diagnostic snapshot after the attempt records firmware capture and notify counters if available. Healthy recording is not polled.
+
+Every Stop, including a pendant-initiated drain, has one recording-owned watchdog. Reconnect cannot reset its deadline. Complete frames extend the progress window; status notifications or partial packets alone do not. After eight seconds without complete-frame progress, or 35 seconds total, the app disconnects if necessary and seals the original journal as `stop-unconfirmed`. Received packets remain available; missing audio is not synthesized as recovered speech. Normal acknowledged drain still saves as `normal`. While finishing, the header shows Finishing and received duration; it cannot imply Ready while the pendant may still stream.
+
+Browser coverage: `node tools/audio-stall-smoke.cjs` exercises notification repair, zero received audio, pendant-initiated Stop and link loss during Stop using the real recorder and IndexedDB journal. Native watchdog tests exercise progress, the absolute deadline and recording ownership. Physical pendant validation is required for microphone capture and sustained BLE throughput.

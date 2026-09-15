@@ -74,7 +74,7 @@ module.exports = function pendantFixture() {
     owner = [],
     buffer = [],
     sendTimer = null;
-  let retained = [], replayAck = 0, replayCommands = 0, blockAudio = false, audioSubscriptions = 0;
+  let retained = [], replayAck = 0, replayCommands = 0, blockAudio = false, audioSubscriptions = 0, restoreOnSubscribe = false;
   let stopDisconnect = null,
     echoStop = false,
     rejectStopResponse = false,
@@ -153,7 +153,7 @@ module.exports = function pendantFixture() {
       this.value = null;
     }
     startNotifications() {
-      return operation(() => {if(this.id===uuid('46'))audioSubscriptions++;return this;});
+      return operation(() => {if(this.id===uuid('46')){audioSubscriptions++;if(restoreOnSubscribe){blockAudio=false;restoreOnSubscribe=false;}}return this;});
     }
     readValue() {
       return operation(async () => {
@@ -476,6 +476,12 @@ module.exports = function pendantFixture() {
     setSdAvailable(value){sdAvailable=value;},
     finishMedia(error=0){mediaError=error;mediaState=error?3:2;},
     blockAudio(value) { blockAudio = value; },
+    loseNotifications() { blockAudio=true;restoreOnSubscribe=true; },
+    pendantStop() {
+      clearInterval(audioTimer);finishing=true;
+      const recovery=chars.get(uuid('4f'));recovery.value=recoveryStatus();
+      recovery.dispatchEvent(new Event('characteristicvaluechanged'));startSender();
+    },
     get replayCommands() { return replayCommands; },
     get audioSubscriptions() { return audioSubscriptions; },
     disconnect: loseLink,
