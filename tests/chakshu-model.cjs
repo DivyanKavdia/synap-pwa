@@ -3,7 +3,7 @@ const { test } = require('node:test'),
   assert = require('node:assert/strict'),
   fs = require('node:fs'),
   vm = require('node:vm');
-const protocol = require('../chakshu-model-transfer.js');
+const protocol = require('../devices/chakshu/model-transfer.js');
 test('model download checks exact size and SHA-256 before any device write', async () => {
   await assert.rejects(protocol.verify(new Uint8Array(10)), /incomplete/);
   await assert.rejects(protocol.verify(new Uint8Array(protocol.SIZE)), /integrity/);
@@ -40,7 +40,7 @@ function fixture(embedded = false) {
       },
     },
   };
-  vm.runInNewContext(fs.readFileSync('chakshu-model-transfer.js', 'utf8'), realm);
+  vm.runInNewContext(fs.readFileSync('devices/chakshu/model-transfer.js', 'utf8'), realm);
   function status() {
     const v = new DataView(new ArrayBuffer(20));
     [0xce, 1, embedded ? 3 : state, 0].forEach((n, i) => v.setUint8(i, n));

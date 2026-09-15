@@ -1,6 +1,6 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {decode,decodeStatus,legacy,Client,UUID,PROFILES}=require('../device-modules.js');
+const {decode,decodeStatus,legacy,Client,UUID,PROFILES}=require('../devices/modules.js');
 function descriptor(id=3) {
   const view=new DataView(new ArrayBuffer(20));
   [0xC7,1,id,1].forEach((v,i)=>view.setUint8(i,v));

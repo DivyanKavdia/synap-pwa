@@ -4,11 +4,8 @@
   const WRITE_UUID = "4fa12348-0000-1000-8000-00805f9b34fb";
   const STATUS_UUID = "4fa12349-0000-1000-8000-00805f9b34fb";
   const DEVICE_UUID = "4fa1234c-0000-1000-8000-00805f9b34fb";
-  const IMAGE_TARGETS = Object.freeze({
-    "xiao-esp32s3-sense-8m":Object.freeze({target:"xiao-esp32s3-sense-8m",chip:9,marker:"SYNAP-CHAKSHU-OTA-ID-V3"}),
-    "esp32s3-fh4r2-qspi-4m":Object.freeze({target:"esp32s3-fh4r2-qspi-4m",chip:9,marker:"SYNAP-ESP32S3-OTA-ID-V3"}),
-    "esp32c3-supermini-4m":Object.freeze({target:"esp32c3-supermini-4m",chip:5,marker:"SYNAP-ESP32C3-OTA-ID-V3"})
-  });
+  const profiles = root.SynapDeviceProfiles || require('./devices/profiles.js');
+  const IMAGE_TARGETS = profiles.BY_TARGET;
   const WINDOW_CHUNKS = root.navigator?.bluetooth ? 4 : 1;
   const MIGRATION_MESSAGE = "This pendant uses an older updater. Install the device-ID firmware by USB once during developer/factory provisioning. Future updates need only this app; no key is required.";
   const errors = ["", "Updater is not available.", "Invalid OTA packet.",

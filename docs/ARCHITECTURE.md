@@ -1,66 +1,54 @@
 # Synap architecture
 
-The browser receives and journals pendant audio, then schedules processing and
-renders locally saved memory. The managed backend authenticates the owner,
-stores encrypted sources, runs transcription/memory extraction, and answers
-questions using retrieved evidence. Firmware is a separate repository.
+The PWA owns connection policy, durable local recordings, processing jobs and presentation. Firmware owns physical capture and reports capabilities. The managed backend authenticates the account, stores encrypted sources and derives memory from those sources.
 
-Chakshu module detection and camera/SD checks use `device-modules.js` and `chakshu-ui.js`. They consume the existing app-owned GATT queue and are described in [Chakshu integration](CHAKSHU.md). Audio keeps the existing recording journal and cloud pipeline; SD check files are reviewed directly from the card.
+## Source ownership
 
-## Find the owner
+| Responsibility                                                             | Owner                                                                          |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Startup dependency order and offline shell                                 | `index.html`, `sw.js`                                                          |
+| Device definitions, identity, capabilities and settings                    | `devices/` — see [device capabilities](DEVICE_CAPABILITIES.md)                 |
+| Chakshu capture, SD transfer, media library/player and voice/model clients | `devices/chakshu/` — see [Chakshu](CHAKSHU.md)                                 |
+| Connection/recording policy and audio Library coordination                 | `app.js`                                                                       |
+| Native GATT queue, deadlines and connection generations                    | `recording/bluetooth-session.js`                                               |
+| Per-store sequence/timeline and explicit capture configuration             | `recording/timeline.js`, `recording/journal.js`                                |
+| Audio transport decoding                                                   | `audio-codec-v3.js`                                                            |
+| IndexedDB journal, segments, recovery, close/delete barriers and jobs      | `audio-store.js`                                                               |
+| Hardware-started recording adoption                                        | `recording-bridge.js`                                                          |
+| Intentional sleep/reconnect preference                                     | `sleep-state-guard.js`                                                         |
+| Automatic standby / battery popover placement                              | `devices/power.js` / `battery-popover-fix.js`                                  |
+| Session-bound recording notifications                                      | `recording-notifications.js`, `sw.js`                                          |
+| Processing concurrency, cancellation and retries                           | `processing-queue.js`                                                          |
+| Google session and account-bound requests                                  | `google-auth.js`                                                               |
+| Managed provider and memory/people/follow-up client                        | `synap-backend.js`                                                             |
+| Provider preferences and direct processing                                 | `ai-providers.js`                                                              |
+| Stalled processing and cloud restoration                                   | `processing-recovery.js`, `cloud-history.js`, `experience-recovery.js`         |
+| Legacy rebuild UI / completion events                                      | `transcript-repair.js` / `memory-ready-events.js`                              |
+| Navigation and mounted panels                                              | `dashboard-ui.js`, `memory-workspace.js`, `my-actions.js`, `compact-layout.js` |
+| Memory editing and source-linked views                                     | `memory-tools.js`, `provenance-links.js`                                       |
+| Daily/weekly summaries                                                     | `brain-ui.js`, `productivity-tools.js`                                         |
+| Actions and people controls                                                | `interaction-surfaces.js`, `action-state.js`, `people-confirm-ui.js`           |
+| Managed HTTP boundaries                                                    | `backend/src/http/app.ts`, `backend/src/http/routes/`                          |
+| Processing, window validation and derived indexing                         | `backend/src/pipeline/`                                                        |
+| Encryption and durable cloud persistence                                   | `backend/src/crypto/`, `backend/src/store/`                                    |
+| Speaker embeddings                                                         | `speaker-service/app.py`                                                       |
+| Deployment                                                                 | `.github/workflows/`, `infra/terraform/`                                       |
 
-| Responsibility                                                       | Source                                                                         |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Startup graph and offline shell                                      | `index.html`, `sw.js`                                                          |
-| Connection/recording policy and library controller                    | `app.js`                                                                       |
-| Audio transport decoding                                             | `audio-codec-v3.js`                                                            |
-| IndexedDB journal, recovery, segments and job persistence            | `audio-store.js`                                                               |
-| Processing locks, dispatch, concurrency, pause and retry             | `processing-queue.js`                                                          |
-| Native GATT queue and connection-generation ownership                | `recording/bluetooth-session.js`                                                     |
-| Per-store pendant timeline and explicit capture options              | `recording/timeline.js`, `recording/journal.js`                                                         |
-| Adopting hardware-started recording                                  | `recording-bridge.js`                                                          |
-| Intentional sleep/reconnect preference                               | `sleep-state-guard.js`                                                         |
-| Battery popover and idle standby control                             | `battery-popover-fix.js`                                                       |
-| Session-bound recording notifications                                | `recording-notifications.js`, `sw.js`                                          |
-| Google session, refresh and authenticated requests                   | `google-auth.js`                                                               |
-| Cloud provider and memory/people/follow-up API client                | `synap-backend.js`                                                             |
-| Provider preferences and legacy direct OpenAI processing             | `ai-providers.js`                                                              |
-| Stalled cloud status recovery                                        | `processing-recovery.js`                                                       |
-| Cloud history hydration and targeted restore                         | `cloud-history.js`, `experience-recovery.js`                                   |
-| Legacy memory rebuild UI                                             | `transcript-repair.js`                                                         |
-| Deduplicated completion notification                                 | `memory-ready-events.js`                                                       |
-| Navigation and mounted panels                                        | `dashboard-ui.js`, `memory-workspace.js`, `my-actions.js`, `compact-layout.js` |
-| Memory cards, merges and source-linked viewing                       | `memory-tools.js`, `provenance-links.js`                                       |
-| Day summaries and weekly memory timeline                             | `brain-ui.js`, `productivity-tools.js`                                         |
-| Action timelines and completion                                      | `interaction-surfaces.js`, `action-state.js`                                   |
-| People identity and deletion                                         | `interaction-surfaces.js`, `people-confirm-ui.js`                              |
-| Managed HTTP routes                                                  | `backend/src/http/app.ts`, `backend/src/http/routes/`                          |
-| Managed processing orchestration                                     | `backend/src/pipeline/process.ts`                                              |
-| Encryption and durable cloud storage                                 | `backend/src/crypto/`, `backend/src/store/`                                    |
-| Acoustic embeddings                                                  | `speaker-service/app.py`                                                       |
-| Deployment configuration                                             | `.github/workflows/`, `infra/terraform/`                                       |
+Device code shares the existing recorder and GATT queue. Adding a camera or local command service must not create a second Bluetooth connection, replace recorder methods or capture audio through a parallel journal.
 
-The names of some older UI modules describe the repair that introduced them.
-Consult this table before creating a second owner for the same responsibility.
+## Startup and connection lifetime
 
-## Browser startup
+`index.html` declares scripts once in dependency order. Profiles precede capability consumers; storage and processing precede recording hooks; authentication/providers register before `app.js` resumes jobs. Modules communicate through explicit APIs and events. The service worker uses network-first code with an offline fallback. Cache generation and changed script URLs advance together. Normal updates preserve IndexedDB and defer reload while recording, saving or updating firmware.
 
-`index.html` declares the production scripts exactly once. Storage and the queue
-load before recording hooks; auth and processing providers register before
-`app.js` can resume pending jobs. Readiness events are available before the queue.
-Recovery observes authenticated status responses through an explicit callback;
-it does not replace `SynapAuth.authedFetch` or inject another script at runtime.
+`app.js` publishes a physical connection through `devices/identity.js`. That lease lasts until the GATT connection changes. Recording generations have a separate lifetime, so starting/stopping audio does not invalidate the camera service. Optional work checks ownership immediately before native execution. Passive polling waits for idle; camera transfer is explicitly allowed during confirmed audio recording. Discovery can identify a module once during resumed audio, preventing a long recording from hiding its camera indefinitely.
 
-The service worker uses network-first code with an offline shell fallback. Cache
-generation and script URLs must advance together. Normal updates preserve
-IndexedDB. Reload is gated while recording, saving or updating firmware.
+A new page can encounter firmware still reporting STREAMING with MTU23 and zero payload because it retains an abandoned recovery session. With no matching recording owner, the PWA sends STOP and requires a valid idle acknowledgement before connecting normally. It retries while transport settles. Owned recovery sessions use their token/resume path instead. Invalid transport is never accepted as playable audio.
 
-Pendant diagnostics in `enhancements.js` accept the legacy 32-byte v1 packet and
-48-byte v2 packet. V2 adds the retained disconnect reason/count/time and last
-notification error. Reads use the existing GATT queue only while idle. Results
-flow through `app.js`'s bounded log, so Copy and Download preserve the same data
-after later app messages. A rejection count measures failed local notification
-attempts; retries can recover them, so it is separate from lost audio frames.
+Chakshu transfer serializes an entire frame/file transaction while each GATT operation also uses the shared native queue. This prevents request/reply overlap without starving audio control. Stale connections, account changes and cancelled captures invalidate pending work. The ordinary audio journal is shared across all devices; video soundtracks receive their own recording ID and remain independent from silent visual frames.
+
+## Diagnostics
+
+`enhancements.js` reads legacy 32-byte v1 and 48-byte v2 diagnostics through the idle GATT queue. V2 adds disconnect reason/count/time and notification errors. Results enter the bounded `app.js` log, so Copy/Download retain firmware and app evidence together. Local notification rejection is separate from missing audio because a retry can succeed. Use [audio diagnostics](AUDIO_PIPELINE.md) to distinguish app-requested disconnects, physical link loss, browser suspension and corrupt PCM.
 
 ## Durable processing
 
@@ -130,35 +118,10 @@ speaker service is a separate private service for embeddings. Browser-facing
 code does not receive managed model credentials. Inline development secrets and
 Secret Manager values pass through the same signing-key validation.
 
-## Remaining maintenance work
+## Maintenance boundaries
 
-`app.js` remains the connection/recording policy and library coordinator. The
-native GATT queue has been extracted into `recording/bluetooth-session.js` and
-storage no longer depends on prototype patches. Future extractions should move
-recording transitions and Library rendering behind explicit interfaces while
-preserving the real browser workflow checks.
+`app.js` still coordinates recording policy and audio Library rendering. Older presentation modules contain some overlapping CSS/UI layers and repair-era names. Move a responsibility only when its lifetime and browser regression can move together. Do not add prototype wrappers or whole-document observers as integration mechanisms.
 
-Older presentation modules and CSS layers still overlap; several modules have
-names inherited from earlier repairs. Some tests still inspect source strings.
-Prefer behavior tests for each boundary as it changes. Do not introduce another
-module that wraps existing methods at startup.
+Processing claims use ownership fences. `pipeline/index-memory.ts` prepares optional embeddings outside Firestore, then commits derived rows and readiness together. Retries reuse sealed understanding and preserve completed tasks. Daily-brief failure does not hide an already published memory. `first-memory.js` reads an explicit Library snapshot; its sample never enters personal storage.
 
-Backend processing now claims a recording through a transaction and fences each
-attempt with a lease. `pipeline/index-memory.ts` prepares optional embeddings
-outside Firestore, then commits conversations, people contributions, follow-ups
-and the ready checkpoint together. Retries reuse sealed understanding and leave
-completed tasks intact. Daily-brief recovery runs after publication, so a brief
-failure does not hide the memory. `first-memory.js` consumes the existing Library
-snapshot through an explicit callback; its illustrative sample never enters the
-journal, cloud history or personal actions.
-
-The emulator CI job exercises real SDK transactions without cloud credentials.
-The emulator does not reproduce every production contention/size limit; physical
-radio/audio testing and production monitoring remain separate release gates.
-
-See [recording architecture audit](RECORDING_AUDIT.md) for findings, changes,
-validation evidence and the physical-device acceptance boundary.
-
-## Chakshu visual capture
-
-The account-gated photo/video library lives in `chakshu-library.js` with orchestration in `chakshu-media.js`, byte transfer in `chakshu-transfer.js`, and separate account-keyed IndexedDB storage in `chakshu-store.js`. Audio stays in the existing recording lifecycle. The backend association/vision router accepts only selected JPEG frames; video never enters ASR. See [Chakshu](CHAKSHU.md) for capture, timing, import and offline limits.
+CI covers pure code, native firmware contracts, simulated browser workflows and disposable Firestore transactions. It does not establish microphone quality, sustained RF throughput, OS background behavior, power endurance or physical camera timing. Those remain device checks.

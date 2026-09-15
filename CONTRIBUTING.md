@@ -37,16 +37,16 @@ Builds remove stale output before compiling.
 
 ## Checks
 
-| Command                                         | What it checks                                                           |
-| ----------------------------------------------- | ------------------------------------------------------------------------ |
-| `npm test`                                      | Browser module logic, storage/queue rules and shell contracts            |
-| `npm run typecheck`                             | Strict backend TypeScript, including unused code checks                  |
-| `npm run test:backend`                          | Backend behavior, encryption, grounding and HTTP guards                  |
-| `npm run test:browser`                          | The same browser workflow sequence used in CI                            |
-| `npm run test:browser -- processing connection` | Only those workflows, including buffered connection recovery             |
+| Command                                         | What it checks                                                                |
+| ----------------------------------------------- | ----------------------------------------------------------------------------- |
+| `npm test`                                      | Browser module logic, storage/queue rules and shell contracts                 |
+| `npm run typecheck`                             | Strict backend TypeScript, including unused code checks                       |
+| `npm run test:backend`                          | Backend behavior, encryption, grounding and HTTP guards                       |
+| `npm run test:browser`                          | The same browser workflow sequence used in CI                                 |
+| `npm run test:browser -- processing connection` | Only those workflows, including buffered connection recovery                  |
 | `npm run test:browser -- ui`                    | Populated layouts, date navigation and reading across screen sizes and themes |
-| `npm run format -- processing-queue.js`         | Format the specified files                                               |
-| `npm run format:check -- processing-queue.js`   | Check formatting without editing                                         |
+| `npm run format -- processing-queue.js`         | Format the specified files                                                    |
+| `npm run format:check -- processing-queue.js`   | Check formatting without editing                                              |
 
 `SYNAP_CHROMIUM_PATH` can select an already installed Chromium executable.
 Browser screenshots from the CI sequence go to `artifacts/workflows/`.
@@ -62,6 +62,20 @@ Some older tests still extract functions or match source formatting. Update thos
 checks when editing their modules; formatting differences should not decide
 whether a behavior is correct. Apply Prettier to the files being maintained,
 with formatting changes kept separate from functional edits when practical.
+
+## Device changes
+
+Use `devices/capabilities.js` for support/readiness checks. Keep connection and account ownership in their existing controllers. The [device guide](docs/DEVICE_CAPABILITIES.md) describes the separate gates and source map.
+
+The firmware repository owns `devices/catalog.json`. After changing its hardware/profile implementation, synchronize the PWA with:
+
+```sh
+node tools/device-catalog.cjs --from ../synap-firmware
+npm test
+npm run test:browser -- chakshu chakshu-library chakshu-model connection
+```
+
+Review the generated catalog diff for all three targets. Do not hand-edit `devices/profiles.js`. Preserve target IDs, OTA image limits, numeric module IDs and capability bits. Firmware CI must compile every supported board before publication.
 
 ## Extending the code
 

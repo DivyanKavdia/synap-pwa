@@ -8,7 +8,7 @@ Connect the device through the normal pendant picker. The Device panel reads fir
 - Live audio, OTA and SD checks cannot run together. Completed results can be read after a reconnect; reboot clears the last result but keeps saved files.
 - Chakshu stays awake and requires no touch sensor, external LED or battery divider.
 
-The initial firmware supports XIAO ESP32S3 Sense with 8 MB flash / 8 MB OPI PSRAM and probes the installed card. It does not assume the 2 GB card is empty, delete files or auto-format it.
+The Chakshu profile supports XIAO ESP32S3 Sense with 8 MB flash / 8 MB OPI PSRAM and probes the installed card. It does not assume the 2 GB card is empty, delete files or auto-format it.
 
 ## Browse and work with photos and videos
 
@@ -49,19 +49,21 @@ Browse SD card transfers files through Bluetooth; the current firmware catalogue
 
 The viewer plays frames at their saved timestamps and follows the linked audio clock when enabled. It also supports silent clips and a silent video tail after a shorter soundtrack ends. Audio remains independently stored with its own transcript link. Audio can be linked or replaced from recordings belonging to the same account. Original video export is MJPEG plus a JSON timing sidecar; original audio remains downloadable through the audio recording.
 
+See [device capabilities](DEVICE_CAPABILITIES.md) for supported/readiness/permission gates and catalog synchronization.
+
 ## Code boundaries
 
 | Responsibility | Owner |
 | --- | --- |
-| BLE connection, serialized queue and audio ownership | app.js, recording/bluetooth-session.js, device-identity.js |
-| Module descriptor and hardware checks | device-modules.js, chakshu-ui.js |
-| Local command lease and routing | chakshu-voice.js |
-| Camera/file transport | chakshu-transfer.js |
-| Account association, capture and audio links | chakshu-media.js |
-| Account-keyed media and frame storage | chakshu-store.js |
-| Library and selected-frame descriptions | chakshu-library.js, chakshu-library.css |
-| Timestamped playback and linked audio clock | chakshu-player.js |
-| Header photo/video preview popup | chakshu-capture-preview.js |
+| BLE connection, serialized queue and audio ownership | app.js, recording/bluetooth-session.js, devices/identity.js |
+| Module descriptor and hardware checks | devices/modules.js, devices/panel.js |
+| Local command lease and routing | devices/chakshu/voice.js |
+| Camera/file transport | devices/chakshu/transfer.js |
+| Account association, capture and audio links | devices/chakshu/media.js |
+| Account-keyed media and frame storage | devices/chakshu/store.js |
+| Library and selected-frame descriptions | devices/chakshu/library.js, devices/chakshu/library.css |
+| Timestamped playback and linked audio clock | devices/chakshu/player.js |
+| Header photo/video preview popup | devices/chakshu/capture-preview.js |
 | Encrypted account device association and vision endpoint | backend/src/http/routes/chakshu.ts |
 | Timestamped audio transcription events | synap-backend.js, backend/src/http/routes/recordings.ts |
 | Firmware capture and SD worker | synap-firmware repository |

@@ -26,7 +26,7 @@ test('Settings promotes the firmware-backed synap serial into the device title',
 
 test('static shell never paints a capitalized synap brand before runtime normalization',()=>{
   const start=html.indexOf('<body');
-  const end=html.indexOf('<script src="device-identity.js',start);
+  const end=html.indexOf('<script src="devices/identity.js',start);
   const visibleShell=html.slice(start,end);
   assert.doesNotMatch(visibleShell,/\bSynap\b/);
   assert.match(visibleShell,/Day summary/);

@@ -23,7 +23,7 @@ Blob without starting a Worker, including during a partial app update. The
 provider also bypasses enhancement directly, protecting both update orders.
 WAV validation still rejects malformed sample alignment before upload/storage.
 
-See the [complete audio path audit](AUDIO_PIPELINE_AUDIT.md) for transport, memory,
+See the [audio pipeline guide](AUDIO_PIPELINE.md) for transport, memory,
 compatibility, evidence and hardware acceptance limits.
 
 ## Rejected transcription requests

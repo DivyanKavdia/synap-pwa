@@ -33,7 +33,7 @@
     const container = document.getElementById('chakshuVoice');
     if (!container) return;
     container.hidden = !api()?.state.available;
-    const supported = root.SynapModules?.client?.module?.voiceVersion === 1;
+    const supported = root.SynapCapabilities.hasVoice(root.SynapModules?.client?.module);
     const toggle = document.getElementById('chakshuVoiceEnabled');
     toggle.disabled = !binding || pending || !state || ![1, 5].includes(state.status);
     toggle.checked = Boolean(state?.enabled);
@@ -137,7 +137,7 @@
       !context ||
       !owner ||
       !api()?.state.available ||
-      root.SynapModules?.client?.module?.voiceVersion !== 1
+      !root.SynapCapabilities.hasVoice(root.SynapModules?.client?.module)
     ) {
       render();
       return;

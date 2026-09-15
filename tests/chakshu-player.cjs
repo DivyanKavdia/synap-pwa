@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test'),
   assert = require('node:assert/strict');
-const { Player, frameAt, timeLabel } = require('../chakshu-player.js');
+const { Player, frameAt, timeLabel } = require('../devices/chakshu/player.js');
 function clock() {
   let now = 0,
     tick = null;

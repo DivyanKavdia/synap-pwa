@@ -3,16 +3,17 @@ const APP_VERSION='1.0.0';
 /* app.js owns the client compatibility revision used for update signalling. */
 const CLIENT_REVISION='1.0.0-audio2';
 /* Refresh the installed shell without changing audio protocol compatibility. */
-const UI_RECOVERY_REVISION='1.0.0-chakshu-capture1';
-const CACHE_REVISION='1.0.0-shell106-chakshu-capture';
+const UI_RECOVERY_REVISION='1.0.0-devices1';
+const CACHE_REVISION='1.0.0-shell107-devices';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
-  './chakshu-player.js','./chakshu-capture-preview.js',
-  './chakshu-model-transfer.js','./chakshu-model.js','./chakshu-voice.js','./chakshu-store.js','./chakshu-transfer.js','./chakshu-media.js','./chakshu-library.js','./chakshu-library.css',
-  './device-modules.js','./chakshu-ui.js','./device-modules.css',
+  './devices/chakshu/player.js','./devices/chakshu/capture-preview.js',
+  './devices/chakshu/model-transfer.js','./devices/chakshu/model.js','./devices/chakshu/voice.js','./devices/chakshu/store.js','./devices/chakshu/transfer.js','./devices/chakshu/media.js','./devices/chakshu/library.js','./devices/chakshu/library.css',
+  './devices/profiles.js','./devices/capabilities.js',
+  './devices/modules.js','./devices/power.js','./devices/panel.js','./devices/panel.css',
   './recording/screen-wake-lock.js',
   './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./brain.css','./polish.css','./settings.css','./library-tools.js','./library-tools.css',
-  './touch-event-bridge.js','./battery-v2-ui.js','./event-channel.js','./audio-codec-v3.js','./battery-popover-fix.js','./memory-ui-fix.js','./memory-tools.js','./voice-profile.js','./device-identity.js','./runtime-compat.js','./audio-store.js','./processing-queue.js','./recording/journal.js','./recording/timeline.js','./recording/bluetooth-session.js','./ota.js','./releases.js',
+  './touch-event-bridge.js','./battery-v2-ui.js','./event-channel.js','./audio-codec-v3.js','./battery-popover-fix.js','./memory-ui-fix.js','./memory-tools.js','./voice-profile.js','./devices/identity.js','./runtime-compat.js','./audio-store.js','./processing-queue.js','./recording/journal.js','./recording/timeline.js','./recording/bluetooth-session.js','./ota.js','./releases.js',
   './disconnect-protection.js','./audio-quality.js','./meeting-tools.js','./meeting-tools.css','./app.js','./recording-notifications.js','./moments.js','./speaker-names.js','./settings-panel.js','./enhancements.js','./capture-ui.js','./brain-ui.js','./ask-synap.js','./product-ui.js','./runtime-ui.js','./dashboard-ui.js','./provenance-links.js','./productivity-tools.js','./desktop-capture.js','./interaction-surfaces.js','./memory-ready-events.js','./experience-recovery.js',
   './memory-workspace.js','./action-state.js','./my-actions.js','./compact-layout.js','./audio-enhancement.js','./audio-enhancement-ui.js','./audio-enhancement-worker.js','./vendor/audio-enhancement/rnnoise-sync.js',
   './synap-logo-blue-light.png','./synap-logo-blue-dark.png','./synap-logo-pink-light.png','./synap-logo-pink-dark.png','./synap-logo-lavender-light.png','./synap-logo-lavender-dark.png',

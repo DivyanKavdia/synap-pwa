@@ -279,8 +279,9 @@
     $('visualGrid').hidden = !state.available;
     $('visualDeviceHint').textContent = !state.connected
       ? 'Your library is available. Connect Chakshu for camera capture.'
-      : !state.cameraReady
+      : !state.mediaSupported
         ? 'Update Chakshu firmware for camera transfers. You can import files from its SD card now.'
+        : !state.cameraReady ? 'Camera unavailable. Check hardware in Settings.'
         : 'Camera connected. Audio-only mode uses the usual recording and transcription flow.';
     $('visualStop').hidden = !state.session && !state.offline;
     $('visualStop').textContent = state.offline
@@ -291,14 +292,10 @@
     $('visualStop').disabled = state.session?.phase === 'saving';
     const deviceBusy = root.SynapChakshuModel?.busy || root.SynapModules?.busy;
     const busy = state.working || Boolean(state.session) || state.offline || deviceBusy;
-    for (const id of [
-      'visualPhoto',
-      'visualPhotoAudio',
-      'visualOnline',
-      'visualOffline',
-      'visualSD',
-    ])
-      $(id).disabled = busy || !state.connected || !state.cameraReady;
+    for (const [id, available] of Object.entries({
+      visualPhoto: state.cameraReady, visualPhotoAudio: state.cameraReady,
+      visualOnline: state.videoReady, visualOffline: state.offlineReady, visualSD: state.storageReady
+    })) $(id).disabled = busy || !state.connected || !available;
     $('visualImport').disabled = busy;
     $('visualMode').disabled = busy;
     $('visualExplainLive').hidden = !state.session?.id;

@@ -76,6 +76,7 @@
       checking ||
       running ||
       !context ||
+      !api()?.state.voiceSupported ||
       !owner ||
       !api()?.state.available ||
       !api().state.devices.some((d) => d.deviceId === context.deviceId) ||

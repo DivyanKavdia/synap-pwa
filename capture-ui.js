@@ -269,25 +269,35 @@
         ready &&
         media?.available &&
         media?.connected &&
-        media?.cameraReady &&
         !busy &&
         !mediaPending &&
         !media?.working &&
         !window.SynapChakshuModel?.busy &&
         !window.SynapModules?.busy;
-      photo.disabled = !visualReady || media?.offline || media?.session?.phase === 'saving';
-      const unavailable = media?.available
-        ? 'Connect Chakshu to capture'
-        : 'Unavailable — associate Chakshu with this account';
-      photo.setAttribute('aria-label', visualReady ? 'Take photo' : unavailable);
+      photo.disabled =
+        !visualReady || !media?.cameraReady || media?.offline || media?.session?.phase === 'saving';
+      const unavailable = !media?.available
+        ? 'Unavailable — associate Chakshu with this account'
+        : !media?.connected
+          ? 'Connect Chakshu to capture'
+          : !media?.mediaSupported
+            ? 'Update Chakshu firmware for camera capture'
+            : 'Camera or microphone unavailable. Check device hardware.';
+      photo.setAttribute(
+        'aria-label',
+        visualReady && media?.cameraReady ? 'Take photo' : unavailable,
+      );
       photo.title = photo.getAttribute('aria-label');
       video.disabled =
-        !visualReady || media?.session?.phase === 'starting' || media?.session?.phase === 'saving';
+        !visualReady ||
+        (!visualActive && !media?.videoReady) ||
+        media?.session?.phase === 'starting' ||
+        media?.session?.phase === 'saving';
       video.setAttribute(
         'aria-label',
         visualActive
           ? 'Stop video recording'
-          : visualReady
+          : visualReady && media?.videoReady
             ? 'Start video with separate audio'
             : unavailable,
       );

@@ -2,6 +2,8 @@
 (function (root) {
   'use strict';
   const { Store, TARGET, windowFrames, explainWords, splitMJPEG } = root.SynapVisualStore;
+  const capabilities = root.SynapCapabilities;
+  const moduleInfo = () => root.SynapModules?.client?.module;
   const CACHE = 'synap-account-chakshu-v1:';
   const uid = () => String(root.SynapAuth?.session?.()?.profile?.uid || '');
   const delay = (ms) => new Promise((resolve) => root.setTimeout(resolve, ms));
@@ -22,7 +24,7 @@
   const MAX_VIDEO_BYTES = 32 * 1024 * 1024;
   const notify = () => root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
   const connected = () =>
-    root.SynapModules?.client?.module?.id === 3 ? root.SynapDevices?.connection : null;
+    capabilities.isChakshu(moduleInfo()) ? root.SynapDevices?.connection : null;
   const ready = () => Boolean(owner && devices.some((device) => device.target === TARGET));
   function check(expected) {
     if (!expected || uid() !== expected || owner !== expected)
@@ -57,7 +59,7 @@
       throw Error('Photo/video library unavailable. Associate Chakshu with this account first.');
     return { owner, store };
   }
-  function camera() {
+  function camera(kind, offlineCapture = false) {
     if (root.SynapChakshuModel?.busy)
       throw Error('Finish or cancel voice model installation first.');
     requireAccess();
@@ -65,9 +67,17 @@
     if (!next?.deviceId) throw Error('Connect your associated Chakshu first.');
     if (!devices.some((device) => device.deviceId === next.deviceId))
       throw Error('Associate this Chakshu with your account first.');
-    if (root.SynapModules.client.module.mediaVersion !== 1)
+    if (!capabilities.hasMedia(moduleInfo()))
       throw Error(
         'Update Chakshu firmware to enable camera transfers and paired video. SD files can still be imported.',
+      );
+    if (kind && !capabilities.canCapture(moduleInfo(), kind, offlineCapture))
+      throw Error(
+        offlineCapture
+          ? 'Camera, microphone or SD card unavailable. Check hardware before recording offline.'
+          : kind === 'video'
+            ? 'Camera or microphone unavailable. Refresh hardware status and retry.'
+            : 'Camera unavailable. Refresh hardware status and retry.',
       );
     if (context !== next) {
       context = next;
@@ -147,7 +157,7 @@
         if (
           ready() &&
           connected()?.deviceId &&
-          root.SynapModules.client.module.mediaVersion === 1 &&
+          capabilities.hasMedia(moduleInfo()) &&
           !session &&
           !working
         )
@@ -198,7 +208,7 @@
     return operation(async (signal) => {
       const owned = requireAccess(),
         device = connected(),
-        client = camera();
+        client = camera('photo');
       let audio = root.SynapAppControls.recordingState();
       const audioOwned = withAudio && !audio.active;
       try {
@@ -300,7 +310,7 @@
   async function startLive(inference = true) {
     if (session || working || offline) throw Error('Finish the current capture first.');
     const owned = requireAccess(),
-      client = camera(),
+      client = camera('video'),
       deviceId = connected().deviceId;
     const take = {
       ...owned,
@@ -455,7 +465,7 @@
   }
   async function startOffline() {
     return operation(async () => {
-      camera();
+      camera('video', true);
       if (root.SynapAppControls.recordingState().active)
         throw Error('Stop audio capture before recording to SD.');
       await transfer.request(5);
@@ -685,7 +695,12 @@
         owner,
         available: ready(),
         connected: Boolean(connected()),
-        cameraReady: root.SynapModules?.client?.module?.mediaVersion === 1,
+        cameraReady: capabilities.canCapture(moduleInfo(), 'photo'),
+        videoReady: capabilities.canCapture(moduleInfo(), 'video'),
+        offlineReady: capabilities.canCapture(moduleInfo(), 'video', true),
+        storageReady: capabilities.hasMedia(moduleInfo()) && capabilities.ready(moduleInfo(), 'sd'),
+        mediaSupported: capabilities.hasMedia(moduleInfo()),
+        voiceSupported: capabilities.hasVoice(moduleInfo()),
         devices,
         error,
         working,

@@ -9,6 +9,7 @@ const html=read('index.html');
 const app=read('app.js');
 const sw=read('sw.js');
 const battery=read('battery-popover-fix.js');
+const power=read('devices/power.js');
 const cloud=read('cloud-history.js');
 const runtime=read('runtime-ui.js');
 const bridge=read('recording-bridge.js');
@@ -22,6 +23,7 @@ const capture=read('capture-ui.js');
 
 assert(html.includes('globalThis.SYNAP_STATIC_BOOTSTRAP=true'),'production shell must declare deterministic bootstrap');
 const core=[
+  'devices/profiles.js','devices/capabilities.js','devices/identity.js','devices/modules.js','devices/power.js','devices/panel.js',
   'runtime-compat.js','recording/bluetooth-session.js','recording/timeline.js','audio-store.js','memory-ready-events.js','processing-queue.js','recording/journal.js','battery-popover-fix.js','sleep-state-guard.js','recording-bridge.js','event-channel.js',
   'ota.js','releases.js','moments.js','experience-recovery.js','google-auth.js','processing-recovery.js','ai-providers.js','synap-backend.js','first-memory.js','app.js','processing-pipeline-ui.js','memory-ui-fix.js','cloud-history.js',
   'memory-tools.js','cost-ui.js','transcript-repair.js','voice-profile.js','ask-synap.js','brain-ui.js','dashboard-ui.js','runtime-ui.js','capture-ui.js','product-ui.js','provenance-links.js','productivity-tools.js','desktop-capture.js','interaction-surfaces.js'
@@ -41,7 +43,7 @@ assert.match(runtime,/if\(!globalThis\.SynapRecordingBridge\)bindTouchRecordingB
   'hardware stream adoption must defer to recording-bridge');
 assert.match(runtime,/if\(!globalThis\.SynapDashboardUI\)bindBrainTabs\(\)/,
   'navigation must defer to dashboard-ui');
-assert.match(battery,/function tryAutoStart\(\)\{if\(root\.SynapRecordingBridge\)return;/,
+assert.match(power,/function tryAutoStart\(\)\{if\(root\.SynapRecordingBridge\)return;/,
   'power helper must not become a second hardware-stream adoption owner');
 
 assert.match(sleep,/owner:'sleep-state-guard'/,'sleep-state guard must publish the canonical intentional-sleep event');
@@ -66,9 +68,9 @@ assert.doesNotMatch(bindBrief,/MutationObserver/,'daily brief refresh must use e
 assert.doesNotMatch(product,/Advanced & recovery/,'product UI must not recreate the removed Advanced & recovery panel');
 assert.doesNotMatch(capture,/backgroundMemoryControls/,'capture UI must not rebuild manual processing controls');
 assert.doesNotMatch(capture,/if\(timer\)new MutationObserver\(sync\)/,'recording timer must not trigger a full capture-header render every second');
-assert(enhancements.includes("SHELL_REVISION='1.0.0-shell106-chakshu-capture'"),'update-notice generation must match the service worker');
+assert(enhancements.includes("SHELL_REVISION='1.0.0-shell107-devices'"),'update-notice generation must match the service worker');
 assert.doesNotMatch(stability,/observe\(root\.document\.body, \{ childList: true, subtree: true \}\)/,
   'recovery hiding must not watch the entire document forever');
-assert(sw.includes("const CACHE_REVISION='1.0.0-shell106-chakshu-capture';"),'service worker revision must advance with the architecture graph');
+assert(sw.includes("const CACHE_REVISION='1.0.0-shell107-devices';"),'service worker revision must advance with the architecture graph');
 
 console.log('PASS: production bootstrap, BLE ownership, sleep ownership, render flow and reconnect policy are structurally consistent.');
