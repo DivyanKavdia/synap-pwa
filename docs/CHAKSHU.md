@@ -43,7 +43,7 @@ time, and distinguish a queued timeout from an operation running on Bluetooth.
 The queue gives each operation its own execution deadline after bounded waiting.
 Native bridge failures reported as strings retain their message in the preview
 and diagnostic log. Startup diagnostics also identify the loaded recorder,
-camera, voice and capture UI revisions, so an old cached module is distinguishable
+camera and capture UI revisions, so an old cached module is distinguishable
 from a failure in the current build.
 
 Module and event discovery wait until identity, audio/control subscriptions and recovery negotiation finish. The app releases optional setup explicitly after that handshake, including after a reconnect.
@@ -75,7 +75,6 @@ See [device capabilities](DEVICE_CAPABILITIES.md) for supported/readiness/permis
 | --- | --- |
 | BLE connection, serialized queue and audio ownership | app.js, recording/bluetooth-session.js, devices/identity.js |
 | Module descriptor and hardware checks | devices/modules.js, devices/panel.js |
-| Local command lease and routing | devices/chakshu/voice.js |
 | Camera/file transport | devices/chakshu/transfer.js |
 | Account association, capture and audio links | devices/chakshu/media.js |
 | Account-keyed media and frame storage | devices/chakshu/store.js |
@@ -90,26 +89,14 @@ Native media operations use the app-owned GATT queue. Media has explicit permiss
 
 ## Protocols
 
-The existing `4fa12350` descriptor and `4fa12351`–`53` SD-check protocol remain. Descriptor byte 14 advertises the media extension version; byte 15 advertises voice extension version 1. `4fa12354`/`55` provide request/response frame and file transfer. All UUIDs share suffix `-0000-1000-8000-00805f9b34fb`.
+The existing `4fa12350` descriptor and `4fa12351`–`53` SD-check protocol remain. Descriptor byte 14 advertises the media extension version; byte 15 is zero (local voice removed). `4fa12354`/`55` provide request/response frame and file transfer. All UUIDs share suffix `-0000-1000-8000-00805f9b34fb`.
 
 See the [firmware media protocol and setup](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/CHAKSHU.md) for wire fields and limits.
 
-## Header controls and local voice
+## Header controls
 
-Photo and video buttons sit beside the microphone. They show unavailable until the account has a Chakshu association and require a connected camera for capture. Audio-only keeps the normal C3/S3 journal behavior. Starting video seals any audio-only take and creates a fresh audio journal linked to a separate silent video record. The video button stops both parts; the microphone button saves video and starts a new audio-only take. A photo during video saves the latest available video frame with its audio position.
+The microphone button starts/stops audio, the camera button takes a photo, and the video button opens preview and records timestamped frames with separate audio. Local voice recognition, voice settings, model installation and background voice BLE services are removed for this release. Descriptor voice version is zero in the matching firmware. The PWA also avoids voice/model discovery against older firmware.
 
-The header camera/video buttons immediately open a preview popup. It shows the actual saved photo or latest captured video frame, plus waiting/error status while capture starts. During video, **Take photo** saves a frame and **Stop & save video** finishes both separate recordings. Closing the preview keeps recording; the popup explains this. After saving, **Open in library** opens the captured item. Preview reads the existing capture stream and does not start another camera or audio stream. Online capture and playback need no SD card; disconnected/offline recordings still require SD storage.
+Video requests use QVGA frames on the new firmware, while standalone photos and SD captures remain VGA. The preview reports camera transfer percentage. Bluefy read latency still limits the achieved frame rate; this is a sequence of timestamped JPEGs, not a guaranteed continuous-motion video stream. Stopping video cancels its pending camera read and preserves completed frames and received audio. An AbortError at that exact Stop boundary alone does not establish a failed camera or a disconnected link.
 
-For local commands, install the current Chakshu firmware through **Settings → Firmware**, then reconnect. Published Chakshu images include the voice model in internal flash; there is no separate model upload or SD requirement. Settings identifies the embedded model and hides the SD installer. Older/manual builds without embedded weights retain the **Install voice model** SD fallback. Enable Local voice controls if the listener was previously switched off. Settings → Device → Local voice controls shows readiness and an enable switch. Say **“Hi Chakshu”**, pause, then one of **“take photo”** (or **“click photo”**), **“start video”**, **“stop video”**, **“audio on”**, or **“audio off”**. Repeat the activation phrase for each command. Audio off stops recording; the separate voice-control switch stops command listening.
-
-Recognition runs on Chakshu. An associated, visible, connected PWA renews a six-second command lease through its existing GATT queue and routes recognized actions to these same controls. Duplicate notifications are ignored; a bounded queue preserves a stop arriving during startup. Hidden pages release the lease, and a disconnected page cannot replay commands into another account. Without a current lease, the pendant saves JPEG photos, paired video/WAV/JSON takes, or standalone audio WAV takes on SD. SD audio and video takes are each bounded to 60 seconds. Switching offline modes closes the current files before opening new ones. Import the files when reconnected, or use a card reader.
-
-The model uses MultiNet phoneme commands with “Hi Chakshu” as an activation gate. This is not a separately trained wake-word model. Recognition accuracy, false activations, runtime memory and battery use require device measurement. Missing or invalid model files leave the ordinary capture controls available and show a model setup message.
-
-## Updating older Chakshu firmware
-
-Before build 1227, Chakshu's BLE wrapper can acknowledge a write before its deferred callback copies the packet. Sending several chunks together can then report **Chunk order or duplicate mismatch**. The PWA sends one chunk per firmware acknowledgement for these older Chakshu builds, including resumed transfers. Native-callback Chakshu builds (1227 onward), C3 and ordinary S3 retain the existing window. Image target, device identity, cumulative offset, SHA-256 and commit validation remain enforced. Reopen the updated PWA, reconnect, and retry the update if an earlier transfer failed; the fix is in the PWA and can install the newer firmware.
-
-## Verification boundary
-
-Run `npm test`, backend typechecking/tests, and `npm run test:browser -- chakshu chakshu-library`. Browser fixtures cover account gating/switching, JPEG transfers, local playback, separate audio/video, selected-frame inference and SD import. Backend tests exercise the real authenticated routes, encrypted association and rejection of other accounts. Firmware CI compiles C3, S3 and Chakshu. Camera/microphone quality, timing alignment, actual Bluetooth throughput and on-device flash still require hardware validation.
+Update Chakshu firmware and reconnect after updating this page. A PWA reload does not change the firmware already running on the pendant.

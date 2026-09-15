@@ -54,7 +54,7 @@ test('Chakshu live capture needs a ready camera, and offline video additionally 
   assert.equal(caps.canCapture(noSD, 'photo'), true);
   assert.equal(caps.canCapture(noSD, 'video'), true);
   assert.equal(caps.canCapture(noSD, 'video', true), false);
-  assert.equal(caps.hasVoice(noSD), true, 'voice service does not require SD');
+  assert.equal(caps.hasVoice(noSD), false, 'retired voice stays off even on older firmware');
   assert.equal(caps.hardwareCheck(noSD, 1, true), true, 'hardware refresh stays available');
   assert.equal(caps.hardwareCheck(noSD, 3, true), false);
   const noMic = descriptor(3, all, all & ~(profiles.FLAGS.audio | profiles.FLAGS.sdAudio));

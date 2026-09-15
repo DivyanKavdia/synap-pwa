@@ -29,24 +29,55 @@ test('gallery search combines titles, notes and descriptions with kind and favou
 });
 const { decode, Client } = require('../devices/chakshu/transfer.js');
 test('camera failure diagnostics identify discovery, command and response stages', async () => {
-  const vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
-  for(const failed of ['Find Chakshu camera controls','Find Chakshu camera data',
-    'Send Chakshu camera request','Read Chakshu camera response']){
-    const reports=[],c={Promise,Uint8Array,DataView,TextEncoder,Date,
-      CustomEvent:class{constructor(type,{detail}){this.type=type;this.detail=detail;}},
-      dispatchEvent:event=>reports.push(event)};
+  const vm = require('node:vm'),
+    fs = require('node:fs'),
+    path = require('node:path');
+  for (const failed of [
+    'Find Chakshu camera controls',
+    'Find Chakshu camera data',
+    'Send Chakshu camera request',
+    'Read Chakshu camera response',
+  ]) {
+    const reports = [],
+      c = {
+        Promise,
+        Uint8Array,
+        DataView,
+        TextEncoder,
+        Date,
+        CustomEvent: class {
+          constructor(type, { detail }) {
+            this.type = type;
+            this.detail = detail;
+          }
+        },
+        dispatchEvent: (event) => reports.push(event),
+      };
     vm.createContext(c);
-    vm.runInContext(fs.readFileSync(path.join(__dirname,'../devices/chakshu/transfer.js'),'utf8'),c);
-    const client=new c.SynapChakshuTransfer.Client({
+    vm.runInContext(
+      fs.readFileSync(path.join(__dirname, '../devices/chakshu/transfer.js'), 'utf8'),
+      c,
+    );
+    const client = new c.SynapChakshuTransfer.Client({
       // Native Bluetooth bridges can reject with a string, not an Error object.
-      queue:async(action,label)=>{if(label===failed)throw 'GATT Error Unknown.';return action();},
-      service:{getCharacteristic:async()=>({writeValueWithResponse:async()=>{},readValue:async()=>response(1,0,0)})},
+      queue: async (action, label) => {
+        if (label === failed) throw 'GATT Error Unknown.';
+        return action();
+      },
+      service: {
+        getCharacteristic: async () => ({
+          writeValueWithResponse: async () => {},
+          readValue: async () => response(1, 0, 0),
+        }),
+      },
     });
-    await assert.rejects(client.request(1),/GATT Error Unknown/);
-    assert.equal(reports.length,1);assert.equal(reports[0].detail.stage,failed);
-    assert.equal(reports[0].detail.operation,1);assert.equal(reports[0].detail.offset,0);
-    assert.equal(reports[0].detail.message,'GATT Error Unknown.');
-    assert.equal(typeof reports[0].detail.elapsedMs,'number');
+    await assert.rejects(client.request(1), /GATT Error Unknown/);
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0].detail.stage, failed);
+    assert.equal(reports[0].detail.operation, 1);
+    assert.equal(reports[0].detail.offset, 0);
+    assert.equal(reports[0].detail.message, 'GATT Error Unknown.');
+    assert.equal(typeof reports[0].detail.elapsedMs, 'number');
   }
 });
 test('explain uses only the closest frame and at most two neighbours on each side', () => {
@@ -383,4 +414,78 @@ test('cancelled camera work waiting behind a request never reaches the pendant a
   await cancelled;
   await client.request(9);
   assert.deepEqual(writes, [9, 9]);
+});
+
+test('video requests smaller frames while photo bytes, progress and cancellation stay exact', async () => {
+  const source = new Uint8Array([255, 216, 1, 2, 3, 4, 5, 255, 217]),
+    requests = [];
+  let last;
+  const client = new Client({
+    queue: (action) => action(),
+    service: {
+      getCharacteristic: async (uuid) =>
+        uuid.includes('354-')
+          ? {
+              properties: { writeWithoutResponse: true },
+              writeValueWithoutResponse: async (bytes) => {
+                const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                last = { op: bytes[1], id: v.getUint32(2, true), offset: v.getUint32(6, true) };
+                requests.push(last);
+              },
+            }
+          : {
+              readValue: async () =>
+                response(
+                  last.id,
+                  source.length,
+                  last.op === 1 ? 0 : last.offset,
+                  last.op === 2 ? source.slice(last.offset, last.offset + 3) : [],
+                ),
+            },
+    },
+  });
+  for (const preview of [false, true]) {
+    requests.length = 0;
+    const progress = [];
+    const blob = await client.snapshot(
+      undefined,
+      (fraction, total) => progress.push([fraction, total]),
+      preview,
+    );
+    assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), source);
+    assert.equal(requests[0].offset, preview ? 1 : 0);
+    assert.deepEqual(
+      requests.slice(1).map((r) => r.offset),
+      [0, 3, 6],
+    );
+    assert.deepEqual(progress, [
+      [0, 9],
+      [1 / 3, 9],
+      [2 / 3, 9],
+      [1, 9],
+    ]);
+  }
+  requests.length = 0;
+  const controller = new AbortController();
+  await assert.rejects(
+    client.snapshot(
+      controller.signal,
+      (fraction) => {
+        if (fraction > 0) controller.abort();
+      },
+      true,
+    ),
+    { name: 'AbortError' },
+  );
+  assert.equal(requests.filter((r) => r.op === 1).length, 1);
+  assert.equal(
+    requests.filter((r) => r.op === 2).length,
+    1,
+    'cancel must not save or finish a partial JPEG',
+  );
+  assert.deepEqual(
+    new Uint8Array(await (await client.snapshot()).arrayBuffer()),
+    source,
+    'a cancelled video must not poison the next standalone photo',
+  );
 });

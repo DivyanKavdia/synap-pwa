@@ -144,14 +144,15 @@
         throw error;
       }
     }
-    bytes(op, path, signal, progress = () => {}) {
-      return this.serialize(() => this._bytes(op, path, signal, progress));
+    bytes(op, path, signal, progress = () => {}, preview = false) {
+      return this.serialize(() => this._bytes(op, path, signal, progress, preview));
     }
-    async _bytes(op, path, signal, progress = () => {}) {
-      const first = await this._request(op, 0, path, signal),
+    async _bytes(op, path, signal, progress = () => {}, preview = false) {
+      const first = await this._request(op, op === 1 && preview ? 1 : 0, path, signal),
         limit = op === 1 ? 250000 : 32 * 1024 * 1024;
       if (!first.total || first.total > limit)
         throw Error('Camera file exceeds this transfer limit. Import it from the SD card.');
+      progress(0, first.total);
       const parts = [];
       let size = 0;
       const readOp = op === 1 ? 2 : 4;
@@ -166,12 +167,12 @@
           throw Error('Camera transfer changed. Retry the import.');
         parts.push(reply.bytes);
         size += reply.bytes.length;
-        progress(size / first.total);
+        progress(size / first.total, first.total);
       }
       return new Blob(parts, { type: op === 1 ? 'image/jpeg' : 'application/octet-stream' });
     }
-    snapshot(signal) {
-      return this.bytes(1, '', signal);
+    snapshot(signal, progress, preview = false) {
+      return this.bytes(1, '', signal, progress, preview);
     }
     file(path, signal, progress) {
       if (!/^\/synap\/[a-f0-9]{8}-[a-f0-9]{8}\.(jpg|wav|mjpeg|json)$/.test(path))
@@ -186,6 +187,6 @@
       });
     }
   }
-  root.SynapChakshuTransfer = { Client, decode, revision: '1.0.0-chakshu-transport5' };
+  root.SynapChakshuTransfer = { Client, decode, revision: '1.0.0-chakshu-core1' };
   if (typeof module !== 'undefined') module.exports = root.SynapChakshuTransfer;
 })(globalThis);

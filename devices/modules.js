@@ -222,7 +222,7 @@
       }
     }
     async run(operation) {
-      if (root.SynapChakshu?.busy || root.SynapChakshuModel?.busy)
+      if (root.SynapChakshu?.busy)
         throw Error('Finish the current capture or model installation first.');
       if (![1, 2, 3, 4].includes(operation) || !capabilities.isChakshu(this.module))
         throw Error('Connect Chakshu first.');

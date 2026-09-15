@@ -14,7 +14,6 @@ async function until(page, predicate, arg) {
           media: SynapChakshu.state,
           recording: SynapAppControls.recordingState(),
           notice: document.getElementById('headerMediaNotice').textContent,
-          voice: document.getElementById('chakshuVoiceStatus').textContent,
           log: document.getElementById('log')?.textContent?.slice(-2000),
         })),
       );
@@ -165,8 +164,9 @@ async function until(page, predicate, arg) {
           path: '',
         });
       }
-      await page.waitForFunction(() => bleFixture.voiceLease > 0);
-      assert((await page.locator('#chakshuVoice').textContent()).includes('Hi Chakshu'));
+      assert.equal(await page.locator('#chakshuVoice').count(), 0);
+      assert.equal(await page.evaluate(() => Boolean(window.SynapChakshuVoice || window.SynapChakshuModel)), false);
+      assert.equal(await page.evaluate(() => bleFixture.voiceLease), 0);
       // Hold cleanup after the audio journal has cleared its ID. Video must wait
       // for the capture owner, even though there is no longer an active journal.
       await page.evaluate(() => {
@@ -201,13 +201,21 @@ async function until(page, predicate, arg) {
           beforeVideo,
         );
       }
-      await page.evaluate(() => bleFixture.delayNextCameraReply());
+      await page.evaluate(() => {
+        window.cameraProgressSeen = [];
+        addEventListener('synap-chakshu-changed', () => {
+          if (SynapChakshu.state.transferProgress) cameraProgressSeen.push(SynapChakshu.state.transferProgress.percent);
+        });
+        bleFixture.delayNextCameraReply();
+      });
       await page.locator('#headerVideo').click();
       await until(page, async () => {
         const id = SynapChakshu.state.session?.id;
         return id && (await SynapChakshu.store.get(id)).frameCount > 0;
       });
       const headerVideo = await page.evaluate(() => SynapChakshu.state.session.id);
+      const progress = await page.evaluate(() => cameraProgressSeen);
+      assert(progress.includes(0) && progress.includes(100), 'camera transfer reports progress through a complete image');
       await page.waitForFunction(
         () => document.getElementById('capturePreviewImage').naturalWidth === 160,
       );
@@ -336,7 +344,8 @@ async function until(page, predicate, arg) {
             throw new DOMException('GATT Error Unknown.', 'NetworkError');
           };
         });
-        await page.waitForFunction(() => SynapChakshu.state.session?.phase === 'saving');
+        await page.waitForFunction(() => SynapChakshu.state.session?.phase === 'saving' &&
+          document.getElementById('capturePreviewStatus').textContent.includes('GATT Error Unknown'));
         assert.match(
           await page.locator('#capturePreviewStatus').textContent(),
           /GATT Error Unknown/,
@@ -387,68 +396,10 @@ async function until(page, predicate, arg) {
           /No audio samples arrived/,
         );
       }
-      await page.evaluate(() => bleFixture.voice(4));
-      await page.waitForFunction(() => SynapAppControls.recordingState().active).catch(async error => {
-        console.log(await page.evaluate(() => ({
-          state: document.body.dataset.state,
-          voice: SynapChakshuVoice.state,
-          leaseAge: Date.now() - bleFixture.voiceLease,
-          voiceStatus: document.getElementById('chakshuVoiceStatus').textContent,
-          diagnostics: document.getElementById('diagnosticsLog').textContent.slice(-6000)
-        })));
-        throw error;
-      });
-      const voiceAudio = await page.evaluate(() => SynapAppControls.recordingState().recordingId);
-      await page.evaluate(() => bleFixture.replayVoice());
-      assert.equal(
-        await page.evaluate(() => SynapAppControls.recordingState().recordingId),
-        voiceAudio,
-      );
-      await page.evaluate(() => bleFixture.voice(5));
-      await page.waitForFunction(() => document.body.dataset.state === 'idle');
-      const photosBeforeVoice = await page.evaluate(
-        async () => (await SynapChakshu.store.list()).filter((r) => r.kind === 'image').length,
-      );
-      await page.evaluate(() => bleFixture.voice(1));
-      await until(
-        page,
-        async (n) =>
-          (await SynapChakshu.store.list()).filter((r) => r.kind === 'image' && r.state === 'saved')
-            .length ===
-          n + 1,
-        photosBeforeVoice,
-      );
-      await page.waitForFunction(() => !SynapChakshu.state.working);
-      await page.evaluate(() => bleFixture.voice(2));
-      await page.waitForFunction(() => SynapChakshu.state.session?.phase === 'recording');
-      await page.evaluate(() => bleFixture.voice(3));
-      await page.waitForFunction(
-        () => !SynapChakshu.state.session && document.body.dataset.state === 'idle',
-      );
-      // Listener toggle and background lease release cannot start browser captures.
-      await page.evaluate(() => SynapChakshuVoice.enabled(false));
-      await page.waitForFunction(() => SynapChakshuVoice.state?.status === 5);
+      // Older firmware may still emit voice events; this release has no listener.
       await page.evaluate(() => bleFixture.voice(4));
       assert.equal(await page.evaluate(() => SynapAppControls.recordingState().active), false);
-      await page.evaluate(() => SynapChakshuVoice.enabled(true));
-      await page.waitForFunction(() => SynapChakshuVoice.state?.status === 1);
-      await page.evaluate(() => bleFixture.hide());
-      await page.waitForFunction(() => bleFixture.voiceLease === 0);
-      await page.evaluate(() => bleFixture.voice(4));
-      assert.equal(await page.evaluate(() => SynapAppControls.recordingState().active), false);
-      await page.evaluate(() => bleFixture.show());
-      await page.waitForFunction(() => bleFixture.voiceLease > 0);
-      const finalVoiceSequence = await page.evaluate(() => {
-        bleFixture.voice(2);
-        return bleFixture.voice(3);
-      });
-      await page.waitForFunction(
-        (expected) => SynapChakshuVoice.state.sequence === expected,
-        finalVoiceSequence,
-      );
-      await page.waitForFunction(
-        () => !SynapChakshu.state.session && document.body.dataset.state === 'idle',
-      );
+      assert.equal(await page.evaluate(() => bleFixture.voiceLease), 0);
       fs.mkdirSync('artifacts/workflows/chakshu-library', { recursive: true });
       await page.screenshot({
         path: 'artifacts/workflows/chakshu-library/header-' + width + '.png',

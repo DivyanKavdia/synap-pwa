@@ -3,12 +3,12 @@ const APP_VERSION='1.0.0';
 /* app.js owns the client compatibility revision used for update signalling. */
 const CLIENT_REVISION='1.0.0-audio2';
 /* Refresh the installed shell without changing audio protocol compatibility. */
-const UI_RECOVERY_REVISION='1.0.0-chakshu-transport5';
-const CACHE_REVISION='1.0.0-shell115-chakshu';
+const UI_RECOVERY_REVISION='1.0.0-chakshu-core1';
+const CACHE_REVISION='1.0.0-shell116-chakshu';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './devices/chakshu/player.js','./devices/chakshu/capture-preview.js',
-  './devices/chakshu/model-transfer.js','./devices/chakshu/model.js','./devices/chakshu/voice.js','./devices/chakshu/store.js','./devices/chakshu/transfer.js','./devices/chakshu/media.js','./devices/chakshu/library.js','./devices/chakshu/library.css',
+  './devices/chakshu/store.js','./devices/chakshu/transfer.js','./devices/chakshu/media.js','./devices/chakshu/library.js','./devices/chakshu/library.css',
   './devices/profiles.js','./devices/capabilities.js',
   './devices/modules.js','./devices/power.js','./devices/panel.js','./devices/panel.css',
   './recording/screen-wake-lock.js',

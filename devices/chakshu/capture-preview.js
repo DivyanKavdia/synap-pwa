@@ -79,27 +79,36 @@
     }
     $('capturePreviewWaiting').hidden = Boolean(frame);
     const active = mode === 'video' && Boolean(state.session || state.offline);
+    const receiving =
+      state.transferProgress && !state.error
+        ? state.transferProgress.totalBytes
+          ? 'Receiving camera image · ' + state.transferProgress.percent + '%'
+          : 'Taking camera image…'
+        : '';
     const stopping = state.session?.phase === 'saving';
     $('capturePreviewWaiting').textContent =
       state.error ||
       note ||
+      receiving ||
       (active ? 'Waiting for the first video frame…' : 'No camera image yet.');
     $('capturePreviewStatus').textContent =
       note ||
       state.error ||
       (stopping
         ? 'Saving video and audio…'
-        : active
-          ? frame
-            ? 'Recording · ' + root.SynapChakshuPlayer.timeLabel(frame.atMs)
-            : 'Preparing video and separate audio…'
-          : row
-            ? row.kind === 'video'
-              ? 'Video saved. Audio is saved separately.'
-              : 'Photo saved to your library.'
-            : busy
-              ? 'Taking photo…'
-              : 'Capture unavailable.');
+        : receiving
+          ? receiving
+          : active
+            ? frame
+              ? 'Recording · ' + root.SynapChakshuPlayer.timeLabel(frame.atMs)
+              : 'Preparing video and separate audio…'
+            : row
+              ? row.kind === 'video'
+                ? 'Video saved. Audio is saved separately.'
+                : 'Photo saved to your library.'
+              : busy
+                ? 'Taking photo…'
+                : 'Capture unavailable.');
     $('capturePreviewHint').textContent = active
       ? stopping
         ? 'Finishing the recording and saving received frames and audio…'

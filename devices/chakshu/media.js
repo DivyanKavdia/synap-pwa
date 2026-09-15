@@ -17,21 +17,24 @@
     transfer = null,
     context = null,
     accountPending = false;
+  let transferProgress = null;
   const controllers = new Set();
   let workController = null;
   const voicePending = new Set();
   let associatedConnection = null;
   const MAX_VIDEO_BYTES = 32 * 1024 * 1024;
   const notify = () => root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
-  const connectionStatus = () => capabilities.cameraConnection(
-    root.SynapDevices?.connection, root.SynapModules?.client,
-  );
-  const connected = () => connectionStatus().state === 'connected' ? root.SynapDevices.connection : null;
+  const connectionStatus = () =>
+    capabilities.cameraConnection(root.SynapDevices?.connection, root.SynapModules?.client);
+  const connected = () =>
+    connectionStatus().state === 'connected' ? root.SynapDevices.connection : null;
   async function prepareCamera() {
-    const physical = root.SynapDevices?.connection, expected = owner;
+    const physical = root.SynapDevices?.connection,
+      expected = owner;
     if (physical && !connected()) await root.SynapModules?.refresh();
     check(expected);
-    if (physical !== root.SynapDevices?.connection) throw Error('Pendant connection changed. Retry capture.');
+    if (physical !== root.SynapDevices?.connection)
+      throw Error('Pendant connection changed. Retry capture.');
     if (!connected()) throw Error(connectionStatus().message);
   }
   const ready = () => Boolean(owner && devices.some((device) => device.target === TARGET));
@@ -69,8 +72,6 @@
     return { owner, store };
   }
   function camera(kind, offlineCapture = false) {
-    if (root.SynapChakshuModel?.busy)
-      throw Error('Finish or cancel voice model installation first.');
     requireAccess();
     const next = connected();
     if (!next?.deviceId) throw Error(connectionStatus().message);
@@ -175,8 +176,6 @@
     }
   }
   async function operation(action) {
-    if (root.SynapChakshuModel?.busy)
-      throw Error('Finish or cancel voice model installation first.');
     if (working || session || offline) throw Error('Finish the current capture or transfer first.');
     working = true;
     const controller = new AbortController(),
@@ -193,6 +192,35 @@
       working = false;
       if (workController === controller) workController = null;
       notify();
+    }
+  }
+  async function snapshot(client, signal, preview = false) {
+    const expected = owner;
+    let lastProgressAt = 0;
+    transferProgress = { percent: 0, totalBytes: 0, receivedBytes: 0 };
+    notify();
+    try {
+      return await client.snapshot(
+        signal,
+        (fraction, totalBytes) => {
+          if (expected !== owner || signal?.aborted) return;
+          transferProgress = {
+            percent: Math.floor(fraction * 100),
+            totalBytes,
+            receivedBytes: Math.round(fraction * totalBytes),
+          };
+          if (fraction === 1 || Date.now() - lastProgressAt >= 200) {
+            lastProgressAt = Date.now();
+            notify();
+          }
+        },
+        preview,
+      );
+    } finally {
+      if (expected === owner) {
+        transferProgress = null;
+        notify();
+      }
     }
   }
   async function photo(withAudio = false) {
@@ -225,7 +253,7 @@
         if (audioOwned) audio = await root.SynapAppControls.startMediaAudio();
         check(owned.owner);
         const atMs = audio.active ? audio.offsetMs : 0;
-        const blob = await client.snapshot(signal);
+        const blob = await snapshot(client, signal);
         check(owned.owner);
         const row = await owned.store.create({
           kind: 'image',
@@ -366,7 +394,7 @@
           const audio = root.SynapAppControls.recordingState();
           if (!audio.active || audio.recordingId !== take.audioId) break;
           const atMs = audio.offsetMs;
-          const blob = await client.snapshot(take.controller.signal);
+          const blob = await snapshot(client, take.controller.signal, true);
           check(take.owner);
           if (take.cancelled) break;
           if (take.bytes + blob.size > MAX_VIDEO_BYTES) {
@@ -444,15 +472,6 @@
       working = false;
       notify();
     }
-  }
-  async function voiceCommand(command) {
-    requireAccess();
-    if (command === 1) return photo();
-    if (command === 2) {
-      if (!session && !offline) return startLive(false);
-    } else if (command === 3) return stop();
-    else if (command === 4) return setAudio(true);
-    else if (command === 5) return setAudio(false);
   }
   async function stop() {
     const take = session;
@@ -696,7 +715,6 @@
     photo,
     startLive,
     setAudio,
-    voiceCommand,
     startOffline,
     stop,
     describe,
@@ -706,6 +724,7 @@
     pollOffline,
     get state() {
       return {
+        transferProgress,
         owner,
         available: ready(),
         connected: Boolean(connected()),
@@ -715,7 +734,7 @@
         offlineReady: capabilities.canCapture(moduleInfo(), 'video', true),
         storageReady: capabilities.hasMedia(moduleInfo()) && capabilities.ready(moduleInfo(), 'sd'),
         mediaSupported: capabilities.hasMedia(moduleInfo()),
-        voiceSupported: capabilities.hasVoice(moduleInfo()),
+        voiceSupported: false,
         devices,
         error,
         working,

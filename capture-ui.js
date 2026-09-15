@@ -1,7 +1,7 @@
 /* Product-facing capture controls. Core BLE/recording behavior remains in app.js. */
 (function () {
   'use strict';
-  globalThis.SynapCaptureUIRevision = '1.0.0-chakshu-transport5';
+  globalThis.SynapCaptureUIRevision = '1.0.0-chakshu-core1';
   const TAGLINE = 'Stay present. Keep the memory.';
   const PUBLIC_VERSION = '1.0.0';
   const logoSource = () =>
@@ -255,12 +255,7 @@
       toggle.classList.toggle('is-connected', connected || state === 'updating');
       toggle.classList.toggle('is-recording', recording || canStop || finishing);
       toggle.disabled =
-        !ready ||
-        (!canStop &&
-          (window.SynapChakshuModel?.busy ||
-            busy ||
-            state === 'unsupported' ||
-            (connected && start.disabled)));
+        !ready || (!canStop && (busy || state === 'unsupported' || (connected && start.disabled)));
       const action =
         finishing && !canStop
           ? 'Finishing recording'
@@ -282,7 +277,6 @@
         !busy &&
         !mediaPending &&
         !media?.working &&
-        !window.SynapChakshuModel?.busy &&
         !window.SynapModules?.busy;
       photo.disabled =
         !visualReady || !media?.cameraReady || media?.offline || media?.session?.phase === 'saving';

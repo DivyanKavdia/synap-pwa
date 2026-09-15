@@ -281,8 +281,9 @@
       ? 'Your library is available. ' + state.connectionStatus.message
       : !state.mediaSupported
         ? 'Update Chakshu firmware for camera transfers. You can import files from its SD card now.'
-        : !state.cameraReady ? 'Camera unavailable. Check hardware in Settings.'
-        : 'Camera connected. Audio-only mode uses the usual recording and transcription flow.';
+        : !state.cameraReady
+          ? 'Camera unavailable. Check hardware in Settings.'
+          : 'Camera connected. Audio-only mode uses the usual recording and transcription flow.';
     $('visualStop').hidden = !state.session && !state.offline;
     $('visualStop').textContent = state.offline
       ? 'Stop SD recording'
@@ -290,12 +291,16 @@
         ? 'Saving…'
         : 'Stop video';
     $('visualStop').disabled = state.session?.phase === 'saving';
-    const deviceBusy = root.SynapChakshuModel?.busy || root.SynapModules?.busy;
+    const deviceBusy = root.SynapModules?.busy;
     const busy = state.working || Boolean(state.session) || state.offline || deviceBusy;
     for (const [id, available] of Object.entries({
-      visualPhoto: state.cameraReady, visualPhotoAudio: state.cameraReady,
-      visualOnline: state.videoReady, visualOffline: state.offlineReady, visualSD: state.storageReady
-    })) $(id).disabled = busy || !state.connected || !available;
+      visualPhoto: state.cameraReady,
+      visualPhotoAudio: state.cameraReady,
+      visualOnline: state.videoReady,
+      visualOffline: state.offlineReady,
+      visualSD: state.storageReady,
+    }))
+      $(id).disabled = busy || !state.connected || !available;
     $('visualImport').disabled = busy;
     $('visualMode').disabled = busy;
     $('visualExplainLive').hidden = !state.session?.id;
@@ -454,10 +459,12 @@
       $('visualFavourites').setAttribute('aria-pressed', 'false');
       refreshFilters();
     });
-    $('visualRetryAccess').addEventListener('click', () => action(async () => {
-      await root.SynapModules?.refresh();
-      await api().sync();
-    }));
+    $('visualRetryAccess').addEventListener('click', () =>
+      action(async () => {
+        await root.SynapModules?.refresh();
+        await api().sync();
+      }),
+    );
     $('visualAudioOnly').addEventListener('click', () =>
       action(() => root.SynapAppControls.toggleCapture()),
     );

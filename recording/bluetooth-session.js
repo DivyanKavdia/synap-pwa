@@ -3,7 +3,7 @@
   'use strict';
 
   class BluetoothSession {
-    static revision = '1.0.0-chakshu-transport5';
+    static revision = '1.0.0-chakshu-core1';
 
     static normalizeError(reason) {
       if (reason && typeof reason.message === 'string') return reason;
