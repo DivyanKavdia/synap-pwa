@@ -183,7 +183,12 @@
         }
       } else this.path = '';
     }
-    async refresh() {
+    refresh() {
+      if (this.refreshPromise) return this.refreshPromise;
+      this.refreshPromise = this.refreshOnce().finally(() => { this.refreshPromise = null; });
+      return this.refreshPromise;
+    }
+    async refreshOnce() {
       // A resumed audio take may last indefinitely. Read capabilities once on
       // its new link so the camera can be used alongside audio. SD status and
       // subsequent passive polling still wait until recording stops.

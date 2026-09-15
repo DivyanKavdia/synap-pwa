@@ -278,7 +278,7 @@
     $('visualTools').hidden = !state.available;
     $('visualGrid').hidden = !state.available;
     $('visualDeviceHint').textContent = !state.connected
-      ? 'Your library is available. Connect Chakshu for camera capture.'
+      ? 'Your library is available. ' + state.connectionStatus.message
       : !state.mediaSupported
         ? 'Update Chakshu firmware for camera transfers. You can import files from its SD card now.'
         : !state.cameraReady ? 'Camera unavailable. Check hardware in Settings.'
@@ -454,7 +454,10 @@
       $('visualFavourites').setAttribute('aria-pressed', 'false');
       refreshFilters();
     });
-    $('visualRetryAccess').addEventListener('click', () => action(() => api().sync()));
+    $('visualRetryAccess').addEventListener('click', () => action(async () => {
+      await root.SynapModules?.refresh();
+      await api().sync();
+    }));
     $('visualAudioOnly').addEventListener('click', () =>
       action(() => root.SynapAppControls.toggleCapture()),
     );

@@ -14,7 +14,7 @@ function activity() {
   const c={console,Promise,DOMException,Date:class extends Date{static now(){return wall;}},
     CustomEvent:class{constructor(type){this.type=type;}},performance:{now:()=>now},
     document:{visibilityState:'visible',body:{dataset:{}}},window:{dispatchEvent(){calls.events++;}},
-    recordingSessionId:1,currentRecordingId:'same-take',recordingConfirmed:true,recordingStartedAt:100,
+    recordingSessionId:1,currentRecordingId:'same-take',recordingConfirmed:true,recordingStartedAt:100,recordingStoppedAt:null,
     recordingStopRequested:false,recordingReconnectPending:false,finalizing:false,connectionEpoch:1,
     appState:'recording',lastCompleteAudioAt:10000,lastCompleteSequence:41,lastObservedSequence:41,
     backgroundCapture:null,backgroundRecoveryPromise:null,foregroundAt:10000,
@@ -79,9 +79,9 @@ test('an unobserved half-cycle is saved before counter ambiguity can overwrite o
   assert.equal(t.calls.stop,1);assert.equal(t.calls.subscribe,0);assert.equal(t.c.backgroundCapture,null);
 });
 
-test('the recording clock counts complete PCM and reports stalled delivery while hidden',()=>{
+test('elapsed time advances independently of audio reception and exposes stalls',()=>{
   const t=activity();t.hide();t.advance(60000);t.c.updateTimer();
-  assert.equal(t.c.ui.timer.textContent,'00:02');assert.equal(t.c.document.body.dataset.audioDelivery,'waiting');
+  assert.equal(t.c.ui.timer.textContent,'01:09');assert.equal(t.c.document.body.dataset.receivedAudioClock,'00:02');assert.equal(t.c.document.body.dataset.audioDelivery,'waiting');
   assert.equal(t.calls.stop,0,'visibility alone must not stop a browser that can keep delivering audio');
   const events=t.calls.events;t.c.updateTimer();assert.equal(t.calls.events,events,'unchanged delivery status does not churn the DOM');
   t.frame(42);t.c.updateTimer();assert.equal(t.c.document.body.dataset.audioDelivery,'receiving');
@@ -147,4 +147,22 @@ test('an unchanged recovery status is not a replay acknowledgement',async()=>{
 test('replayed older frames cannot move the reconnect checkpoint backwards',async()=>{
   const t=protection();await t.connect();t.api.received(65534);t.api.received(65535);t.api.received(0);t.api.received(65535);
   assert.equal(t.api.lastSequence(),0);t.api.resetRecording();assert.equal(t.api.lastSequence(),null);
+});
+
+test('Stop freezes elapsed time while recovered audio duration can grow',()=>{
+  const t=activity();t.c.recordingStoppedAt=11000;t.c.appState='stopping';t.c.updateTimer();
+  assert.equal(t.c.ui.timer.textContent,'00:10');t.advance(30000);t.c.sessionStats.completeFrames=200;t.c.updateTimer();
+  assert.equal(t.c.ui.timer.textContent,'00:10');assert.equal(t.c.document.body.dataset.receivedAudioClock,'00:10');
+});
+
+test('pendant Stop freezes the clock once while repeated drain acknowledgements arrive',()=>{
+  const t=activity();let drain;
+  t.c.window.addEventListener=(name,fn)=>{drain=fn;};
+  t.c.clearStartTimeout=()=>{};t.c.setAppState=state=>{t.c.appState=state;};
+  const start=source.indexOf('    window.addEventListener("synap-recording-draining"');
+  vm.runInContext(source.slice(start,source.indexOf('\n    });',start)+8),t.c);
+  drain();const clock=t.c.ui.timer.textContent;
+  assert.equal(t.c.recordingStopRequested,true);assert.equal(t.c.appState,'stopping');
+  t.advance(30000);drain();assert.equal(t.c.ui.timer.textContent,clock);
+  assert.equal(t.c.recordingStoppedAt,10000);
 });

@@ -166,6 +166,7 @@
 
   let recordingConfirmed = false;
   let recordingStartedAt = 0;
+  let recordingStoppedAt = null;
   let timerInterval = null;
   let startTimeout = null;
   let finalizeTimeout = null;
@@ -771,7 +772,7 @@
   function completeRecordingTransportResume(source) {
     if (!recordingReconnectPending) return;
     const now = performance.now();
-    if (!recordingTransportPreserved && recordingWasConfirmedBeforeDisconnect && recordingStartedAt && recordingDisconnectedAt) {
+    if (recordingStoppedAt === null && !recordingTransportPreserved && recordingWasConfirmedBeforeDisconnect && recordingStartedAt && recordingDisconnectedAt) {
       recordingStartedAt += Math.max(0, now - recordingDisconnectedAt);
     }
     clearRecordingReconnectState();
@@ -1796,7 +1797,9 @@
   async function drainRecordingStop(sessionId, epoch) {
     const ownsStop = () => isCurrentSession(sessionId) && epoch === connectionEpoch && appState === "stopping";
     recordingStopRequested = true;
+    if (recordingStoppedAt === null) recordingStoppedAt = performance.now();
     setAppState("stopping");
+    updateTimer();
     clearStartTimeout();
 
     try {
@@ -1951,6 +1954,8 @@
     sessionStats = createEmptyStats();
     recordingConfirmed = false;
     recordingStartedAt = 0;
+    recordingStoppedAt = null;
+    delete document.body.dataset.receivedAudioClock;
     levelHistory = [];
     currentRms = 0;
     lastDb = -96;
@@ -2273,9 +2278,12 @@
   function updateTimer() {
     if (!recordingConfirmed || !recordingStartedAt) return;
 
-    // This clock measures actual complete audio, not time spent in a suspended
-    // browser. Timeline gaps remain explicit in the stored recording.
-    const elapsed = sessionStats.completeFrames * 50;
+    // Elapsed capture time and received audio are different measurements.
+    // Stop freezes capture time while buffered audio can continue to arrive.
+    const elapsed = Math.max(0, (recordingStoppedAt ?? performance.now()) - recordingStartedAt);
+    const received = formatClock(sessionStats.completeFrames * 50);
+    if (document.body.dataset.receivedAudioClock !== received)
+      document.body.dataset.receivedAudioClock = received;
     const clock = formatClock(elapsed);
     if (ui.timer.textContent !== clock) ui.timer.textContent = clock;
     const now = performance.now();
@@ -3751,7 +3759,26 @@
   function bindEvents() {
     if (eventsBound) return;
     eventsBound = true;
-    window.addEventListener("synap-recording-draining",()=>{if(recordingConfirmed&&!finalizing){recordingStopRequested=true;clearStartTimeout();setAppState("stopping");}});
+    let hardwareSignature = '';
+    window.addEventListener('synap-module-changed', function () {
+      const client = globalThis.SynapModules?.client, info = client?.module;
+      const hardware = { module: info?.id ?? null, target: info?.target ?? null,
+        supported: info?.supported ?? null, ready: info?.ready ?? null,
+        mediaVersion: info?.mediaVersion ?? null, error: client?.error || '' };
+      const signature = JSON.stringify(hardware);
+      if (signature !== hardwareSignature) {
+        hardwareSignature = signature;
+        log('Connected hardware capabilities', hardware);
+      }
+    });
+    window.addEventListener("synap-recording-draining", () => {
+      if (!recordingConfirmed || finalizing) return;
+      recordingStopRequested = true;
+      if (recordingStoppedAt === null) recordingStoppedAt = performance.now();
+      clearStartTimeout();
+      setAppState("stopping");
+      updateTimer();
+    });
     bindCoreControls();
     document.querySelectorAll("[data-day-step]").forEach(function (button) {
       button.addEventListener("click", function () { moveDay(Number(button.dataset.dayStep)); });

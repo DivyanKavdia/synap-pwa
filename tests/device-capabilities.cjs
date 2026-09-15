@@ -67,3 +67,22 @@ test('Chakshu live capture needs a ready camera, and offline video additionally 
   assert.equal(caps.canCapture({ ...noSD, legacy: true }, 'photo'), false);
   assert.equal(caps.canCapture(null, 'photo'), false);
 });
+
+test('camera gating distinguishes detecting, failed, other hardware and stale connections', () => {
+  const connection = { deviceId: 'SYNAP-68EE8F4719A0' };
+  const client = { context: connection, module: null };
+  assert.equal(caps.cameraConnection(null, client).state, 'disconnected');
+  assert.equal(caps.cameraConnection(connection, client).state, 'detecting');
+  client.error = 'Read failed';
+  assert.equal(caps.cameraConnection(connection, client).state, 'unavailable');
+  for (const id of [1, 2]) {
+    client.module = descriptor(id, 1023, 1023);
+    const state = caps.cameraConnection(connection, client);
+    assert.equal(state.state, 'unsupported');assert.match(state.message, /is connected/);
+  }
+  client.module = descriptor(3, 911, 911);
+  assert.equal(caps.cameraConnection(connection, client).state, 'connected');
+  assert.equal(caps.cameraConnection({ ...connection }, client).state, 'detecting', 'old descriptor cannot unlock another physical link');
+  delete connection.deviceId;
+  assert.equal(caps.cameraConnection(connection, client).state, 'unavailable');
+});

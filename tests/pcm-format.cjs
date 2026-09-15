@@ -121,3 +121,44 @@ test('padded metadata is accepted and validation never reads the PCM body', asyn
   assert.deepEqual(await DKAudioCodec.validateWav(blob), { start: 56, bytes: 1600, samples: 800 });
   assert.equal(read, 52, 'validation cost depends on headers, not recording duration');
 });
+
+test('short or rejected native Blob reads retry without changing source bytes', async () => {
+  const original = DKAudioCodec.wav([new Uint8Array(1600).fill(37)]);
+  const nativeRead = Blob.prototype.arrayBuffer;
+  const oldReader = globalThis.FileReader;
+  let fallbackReads = 0;
+  globalThis.FileReader = class {
+    readAsArrayBuffer(blob) {
+      fallbackReads++;
+      nativeRead.call(blob).then(result => { this.result = result; this.onload(); });
+    }
+  };
+  try {
+    for (const mode of ['short', 'throws']) {
+      const source = new Blob([original]);
+      const nativeSlice = source.slice.bind(source);
+      source.slice = (...args) => {
+        const slice = nativeSlice(...args);
+        slice.arrayBuffer = async () => {
+          if (mode === 'throws') throw new RangeError('Out of bounds access');
+          return new ArrayBuffer(0);
+        };
+        return slice;
+      };
+      assert.deepEqual(await DKAudioCodec.validateWav(source), { start: 44, bytes: 1600, samples: 800 });
+      source.arrayBuffer = async () => new ArrayBuffer(1600);
+      assert.deepEqual(await DKAudioCodec.readBlob(source), await original.arrayBuffer());
+    }
+    assert.equal(fallbackReads, 10);
+  } finally { globalThis.FileReader = oldReader; }
+});
+
+test('unreadable stored PCM cannot become an empty or truncated upload', async () => {
+  const blob = new Blob([new Uint8Array(1600)]);
+  blob.arrayBuffer = async () => new ArrayBuffer(800);
+  await assert.rejects(DKAudioCodec.readBlob(blob), { code: 'audio_read', retryable: true, expectedBytes: 1600, actualBytes: 800 });
+  const store = new DKAudioStore();
+  store.get = async () => ({ pcmBlob: blob, frameCount: 1 });
+  await assert.rejects(store.segment('r', 0), { code: 'audio_read' });
+  assert.equal(blob.size, 1600);
+});

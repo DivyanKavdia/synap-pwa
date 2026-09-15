@@ -138,8 +138,14 @@
           attempts,
           nextAt: failed ? 0 : nextAt,
           lastError: (e.name || 'Error') + ': ' + e.message,
+          ...(e.audioStage ? { failureDetail: {
+            stage: e.audioStage, code: e.code || e.name,
+            expectedBytes: e.expectedBytes ?? null, actualBytes: e.actualBytes ?? null,
+            stack: String(e.stack || '').slice(0, 3000),
+          }} : {}),
         });
         emitState(job, failed ? 'failed' : 'pending');
+        if (e.audioStage) this.onChange('Audio processing failed while ' + e.audioStage + ': ' + e.message);
         this.onChange(
           failed
             ? 'Recording processing needs retry: ' + e.message

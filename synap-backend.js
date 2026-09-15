@@ -260,9 +260,11 @@
     if((await processor.store.get('segments',[job.recordingId,job.segmentIndex]))?.uploadedToBackend)
       return {transcript:'',uploadedToBackend:true,provider:'synap'};
     var recording = null;
+    let audioStage = 'registering recording';
     return safePatchLocalProcessing(processor, job.recordingId, {
       processingStage: 'uploading', processingError: '', processingRetryable: true
     }).then(function () {
+      audioStage = 'reading saved segment';
       return ensureRecording(processor, job.recordingId, signal);
     }).then(function () {
       return Promise.all([
@@ -273,7 +275,11 @@
       var data = values[0]; recording = values[1];
       if (!data.blob && !data.frames.length) throw permanent('Segment has no complete PCM frames.');
       var wav = data.blob || root.DKAudioCodec.wav(data.frames);
-      return transcriptionAudio(processor.store,job,wav,signal).then(function(copy){return copy.arrayBuffer()});
+      audioStage = 'validating upload audio';
+      return transcriptionAudio(processor.store,job,wav,signal).then(function(copy){
+        audioStage = 'reading upload bytes';
+        return root.DKAudioCodec.readBlob(copy);
+      });
     }).then(function (buffer) {
       return sha256Hex(buffer).then(function (digest) {
         var bounds = segmentBounds(recording, job.segmentIndex);
@@ -283,11 +289,13 @@
           'X-Synap-End-Ms': String(bounds.endMs)
         };
         if (digest) headers['X-Synap-Sha256'] = digest;
+        audioStage = 'sending upload';
         return request('/v1/recordings/' + encodeURIComponent(job.recordingId) + '/segments/' + encodeURIComponent(job.segmentIndex), {
           method: 'PUT', headers: headers, body: buffer, signal: signal
         });
       });
     }).then(async function (response) {
+      audioStage = 'saving upload result';
       if(processor.store.atomic)await processor.store.atomic(['segments'],function(stores){
         const get=stores.segments.get([job.recordingId,job.segmentIndex]);
         get.onsuccess=function(){if(get.result){const meta={...get.result,uploadedToBackend:true};delete meta.transcriptionBlob;stores.segments.put(meta)}};
@@ -296,6 +304,9 @@
         detail: { ownerUid: recording.ownerUid, recordingId: job.recordingId, segmentIndex: job.segmentIndex, words: response.words }
       }));
       return { transcript: '', uploadedToBackend: true, provider: 'synap', uploadedAt: new Date().toISOString() };
+    }).catch(function (error) {
+      error.audioStage = audioStage;
+      throw error;
     });
   }
 

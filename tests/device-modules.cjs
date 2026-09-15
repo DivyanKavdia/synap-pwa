@@ -120,3 +120,14 @@ test('an ATT write response is not mistaken for firmware acceptance or successfu
   assert.match(client.error,/did not confirm/);
   assert.equal(written,1,'never automatically repeat a capture after ambiguous acceptance');
 });
+
+test('a camera click joins pending module discovery instead of racing a false disconnected result', async () => {
+  let release, reads = 0;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const context = { canUse: () => false, canUseMedia: () => true,
+    mediaQueue: action => action(), service: { getCharacteristic: async () => ({ readValue: async () => { reads++; await blocked; return descriptor(); } }) } };
+  const client = new Client(context);
+  const poll = client.refresh(), click = client.refresh();
+  assert.equal(poll, click);assert.equal(client.module, null);
+  release();assert.equal(await click, true);assert.equal(client.module.id, 3);assert.equal(reads, 1);
+});

@@ -45,12 +45,50 @@
     if (!Number.isSafeInteger(bytes) || bytes > 0xffffffff - 36) throw audioError('WAV size limit');
     return bytes;
   }
+  async function readBlob(blob) {
+    const valid = (value) => value instanceof ArrayBuffer && value.byteLength === blob.size;
+    let buffer;
+    try {
+      buffer = await blob.arrayBuffer();
+      if (valid(buffer)) return buffer;
+    } catch (_) {}
+    // Some native browser readers can return fewer bytes than Blob.size.
+    // Retry through the independent FileReader API before touching a DataView.
+    if (typeof root.FileReader === 'function') {
+      try {
+        buffer = await new Promise((resolve, reject) => {
+          const reader = new root.FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(reader.error);
+          reader.onabort = () => reject(new Error('Audio read interrupted'));
+          reader.readAsArrayBuffer(blob);
+        });
+        if (valid(buffer)) return buffer;
+      } catch (_) {}
+    }
+    throw Object.assign(
+      new Error(
+        'Saved audio could not be read completely. Retry after reopening Synap; keep this recording.',
+      ),
+      {
+        code: 'audio_read',
+        retryable: true,
+        expectedBytes: blob.size,
+        actualBytes: buffer?.byteLength ?? null,
+      },
+    );
+  }
   // Read only chunk headers. Validation must stay bounded for long recordings
   // and must never silently drop a byte or guess how damaged PCM was aligned.
   async function validateWav(blob) {
     if (!(blob instanceof Blob) || blob.size < 44) throw audioError('invalid WAV header');
     const tag = (view, at) => view.getUint32(at, false);
-    const riff = new DataView(await blob.slice(0, 12).arrayBuffer());
+    const header = async (start, length) => {
+      const buffer = await readBlob(blob.slice(start, start + length));
+      if (buffer.byteLength !== length) throw audioError('incomplete WAV header read');
+      return new DataView(buffer);
+    };
+    const riff = await header(0, 12);
     if (tag(riff, 0) !== 0x52494646 || tag(riff, 8) !== 0x57415645)
       throw audioError('invalid WAV header');
     const end = riff.getUint32(4, true) + 8;
@@ -61,14 +99,14 @@
       chunks = 0;
     while (offset < end) {
       if (offset + 8 > end || ++chunks > 1024) throw audioError('invalid WAV chunks');
-      const chunk = new DataView(await blob.slice(offset, offset + 8).arrayBuffer());
+      const chunk = await header(offset, 8);
       const kind = tag(chunk, 0),
         size = chunk.getUint32(4, true),
         start = offset + 8;
       if (start + size > end) throw audioError('incomplete WAV audio');
       if (kind === 0x666d7420) {
         if (format || size < 16) throw audioError('invalid PCM format');
-        const fmt = new DataView(await blob.slice(start, start + 16).arrayBuffer());
+        const fmt = await header(start, 16);
         if (
           fmt.getUint16(0, true) !== 1 ||
           fmt.getUint16(2, true) !== 1 ||
@@ -127,7 +165,9 @@
       if (
         !total ||
         parts.length !== total ||
-        parts.some((p, i) => p.chunk !== i || p.total !== total || p.transport !== parts[0].transport) ||
+        parts.some(
+          (p, i) => p.chunk !== i || p.total !== total || p.transport !== parts[0].transport,
+        ) ||
         parts.reduce((n, p) => n + p.payload.byteLength, 0) !== PCM_BYTES_PER_FRAME
       ) {
         incomplete++;
@@ -279,6 +319,13 @@
           tx = db.transaction(names, 'readwrite');
         }
         let result, failure;
+        const abort = (error) => {
+          failure ||= error;
+          // Another request listener may already have aborted this transaction.
+          try {
+            tx.abort();
+          } catch (_) {}
+        };
         tx.oncomplete = () => resolve(result);
         // Request errors bubble before tx.error is populated. Keep the cause,
         // and wait for rollback to finish before allowing a recovery attempt.
@@ -293,10 +340,10 @@
               result = v;
             },
             tx,
+            abort,
           );
         } catch (e) {
-          failure = e;
-          tx.abort();
+          abort(e);
         }
       });
     }
@@ -492,7 +539,7 @@
           completeFrames: meta.frameCount || 0,
         };
       if (meta?.pcmBlob) {
-        const pcm = new Uint8Array(await meta.pcmBlob.arrayBuffer());
+        const pcm = new Uint8Array(await readBlob(meta.pcmBlob));
         return {
           blob: wav([pcm]),
           frames: [],
@@ -576,11 +623,11 @@
       pcmBytes(data.frames, PCM_BYTES_PER_FRAME);
       const pcmBlob = new Blob(data.frames, { type: 'application/octet-stream' });
       const consumed = new Set(data.completeSequences || []);
-      await this.atomic(['segments', 'packets', 'jobs'], (s) => {
+      await this.atomic(['segments', 'packets', 'jobs'], (s, result, tx, abort) => {
         const req = s.segments.get([recordingId, index]);
         req.onsuccess = () => {
           const current = req.result || { recordingId, index };
-          s.segments.put({
+          const saved = s.segments.put({
             ...current,
             closed: true,
             compacted: true,
@@ -594,28 +641,39 @@
             firstSequence: data.firstSequence,
             lastSequence: data.lastSequence,
           });
+          // WebKit may dispatch pending IDB callbacks while serializing a
+          // Blob, when this transaction is temporarily inactive. Queue no
+          // dependent requests until the Blob write succeeds. All changes
+          // still commit together, so a failure keeps the original packets.
+          saved.onsuccess = () => {
+            try {
+              const cursor = s.packets
+                .index('segment')
+                .openCursor(this.keys.only([recordingId, index]));
+              cursor.onsuccess = () => {
+                if (cursor.result) {
+                  // Late and incomplete packets are not represented in this snapshot.
+                  if (consumed.has(cursor.result.value.sequence)) cursor.result.delete();
+                  cursor.result.continue();
+                }
+              };
+              if (hasAudio && data.frames.length)
+                for (const kind of ['transcribe', 'summarize']) {
+                  enqueueJob(s.jobs, {
+                    recordingId,
+                    segmentIndex: index,
+                    kind,
+                    dedupe: recordingId + ':' + index + ':' + kind,
+                    state: 'pending',
+                    attempts: 0,
+                    nextAt: 0,
+                  });
+                }
+            } catch (error) {
+              abort(error);
+            }
+          };
         };
-        const cursor = s.packets.index('segment').openCursor(this.keys.only([recordingId, index]));
-        cursor.onsuccess = () => {
-          if (cursor.result) {
-            // Keep incomplete frames and packets that arrived after the
-            // snapshot. They are not represented in the compacted PCM.
-            if (consumed.has(cursor.result.value.sequence)) cursor.result.delete();
-            cursor.result.continue();
-          }
-        };
-        if (hasAudio && data.frames.length)
-          for (const kind of ['transcribe', 'summarize']) {
-            enqueueJob(s.jobs, {
-              recordingId,
-              segmentIndex: index,
-              kind,
-              dedupe: recordingId + ':' + index + ':' + kind,
-              state: 'pending',
-              attempts: 0,
-              nextAt: 0,
-            });
-          }
       });
       return true;
     }
@@ -665,7 +723,7 @@
         capturedFrames += scan.completeFrames;
       }
       const transportFrames = {};
-      const addTransport = counts => {
+      const addTransport = (counts) => {
         for (const kind of ['pcm16', 'adpcm'])
           if (counts?.[kind]) transportFrames[kind] = (transportFrames[kind] || 0) + counts[kind];
       };
@@ -782,7 +840,7 @@
       const pcm = [];
       for (const segment of segments) {
         if (segment.pcmBlob) {
-          pcm.push(new Uint8Array(await segment.pcmBlob.arrayBuffer()));
+          pcm.push(new Uint8Array(await readBlob(segment.pcmBlob)));
           continue;
         }
         const packets = await this.all('packets', 'segment', [record.id, segment.index]);
@@ -906,5 +964,5 @@
   }
 
   root.DKAudioStore = AudioStore;
-  root.DKAudioCodec = { assemble, wav, validateWav, SEGMENT_FRAMES, PCM_BYTES_PER_FRAME };
+  root.DKAudioCodec = { assemble, wav, validateWav, readBlob, SEGMENT_FRAMES, PCM_BYTES_PER_FRAME };
 })(globalThis);
