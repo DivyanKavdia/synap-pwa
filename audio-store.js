@@ -66,10 +66,17 @@
         if (valid(buffer)) return buffer;
       } catch (_) {}
     }
-    throw Object.assign(new Error('Saved audio could not be read completely. Retry after reopening Synap; keep this recording.'), {
-      code: 'audio_read', retryable: true,
-      expectedBytes: blob.size, actualBytes: buffer?.byteLength ?? null,
-    });
+    throw Object.assign(
+      new Error(
+        'Saved audio could not be read completely. Retry after reopening Synap; keep this recording.',
+      ),
+      {
+        code: 'audio_read',
+        retryable: true,
+        expectedBytes: blob.size,
+        actualBytes: buffer?.byteLength ?? null,
+      },
+    );
   }
   // Read only chunk headers. Validation must stay bounded for long recordings
   // and must never silently drop a byte or guess how damaged PCM was aligned.
@@ -158,7 +165,9 @@
       if (
         !total ||
         parts.length !== total ||
-        parts.some((p, i) => p.chunk !== i || p.total !== total || p.transport !== parts[0].transport) ||
+        parts.some(
+          (p, i) => p.chunk !== i || p.total !== total || p.transport !== parts[0].transport,
+        ) ||
         parts.reduce((n, p) => n + p.payload.byteLength, 0) !== PCM_BYTES_PER_FRAME
       ) {
         incomplete++;
@@ -310,6 +319,13 @@
           tx = db.transaction(names, 'readwrite');
         }
         let result, failure;
+        const abort = (error) => {
+          failure ||= error;
+          // Another request listener may already have aborted this transaction.
+          try {
+            tx.abort();
+          } catch (_) {}
+        };
         tx.oncomplete = () => resolve(result);
         // Request errors bubble before tx.error is populated. Keep the cause,
         // and wait for rollback to finish before allowing a recovery attempt.
@@ -324,10 +340,10 @@
               result = v;
             },
             tx,
+            abort,
           );
         } catch (e) {
-          failure = e;
-          tx.abort();
+          abort(e);
         }
       });
     }
@@ -607,7 +623,7 @@
       pcmBytes(data.frames, PCM_BYTES_PER_FRAME);
       const pcmBlob = new Blob(data.frames, { type: 'application/octet-stream' });
       const consumed = new Set(data.completeSequences || []);
-      await this.atomic(['segments', 'packets', 'jobs'], (s) => {
+      await this.atomic(['segments', 'packets', 'jobs'], (s, result, tx, abort) => {
         const req = s.segments.get([recordingId, index]);
         req.onsuccess = () => {
           const current = req.result || { recordingId, index };
@@ -630,26 +646,32 @@
           // dependent requests until the Blob write succeeds. All changes
           // still commit together, so a failure keeps the original packets.
           saved.onsuccess = () => {
-            const cursor = s.packets.index('segment').openCursor(this.keys.only([recordingId, index]));
-            cursor.onsuccess = () => {
-              if (cursor.result) {
-                // Late and incomplete packets are not represented in this snapshot.
-                if (consumed.has(cursor.result.value.sequence)) cursor.result.delete();
-                cursor.result.continue();
-              }
-            };
-            if (hasAudio && data.frames.length)
-              for (const kind of ['transcribe', 'summarize']) {
-                enqueueJob(s.jobs, {
-                  recordingId,
-                  segmentIndex: index,
-                  kind,
-                  dedupe: recordingId + ':' + index + ':' + kind,
-                  state: 'pending',
-                  attempts: 0,
-                  nextAt: 0,
-                });
-              }
+            try {
+              const cursor = s.packets
+                .index('segment')
+                .openCursor(this.keys.only([recordingId, index]));
+              cursor.onsuccess = () => {
+                if (cursor.result) {
+                  // Late and incomplete packets are not represented in this snapshot.
+                  if (consumed.has(cursor.result.value.sequence)) cursor.result.delete();
+                  cursor.result.continue();
+                }
+              };
+              if (hasAudio && data.frames.length)
+                for (const kind of ['transcribe', 'summarize']) {
+                  enqueueJob(s.jobs, {
+                    recordingId,
+                    segmentIndex: index,
+                    kind,
+                    dedupe: recordingId + ':' + index + ':' + kind,
+                    state: 'pending',
+                    attempts: 0,
+                    nextAt: 0,
+                  });
+                }
+            } catch (error) {
+              abort(error);
+            }
           };
         };
       });
@@ -701,7 +723,7 @@
         capturedFrames += scan.completeFrames;
       }
       const transportFrames = {};
-      const addTransport = counts => {
+      const addTransport = (counts) => {
         for (const kind of ['pcm16', 'adpcm'])
           if (counts?.[kind]) transportFrames[kind] = (transportFrames[kind] || 0) + counts[kind];
       };
