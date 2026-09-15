@@ -103,7 +103,7 @@ test('recording retries cover the recovery window while idle retries remain boun
 });
 test('capture metrics batch frame updates and the clock only writes changed seconds',()=>{
   const timers=[];let renders=0,writes=0,text='00:01';
-  const c={metricsTimer:null,window:{setTimeout(fn){timers.push(fn);return timers.length}},renderMetrics(){renders++},recordingConfirmed:true,recordingStartedAt:1,performance:{now:()=>1501},ui:{timer:{get textContent(){return text},set textContent(v){text=v;writes++}}},formatClock:()=> '00:01',appState:'starting'};
+  const c={metricsTimer:null,window:{setTimeout(fn){timers.push(fn);return timers.length}},renderMetrics(){renders++},recordingConfirmed:true,recordingStartedAt:1,recordingStoppedAt:null,document:{body:{dataset:{}}},performance:{now:()=>1501},ui:{timer:{get textContent(){return text},set textContent(v){text=v;writes++}}},formatClock:()=> '00:01',appState:'starting'};
   vm.createContext(c);vm.runInContext(slice('  function updateMetrics()', '  function renderMetrics()'),c);
   for(let i=0;i<20;i++)c.updateMetrics();assert.equal(timers.length,1);timers[0]();assert.equal(renders,1);
   c.sessionStats={completeFrames:20};

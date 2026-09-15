@@ -14,6 +14,21 @@
   const ready = (info, feature) =>
     supports(info, feature) && !info.legacy && Boolean(info.ready & FLAGS[feature]);
   const isChakshu = (info) => profile(info)?.adapter === 'xiao-sense' && !info.legacy;
+  function cameraConnection(connection, client) {
+    if (!connection) return { state: 'disconnected', message: 'Connect Chakshu for camera capture.' };
+    if (!client || client.closed || client.context !== connection)
+      return { state: 'detecting', message: 'Pendant connected. Reading its camera capabilities…' };
+    const info = client.module;
+    if (!info)
+      return { state: client.error ? 'unavailable' : 'detecting', message: client.error
+        ? 'Pendant connected, but camera capabilities could not be read. Refresh hardware status in Settings.'
+        : 'Pendant connected. Reading its camera capabilities…' };
+    if (!isChakshu(info))
+      return { state: 'unsupported', message: (profile(info)?.name || 'This pendant') + ' is connected. Connect Chakshu for camera capture.' };
+    if (!connection.deviceId)
+      return { state: 'unavailable', message: 'Chakshu connected, but its device ID could not be read. Reconnect to identify it.' };
+    return { state: 'connected', message: 'Chakshu connected.' };
+  }
   const protocol = (info, key) =>
     Boolean(isChakshu(info) && profile(info).protocols[key] === 1 && info[key + 'Version'] === 1);
   const hasMedia = (info) => protocol(info, 'media');
@@ -45,6 +60,7 @@
     supports,
     ready,
     isChakshu,
+    cameraConnection,
     hasMedia,
     hasVoice,
     canCapture,

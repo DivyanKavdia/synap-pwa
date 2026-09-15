@@ -38,7 +38,7 @@ const server=createStaticServer(path.resolve(__dirname,'..'));
       await page.waitForTimeout(2000);
       const absent=await page.evaluate(()=>({clock:document.getElementById('timer').textContent,received:SynapAppControls.recordingState().receivedMs,
         phase:SynapAppControls.recordingState().phase,canMark:SynapAppControls.recordingState().canMark,label:document.querySelector('.header-status-text').textContent}));
-      assert.equal(absent.clock,before.clock);assert.equal(absent.received,before.received);
+      assert.notEqual(absent.clock,before.clock);assert.equal(absent.received,before.received);
       assert.equal(absent.phase,'interrupted');assert.equal(absent.canMark,false);assert.equal(absent.label,'Waiting');
       if(process.env.SYNAP_BACKGROUND_SCREENSHOT&&mode==='s3')await page.screenshot({path:process.env.SYNAP_BACKGROUND_SCREENSHOT,fullPage:true});
       await page.evaluate(()=>{bleFixture.blockAudio(false);bleFixture.show();});

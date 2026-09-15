@@ -23,8 +23,17 @@
   let associatedConnection = null;
   const MAX_VIDEO_BYTES = 32 * 1024 * 1024;
   const notify = () => root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
-  const connected = () =>
-    capabilities.isChakshu(moduleInfo()) ? root.SynapDevices?.connection : null;
+  const connectionStatus = () => capabilities.cameraConnection(
+    root.SynapDevices?.connection, root.SynapModules?.client,
+  );
+  const connected = () => connectionStatus().state === 'connected' ? root.SynapDevices.connection : null;
+  async function prepareCamera() {
+    const physical = root.SynapDevices?.connection, expected = owner;
+    if (physical && !connected()) await root.SynapModules?.refresh();
+    check(expected);
+    if (physical !== root.SynapDevices?.connection) throw Error('Pendant connection changed. Retry capture.');
+    if (!connected()) throw Error(connectionStatus().message);
+  }
   const ready = () => Boolean(owner && devices.some((device) => device.target === TARGET));
   function check(expected) {
     if (!expected || uid() !== expected || owner !== expected)
@@ -64,7 +73,7 @@
       throw Error('Finish or cancel voice model installation first.');
     requireAccess();
     const next = connected();
-    if (!next?.deviceId) throw Error('Connect your associated Chakshu first.');
+    if (!next?.deviceId) throw Error(connectionStatus().message);
     if (!devices.some((device) => device.deviceId === next.deviceId))
       throw Error('Associate this Chakshu with your account first.');
     if (!capabilities.hasMedia(moduleInfo()))
@@ -206,6 +215,7 @@
       return row.id;
     }
     return operation(async (signal) => {
+      await prepareCamera();
       const owned = requireAccess(),
         device = connected(),
         client = camera('photo');
@@ -308,6 +318,8 @@
     }
   }
   async function startLive(inference = true) {
+    if (session || working || offline) throw Error('Finish the current capture first.');
+    await prepareCamera();
     if (session || working || offline) throw Error('Finish the current capture first.');
     const owned = requireAccess(),
       client = camera('video'),
@@ -695,6 +707,7 @@
         owner,
         available: ready(),
         connected: Boolean(connected()),
+        connectionStatus: connectionStatus(),
         cameraReady: capabilities.canCapture(moduleInfo(), 'photo'),
         videoReady: capabilities.canCapture(moduleInfo(), 'video'),
         offlineReady: capabilities.canCapture(moduleInfo(), 'video', true),

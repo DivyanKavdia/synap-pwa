@@ -71,7 +71,7 @@
     reception.id = 'audioReceptionStatus';
     reception.setAttribute('role', 'status');
     if (timer) {
-      timer.setAttribute('aria-label', 'Audio received');
+      timer.setAttribute('aria-label', 'Elapsed recording time');
       sessionBar.append(timer, reception);
     }
     sessionBar.append(feedback, mark);
@@ -222,7 +222,7 @@
           ? 'Recovering audio…'
           : waiting
             ? 'No audio arriving'
-            : 'audio received';
+            : (document.body.dataset.receivedAudioClock || '00:00') + ' audio received';
       reception.dataset.waiting = String(waiting);
       if (sessionBar.hidden) feedback.textContent = '';
       status.classList.toggle('is-connected', connected);
@@ -279,7 +279,7 @@
       const unavailable = !media?.available
         ? 'Unavailable — associate Chakshu with this account'
         : !media?.connected
-          ? 'Connect Chakshu to capture'
+          ? media?.connectionStatus?.message || 'Connect Chakshu to capture'
           : !media?.mediaSupported
             ? 'Update Chakshu firmware for camera capture'
             : 'Camera or microphone unavailable. Check device hardware.';
@@ -346,7 +346,7 @@
         updateDesktopClock();
       } else if (timer) {
         timer.hidden = false;
-        timer.setAttribute('aria-label', 'Audio received');
+        timer.setAttribute('aria-label', 'Elapsed recording time');
       }
       if (desktop?.phase === 'recording' && !desktopClock)
         desktopClock = setInterval(updateDesktopClock, 1000);
@@ -365,6 +365,7 @@
           'data-startup',
           'data-recording-interrupted',
           'data-audio-delivery',
+          'data-received-audio-clock',
         ],
       });
       new MutationObserver(sync).observe(connect, {

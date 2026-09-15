@@ -45,12 +45,43 @@
     if (!Number.isSafeInteger(bytes) || bytes > 0xffffffff - 36) throw audioError('WAV size limit');
     return bytes;
   }
+  async function readBlob(blob) {
+    const valid = (value) => value instanceof ArrayBuffer && value.byteLength === blob.size;
+    let buffer;
+    try {
+      buffer = await blob.arrayBuffer();
+      if (valid(buffer)) return buffer;
+    } catch (_) {}
+    // Some native browser readers can return fewer bytes than Blob.size.
+    // Retry through the independent FileReader API before touching a DataView.
+    if (typeof root.FileReader === 'function') {
+      try {
+        buffer = await new Promise((resolve, reject) => {
+          const reader = new root.FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(reader.error);
+          reader.onabort = () => reject(new Error('Audio read interrupted'));
+          reader.readAsArrayBuffer(blob);
+        });
+        if (valid(buffer)) return buffer;
+      } catch (_) {}
+    }
+    throw Object.assign(new Error('Saved audio could not be read completely. Retry after reopening Synap; keep this recording.'), {
+      code: 'audio_read', retryable: true,
+      expectedBytes: blob.size, actualBytes: buffer?.byteLength ?? null,
+    });
+  }
   // Read only chunk headers. Validation must stay bounded for long recordings
   // and must never silently drop a byte or guess how damaged PCM was aligned.
   async function validateWav(blob) {
     if (!(blob instanceof Blob) || blob.size < 44) throw audioError('invalid WAV header');
     const tag = (view, at) => view.getUint32(at, false);
-    const riff = new DataView(await blob.slice(0, 12).arrayBuffer());
+    const header = async (start, length) => {
+      const buffer = await readBlob(blob.slice(start, start + length));
+      if (buffer.byteLength !== length) throw audioError('incomplete WAV header read');
+      return new DataView(buffer);
+    };
+    const riff = await header(0, 12);
     if (tag(riff, 0) !== 0x52494646 || tag(riff, 8) !== 0x57415645)
       throw audioError('invalid WAV header');
     const end = riff.getUint32(4, true) + 8;
@@ -61,14 +92,14 @@
       chunks = 0;
     while (offset < end) {
       if (offset + 8 > end || ++chunks > 1024) throw audioError('invalid WAV chunks');
-      const chunk = new DataView(await blob.slice(offset, offset + 8).arrayBuffer());
+      const chunk = await header(offset, 8);
       const kind = tag(chunk, 0),
         size = chunk.getUint32(4, true),
         start = offset + 8;
       if (start + size > end) throw audioError('incomplete WAV audio');
       if (kind === 0x666d7420) {
         if (format || size < 16) throw audioError('invalid PCM format');
-        const fmt = new DataView(await blob.slice(start, start + 16).arrayBuffer());
+        const fmt = await header(start, 16);
         if (
           fmt.getUint16(0, true) !== 1 ||
           fmt.getUint16(2, true) !== 1 ||
@@ -492,7 +523,7 @@
           completeFrames: meta.frameCount || 0,
         };
       if (meta?.pcmBlob) {
-        const pcm = new Uint8Array(await meta.pcmBlob.arrayBuffer());
+        const pcm = new Uint8Array(await readBlob(meta.pcmBlob));
         return {
           blob: wav([pcm]),
           frames: [],
@@ -782,7 +813,7 @@
       const pcm = [];
       for (const segment of segments) {
         if (segment.pcmBlob) {
-          pcm.push(new Uint8Array(await segment.pcmBlob.arrayBuffer()));
+          pcm.push(new Uint8Array(await readBlob(segment.pcmBlob)));
           continue;
         }
         const packets = await this.all('packets', 'segment', [record.id, segment.index]);
@@ -906,5 +937,5 @@
   }
 
   root.DKAudioStore = AudioStore;
-  root.DKAudioCodec = { assemble, wav, validateWav, SEGMENT_FRAMES, PCM_BYTES_PER_FRAME };
+  root.DKAudioCodec = { assemble, wav, validateWav, readBlob, SEGMENT_FRAMES, PCM_BYTES_PER_FRAME };
 })(globalThis);

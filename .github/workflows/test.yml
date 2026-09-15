@@ -34,6 +34,19 @@ jobs:
           path: artifacts/workflows
           if-no-files-found: ignore
 
+  webkit-audio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright install --with-deps webkit
+      - run: node tools/wav-upload-smoke.cjs
+        env:
+          SYNAP_STORAGE_BROWSER: webkit
+
   backend:
     runs-on: ubuntu-latest
     defaults:
