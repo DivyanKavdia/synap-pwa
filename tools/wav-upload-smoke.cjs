@@ -8,7 +8,7 @@ setTimeout(() => { console.error('WAV upload test exceeded 120 seconds');process
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + server.address().port;
   const browser = process.env.SYNAP_STORAGE_BROWSER === 'webkit'
-    ? await require('playwright').webkit.launch() : await launchChromium();
+    ? await require('playwright').webkit.launchPersistentContext('', { headless: true }) : await launchChromium();
   try {
     const page = await browser.newPage();
     page.on('console', message => console.log('browser:', message.text()));
@@ -19,6 +19,7 @@ setTimeout(() => { console.error('WAV upload test exceeded 120 seconds');process
     await page.goto(origin + '/__upload');
     const id = await page.evaluate(async () => {
       const store = new DKAudioStore(SynapRecordingJournal.options({ transport: true }));
+      await store.verifyWritable();
       const id = await store.begin('Upload read fixture');
       for (let sequence = 0; sequence < 520; sequence++) {
         if (sequence === 333) continue;
