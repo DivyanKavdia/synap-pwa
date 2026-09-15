@@ -190,6 +190,8 @@
   let recordingTransportPreserved = false;
   let recordingStopRequested = false;
   let recordingStopOperation = null;
+  let recordingStopWatch = null;
+  let foregroundRecoveryAttempted = false;
   let recordingDisconnectedAt = 0;
   let recordingReconnectDeadline = null;
   let recordingResumeDeviceId = null;
@@ -965,12 +967,13 @@
         }, "Restore background audio notifications");
         if (!ownsRecovery()) return;
         const replayed = await globalThis.SynapDisconnectProtection?.replay?.(checkpoint.lastSequence ?? 0xffff, ownsRecovery);
-        log("Background audio recovery", { replayed: Boolean(replayed), sequence: checkpoint.lastSequence,
+        log(checkpoint.foreground ? "Foreground audio recovery" : "Background audio recovery", { replayed: Boolean(replayed), sequence: checkpoint.lastSequence,
           capacityMs: globalThis.SynapDisconnectProtection?.capacityMs() || 0 });
-        if (!replayed && ownsRecovery()) toast("Audio was interrupted while the app was away. Keep Synap visible; update the pendant for short-gap recovery.", "error");
+        if (!replayed && ownsRecovery()) toast("Audio delivery was interrupted. Update the pendant for short-gap recovery.", "error");
       } catch (error) {
-        if (ownsRecovery() && error.name !== "AbortError") log("Background audio recovery failed", friendlyError(error));
+        if (ownsRecovery() && error.name !== "AbortError") log(checkpoint.foreground ? "Foreground audio recovery failed" : "Background audio recovery failed", friendlyError(error));
       } finally {
+        if (checkpoint.foreground && ownsRecovery()) await snapshotStalledAudio(ownsRecovery);
         if (ownsRecovery()) setAudioDelivery(performance.now() - lastCompleteAudioAt > 1500 ? "waiting" : "receiving");
       }
     })();
@@ -980,6 +983,25 @@
       if (backgroundCapture === checkpoint) backgroundCapture = null;
     });
     return work;
+  }
+
+  async function snapshotStalledAudio(ownsRecovery) {
+    // One snapshot after missing-frame evidence, never polling a healthy stream.
+    // Capture/TX counters distinguish microphone failure from notification loss.
+    const current = globalThis.SynapDevices?.connection;
+    const decode = globalThis.SynapEnhancements?.decodePendantDiagnostics;
+    if (!current || !decode || !ownsRecovery()) return;
+    try {
+      const characteristic = await queueGattOperation(() => ownsRecovery()
+        ? current.service.getCharacteristic("4fa1234d-0000-1000-8000-00805f9b34fb") : null,
+      "Find stalled audio diagnostics");
+      if (!characteristic || !ownsRecovery()) return;
+      const value = await queueGattOperation(() => ownsRecovery() ? characteristic.readValue() : null,
+        "Read stalled audio diagnostics");
+      if (value && ownsRecovery()) log("Stalled audio firmware counters", decode(value));
+    } catch (error) {
+      if (ownsRecovery()) log("Stalled audio diagnostics unavailable", friendlyError(error));
+    }
   }
 
   function clearReconnectTimer(resetAttempts) {
@@ -1801,15 +1823,15 @@
     setAppState("stopping");
     updateTimer();
     clearStartTimeout();
+    watchRecordingStop(sessionId);
 
     try {
-      const drainDeadline=Date.now()+(globalThis.SynapDisconnectProtection?.capacityMs()?35000:0);
-      for (let attempt = 0; attempt < 3 || Date.now()<drainDeadline; attempt += 1) {
+      for (let attempt = 0; ownsStop(); attempt += 1) {
         if (!ownsStop()) return;
         if (!isGattConnected()) break;
         // Once the recovery service confirms Stop, let it drain. Rewriting
         // Stop competes with the same audio transfer we are waiting to save.
-        if (attempt === 0 || !globalThis.SynapDisconnectProtection?.isDraining?.())
+        if (!globalThis.SynapDisconnectProtection?.isDraining?.())
           await writeCommand(CMD_STOP);
         await delay(attempt<3?150:700);
         if (!ownsStop()) return;
@@ -1836,6 +1858,43 @@
     await finalizeRecording("stop-unconfirmed", sessionId);
   }
 
+  function clearRecordingStopWatch() {
+    if (recordingStopWatch) clearInterval(recordingStopWatch.timer);
+    recordingStopWatch = null;
+    delete document.body.dataset.recordingFinishing;
+  }
+
+  function watchRecordingStop(sessionId) {
+    if (recordingStopWatch?.sessionId === sessionId) return;
+    clearRecordingStopWatch();
+    const watch = { sessionId, startedAt: performance.now(), progressAt: performance.now(),
+      frames: sessionStats.completeFrames, timer: null };
+    recordingStopWatch = watch;
+    document.body.dataset.recordingFinishing = "true";
+    // This recording owns the deadline. GATT cleanup and reconnect must not
+    // reset it; a missing Stop acknowledgement cannot leave the UI paused forever.
+    watch.timer = window.setInterval(() => {
+      if (!isCurrentSession(sessionId) || finalizing || !recordingStopRequested) {
+        if (recordingStopWatch === watch) clearRecordingStopWatch();
+        return;
+      }
+      const now = performance.now();
+      if (sessionStats.completeFrames > watch.frames) {
+        watch.frames = sessionStats.completeFrames;
+        watch.progressAt = now;
+      }
+      if (now - watch.startedAt < 35000 && now - watch.progressAt < 8000) return;
+      clearRecordingStopWatch();
+      log("Recording Stop deadline reached", { session: sessionId,
+        elapsedMs: Math.round(now - watch.startedAt), receivedFrames: watch.frames,
+        receivedPackets: sessionStats.packetsReceived, state: appState });
+      clearReconnectTimer(true);
+      if (isGattConnected()) disconnectGatt("Recording Stop timed out; preserving received audio");
+      toast("Could not finish receiving audio. Saving what arrived; reconnect the pendant before recording again.", "error");
+      void finalizeRecording("stop-unconfirmed", sessionId);
+    }, 250);
+  }
+
   function scheduleFinalize(delayMs, reason, sessionId = recordingSessionId) {
     if (!isCurrentSession(sessionId) || finalizing) return;
     clearFinalizeTimer();
@@ -1847,6 +1906,7 @@
 
   async function finalizeRecording(reason, sessionId = recordingSessionId) {
     if (!isCurrentSession(sessionId) || finalizing) return;
+    clearRecordingStopWatch();
     if (recordingCounterAmbiguous) reason = "background-audio-interrupted";
     finalizedSessionId = sessionId;
     finalizing = true;
@@ -1934,6 +1994,8 @@
   }
 
   function resetCollector() {
+    clearRecordingStopWatch();
+    foregroundRecoveryAttempted = false;
     recordingTransportPreserved = false;
     recordingStopRequested = false;
     globalThis.SynapDisconnectProtection?.resetRecording();
@@ -2289,6 +2351,19 @@
     const now = performance.now();
     if (appState === "recording" && !recordingReconnectPending && !backgroundRecoveryPromise) {
       setAudioDelivery(now - lastCompleteAudioAt > 1500 ? "waiting" : "receiving");
+    }
+    if (appState === "recording" && document.visibilityState === "visible" &&
+        !recordingReconnectPending && !recordingStopRequested &&
+        now - foregroundAt > 1500 && now - lastCompleteAudioAt > 4000 &&
+        !foregroundRecoveryAttempted && !backgroundRecoveryPromise) {
+      foregroundRecoveryAttempted = true;
+      log("Audio delivery stalled; retrying notifications and buffered audio", {
+        receivedFrames: sessionStats.completeFrames, receivedPackets: sessionStats.packetsReceived,
+        firmwareBuild: globalThis.SynapPowerLifecycle?.firmwareBuild || null
+      });
+      void recoverBackgroundAudio({ foreground: true, attempted: false,
+        lastSequence: globalThis.SynapDisconnectProtection?.lastSequence?.() ?? lastCompleteSequence });
+      return;
     }
     if (appState === "recording" && document.visibilityState === "visible" &&
         now - foregroundAt > FOREGROUND_STALL_GRACE_MS &&
@@ -3778,6 +3853,7 @@
       clearStartTimeout();
       setAppState("stopping");
       updateTimer();
+      void stopRecording(true);
     });
     bindCoreControls();
     document.querySelectorAll("[data-day-step]").forEach(function (button) {

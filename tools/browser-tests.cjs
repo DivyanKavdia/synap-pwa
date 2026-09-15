@@ -12,6 +12,7 @@ const suites = [
   ['audio-storage'],
   ['wav-upload'],
   ['background-recording'],
+  ['audio-stall'],
   ['workflow', { SYNAP_WORKFLOW_OUTPUT: 'artifacts/workflows' }],
   ['ui', { SYNAP_UI_OUTPUT: 'artifacts/workflows/ui' }],
   ['transcript', { SYNAP_TRANSCRIPT_OUTPUT: 'artifacts/workflows/transcripts' }],
