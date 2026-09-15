@@ -1,7 +1,8 @@
 /* Visuals never enter the audio journal. Every row belongs to one account. */
 (function (root) {
   'use strict';
-  const TARGET = 'xiao-esp32s3-sense-8m';
+  const profiles = root.SynapDeviceProfiles || require('../profiles.js');
+  const TARGET = profiles.BY_MODULE[3].target;
   function filterMedia(rows, { kind = 'all', query = '', favourites = false } = {}) {
     const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
     return rows.filter((row) => {

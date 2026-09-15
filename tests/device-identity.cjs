@@ -1,6 +1,6 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
-const devices = require('../device-identity.js');
+const devices = require('../devices/identity.js');
 const A = 'SYNAP-AABBCCDDEEFF', B = 'SYNAP-112233445566';
 const value = id => new DataView(new TextEncoder().encode(id).buffer);
 function storage() { const data = new Map(); return { data, getItem: k => data.get(k) ?? null, setItem: (k,v) => data.set(k,v) }; }

@@ -29,10 +29,10 @@ test('PWA receives explicit app-owned GATT service for dedicated EVENT telemetry
   const sw=fs.readFileSync(path.join(root,'sw.js'),'utf8');
   const touch=fs.readFileSync(path.join(root,'touch-event-bridge.js'),'utf8');
   const events=fs.readFileSync(path.join(root,'event-channel.js'),'utf8');
-  const identity=fs.readFileSync(path.join(root,'device-identity.js'),'utf8');
+  const identity=fs.readFileSync(path.join(root,'devices/identity.js'),'utf8');
   const memoryFix=fs.readFileSync(path.join(root,'memory-ui-fix.js'),'utf8');
   const compat=fs.readFileSync(path.join(root,'runtime-compat.js'),'utf8');
-  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell106-chakshu-capture'/);
+  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell107-devices'/);
   assert.match(sw,/\.\/runtime-compat\.js/);
   assert.match(sw,/\.\/processing-recovery\.js/);
   assert.match(sw,/\.\/ask-synap\.js/);

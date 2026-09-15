@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "node tools/serve.cjs",
-    "test": "node --test tests/*.cjs",
+    "test": "node tools/device-catalog.cjs --check && node --test tests/*.cjs",
     "test:browser": "node tools/browser-tests.cjs",
     "test:backend": "npm test --prefix backend",
     "typecheck": "npm run typecheck --prefix backend",

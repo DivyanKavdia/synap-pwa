@@ -20,9 +20,11 @@ function harness(){
   c.globalThis=c;c.window=c;vm.createContext(c);
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..','recording/bluetooth-session.js'),'utf8'),c);
   vm.runInContext(slice('  function optionalGattAllowed(', '  async function writeCommand('),c);
-  vm.runInContext(read('device-identity.js'),c);
+  vm.runInContext(read('devices/identity.js'),c);
   vm.runInContext(read('event-channel.js'),c);
-  const battery=read('battery-popover-fix.js');vm.runInContext(battery.slice(battery.indexOf('/* Standby requires')),c);
+  vm.runInContext(read('devices/profiles.js'),c);
+  vm.runInContext(read('devices/capabilities.js'),c);
+  vm.runInContext(read('devices/power.js'),c);
   async function io(name,value){active++;maximum=Math.max(maximum,active);calls.push(name);await tick();active--;return value}
   const events=new Set();
   const eventCharacteristic={addEventListener(t,f){events.add(f)},removeEventListener(t,f){events.delete(f)},startNotifications:()=>io('notify'),readValue:()=>io('event-read',new DataView(new ArrayBuffer(0)))};
@@ -151,3 +153,18 @@ test('a queued resume rechecks the recording before writing START',async()=>{
   assert.match(app,/resumingSessionId !== null && \(finalizing \|\| !isCurrentSession\(resumingSessionId\)\)/);
   assert.match(app,/writeCommand\(CMD_START, assertConnection\)/);
 });
+
+for (const [id, supportsStandby] of [[1,true],[2,true],[3,false]]) {
+  test(`module ${id} follows its advertised standby policy`, async()=>{
+    const h=harness(), profile=h.c.SynapDeviceProfiles.BY_MODULE[id];
+    h.publish();
+    h.c.dispatchEvent(new h.c.CustomEvent('synap-event-packet',{detail:{hex:'e2 01 01 00 82 04'}}));
+    assert([...h.timers.values()].some(t=>t.ms===30000),'legacy standby is scheduled before module discovery');
+    h.c.SynapModules={client:{module:{id,target:profile.target,supported:1023,ready:1023}}};
+    h.c.dispatchEvent(new h.c.CustomEvent('synap-module-changed'));
+    const standby=[...h.timers.values()].find(t=>t.ms===30000);
+    assert.equal(Boolean(standby),supportsStandby,'catalog bounds advertised firmware flags');
+    if(standby)await standby.fn();
+    assert.equal(h.calls.includes('standby:3,2'),supportsStandby);
+  });
+}

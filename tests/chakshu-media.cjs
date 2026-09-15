@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test'),
   assert = require('node:assert/strict');
-const { windowFrames, explainWords, splitMJPEG, filterMedia } = require('../chakshu-store.js');
+const { windowFrames, explainWords, splitMJPEG, filterMedia } = require('../devices/chakshu/store.js');
 test('gallery search combines titles, notes and descriptions with kind and favourite filters', () => {
   const rows = [
     {
@@ -22,7 +22,7 @@ test('gallery search combines titles, notes and descriptions with kind and favou
   assert.deepEqual(ids({ query: '<script>' }), []);
   assert.deepEqual(ids({}), ['photo', 'video', 'old']);
 });
-const { decode, Client } = require('../chakshu-transfer.js');
+const { decode, Client } = require('../devices/chakshu/transfer.js');
 test('explain uses only the closest frame and at most two neighbours on each side', () => {
   const frames = Array.from({ length: 100 }, (_, i) => ({ atMs: i * 500, index: i }));
   assert.deepEqual(

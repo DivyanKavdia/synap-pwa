@@ -25,6 +25,7 @@ function fixture({
     setTimeout,
     Date,
   };
+  vm.runInNewContext(fs.readFileSync('devices/profiles.js','utf8'), realm);
   vm.runInNewContext(source, realm);
   const api = realm.SynapOTA,
     bytes = new Uint8Array(8192),
