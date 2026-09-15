@@ -105,6 +105,10 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
         await page.waitForFunction(() => document.body.dataset.state === 'stopping');
         assert.equal(await page.locator('.header-status-text').textContent(), 'Finishing');
         if (mode === 'stop-disconnect') {
+          // The UI enters stopping before the native STOP write runs. This
+          // scenario interrupts an acknowledged drain; wait for that firmware
+          // acknowledgement so a fast runner cannot disconnect before STOP.
+          await page.waitForFunction(() => SynapDisconnectProtection.isDraining());
           await page.evaluate(() => {
             localStorage.setItem('dk-pendant-auto-reconnect', 'on');
             bleFixture.disconnect();
