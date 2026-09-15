@@ -43,6 +43,7 @@
       flashMiB: value.getUint8(12),
       psramMiB: value.getUint8(13),
       mediaVersion: value.getUint8(14),
+      mediaFeatures: profile.id === 3 ? value.getUint8(16) : 0,
       voiceVersion: value.getUint8(15),
       legacy: false,
     });
@@ -222,8 +223,7 @@
       }
     }
     async run(operation) {
-      if (root.SynapChakshu?.busy)
-        throw Error('Finish the current capture first.');
+      if (root.SynapChakshu?.busy) throw Error('Finish the current capture first.');
       if (![1, 2, 3, 4].includes(operation) || !capabilities.isChakshu(this.module))
         throw Error('Connect Chakshu first.');
       if (this.pending || this.busy) throw Error('Wait for the current hardware check.');

@@ -7,6 +7,7 @@ const suites = [
   ['startup'],
   ['chakshu'],
   ['chakshu-library'],
+  ['chakshu-sd'],
   ['layout'],
   ['first-memory'],
   ['audio-storage'],

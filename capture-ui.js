@@ -1,7 +1,7 @@
 /* Product-facing capture controls. Core BLE/recording behavior remains in app.js. */
 (function () {
   'use strict';
-  globalThis.SynapCaptureUIRevision = '1.0.0-chakshu-core4';
+  globalThis.SynapCaptureUIRevision = '1.0.0-chakshu-core5';
   const TAGLINE = 'Stay present. Keep the memory.';
   const PUBLIC_VERSION = '1.0.0';
   const logoSource = () =>
@@ -281,8 +281,10 @@
         media?.connected &&
         !busy &&
         !mediaPending &&
+        !media?.wifi?.active &&
         !media?.working &&
         !window.SynapModules?.busy;
+      if (media?.wifi?.active) toggle.disabled = true;
       photo.disabled =
         !visualReady || !media?.cameraReady || media?.offline || media?.session?.phase === 'saving';
       const unavailable = !media?.available

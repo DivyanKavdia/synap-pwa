@@ -324,3 +324,25 @@
 .visual-library .visual-help[open] summary::before {
   content: '−';
 }
+
+.visual-wifi {
+  padding: 16px;
+  border: 1px solid var(--border, #b7c8bb);
+  border-radius: 16px;
+  margin: 12px 0;
+}
+.visual-wifi code {
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.visual-wifi a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid currentColor;
+  border-radius: 12px;
+}
+.visual-wifi[hidden] {
+  display: none;
+}

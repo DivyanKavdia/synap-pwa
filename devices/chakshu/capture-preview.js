@@ -9,6 +9,7 @@
     epoch = 0,
     rendering = 0,
     busy = false,
+    sdCapture = false,
     url = null,
     frameKey = '',
     note = '';
@@ -26,6 +27,7 @@
     release();
     mediaId = null;
     mode = '';
+    sdCapture = false;
     owner = '';
     note = '';
   }
@@ -86,37 +88,58 @@
           : 'Taking camera image…'
         : '';
     const stopping = state.session?.phase === 'saving';
+    if (mode === 'video' && state.offline) sdCapture = true;
+    const sd = sdCapture && !mediaId && !state.session && state.offlineStatus;
     $('capturePreviewWaiting').textContent =
       state.error ||
       note ||
+      (sd
+        ? state.offline
+          ? 'Video is recording on the SD card.'
+          : 'SD recording finished.'
+        : '') ||
       receiving ||
       (active ? 'Waiting for the first video frame…' : 'No camera image yet.');
     $('capturePreviewStatus').textContent =
       note ||
       state.error ||
-      (stopping
-        ? 'Saving video and audio…'
-        : receiving
-          ? receiving
-          : active
-            ? frame
-              ? 'Recording · ' + root.SynapChakshuPlayer.timeLabel(frame.atMs)
-              : 'Preparing video and separate audio…'
-            : row
-              ? row.kind === 'video'
-                ? 'Video saved. Audio is saved separately.'
-                : 'Photo saved to your library.'
-              : busy
-                ? 'Taking photo…'
-                : 'Capture unavailable.');
+      (sd
+        ? state.offline
+          ? 'Recording to SD · ' +
+            root.SynapChakshuPlayer.timeLabel(sd.audioMs || 0) +
+            ' · ' +
+            (sd.frames || 0) +
+            ' frames'
+          : sd.error
+            ? 'Partial recording kept on SD.'
+            : 'Video and audio saved to SD.'
+        : stopping
+          ? 'Saving video and audio…'
+          : receiving
+            ? receiving
+            : active
+              ? frame
+                ? 'Recording · ' + root.SynapChakshuPlayer.timeLabel(frame.atMs)
+                : 'Preparing video and separate audio…'
+              : row
+                ? row.kind === 'video'
+                  ? 'Video saved. Audio is saved separately.'
+                  : row.previewOnly
+                    ? 'Preview saved here. Original photo saved to SD.'
+                    : 'Photo saved to your library.'
+                : busy
+                  ? 'Taking photo…'
+                  : 'Capture unavailable.');
     $('capturePreviewHint').textContent = active
       ? stopping
         ? 'Finishing the recording and saving received frames and audio…'
         : 'Closing this preview keeps recording. Use Stop & save video to finish.'
-      : row
-        ? 'You can review this capture in your library.'
-        : '';
-    $('capturePreviewPhoto').hidden = mode !== 'video' || !active;
+      : sd
+        ? 'Open Photos & video in Library to import this recording or download it over Wi-Fi.'
+        : row
+          ? 'You can review this capture in your library.'
+          : '';
+    $('capturePreviewPhoto').hidden = mode !== 'video' || !active || Boolean(sd);
     $('capturePreviewPhoto').disabled =
       busy || state.working || state.session?.phase !== 'recording';
     $('capturePreviewStop').hidden = !active;
@@ -146,7 +169,7 @@
     mediaId = current.session?.id || null;
     try {
       if (current.session || current.offline) await api().stop();
-      else await api().startLive(false);
+      else await (api().startVideo ? api().startVideo() : api().startLive(false));
     } catch (error) {
       if (token === epoch) note = error.message;
       throw error;

@@ -211,6 +211,7 @@
     $('visualDescribe').disabled = !frames.length;
     $('visualReadText').disabled = !frames.length;
     $('visualDownload').disabled = !frames.length;
+    $('visualDownload').textContent = row.previewOnly ? 'Download preview' : 'Download original';
     $('visualZoom').disabled = !frames.length;
     $('visualPlay').disabled = !frames.length;
     $('visualName').value = row.name || '';
@@ -220,6 +221,11 @@
       (row.state === 'interrupted' ? 'Interrupted capture · ' : '') +
       (video ? 'Video playback · audio remains a separate recording. ' : '') +
       (row.timingEstimated ? 'Frame times estimated from the earlier 2 fps capture. ' : '') +
+      (row.previewOnly
+        ? 'Preview only. Original on SD: ' +
+          row.sourcePath +
+          '. Use Browse SD card or Wi-Fi downloads to retrieve it. '
+        : '') +
       'Saved on this browser.';
     renderDescriptions();
     $('visualDetailStatus').textContent = '';
@@ -292,7 +298,8 @@
         : 'Stop video';
     $('visualStop').disabled = state.session?.phase === 'saving';
     const deviceBusy = root.SynapModules?.busy;
-    const busy = state.working || Boolean(state.session) || state.offline || deviceBusy;
+    const busy =
+      state.working || Boolean(state.session) || state.offline || deviceBusy || state.wifi?.active;
     for (const [id, available] of Object.entries({
       visualPhoto: state.cameraReady,
       visualPhotoAudio: state.cameraReady,
@@ -302,9 +309,30 @@
     }))
       $(id).disabled = busy || !state.connected || !available;
     $('visualImport').disabled = busy;
+    const recording = root.SynapAppControls.recordingState().active;
+    $('visualCheckSD').disabled = busy || recording || !state.connected || !state.mediaSupported;
+    $('visualWifi').disabled =
+      busy || recording || !state.connected || !state.storageReady || !state.wifiSupported;
+    $('visualWifi').title = state.wifiSupported
+      ? ''
+      : 'Update Chakshu firmware for Wi-Fi downloads.';
+    $('visualStorageHint').textContent = !state.connected
+      ? 'Connect Chakshu to check its SD card.'
+      : state.storageReady
+        ? state.sdVideoPreferred
+          ? 'SD card ready. The video button records to SD; phone preview is available below.'
+          : 'SD card ready. Update firmware for faster SD video and Wi-Fi downloads.'
+        : 'Insert an SD card, then choose Check SD card. Phone photos and previews remain available.';
+    $('visualWifiDetails').hidden = !state.wifi?.active;
+    $('visualWifiName').textContent = state.wifi?.ssid || '';
+    $('visualWifiPassword').textContent = state.wifi?.password || '';
+    if (state.wifi?.url) $('visualWifiOpen').href = state.wifi.url;
+    else $('visualWifiOpen').removeAttribute('href');
+    $('visualWifiStop').disabled = !state.connected || state.working;
     $('visualMode').disabled = busy;
     $('visualExplainLive').hidden = !state.session?.id;
-    $('visualAudioOnly').disabled = state.offline || state.working || deviceBusy;
+    $('visualAudioOnly').disabled =
+      state.offline || state.working || deviceBusy || state.wifi?.active;
     $('visualLive').hidden = !state.session?.id;
     if (!state.session?.id && liveUrl) {
       URL.revokeObjectURL(liveUrl);
@@ -318,8 +346,16 @@
       (state.session
         ? 'Recording camera frames and separate audio…'
         : state.offline
-          ? 'Recording to Chakshu’s SD card · up to 60 seconds.'
-          : '');
+          ? 'Recording to SD · ' +
+            ((state.offlineStatus?.audioMs || 0) / 1000).toFixed(1) +
+            ' s · ' +
+            (state.offlineStatus?.frames || 0) +
+            ' frames · up to 60 seconds.'
+          : state.wifi?.active
+            ? 'Wi-Fi downloads active. Finish downloads before recording.'
+            : state.offlineStatus?.path
+              ? 'SD recording saved. Choose Browse SD card or Wi-Fi downloads.'
+              : '');
     if (!state.available) return;
     const store = api().store,
       rows = await store.list();
@@ -476,6 +512,18 @@
       action(() => api().startLive($('visualInference').checked)),
     );
     $('visualOffline').addEventListener('click', () => action(() => api().startOffline()));
+    $('visualCheckSD').addEventListener('click', () => action(() => api().refreshSD()));
+    $('visualWifi').addEventListener('click', () => action(() => api().startWifi()));
+    $('visualWifiStop').addEventListener('click', () => action(() => api().stopWifi()));
+    $('visualWifiCopy').addEventListener('click', () => {
+      const password = api().state.wifi?.password;
+      if (password && navigator.clipboard)
+        navigator.clipboard.writeText(password).then(
+          () => status('Wi-Fi password copied.'),
+          () => status('Select and copy the displayed password.'),
+        );
+      else status('Select and copy the displayed password.');
+    });
     $('visualStop').addEventListener('click', () => action(() => api().stop()));
     $('visualExplainLive').addEventListener('click', () =>
       action(async () => {

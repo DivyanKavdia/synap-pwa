@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio2";
-  const APP_SHELL_REVISION = "1.0.0-shell119-chakshu";
+  const APP_SHELL_REVISION = "1.0.0-shell120-chakshu";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -1744,7 +1744,7 @@
   }
 
   async function startRecording() {
-    if (globalThis.SynapModules?.busy || globalThis.SynapChakshu?.state?.offline) { toast("Wait for Chakshu to finish its SD hardware check.", "error"); return; }
+    if (globalThis.SynapModules?.busy || globalThis.SynapChakshu?.state?.offline || globalThis.SynapChakshu?.state?.wifi?.active) { toast("Finish the SD recording or Wi-Fi downloads before starting audio.", "error"); return; }
     if (firmwareBusy) return;
     if (globalThis.SynapDesktopCapture?.state?.().active) {
       toast("Stop the online meeting capture before starting the pendant.", "error");

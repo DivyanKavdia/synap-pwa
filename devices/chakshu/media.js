@@ -18,6 +18,10 @@
     context = null,
     accountPending = false;
   let transferProgress = null;
+  let offlineStatus = null,
+    wifi = null,
+    wifiTimer,
+    wifiPoll = null;
   const controllers = new Set();
   let workController = null;
   const voicePending = new Set();
@@ -112,6 +116,9 @@
       }
       session = null;
       offline = false;
+      offlineStatus = null;
+      wifi = null;
+      clearTimeout(wifiTimer);
       clearTimeout(offlineTimer);
       owner = next;
       devices = [];
@@ -176,7 +183,8 @@
     }
   }
   async function operation(action) {
-    if (working || session || offline) throw Error('Finish the current capture or transfer first.');
+    if (working || session || offline || wifi?.active)
+      throw Error('Finish the current capture or download session first.');
     working = true;
     const controller = new AbortController(),
       expected = owner;
@@ -194,13 +202,13 @@
       notify();
     }
   }
-  async function snapshot(client, signal, preview = false) {
+  async function snapshot(client, signal, preview = false, saved = false) {
     const expected = owner;
     let lastProgressAt = 0;
     transferProgress = { percent: 0, totalBytes: 0, receivedBytes: 0 };
     notify();
     try {
-      return await client.snapshot(
+      return await client[saved ? 'savedPreview' : 'snapshot'](
         signal,
         (fraction, totalBytes) => {
           if (expected !== owner || signal?.aborted) return;
@@ -253,7 +261,9 @@
         if (audioOwned) audio = await root.SynapAppControls.startMediaAudio();
         check(owned.owner);
         const atMs = audio.active ? audio.offsetMs : 0;
-        const blob = await snapshot(client, signal);
+        const saved = Boolean(client.features & 2 && capabilities.ready(moduleInfo(), 'sd'));
+        const capture = await snapshot(client, signal, false, saved);
+        const blob = saved ? capture.blob : capture;
         check(owned.owner);
         const row = await owned.store.create({
           kind: 'image',
@@ -261,7 +271,9 @@
           audioId: audio.active ? audio.recordingId : null,
           audioOffsetMs: atMs,
           name: 'Photo',
-          captureMode: 'photo',
+          captureMode: saved ? 'sd-photo-preview' : 'photo',
+          sourcePath: saved ? capture.path : null,
+          previewOnly: saved,
         });
         await owned.store.append(row.id, { blob, atMs });
         await owned.store.patch(row.id, { state: 'saved' });
@@ -346,9 +358,11 @@
     }
   }
   async function startLive(inference = true) {
-    if (session || working || offline) throw Error('Finish the current capture first.');
+    if (session || working || offline || wifi?.active)
+      throw Error('Finish the current capture or download session first.');
     await prepareCamera();
-    if (session || working || offline) throw Error('Finish the current capture first.');
+    if (session || working || offline || wifi?.active)
+      throw Error('Finish the current capture or download session first.');
     const owned = requireAccess(),
       client = camera('video'),
       deviceId = connected().deviceId;
@@ -393,6 +407,11 @@
         while (!take.cancelled) {
           const audio = root.SynapAppControls.recordingState();
           if (!audio.active || audio.recordingId !== take.audioId) break;
+          if (audio.phase === 'interrupted') {
+            await delay(300);
+            continue;
+          }
+          const frameStarted = Date.now();
           const atMs = audio.offsetMs;
           const blob = await snapshot(client, take.controller.signal, true);
           check(take.owner);
@@ -419,7 +438,11 @@
                 take.analysis = null;
               });
           }
-          await delay(1500);
+          // Capture/transfer time counts toward cadence. Yield more airtime
+          // when the audio clock falls behind; never build a frame request queue.
+          const current = root.SynapAppControls.recordingState();
+          const cadence = current.phase === 'interrupted' ? 1500 : 400;
+          await delay(Math.max(40, cadence - (Date.now() - frameStarted)));
         }
       })()
         .catch((e) => {
@@ -497,15 +520,106 @@
     }
   }
   async function startOffline() {
-    return operation(async () => {
+    return operation(async (signal) => {
       camera('video', true);
       if (root.SynapAppControls.recordingState().active)
         throw Error('Stop audio capture before recording to SD.');
-      await transfer.request(5);
+      await transfer.request(5, 0, '', signal);
       offline = true;
+      offlineStatus = { active: true, audioMs: 0, frames: 0, progress: 0 };
       notify();
       pollOffline();
     });
+  }
+  async function startVideo() {
+    await prepareCamera();
+    if (moduleInfo()?.mediaFeatures & 8 && capabilities.canCapture(moduleInfo(), 'video', true)) {
+      const audio = root.SynapAppControls.recordingState();
+      if (audio.active) await saveAudio(audio.sessionId);
+      return startOffline();
+    }
+    return startLive(false);
+  }
+  async function refreshSD() {
+    if (root.SynapAppControls.recordingState().active)
+      throw Error('Stop recording before checking the SD card.');
+    try {
+      if (moduleInfo()?.mediaFeatures & 8)
+        await operation(async (signal) => camera().request(14, 0, '', signal));
+      else await root.SynapModules.run(1);
+    } finally {
+      await root.SynapModules?.refresh();
+    }
+  }
+  function decodeWifi(reply) {
+    const next = JSON.parse(new TextDecoder().decode(reply.bytes));
+    if (next.active !== true) return null;
+    if (
+      !/^Chakshu-[A-F0-9]{4}$/.test(next.ssid) ||
+      !/^[a-f0-9]{32}$/.test(next.password) ||
+      !/^http:\/\/192\.168\.4\.1\/\?key=[a-f0-9]{32}$/.test(next.url)
+    )
+      throw Error('The private download network could not be verified.');
+    return next;
+  }
+  async function pollWifi() {
+    if (wifiPoll) return wifiPoll;
+    wifiPoll = refreshWifi().finally(() => {
+      wifiPoll = null;
+    });
+    return wifiPoll;
+  }
+  async function refreshWifi() {
+    clearTimeout(wifiTimer);
+    const expected = owner;
+    const deviceId = connected()?.deviceId;
+    try {
+      if (wifi?.deviceId && deviceId !== wifi.deviceId) return;
+      const next = decodeWifi(await camera().request(21));
+      check(expected);
+      if (connected()?.deviceId !== deviceId) return;
+      wifi = next ? { ...next, deviceId } : null;
+    } catch (_) {
+      /* Keep the join details while the phone changes networks. */
+    }
+    if (expected !== owner) return;
+    notify();
+    if (wifi?.active && connected()) wifiTimer = setTimeout(pollWifi, 5000);
+  }
+  async function startWifi() {
+    if (root.SynapAppControls.recordingState().active)
+      throw Error('Stop recording before starting Wi-Fi downloads.');
+    if (!(moduleInfo()?.mediaFeatures & 4))
+      throw Error('Update Chakshu firmware for Wi-Fi downloads.');
+    return operation(async (signal) => {
+      if (!capabilities.ready(moduleInfo(), 'sd'))
+        throw Error('Insert an SD card, then choose Check SD card.');
+      const expected = owner;
+      // Recover a session whose start reply was interrupted without creating a
+      // second network or leaving the card locked behind a repeated start.
+      const existing = decodeWifi(await camera().request(21, 0, '', signal));
+      const next = existing || decodeWifi(await camera().request(20, 0, '', signal));
+      check(expected);
+      wifi = next ? { ...next, deviceId: connected()?.deviceId } : null;
+      if (!wifi) throw Error('Wi-Fi downloads did not start.');
+      notify();
+      wifiTimer = setTimeout(pollWifi, 5000);
+    });
+  }
+  async function stopWifi() {
+    if (!wifi?.active) return;
+    const expected = owner;
+    await camera().request(22);
+    check(expected);
+    // The firmware closes any current download before releasing the SD lease.
+    const deadline = Date.now() + 12000;
+    do {
+      await delay(200);
+      await pollWifi();
+      check(expected);
+      if (!wifi?.active) return;
+    } while (Date.now() < deadline);
+    throw Error('Finishing the current download. Use Finish downloads on Chakshu’s download page.');
   }
   let offlineTimer;
   async function pollOffline() {
@@ -516,7 +630,12 @@
       check(expected);
       const state = JSON.parse(new TextDecoder().decode(response.bytes));
       offline = state.active;
-      if (state.error) error = 'SD recording failed. Keep the card and check partial files.';
+      offlineStatus = state;
+      if (state.error)
+        error =
+          state.error === 9
+            ? 'The SD card could not keep up. The partial recording was kept.'
+            : 'SD recording failed. Keep the card and check partial files.';
       root.dispatchEvent(new CustomEvent('synap-chakshu-offline', { detail: state }));
       notify();
     } catch (e) {
@@ -714,8 +833,12 @@
     sync,
     photo,
     startLive,
+    startVideo,
     setAudio,
     startOffline,
+    refreshSD,
+    startWifi,
+    stopWifi,
     stop,
     describe,
     catalogue,
@@ -739,6 +862,10 @@
         error,
         working,
         offline,
+        offlineStatus,
+        wifi,
+        wifiSupported: Boolean(moduleInfo()?.mediaFeatures & 4),
+        sdVideoPreferred: Boolean(moduleInfo()?.mediaFeatures & 8),
         session: session ? { id: session.id, phase: session.phase } : null,
       };
     },
@@ -746,7 +873,7 @@
       return store;
     },
     get busy() {
-      return working || offline || Boolean(session);
+      return working || offline || Boolean(session) || Boolean(wifi?.active);
     },
   };
   root.SynapChakshu = apiObject;
@@ -758,6 +885,11 @@
   root.addEventListener('synap-device-identified', sync);
   root.addEventListener('synap-module-changed', () => {
     const next = connected();
+    const deviceId = root.SynapDevices?.connection?.deviceId;
+    if (wifi?.deviceId && deviceId && wifi.deviceId !== deviceId) {
+      wifi = null;
+      clearTimeout(wifiTimer);
+    }
     if (
       next?.deviceId &&
       (next !== associatedConnection || !devices.some((d) => d.deviceId === next.deviceId))
@@ -765,6 +897,7 @@
       associatedConnection = next;
       sync();
     }
+    if (next && wifi?.active && !working) pollWifi();
     notify();
   });
   root.addEventListener('synap-gatt-disconnected', () => {
