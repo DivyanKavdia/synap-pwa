@@ -2366,8 +2366,11 @@
       return;
     }
     if (appState === "recording" && document.visibilityState === "visible" &&
+        !recordingReconnectPending && !recordingStopRequested &&
         now - foregroundAt > FOREGROUND_STALL_GRACE_MS &&
-        now - lastCompleteAudioAt > AUDIO_STALL_TIMEOUT_MS && !backgroundRecoveryPromise) {
+        now - lastCompleteAudioAt > AUDIO_STALL_TIMEOUT_MS) {
+      // A delayed repair must not extend the capture deadline. Stop invalidates
+      // queued repair work; its watchdog also handles a blocked native request.
       log("Audio stalled while foregrounded; stopping safely", {
         stalledMs: Math.round(now-lastCompleteAudioAt), session: recordingSessionId
       });

@@ -35,6 +35,8 @@ Choose a capture mode:
 
 Camera transfers and paired SD video need firmware advertising media extension version 1. Older Chakshu firmware can still use ordinary audio and manual SD imports. There is no Wi-Fi or high-frame-rate MP4 stream.
 
+Short camera commands use write without response when firmware advertises it; the matching request ID in the result confirms execution. Older firmware and requests containing longer SD paths retain write with response. Missing results time out, and an ambiguous write failure never repeats a photo exposure. A failed video transfer immediately enters saving while the owned audio take finishes; the preview shows that transition instead of claiming recording continues.
+
 Photos and video are stored in a separate, account-keyed IndexedDB library **on the current browser**. They are not cloud-synced. Audio follows the existing local/cloud processing flow. Account changes close viewers, revoke object URLs, abort pending descriptions, and stop owned online captures. Interrupted visual captures remain accessible under their original owner. Deleting a visual does not delete linked audio. Download originals before clearing browser data.
 
 ### Descriptions and spoken “explain”

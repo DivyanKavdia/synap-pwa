@@ -99,7 +99,11 @@ async function until(page, predicate, arg) {
       });
       page.setDefaultTimeout(20000);
       // Mobile reproduces installed 1227's NimBLE char-array ID and SD path.
-      await page.goto(origin + '/?chakshu-media&voice' + (width === 390 ? '&chakshu1227&ota&orphan-transport' : ''));
+      await page.goto(
+        origin +
+          '/?chakshu-media&voice' +
+          (width === 390 ? '&chakshu1227&ota&orphan-transport' : ''),
+      );
       await page.waitForFunction(() => document.body.dataset.startup === 'ready');
       assert.equal(await page.locator('#visualAccess').textContent(), 'Unavailable');
       assert(await page.locator('#headerPhoto').isDisabled());
@@ -119,27 +123,47 @@ async function until(page, predicate, arg) {
           );
           throw e;
         });
-      if(width===390) {
+      if (width === 390) {
         await page.waitForFunction(() => document.body.dataset.state === 'idle');
         const recovery = await page.evaluate(() => ({
           log: document.getElementById('diagnosticsLog').textContent,
-          disconnects: bleFixture.appDisconnects, starts: bleFixture.starts,
+          disconnects: bleFixture.appDisconnects,
+          starts: bleFixture.starts,
         }));
         assert.match(recovery.log, /Rejected invalid streaming transport/);
         assert.match(recovery.log, /Recovered orphaned stream; requesting clean stop/);
-        assert.equal(recovery.disconnects, 0, 'the logged MTU 23 state recovers without a disconnect loop');
+        assert.equal(
+          recovery.disconnects,
+          0,
+          'the logged MTU 23 state recovers without a disconnect loop',
+        );
         assert.equal(recovery.starts, 0, 'recovery returns to idle without starting a new take');
-        const info=await page.evaluate(async()=>{
-          const context=SynapDevices.connection;
-          const client=new SynapOTA.Client({getService:async()=>context.service,queue:context.queue,
-            connected:()=>SynapDevices.connection===context});
+        const info = await page.evaluate(async () => {
+          const context = SynapDevices.connection;
+          const client = new SynapOTA.Client({
+            getService: async () => context.service,
+            queue: context.queue,
+            connected: () => SynapDevices.connection === context,
+          });
           try {
-            const info=await client.check();
-            if(!await SynapModules.refresh())throw Error(SynapModules.client.error);
-            return {id:info.deviceId,associated:context.deviceId,build:info.build,path:SynapModules.client.path};
-          } finally {client.reset();}
+            const info = await client.check();
+            if (!(await SynapModules.refresh())) throw Error(SynapModules.client.error);
+            return {
+              id: info.deviceId,
+              associated: context.deviceId,
+              build: info.build,
+              path: SynapModules.client.path,
+            };
+          } finally {
+            client.reset();
+          }
         });
-        assert.deepEqual(info,{id:'SYNAP-ABCDEF123456',associated:'SYNAP-ABCDEF123456',build:1227,path:''});
+        assert.deepEqual(info, {
+          id: 'SYNAP-ABCDEF123456',
+          associated: 'SYNAP-ABCDEF123456',
+          build: 1227,
+          path: '',
+        });
       }
       await page.waitForFunction(() => bleFixture.voiceLease > 0);
       assert((await page.locator('#chakshuVoice').textContent()).includes('Hi Chakshu'));
@@ -166,9 +190,16 @@ async function until(page, predicate, arg) {
           bleFixture.disconnect();
         });
         await page.waitForFunction(() => document.body.dataset.recordingInterrupted === 'true');
-        await page.waitForFunction(() => document.body.dataset.state === 'recording' &&
-          !document.body.hasAttribute('data-auto-reconnecting') && SynapChakshu.state.cameraReady);
-        assert.equal(await page.evaluate(() => SynapAppControls.recordingState().recordingId), beforeVideo);
+        await page.waitForFunction(
+          () =>
+            document.body.dataset.state === 'recording' &&
+            !document.body.hasAttribute('data-auto-reconnecting') &&
+            SynapChakshu.state.cameraReady,
+        );
+        assert.equal(
+          await page.evaluate(() => SynapAppControls.recordingState().recordingId),
+          beforeVideo,
+        );
       }
       await page.evaluate(() => bleFixture.delayNextCameraReply());
       await page.locator('#headerVideo').click();
@@ -269,6 +300,62 @@ async function until(page, predicate, arg) {
       }
       // Recognition is simulated at the GATT boundary; actual pronunciation needs hardware.
       await page.waitForFunction(() => document.body.dataset.state === 'idle');
+      if (width === 1280) {
+        // Reproduce a link that rejects camera Write Requests, but accepts the
+        // newly advertised Write Commands. The existing fixture still checks
+        // that every native operation shares the recorder's ATT queue.
+        await page.evaluate(async () => {
+          const connection = SynapDevices.connection;
+          const command = await connection.mediaQueue(() =>
+            connection.service.getCharacteristic('4fa12354-0000-1000-8000-00805f9b34fb'),
+          );
+          const write = command.writeValueWithResponse.bind(command);
+          command.properties.writeWithoutResponse = true;
+          command.writeValueWithoutResponse = write;
+          command.writeValueWithResponse = async (bytes) => {
+            if (bytes.length <= 20) throw new DOMException('GATT Error Unknown.', 'NetworkError');
+            return write(bytes);
+          };
+        });
+        await page.evaluate(() => SynapChakshuPreview.video());
+        await page.waitForFunction(
+          () => document.getElementById('capturePreviewImage').naturalWidth === 160,
+        );
+        const beforeFailure = await page.evaluate(
+          () => SynapAppControls.recordingState().receivedMs,
+        );
+        assert(beforeFailure > 0, 'video and audio arrive on the shared Bluetooth link');
+        await page.evaluate(async () => {
+          bleFixture.delayStopCommand();
+          const connection = SynapDevices.connection;
+          const data = await connection.mediaQueue(() =>
+            connection.service.getCharacteristic('4fa12355-0000-1000-8000-00805f9b34fb'),
+          );
+          window.restoreCameraRead = data.readValue.bind(data);
+          data.readValue = async () => {
+            throw new DOMException('GATT Error Unknown.', 'NetworkError');
+          };
+        });
+        await page.waitForFunction(() => SynapChakshu.state.session?.phase === 'saving');
+        assert.match(
+          await page.locator('#capturePreviewStatus').textContent(),
+          /GATT Error Unknown/,
+        );
+        assert.match(await page.locator('#capturePreviewHint').textContent(), /Finishing/);
+        assert(await page.locator('#capturePreviewStop').isDisabled());
+        await page.evaluate(() => bleFixture.finishStopCommand());
+        await page.waitForFunction(
+          () => !SynapChakshu.state.session && document.body.dataset.state === 'idle',
+        );
+        await page.evaluate(async () => {
+          const connection = SynapDevices.connection;
+          const data = await connection.mediaQueue(() =>
+            connection.service.getCharacteristic('4fa12355-0000-1000-8000-00805f9b34fb'),
+          );
+          data.readValue = window.restoreCameraRead;
+        });
+        await page.locator('#capturePreviewClose').click();
+      }
       if (width === 320) {
         const failed = await page.evaluate(async () => {
           const before = (await SynapChakshu.store.list()).length;

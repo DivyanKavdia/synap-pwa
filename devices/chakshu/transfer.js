@@ -7,9 +7,11 @@
   function decode(value, id) {
     // Released firmware starts with a zeroed 16-byte response. Its worker (and
     // Arduino's deferred write callback) may not have answered the first read.
-    if (value.byteLength === 0 ||
-        (value.byteLength === 16 &&
-         new Uint8Array(value.buffer, value.byteOffset, 16).every(byte => byte === 0)))
+    if (
+      value.byteLength === 0 ||
+      (value.byteLength === 16 &&
+        new Uint8Array(value.buffer, value.byteOffset, 16).every((byte) => byte === 0))
+    )
       return null;
     if (value.byteLength < 16 || value.getUint8(0) !== 0xcb || value.getUint8(1) !== 1)
       throw Error('Invalid camera transfer response.');
@@ -54,14 +56,30 @@
     request(op, offset = 0, path = '', signal) {
       return this.serialize(() => this._request(op, offset, path, signal));
     }
+    async writeCommand(run, bytes) {
+      const characteristic = this.command,
+        properties = characteristic.properties || {};
+      // The matching response ID confirms execution. Short commands fit even
+      // MTU23 and do not need a separate ATT write acknowledgement. File paths
+      // can exceed that limit; retain long-write support for those requests.
+      if (
+        bytes.byteLength <= 20 &&
+        properties.writeWithoutResponse &&
+        typeof characteristic.writeValueWithoutResponse === 'function'
+      )
+        return run(() => characteristic.writeValueWithoutResponse(bytes));
+      // An ambiguous write failure must not repeat a photo exposure or start.
+      return run(() => characteristic.writeValueWithResponse(bytes));
+    }
     async _request(op, offset = 0, path = '', signal) {
       const queue = this.context.mediaQueue || this.context.queue;
-      const run = (action) => queue(async () => {
-        signal?.throwIfAborted();
-        const value = await action();
-        signal?.throwIfAborted();
-        return value;
-      }, 'Chakshu camera transfer');
+      const run = (action) =>
+        queue(async () => {
+          signal?.throwIfAborted();
+          const value = await action();
+          signal?.throwIfAborted();
+          return value;
+        }, 'Chakshu camera transfer');
       try {
         signal?.throwIfAborted();
         this.command ||= await run(() => this.context.service.getCharacteristic(COMMAND));
@@ -76,8 +94,8 @@
         v.setUint32(2, id, true);
         v.setUint32(6, offset, true);
         bytes.set(name, 10);
-        await run(() => this.command.writeValueWithResponse(bytes));
-        const deadline = Date.now() + 15000;
+        await this.writeCommand(run, bytes);
+        const deadline = Date.now() + 12000;
         while (Date.now() < deadline) {
           signal?.throwIfAborted();
           const reply = decode(await run(() => this.data.readValue()), id);
@@ -86,9 +104,12 @@
         }
         throw Error('Camera request timed out. Reconnect and refresh its status.');
       } catch (error) {
-        if (error.name !== 'AbortError') root.dispatchEvent?.(new CustomEvent('synap-capture-diagnostic', {
-          detail: { operation: op, message: error.message },
-        }));
+        if (error.name !== 'AbortError')
+          root.dispatchEvent?.(
+            new CustomEvent('synap-capture-diagnostic', {
+              detail: { operation: op, message: error.message },
+            }),
+          );
         throw error;
       }
     }

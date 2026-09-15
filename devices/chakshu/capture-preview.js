@@ -101,7 +101,9 @@
               ? 'Taking photo…'
               : 'Capture unavailable.');
     $('capturePreviewHint').textContent = active
-      ? 'Closing this preview keeps recording. Use Stop & save video to finish.'
+      ? stopping
+        ? 'Finishing the recording and saving received frames and audio…'
+        : 'Closing this preview keeps recording. Use Stop & save video to finish.'
       : row
         ? 'You can review this capture in your library.'
         : '';

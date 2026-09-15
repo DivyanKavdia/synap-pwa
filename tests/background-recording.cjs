@@ -174,6 +174,19 @@ test('foreground audio loss gets one bounded replay attempt without restarting c
   t.advance(4000);t.c.updateTimer();assert.equal(t.calls.stop,1);
 });
 
+test('a pending replay cannot suppress the foreground missing-audio deadline',async()=>{
+  const t=activity();let finish;
+  t.c.SynapDisconnectProtection.replay=()=>new Promise(resolve=>{finish=resolve;});
+  t.advance(4100);t.c.updateTimer();await settle();
+  assert(t.c.backgroundRecoveryPromise,'repair is still waiting for its result');
+  t.advance(8000);t.c.updateTimer();
+  assert.equal(t.calls.stop,1,'Stop must begin even when the repair promise remains pending');
+  t.c.recordingStopRequested=true;t.c.appState='stopping';
+  finish(false);await t.done();
+  assert.equal(t.c.currentRecordingId,'same-take');
+  assert.equal(t.calls.stop,1);
+});
+
 test('Stop cancels a queued foreground repair before it can touch the new recording',async()=>{
   const t=activity(),jobs=[];
   t.c.queueGattOperation=fn=>new Promise((resolve,reject)=>jobs.push(()=>Promise.resolve().then(fn).then(resolve,reject)));

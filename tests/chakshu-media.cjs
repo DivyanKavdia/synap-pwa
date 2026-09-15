@@ -1,7 +1,12 @@
 'use strict';
 const { test } = require('node:test'),
   assert = require('node:assert/strict');
-const { windowFrames, explainWords, splitMJPEG, filterMedia } = require('../devices/chakshu/store.js');
+const {
+  windowFrames,
+  explainWords,
+  splitMJPEG,
+  filterMedia,
+} = require('../devices/chakshu/store.js');
 test('gallery search combines titles, notes and descriptions with kind and favourite filters', () => {
   const rows = [
     {
@@ -72,21 +77,41 @@ function response(id, total, offset, payload = [], state = 1) {
 }
 test('first camera request waits through empty, uninitialized and stale worker replies', async () => {
   const source = new Uint8Array([255, 216, 1, 2, 255, 217]);
-  let last, reads = 0, captures = 0;
-  const initial = [new DataView(new ArrayBuffer(0)), new DataView(new ArrayBuffer(16)), response(0, 0, 0)];
+  let last,
+    reads = 0,
+    captures = 0;
+  const initial = [
+    new DataView(new ArrayBuffer(0)),
+    new DataView(new ArrayBuffer(16)),
+    response(0, 0, 0),
+  ];
   const client = new Client({
-    queue: action => action(),
-    service: { getCharacteristic: async uuid => uuid.includes('354-') ? {
-      writeValueWithResponse: async bytes => {
-        const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-        last = { op: bytes[1], id: v.getUint32(2, true), offset: v.getUint32(6, true) };
-        if (last.op === 1) captures++;
-      },
-    } : { readValue: async () => {
-      reads++;
-      return initial.shift() || response(last.id, source.length, last.offset,
-        last.op === 2 ? source.slice(last.offset, last.offset + 3) : []);
-    } } },
+    queue: (action) => action(),
+    service: {
+      getCharacteristic: async (uuid) =>
+        uuid.includes('354-')
+          ? {
+              writeValueWithResponse: async (bytes) => {
+                const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                last = { op: bytes[1], id: v.getUint32(2, true), offset: v.getUint32(6, true) };
+                if (last.op === 1) captures++;
+              },
+            }
+          : {
+              readValue: async () => {
+                reads++;
+                return (
+                  initial.shift() ||
+                  response(
+                    last.id,
+                    source.length,
+                    last.offset,
+                    last.op === 2 ? source.slice(last.offset, last.offset + 3) : [],
+                  )
+                );
+              },
+            },
+    },
   });
   const photo = await client.snapshot();
   assert.deepEqual(new Uint8Array(await photo.arrayBuffer()), source);
@@ -97,12 +122,122 @@ test('first camera request waits through empty, uninitialized and stale worker r
   malformed.setUint8(1, 99);
   assert.throws(() => decode(malformed, 1), /Invalid/);
 });
+test('camera commands prefer write without response when the pendant advertises it', async () => {
+  let responseWrites = 0,
+    commandWrites = 0,
+    id = 0;
+  const client = new Client({
+    queue: (action) => action(),
+    service: {
+      getCharacteristic: async (uuid) =>
+        uuid.includes('354-')
+          ? {
+              properties: { write: true, writeWithoutResponse: true },
+              writeValueWithResponse: async () => {
+                responseWrites++;
+                throw Object.assign(new Error('GATT Error Unknown.'), {
+                  name: 'NotSupportedError',
+                });
+              },
+              writeValueWithoutResponse: async (bytes) => {
+                commandWrites++;
+                id = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(
+                  2,
+                  true,
+                );
+              },
+            }
+          : { readValue: async () => response(id, 0, 0) },
+    },
+  });
+  await client.request(9);
+  assert.equal(commandWrites, 1);
+  assert.equal(responseWrites, 0);
+});
+test('SD file paths retain long writes while chunk requests use short commands', async () => {
+  const writes = [];
+  let last;
+  const accept = (bytes, method) => {
+    writes.push({ method, length: bytes.length });
+    last = { id: new DataView(bytes.buffer).getUint32(2, true), op: bytes[1] };
+  };
+  const client = new Client({
+    queue: (action) => action(),
+    service: {
+      getCharacteristic: async (uuid) =>
+        uuid.includes('354-')
+          ? {
+              properties: { write: true, writeWithoutResponse: true },
+              writeValueWithResponse: async (bytes) => accept(bytes, 'long'),
+              writeValueWithoutResponse: async (bytes) => {
+                assert(bytes.length <= 20, 'a short command must fit the minimum ATT payload');
+                accept(bytes, 'short');
+              },
+            }
+          : { readValue: async () => response(last.id, 3, 0, last.op === 4 ? [7, 8, 9] : []) },
+    },
+  });
+  const blob = await client.file('/synap/abcdef01-00000001.jpg');
+  assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), Uint8Array.of(7, 8, 9));
+  assert.deepEqual(
+    writes.map((x) => x.method),
+    ['long', 'short'],
+  );
+  assert(writes[0].length > 20);
+});
+test('an ambiguous camera write failure cannot repeat a capture', async () => {
+  let writes = 0;
+  const client = new Client({
+    queue: (action) => action(),
+    service: {
+      getCharacteristic: async (uuid) =>
+        uuid.includes('354-')
+          ? {
+              properties: { write: true },
+              writeValueWithResponse: async () => {
+                writes++;
+                throw new DOMException('GATT Error Unknown.', 'NetworkError');
+              },
+              writeValueWithoutResponse: async () => {
+                writes++;
+              },
+            }
+          : { readValue: async () => assert.fail('failed writes must not consume stale results') },
+    },
+  });
+  await assert.rejects(client.snapshot(), /GATT Error Unknown/);
+  assert.equal(writes, 1);
+});
+test('a lost short command times out without reissuing a photo', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  let writes = 0;
+  const client = new Client({
+    queue: (action) => action(),
+    service: {
+      getCharacteristic: async (uuid) =>
+        uuid.includes('354-')
+          ? {
+              properties: { writeWithoutResponse: true },
+              writeValueWithoutResponse: async () => {
+                writes++;
+              },
+            }
+          : { readValue: async () => response(0, 0, 0) },
+    },
+  });
+  const request = assert.rejects(client.snapshot(), /Camera request timed out/);
+  await new Promise(setImmediate);
+  t.mock.timers.tick(12001);
+  await request;
+  assert.equal(writes, 1);
+});
 test('transfer ignores old replies, validates offsets and rejects changed file sizes', async () => {
   assert.equal(decode(response(1, 4, 0), 2), null);
   assert.equal(decode(response(2, 4, 0, [], 0), 2), null);
   let native = 0,
     max = 0,
-    last, changed = false;
+    last,
+    changed = false;
   const file = Uint8Array.from([255, 216, 255, 217]);
   const client = new Client({
     service: {
@@ -139,45 +274,92 @@ test('transfer ignores old replies, validates offsets and rejects changed file s
   changed = true;
   await assert.rejects(client.snapshot(), /changed/);
 });
-test('background status, photos and SD catalogue serialize complete transfers without replacing their source',async()=>{
-  const photo=Uint8Array.from([255,216,1,2,255,217]);
-  const files=[{path:'/synap/abcdef01-00000001.jpg',bytes:6}];
-  let source=new Uint8Array(),last,active=0,maximum=0;
-  const ops=[];
-  const client=new Client({
-    mediaQueue:async action=>{active++;maximum=Math.max(maximum,active);try{return await action();}finally{active--; }},
-    service:{getCharacteristic:async uuid=>uuid.includes('354-')?{
-      writeValueWithResponse:async bytes=>{
-        await new Promise(setImmediate);
-        const v=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
-        last={op:bytes[1],id:v.getUint32(2,true),offset:v.getUint32(6,true)};ops.push(last.op);
-        if(last.op===1)source=photo;
-        if(last.op===7)source=new TextEncoder().encode(JSON.stringify(files));
-      },
-    }:{readValue:async()=>response(last.id,source.length,last.offset,
-      last.op===9?new TextEncoder().encode('{"active":false}'):
-      [2,4].includes(last.op)?source.slice(last.offset,last.offset+3):[]) }},
+test('background status, photos and SD catalogue serialize complete transfers without replacing their source', async () => {
+  const photo = Uint8Array.from([255, 216, 1, 2, 255, 217]);
+  const files = [{ path: '/synap/abcdef01-00000001.jpg', bytes: 6 }];
+  let source = new Uint8Array(),
+    last,
+    active = 0,
+    maximum = 0;
+  const ops = [];
+  const client = new Client({
+    mediaQueue: async (action) => {
+      active++;
+      maximum = Math.max(maximum, active);
+      try {
+        return await action();
+      } finally {
+        active--;
+      }
+    },
+    service: {
+      getCharacteristic: async (uuid) =>
+        uuid.includes('354-')
+          ? {
+              writeValueWithResponse: async (bytes) => {
+                await new Promise(setImmediate);
+                const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                last = { op: bytes[1], id: v.getUint32(2, true), offset: v.getUint32(6, true) };
+                ops.push(last.op);
+                if (last.op === 1) source = photo;
+                if (last.op === 7) source = new TextEncoder().encode(JSON.stringify(files));
+              },
+            }
+          : {
+              readValue: async () =>
+                response(
+                  last.id,
+                  source.length,
+                  last.offset,
+                  last.op === 9
+                    ? new TextEncoder().encode('{"active":false}')
+                    : [2, 4].includes(last.op)
+                      ? source.slice(last.offset, last.offset + 3)
+                      : [],
+                ),
+            },
+    },
   });
-  const [status,first,catalogue,second]=await Promise.all([
-    client.request(9),client.snapshot(),client.catalogue(),client.snapshot(),
+  const [status, first, catalogue, second] = await Promise.all([
+    client.request(9),
+    client.snapshot(),
+    client.catalogue(),
+    client.snapshot(),
   ]);
-  assert.equal(JSON.parse(new TextDecoder().decode(status.bytes)).active,false);
-  assert.deepEqual(new Uint8Array(await first.arrayBuffer()),photo);
-  assert.deepEqual(catalogue,files);
-  assert.deepEqual(new Uint8Array(await second.arrayBuffer()),photo);
-  assert.deepEqual(ops.slice(0,6),[9,1,2,2,7,8]);
-  assert.equal(maximum,1);
+  assert.equal(JSON.parse(new TextDecoder().decode(status.bytes)).active, false);
+  assert.deepEqual(new Uint8Array(await first.arrayBuffer()), photo);
+  assert.deepEqual(catalogue, files);
+  assert.deepEqual(new Uint8Array(await second.arrayBuffer()), photo);
+  assert.deepEqual(ops.slice(0, 6), [9, 1, 2, 2, 7, 8]);
+  assert.equal(maximum, 1);
 });
-test('cancelled camera work waiting behind a request never reaches the pendant and does not block the next request',async()=>{
-  let release,last;const writes=[];
-  const client=new Client({queue:action=>action(),service:{getCharacteristic:async uuid=>uuid.includes('354-')?{
-    writeValueWithResponse:async bytes=>{last=new DataView(bytes.buffer).getUint32(2,true);writes.push(bytes[1]);
-      if(writes.length===1)await new Promise(resolve=>release=resolve);},
-  }:{readValue:async()=>response(last,0,0)}}});
-  const first=client.request(9);
-  while(!release)await new Promise(setImmediate);
-  const controller=new AbortController(),photo=client.snapshot(controller.signal);
-  const cancelled=assert.rejects(photo,{name:'AbortError'});
-  controller.abort();release();await first;await cancelled;
-  await client.request(9);assert.deepEqual(writes,[9,9]);
+test('cancelled camera work waiting behind a request never reaches the pendant and does not block the next request', async () => {
+  let release, last;
+  const writes = [];
+  const client = new Client({
+    queue: (action) => action(),
+    service: {
+      getCharacteristic: async (uuid) =>
+        uuid.includes('354-')
+          ? {
+              writeValueWithResponse: async (bytes) => {
+                last = new DataView(bytes.buffer).getUint32(2, true);
+                writes.push(bytes[1]);
+                if (writes.length === 1) await new Promise((resolve) => (release = resolve));
+              },
+            }
+          : { readValue: async () => response(last, 0, 0) },
+    },
+  });
+  const first = client.request(9);
+  while (!release) await new Promise(setImmediate);
+  const controller = new AbortController(),
+    photo = client.snapshot(controller.signal);
+  const cancelled = assert.rejects(photo, { name: 'AbortError' });
+  controller.abort();
+  release();
+  await first;
+  await cancelled;
+  await client.request(9);
+  assert.deepEqual(writes, [9, 9]);
 });

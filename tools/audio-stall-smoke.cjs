@@ -9,7 +9,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
   const origin = 'http://127.0.0.1:' + server.address().port,
     browser = await launchChromium();
   try {
-    for (const mode of ['repair', 'no-audio', 'pendant-stop', 'stop-disconnect']) {
+    for (const mode of ['repair', 'no-audio', 'pendant-stop', 'stop-disconnect', 'stalled-repair']) {
       const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
       await context.route('**/*', (route) =>
         new URL(route.request().url()).origin === origin ? route.continue() : route.abort(),
@@ -23,10 +23,17 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       await page.waitForFunction(() => document.body.dataset.startup === 'ready');
       await page.locator('#headerPendantStatus').click();
       await page.waitForFunction(() => document.body.dataset.state === 'idle' && bleFixture.armed);
-      if (mode === 'no-audio') await page.evaluate(() => bleFixture.blockAudio(true));
+      if (mode === 'no-audio' || mode === 'stalled-repair')
+        await page.evaluate(() => bleFixture.blockAudio(true));
+      if (mode === 'stalled-repair') await page.evaluate(() => {
+        window.SynapDisconnectProtection = {
+          ...SynapDisconnectProtection,
+          replay: () => new Promise(resolve => { window.finishStalledReplay = resolve; }),
+        };
+      });
       await page.locator('#headerCaptureToggle').click();
       await page.waitForFunction(() => document.body.dataset.state === 'recording');
-      if (mode !== 'no-audio')
+      if (mode !== 'no-audio' && mode !== 'stalled-repair')
         await page.waitForFunction(() => SynapAppControls.recordingState().receivedMs >= 500);
       if (mode === 'repair') {
         await page.evaluate(() => bleFixture.loseNotifications());
@@ -39,9 +46,13 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
         await page.waitForFunction(() => document.body.dataset.state === 'idle');
       } else {
         await page.evaluate(() => bleFixture.holdReplay(true));
+        if (mode === 'stalled-repair') {
+          await page.waitForFunction(() => typeof window.finishStalledReplay === 'function');
+          await page.waitForFunction(() => document.body.dataset.state === 'stopping');
+        }
         const stoppedAt = Date.now();
         if (mode === 'pendant-stop') await page.evaluate(() => bleFixture.pendantStop());
-        else await page.locator('#headerCaptureToggle').click();
+        else if (mode !== 'stalled-repair') await page.locator('#headerCaptureToggle').click();
         await page.waitForFunction(() => document.body.dataset.state === 'stopping');
         assert.equal(await page.locator('.header-status-text').textContent(), 'Finishing');
         if (mode === 'stop-disconnect') {
@@ -63,6 +74,10 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
             0,
             'acknowledged pendant Stop is not rewritten',
           );
+        if (mode === 'stalled-repair') {
+          await page.evaluate(() => window.finishStalledReplay(false));
+          assert.equal(await page.evaluate(() => SynapAppControls.recordingState().active), false);
+        }
       }
       const saved = await page.evaluate(async () => ({
         records: await new DKAudioStore().all('recordings'),
@@ -71,7 +86,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       assert.equal(saved.starts, 1);
       assert.equal(saved.records.length, 1, 'one original journal');
       assert.equal(saved.records[0].stopReason, mode === 'repair' ? 'normal' : 'stop-unconfirmed');
-      if (mode === 'no-audio') assert.equal(saved.records[0].stats.completeFrames, 0);
+      if (mode === 'no-audio' || mode === 'stalled-repair') assert.equal(saved.records[0].stats.completeFrames, 0);
       else assert(saved.records[0].stats.completeFrames >= 10);
       if (mode === 'repair')
         assert.equal(saved.records[0].stats.missingFrames, 0, 'buffered outage was recovered');

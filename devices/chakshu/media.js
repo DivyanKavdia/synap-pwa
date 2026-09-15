@@ -401,6 +401,8 @@
           }
         })
         .finally(async () => {
+          take.phase = 'saving';
+          notify();
           if (take.audioOwned)
             await saveAudio(take.audioSession).catch((e) => {
               if (owner === take.owner) error = e.message;
