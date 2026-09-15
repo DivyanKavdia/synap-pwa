@@ -11,11 +11,13 @@
       this.onFailure = onFailure;
       this.pending = Promise.resolve();
       this.generation = 0;
+      this.active = null;
     }
 
     reset() {
       this.generation++;
       this.pending = Promise.resolve();
+      this.active = null;
     }
 
     run(action, label = 'Bluetooth operation') {
@@ -23,6 +25,11 @@
         generation = this.generation;
       let expired = false,
         started = false;
+      let begin;
+      const ready = new Promise((resolve) => {
+        begin = resolve;
+      });
+      const entry = { label, owner };
       const current = () => {
         const active = this.connection();
         return (
@@ -36,18 +43,38 @@
         if (expired) return;
         if (!current()) throw new Error('Bluetooth connection changed.');
         started = true;
-        const result = await action();
-        if (!current()) throw new Error('Bluetooth connection changed.');
-        return result;
+        this.active = entry;
+        begin();
+        try {
+          const result = await action();
+          if (!current()) throw new Error('Bluetooth connection changed.');
+          return result;
+        } finally {
+          if (this.active === entry) this.active = null;
+        }
       });
       // A caller deadline cannot cancel a browser ATT request. Keep the native
       // promise as the queue owner until it settles or the connection resets.
       this.pending = operation.catch(() => {});
-      return this.withTimeout(operation, this.timeoutMs, label).catch((error) => {
-        expired = true;
-        this.onFailure(error, { label, owner, started, current: current() });
-        throw error;
-      });
+      // Bound queue wait separately. Work that starts near the end of that wait
+      // still needs its full native deadline, particularly camera reads.
+      return this.withTimeout(
+        Promise.race([ready, operation]),
+        this.timeoutMs,
+        label + ' waiting for Bluetooth',
+      )
+        .then(() => this.withTimeout(operation, this.timeoutMs, label))
+        .catch((error) => {
+          expired = true;
+          this.onFailure(error, {
+            label,
+            owner,
+            started,
+            current: current(),
+            blockedBy: !started ? this.active?.label : undefined,
+          });
+          throw error;
+        });
     }
   }
 

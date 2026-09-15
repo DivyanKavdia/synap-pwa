@@ -67,28 +67,42 @@
         properties.writeWithoutResponse &&
         typeof characteristic.writeValueWithoutResponse === 'function'
       )
-        return run(() => characteristic.writeValueWithoutResponse(bytes));
+        return run(
+          () => characteristic.writeValueWithoutResponse(bytes),
+          'Send Chakshu camera request',
+        );
       // An ambiguous write failure must not repeat a photo exposure or start.
-      return run(() => characteristic.writeValueWithResponse(bytes));
+      return run(() => characteristic.writeValueWithResponse(bytes), 'Send Chakshu camera request');
     }
     async _request(op, offset = 0, path = '', signal) {
       const queue = this.context.mediaQueue || this.context.queue;
-      const run = (action) =>
-        queue(async () => {
+      const startedAt = Date.now();
+      let stage = 'Find Chakshu camera controls',
+        id;
+      const run = (action, label) => {
+        stage = label;
+        return queue(async () => {
           signal?.throwIfAborted();
           const value = await action();
           signal?.throwIfAborted();
           return value;
-        }, 'Chakshu camera transfer');
+        }, label);
+      };
       try {
         signal?.throwIfAborted();
-        this.command ||= await run(() => this.context.service.getCharacteristic(COMMAND));
-        this.data ||= await run(() => this.context.service.getCharacteristic(DATA));
+        this.command ||= await run(
+          () => this.context.service.getCharacteristic(COMMAND),
+          'Find Chakshu camera controls',
+        );
+        this.data ||= await run(
+          () => this.context.service.getCharacteristic(DATA),
+          'Find Chakshu camera data',
+        );
         const name = new TextEncoder().encode(path);
         if (name.length > 63) throw Error('Invalid camera file path.');
         const bytes = new Uint8Array(10 + name.length),
-          v = new DataView(bytes.buffer),
-          id = ++this.id;
+          v = new DataView(bytes.buffer);
+        id = ++this.id;
         bytes[0] = 0xca;
         bytes[1] = op;
         v.setUint32(2, id, true);
@@ -98,7 +112,10 @@
         const deadline = Date.now() + 12000;
         while (Date.now() < deadline) {
           signal?.throwIfAborted();
-          const reply = decode(await run(() => this.data.readValue()), id);
+          const reply = decode(
+            await run(() => this.data.readValue(), 'Read Chakshu camera response'),
+            id,
+          );
           if (reply) return reply;
           await delay(60);
         }
@@ -107,7 +124,14 @@
         if (error.name !== 'AbortError')
           root.dispatchEvent?.(
             new CustomEvent('synap-capture-diagnostic', {
-              detail: { operation: op, message: error.message },
+              detail: {
+                operation: op,
+                stage,
+                requestId: id,
+                offset,
+                elapsedMs: Date.now() - startedAt,
+                message: error.message,
+              },
             }),
           );
         throw error;

@@ -44,7 +44,7 @@
     return out;
   }
   function keyFor(key){return key||'default'}
-  function clean(now){for(const [key,state] of states){for(const [seq,frame] of state.frames){if(now-frame.createdAt>2000){state.frames.delete(seq);stats.droppedFrames++}}if(!state.frames.size&&now-state.lastSeen>5000)states.delete(key)}}
+  function clean(now){for(const [key,state] of states){for(const [seq,frame] of state.frames){if(now-frame.lastChunkAt>2000){state.frames.delete(seq);stats.droppedFrames++}}if(!state.frames.size&&now-state.lastSeen>5000)states.delete(key)}}
   function stateFor(key,now){key=keyFor(key);let state=states.get(key);if(!state){state={frames:new Map(),lastSeen:now};states.set(key,state)}state.lastSeen=now;return state}
   function legacyPackets(sequence,pcm){const output=[];for(let chunk=0;chunk<SYNTHETIC_CHUNKS;chunk++){const packet=new Uint8Array(HEADER_BYTES+SYNTHETIC_PAYLOAD),view=new DataView(packet.buffer);packet[0]=MAGIC;packet[1]=LEGACY_VERSION;view.setUint16(2,sequence,true);packet[4]=chunk;packet[5]=SYNTHETIC_CHUNKS;view.setUint16(6,SYNTHETIC_PAYLOAD,true);packet.set(pcm.subarray(chunk*SYNTHETIC_PAYLOAD,(chunk+1)*SYNTHETIC_PAYLOAD),HEADER_BYTES);output.push(view)}return output}
   function normalizePacket(value,key){
@@ -54,10 +54,10 @@
     const sequence=value.getUint16(2,true),chunk=value.getUint8(4),total=value.getUint8(5),length=value.getUint16(6,true);
     if(!total||total>20||chunk>=total||!length||length!==value.byteLength-HEADER_BYTES){stats.invalidPackets++;return []}
     const now=Date.now();clean(now);const state=stateFor(key,now);let frame=state.frames.get(sequence);
-    if(!frame){frame={total,chunks:new Array(total),received:0,bytes:0,createdAt:now};state.frames.set(sequence,frame)}
+    if(!frame){frame={total,chunks:new Array(total),received:0,bytes:0,lastChunkAt:now};state.frames.set(sequence,frame)}
     if(frame.total!==total){state.frames.delete(sequence);stats.invalidPackets++;return []}
     if(frame.chunks[chunk])return [];
-    frame.chunks[chunk]=new Uint8Array(value.buffer,value.byteOffset+HEADER_BYTES,length).slice();frame.received++;frame.bytes+=length;
+    frame.chunks[chunk]=new Uint8Array(value.buffer,value.byteOffset+HEADER_BYTES,length).slice();frame.received++;frame.bytes+=length;frame.lastChunkAt=now;
     if(frame.received!==frame.total)return [];
     state.frames.delete(sequence);
     if(frame.bytes!==ADPCM_BYTES_PER_FRAME||frame.chunks.some(part=>!part)){stats.droppedFrames++;return []}

@@ -6,6 +6,10 @@
 event subscriptions, standby and OTA share one serialized queue. Every queued
 operation belongs to a connection/session in `recording/bluetooth-session.js`; stale work is discarded. A START waiting behind older work rechecks the recording session and Stop intent immediately before writing. A caller's
 timeout does not free an underlying native operation that is still running.
+Queue wait and native execution each have a separate 3.5-second deadline. An
+operation that reaches the front of the queue receives its full execution time.
+Expired queued commands never run later. A blocked queue records the active
+operation's name; if capture has ended, its timeout disconnects the stuck link.
 
 Startup acquires the app lock, opens the journal and recovers interrupted
 recordings. Recording additionally requires a successful storage write check.
@@ -129,3 +133,16 @@ Every Stop, including a pendant-initiated drain, has one recording-owned watchdo
 Browser coverage: `node tools/audio-stall-smoke.cjs` exercises notification repair, zero received audio, pendant-initiated Stop and link loss during Stop using the real recorder and IndexedDB journal. Native watchdog tests exercise progress, the absolute deadline and recording ownership. Physical pendant validation is required for microphone capture and sustained BLE throughput.
 
 A pending notification/replay repair cannot suspend the foreground missing-audio deadline. After twelve seconds without a complete frame and the foreground grace period, Stop starts even if repair is still pending. Queued repair work loses ownership, while the Stop watchdog handles any blocked native Bluetooth request. Delayed repair completion cannot restart the take.
+
+Partial PCM and compressed frames expire after a gap without a new fragment,
+rather than a fixed interval from the first fragment. Congestion can take longer
+than 900 ms to deliver one PCM frame; continuing fragments must remain available
+for assembly. Duplicate fragments do not renew the deadline. The browser test
+delivers two frames in four seconds and verifies every sample in the saved WAV.
+
+After ten seconds in the foreground, a stream receiving less than half the
+elapsed duration also records one firmware diagnostic snapshot, even when some
+complete frames keep arriving. The log includes received/elapsed time, packet
+statistics and negotiated transport settings. It does not replay or interrupt
+that progressing stream. The snapshot helps distinguish capture failure,
+notification congestion and browser-side packet loss on the physical device.

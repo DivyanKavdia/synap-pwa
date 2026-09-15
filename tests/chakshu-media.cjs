@@ -28,6 +28,25 @@ test('gallery search combines titles, notes and descriptions with kind and favou
   assert.deepEqual(ids({}), ['photo', 'video', 'old']);
 });
 const { decode, Client } = require('../devices/chakshu/transfer.js');
+test('camera failure diagnostics identify discovery, command and response stages', async () => {
+  const vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
+  for(const failed of ['Find Chakshu camera controls','Find Chakshu camera data',
+    'Send Chakshu camera request','Read Chakshu camera response']){
+    const reports=[],c={Promise,Uint8Array,DataView,TextEncoder,Date,
+      CustomEvent:class{constructor(type,{detail}){this.type=type;this.detail=detail;}},
+      dispatchEvent:event=>reports.push(event)};
+    vm.createContext(c);
+    vm.runInContext(fs.readFileSync(path.join(__dirname,'../devices/chakshu/transfer.js'),'utf8'),c);
+    const client=new c.SynapChakshuTransfer.Client({
+      queue:async(action,label)=>{if(label===failed)throw Error('GATT Error Unknown.');return action();},
+      service:{getCharacteristic:async()=>({writeValueWithResponse:async()=>{},readValue:async()=>response(1,0,0)})},
+    });
+    await assert.rejects(client.request(1),/GATT Error Unknown/);
+    assert.equal(reports.length,1);assert.equal(reports[0].detail.stage,failed);
+    assert.equal(reports[0].detail.operation,1);assert.equal(reports[0].detail.offset,0);
+    assert.equal(typeof reports[0].detail.elapsedMs,'number');
+  }
+});
 test('explain uses only the closest frame and at most two neighbours on each side', () => {
   const frames = Array.from({ length: 100 }, (_, i) => ({ atMs: i * 500, index: i }));
   assert.deepEqual(

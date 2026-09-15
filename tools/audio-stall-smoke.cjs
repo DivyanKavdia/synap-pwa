@@ -9,7 +9,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
   const origin = 'http://127.0.0.1:' + server.address().port,
     browser = await launchChromium();
   try {
-    for (const mode of ['repair', 'no-audio', 'pendant-stop', 'stop-disconnect', 'stalled-repair']) {
+    for (const mode of ['repair', 'no-audio', 'pendant-stop', 'stop-disconnect', 'stalled-repair', 'slow-fragments']) {
       const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
       await context.route('**/*', (route) =>
         new URL(route.request().url()).origin === origin ? route.continue() : route.abort(),
@@ -23,8 +23,13 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       await page.waitForFunction(() => document.body.dataset.startup === 'ready');
       await page.locator('#headerPendantStatus').click();
       await page.waitForFunction(() => document.body.dataset.state === 'idle' && bleFixture.armed);
-      if (mode === 'no-audio' || mode === 'stalled-repair')
+      if (mode === 'no-audio' || mode === 'stalled-repair' || mode === 'slow-fragments')
         await page.evaluate(() => bleFixture.blockAudio(true));
+      if (mode === 'slow-fragments') await page.evaluate(async () => {
+        const connection = SynapDevices.connection;
+        window.slowAudio = await connection.queue(() => connection.service.getCharacteristic(
+          '4fa12346-0000-1000-8000-00805f9b34fb'), 'Prepare congested audio fixture');
+      });
       if (mode === 'stalled-repair') await page.evaluate(() => {
         window.SynapDisconnectProtection = {
           ...SynapDisconnectProtection,
@@ -33,7 +38,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       });
       await page.locator('#headerCaptureToggle').click();
       await page.waitForFunction(() => document.body.dataset.state === 'recording');
-      if (mode !== 'no-audio' && mode !== 'stalled-repair')
+      if (mode !== 'no-audio' && mode !== 'stalled-repair' && mode !== 'slow-fragments')
         await page.waitForFunction(() => SynapAppControls.recordingState().receivedMs >= 500);
       if (mode === 'repair') {
         await page.evaluate(() => bleFixture.loseNotifications());
@@ -42,6 +47,21 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
         );
         assert.equal(await page.evaluate(() => bleFixture.audioSubscriptions), 2);
         assert.equal(await page.evaluate(() => bleFixture.starts), 1);
+        await page.locator('#headerCaptureToggle').click();
+        await page.waitForFunction(() => document.body.dataset.state === 'idle');
+      } else if (mode === 'slow-fragments') {
+        await page.evaluate(async () => {
+          for (let sequence = 0; sequence < 2; sequence++) for (let chunk = 0; chunk < 10; chunk++) {
+            const v = new DataView(new ArrayBuffer(168));
+            v.setUint8(0, 0xa5);v.setUint8(1, 2);v.setUint16(2, sequence, true);
+            v.setUint8(4, chunk);v.setUint8(5, 10);v.setUint16(6, 160, true);
+            for (let offset = 8; offset < 168; offset += 2) v.setInt16(offset, 1000 + sequence * 10 + chunk, true);
+            window.slowAudio.value = v;
+            window.slowAudio.dispatchEvent(new Event('characteristicvaluechanged'));
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+        });
+        assert.equal(await page.evaluate(() => SynapAppControls.recordingState().receivedMs), 100);
         await page.locator('#headerCaptureToggle').click();
         await page.waitForFunction(() => document.body.dataset.state === 'idle');
       } else {
@@ -85,8 +105,17 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       }));
       assert.equal(saved.starts, 1);
       assert.equal(saved.records.length, 1, 'one original journal');
-      assert.equal(saved.records[0].stopReason, mode === 'repair' ? 'normal' : 'stop-unconfirmed');
+      assert.equal(saved.records[0].stopReason, ['repair', 'slow-fragments'].includes(mode) ? 'normal' : 'stop-unconfirmed');
       if (mode === 'no-audio' || mode === 'stalled-repair') assert.equal(saved.records[0].stats.completeFrames, 0);
+      else if (mode === 'slow-fragments') {
+        assert.equal(saved.records[0].stats.completeFrames, 2);
+        const samples = await page.evaluate(async (id) => {
+          const store = new DKAudioStore(), recording = await store.get('recordings', id);
+          const wav = new DataView(await (await store.blob(recording)).arrayBuffer());
+          return Array.from({length: (wav.byteLength - 44) / 2}, (_, i) => wav.getInt16(44 + i * 2, true));
+        }, saved.records[0].id);
+        assert.deepEqual(samples, Array.from({length: 1600}, (_, i) => 1000 + Math.floor(i / 80)));
+      }
       else assert(saved.records[0].stats.completeFrames >= 10);
       if (mode === 'repair')
         assert.equal(saved.records[0].stats.missingFrames, 0, 'buffered outage was recovered');

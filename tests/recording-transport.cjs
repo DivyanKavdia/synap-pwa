@@ -10,7 +10,7 @@ function harness(){
     AUDIO_STALL_TIMEOUT_MS:12000,COMMAND_TIMEOUT_MS:3500,recordingSessionId:1,
     connectionEpoch:0,gattQueue:Promise.resolve(),
     log:(message,detail)=>logs.push({message,detail}),
-    setTimeout(fn,ms){timers.set(++id,{fn,ms});return id},clearTimeout(id){timers.delete(id)},
+    setTimeout(fn,ms){timers.set(++id,{fn,at:clock+ms});return id},clearTimeout(id){timers.delete(id)},
     bluetoothDevice:{gatt:{connected:true,disconnect(){disconnects++;this.connected=false}}},
     disconnectGatt(reason,device=c.bluetoothDevice){logs.push({reason});device.gatt.disconnect()},
     isGattConnected:()=>c.bluetoothDevice.gatt.connected
@@ -18,7 +18,7 @@ function harness(){
   c.window=c;vm.createContext(c);
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..','recording/bluetooth-session.js'),'utf8'),c);
   vm.runInContext(source.slice(source.indexOf('  function withTimeout('),source.indexOf('  async function writeCommand(')),c);
-  async function expire(ms=3500){clock+=ms;for(const [key,timer] of [...timers]){if(timer.ms<=ms){timers.delete(key);timer.fn()}}await tick()}
+  async function expire(ms=3500){clock+=ms;for(const [key,timer] of [...timers]){if(timer.at<=clock){timers.delete(key);timer.fn()}}await tick()}
   return {c,logs,expire,get disconnects(){return disconnects},set clock(value){clock=value}};
 }
 test('a delayed GATT read cannot disconnect a recording with arriving audio',async()=>{
@@ -59,4 +59,28 @@ test('a late success from the old connection is rejected',async()=>{
   const pending=h.c.queueGattOperation(()=>new Promise(resolve=>{finish=resolve}),'Old read');
   const failed=assert.rejects(pending,/connection changed/i);await tick();h.c.connectionEpoch++;
   finish('old status');await failed;
+});
+test('a camera request gets its full native deadline after waiting behind another operation',async()=>{
+  const h=harness();let finishRead,finishCamera;
+  const read=h.c.queueGattOperation(()=>new Promise(resolve=>{finishRead=resolve}),'Read status');
+  const camera=h.c.queueGattOperation(()=>new Promise(resolve=>{finishCamera=resolve}),'Read camera image');
+  // Attach a rejection handler before advancing time, so the regression is an assertion failure.
+  const result=camera.then(value=>({value}),error=>({error}));
+  await tick();await h.expire(3000);assert.equal(finishCamera,undefined);
+  finishRead();await read;await tick();await h.expire(1000);
+  finishCamera('image bytes');assert.deepEqual(await result,{value:'image bytes'});
+  assert.equal(h.disconnects,0);
+});
+test('a queued timeout identifies its blocker and recovers a link that became idle',async()=>{
+  const h=harness();let finish;
+  const read=h.c.queueGattOperation(()=>new Promise(resolve=>{finish=resolve}),'Read old status');
+  const readFailure=assert.rejects(read,{name:'TimeoutError'});await tick();h.c.lastAudioAt=13400;
+  await h.expire();await readFailure;assert.equal(h.disconnects,0);
+  h.c.appState='idle';let writes=0;
+  const camera=h.c.queueGattOperation(()=>{writes++},'Read camera image');
+  const failure=assert.rejects(camera,/waiting for Bluetooth.*timed out/);
+  await tick();await h.expire();await failure;
+  assert.equal(h.disconnects,1);assert.equal(writes,0);
+  assert(h.logs.some(entry=>entry.detail?.blockedBy==='Read old status'));
+  finish();await tick();assert.equal(writes,0);
 });

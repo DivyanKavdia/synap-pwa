@@ -18,6 +18,7 @@ function activity() {
     recordingStopRequested:false,recordingReconnectPending:false,finalizing:false,connectionEpoch:1,
     appState:'recording',lastCompleteAudioAt:10000,lastCompleteSequence:41,lastObservedSequence:41,
     backgroundCapture:null,backgroundRecoveryPromise:null,foregroundAt:10000,foregroundRecoveryAttempted:false,
+    slowAudioDiagnosticAttempted:false,deviceStatus:{mtu:185},
     AUDIO_STALL_TIMEOUT_MS:12000,FOREGROUND_STALL_GRACE_MS:12000,sessionStats:{completeFrames:40},
     audioCharacteristic:target,journal:{async flush(){calls.flush++;}},
     SynapDisconnectProtection:{lastSequence:()=>c.lastCompleteSequence,capacityMs:()=>30000,
@@ -85,6 +86,24 @@ test('elapsed time advances independently of audio reception and exposes stalls'
   assert.equal(t.calls.stop,0,'visibility alone must not stop a browser that can keep delivering audio');
   const events=t.calls.events;t.c.updateTimer();assert.equal(t.calls.events,events,'unchanged delivery status does not churn the DOM');
   t.frame(42);t.c.updateTimer();assert.equal(t.c.document.body.dataset.audioDelivery,'receiving');
+});
+test('continuing slow audio records firmware evidence once without replaying a progressing stream',async()=>{
+  const t=activity();let snapshots=0;const logs=[];
+  t.c.snapshotStalledAudio=async valid=>{assert(valid());snapshots++;};
+  t.c.log=(message,detail)=>logs.push({message,detail});
+  for(let i=0;i<15;i++){t.advance(1000);t.frame(42+i);t.c.updateTimer();}
+  await t.done();assert.equal(snapshots,1);assert.equal(t.calls.subscribe,0);assert.equal(t.calls.stop,0);
+  assert(logs.some(row=>row.message==='Audio arriving below capture rate'&&row.detail.audioState.mtu===185));
+});
+test('healthy, hidden and reconnecting audio do not trigger slow-delivery diagnostic reads',()=>{
+  for(const mode of ['healthy','hidden','reconnecting']){
+    const t=activity();let snapshots=0;t.c.snapshotStalledAudio=()=>{snapshots++;};
+    if(mode==='hidden')t.c.document.visibilityState='hidden';
+    if(mode==='reconnecting')t.c.recordingReconnectPending=true;
+    t.advance(15000);t.frame(42);
+    if(mode==='healthy')t.c.sessionStats.completeFrames=500;
+    t.c.updateTimer();assert.equal(snapshots,0,mode);
+  }
 });
 
 test('Bluefy dimming control is released when recording ends, including an interrupted acquisition',async()=>{

@@ -192,6 +192,7 @@
   let recordingStopOperation = null;
   let recordingStopWatch = null;
   let foregroundRecoveryAttempted = false;
+  let slowAudioDiagnosticAttempted = false;
   let recordingDisconnectedAt = 0;
   let recordingReconnectDeadline = null;
   let recordingResumeDeviceId = null;
@@ -1493,15 +1494,17 @@
     return bluetoothSession.run(action, label);
   }
 
-  function handleGattFailure(error, { label, owner, started, current }) {
+  function handleGattFailure(error, { label, owner, started, current, blockedBy }) {
     log("GATT operation failed", { operation: label, name: error.name, message: error.message,
-      connected: isGattConnected(), queued: !started, session: recordingSessionId });
+      connected: isGattConnected(), queued: !started, blockedBy, session: recordingSessionId });
     if (error.name !== "TimeoutError" || !current) return;
     const captureAlive = recordingConfirmed && appState === "recording" &&
       (document.visibilityState === "hidden" || performance.now() - lastAudioAt < AUDIO_STALL_TIMEOUT_MS);
     if (captureAlive) {
       log("GATT reply delayed; preserving recording transport", { operation: label });
-    } else if (started) {
+    } else {
+      // A queued request can reveal an older native operation that timed out
+      // during recording and still blocks the link after that recording ended.
       disconnectGatt("GATT timeout: " + label, owner.device);
     }
   }
@@ -1996,6 +1999,7 @@
   function resetCollector() {
     clearRecordingStopWatch();
     foregroundRecoveryAttempted = false;
+    slowAudioDiagnosticAttempted = false;
     recordingTransportPreserved = false;
     recordingStopRequested = false;
     globalThis.SynapDisconnectProtection?.resetRecording();
@@ -2111,6 +2115,10 @@
 
     if (appState === "starting") confirmRecordingStarted("first-audio-packet");
     lastAudioAt = performance.now();
+    if (lastAudioAt - lastFrameCleanupAt > 250) {
+      lastFrameCleanupAt = lastAudioAt;
+      cleanupStaleFrames(false);
+    }
     if (completedSequences.has(sequence)) {
       sessionStats.duplicatePackets += 1;
       return;
@@ -2127,7 +2135,7 @@
         chunks: new Array(totalChunks),
         receivedChunks: 0,
         receivedBytes: 0,
-        createdAt: performance.now()
+        lastChunkAt: performance.now()
       };
 
       pendingFrames.set(sequence, frame);
@@ -2164,17 +2172,13 @@
     frame.chunks[chunkIndex] = payload;
     frame.receivedChunks += 1;
     frame.receivedBytes += payloadLength;
+    // Unique fragments are progress even when a congested frame takes longer
+    // than the stale-frame timeout. Duplicate packets never extend this clock.
+    frame.lastChunkAt = performance.now();
 
     if (frame.receivedChunks === frame.totalChunks) {
       completeFrame(frame);
       pendingFrames.delete(sequence);
-    }
-
-    const now = performance.now();
-
-    if (now - lastFrameCleanupAt > 250) {
-      lastFrameCleanupAt = now;
-      cleanupStaleFrames(false);
     }
   }
   function observeSequence(sequence) {
@@ -2251,7 +2255,7 @@
     pendingFrames.forEach(function (frame, sequence) {
       if (
         force ||
-        now - frame.createdAt > INCOMPLETE_FRAME_TIMEOUT_MS
+        now - frame.lastChunkAt > INCOMPLETE_FRAME_TIMEOUT_MS
       ) {
         pendingFrames.delete(sequence);
         sessionStats.incompleteFrames += 1;
@@ -2349,6 +2353,22 @@
     const clock = formatClock(elapsed);
     if (ui.timer.textContent !== clock) ui.timer.textContent = clock;
     const now = performance.now();
+    if (appState === "recording" && document.visibilityState === "visible" &&
+        !recordingReconnectPending && !recordingStopRequested && !backgroundRecoveryPromise &&
+        now - foregroundAt >= 10000 && now - lastCompleteAudioAt < 1500 &&
+        sessionStats.completeFrames > 0 && sessionStats.completeFrames * 50 < elapsed / 2 &&
+        !slowAudioDiagnosticAttempted) {
+      // Some complete frames can trickle through forever without the no-audio
+      // watchdog firing. Capture one firmware snapshot to distinguish a slow
+      // microphone from congested notifications or discarded browser packets.
+      slowAudioDiagnosticAttempted = true;
+      log("Audio arriving below capture rate", { elapsedMs: Math.round(elapsed),
+        receivedMs: sessionStats.completeFrames * 50, audioStats: sessionStats,
+        audioState: deviceStatus, firmwareBuild: globalThis.SynapPowerLifecycle?.firmwareBuild || null });
+      const session = recordingSessionId, epoch = connectionEpoch;
+      void snapshotStalledAudio(() => isCurrentSession(session) && epoch === connectionEpoch &&
+        appState === "recording" && !recordingStopRequested && !recordingReconnectPending && isGattConnected());
+    }
     if (appState === "recording" && !recordingReconnectPending && !backgroundRecoveryPromise) {
       setAudioDelivery(now - lastCompleteAudioAt > 1500 ? "waiting" : "receiving");
     }
