@@ -54,9 +54,22 @@ const server = createStaticServer(root);
       await page.waitForFunction(() => document.body.dataset.recordingInterrupted === 'true');
       await page.waitForFunction(() => document.body.dataset.state === 'recording' && !bleFixture.recoveryWaiting);
       assert.equal(await page.evaluate(() => bleFixture.appDisconnects), 0);
+      await page.waitForFunction(() => !document.body.hasAttribute('data-auto-reconnecting'));
       // Stop before replay catches up; received frames must still be drained and sealed.
+      const stopsBefore=await page.evaluate(() => {
+        bleFixture.holdReplay(true);bleFixture.emulateStopEcho(true);return bleFixture.stopWrites;
+      });
       await page.locator('#headerCaptureToggle').click();
+      await page.waitForFunction(() => document.querySelector('#diagnosticsLog').textContent.includes('Control read echoed a command; requesting fresh status'));
+      await page.waitForFunction(() => document.querySelector('#diagnosticsLog').textContent.includes('Waiting for recording drain'));
+      assert.equal(await page.evaluate(() => document.body.dataset.state),'stopping');
+      await page.waitForTimeout(800);
+      assert.equal(await page.evaluate(() => bleFixture.stopWrites),stopsBefore+1,
+        'acknowledged drain is not flooded with STOP writes: '+await page.evaluate(() => document.querySelector('#diagnosticsLog').textContent));
+      assert(await page.evaluate(() => document.querySelector('#diagnosticsLog').textContent.includes('Write-with-response rejected')));
+      await page.evaluate(() => bleFixture.holdReplay(false));
       await page.waitForFunction(() => document.body.dataset.state === 'idle');
+      await page.evaluate(() => bleFixture.emulateStopEcho(false));
       const captured = await page.evaluate(() => bleFixture.captured);
       const stored = await page.evaluate(async () => {
         const store = new DKAudioStore();

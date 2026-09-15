@@ -188,6 +188,7 @@
   let recordingReconnectPending = false;
   let recordingTransportPreserved = false;
   let recordingStopRequested = false;
+  let recordingStopOperation = null;
   let recordingDisconnectedAt = 0;
   let recordingReconnectDeadline = null;
   let recordingResumeDeviceId = null;
@@ -1517,10 +1518,26 @@
     const epoch = connectionEpoch;
     if (!characteristic || !isGattConnected()) return false;
     try {
-      const value = await queueGattOperation(function () {
+      let value = await queueGattOperation(function () {
         return characteristic.readValue();
-      });
+      }, "Control status read");
       if (epoch !== connectionEpoch) return false;
+      // Chakshu build1231 can retain its two-byte write value while buffered
+      // audio drains. Request a fresh status once; never treat an echoed STOP
+      // as an idle acknowledgement or discard the journal on its strength.
+      if (value?.byteLength === 2 && value.getUint8(1) === PROTOCOL_VERSION &&
+          [CMD_STOP, CMD_START, CMD_GET_STATUS].includes(value.getUint8(0))) {
+        log("Control read echoed a command; requesting fresh status", { command: value.getUint8(0) });
+        const assertOwner = () => {
+          if (epoch !== connectionEpoch || characteristic !== controlCharacteristic)
+            throw new DOMException("Control connection changed.", "AbortError");
+        };
+        await writeCommand(CMD_GET_STATUS, assertOwner);
+        await delay(120);
+        assertOwner();
+        value = await queueGattOperation(() => { assertOwner(); return characteristic.readValue(); }, "Fresh control status read");
+        assertOwner();
+      }
       return parseStatusValue(value, "read", onInvalidStream);
     } catch (error) {
       log("Control status read failed", friendlyError(error));
@@ -1766,6 +1783,17 @@
     if (appState !== "recording" && appState !== "starting" && !(resumingStop === true && appState === "stopping")) return;
     const sessionId = recordingSessionId;
     const epoch = connectionEpoch;
+    if (recordingStopOperation?.sessionId === sessionId && recordingStopOperation.epoch === epoch)
+      return recordingStopOperation.promise;
+    const operation = { sessionId, epoch, promise: null };
+    recordingStopOperation = operation;
+    operation.promise = drainRecordingStop(sessionId, epoch).finally(() => {
+      if (recordingStopOperation === operation) recordingStopOperation = null;
+    });
+    return operation.promise;
+  }
+
+  async function drainRecordingStop(sessionId, epoch) {
     const ownsStop = () => isCurrentSession(sessionId) && epoch === connectionEpoch && appState === "stopping";
     recordingStopRequested = true;
     setAppState("stopping");
@@ -1776,7 +1804,10 @@
       for (let attempt = 0; attempt < 3 || Date.now()<drainDeadline; attempt += 1) {
         if (!ownsStop()) return;
         if (!isGattConnected()) break;
-        await writeCommand(CMD_STOP);
+        // Once the recovery service confirms Stop, let it drain. Rewriting
+        // Stop competes with the same audio transfer we are waiting to save.
+        if (attempt === 0 || !globalThis.SynapDisconnectProtection?.isDraining?.())
+          await writeCommand(CMD_STOP);
         await delay(attempt<3?150:700);
         if (!ownsStop()) return;
         await readControlStatus();
@@ -1786,7 +1817,9 @@
           scheduleFinalize(100, "normal", sessionId);
           return;
         }
-        log("Stop not yet acknowledged; retrying", { attempt: attempt + 1 });
+        log("Waiting for recording drain", { attempt: attempt + 1,
+          firmwareDraining: Boolean(globalThis.SynapDisconnectProtection?.isDraining?.()),
+          receivedFrames: sessionStats.completeFrames, receivedPackets: sessionStats.packetsReceived });
       }
       if (!ownsStop()) return;
       log("Stop unconfirmed; disconnecting to stop the peripheral");

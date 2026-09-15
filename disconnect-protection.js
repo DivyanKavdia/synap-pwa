@@ -11,7 +11,8 @@
     if(frames>600)return null;
     return {tokenHash:value.getUint32(12,true),generation:value.getUint32(8,true),replaySupported:Boolean(flags&16),replayAck:value.getUint8(3),finishing:Boolean(flags&8),available:Boolean(flags&1)&&frames>0,armed:Boolean(flags&2),waiting:Boolean(flags&4),frames};
   }
-  function onStatus(event){const info=status(event.target.value);if(info?.finishing)root.dispatchEvent(new CustomEvent("synap-recording-draining"));}
+  function onStatus(event){const info=status(event.target.value);if(!info)return;latestInfo=info;if(isDraining())root.dispatchEvent(new CustomEvent("synap-recording-draining"));}
+  function isDraining(){return Boolean(characteristic&&token&&latestInfo?.armed&&latestInfo.finishing&&!latestInfo.waiting&&latestInfo.tokenHash===tokenHash());}
   async function discover(service,operation,assertConnection,resuming=false){
     detach();queue=operation;
     try{
@@ -68,7 +69,7 @@
     // reconnect checkpoint at the newest complete frame, including uint16 wrap.
     if(!hasSequence||((sequence-lastSequence+65536)&65535)<32768){lastSequence=sequence;hasSequence=true;}
   }
-  function resetRecording(){lastSequence=0xffff;hasSequence=false;}
+  function resetRecording(){lastSequence=0xffff;hasSequence=false;if(latestInfo)latestInfo={...latestInfo,finishing:false};}
   function detach(){report("");characteristic?.removeEventListener("characteristicvaluechanged",onStatus);characteristic=null;queue=null;capacity=0;latestInfo=null;}
-  root.SynapDisconnectProtection=Object.freeze({discover,arm,canResume,resume,received,resetRecording,detach,status,canReplay,replay,lastSequence:()=>hasSequence?lastSequence:null,capacityMs:()=>capacity*50});
+  root.SynapDisconnectProtection=Object.freeze({discover,arm,canResume,resume,received,resetRecording,detach,status,canReplay,replay,isDraining,lastSequence:()=>hasSequence?lastSequence:null,capacityMs:()=>capacity*50});
 })(globalThis);
