@@ -88,7 +88,7 @@ Native tests cover capture conversion, partial reads, cancellation, MTUs, codec 
 
 For physical acceptance, record each affected device for 10–15 minutes, include quiet speech and brief interruptions, listen to local/cloud-source downloads, and inspect transport, gaps, notification/capture drops and STOP drain. Check Chakshu camera/audio timing separately. Tests and successful compilation cannot certify RF endurance, microphone quality or OS background delivery.
 
-## Elapsed clock and browser read failures
+## Elapsed clock and browser storage failures
 
 The header clock shows elapsed confirmed capture time, frozen when Stop is requested. Its neighbouring label shows complete audio received. These measurements can diverge during loss, replay, or slow delivery; the elapsed clock is never used to invent samples or change saved WAV duration. A reconnect without preserved pendant capture excludes the disconnected interval as before.
 
@@ -97,3 +97,5 @@ All journal PCM reads and upload-byte reads verify the returned ArrayBuffer leng
 Upload jobs retain `failureDetail` (stage, code, expected/actual bytes, and bounded stack). The diagnostics log also names the failing stage. The September 15 screenshot alone does not identify which native read produced its RangeError; fault-injection tests cover short/throwing reads without claiming the user's exact browser failure was reproduced.
 
 Camera gating uses capabilities owned by the current physical connection. The library distinguishes disconnected, detecting, unreadable device identity/capabilities, another connected module, and identified Chakshu. Camera clicks join in-flight descriptor reads. A saved account association never grants camera capabilities to a connected C3/S3.
+
+WebKit regression: concurrent job lookup callbacks could run while IndexedDB serialized the segment Blob, producing `TransactionInactiveError` in `enqueueJob` and stalling close. Compaction now waits for the Blob write success event before enqueueing packet cleanup and jobs, all in the same transaction. Failed writes still roll back and preserve raw packets. The WebKit CI fixture covers sealing, reload, a missing frame, original-byte upload retries and native FileReader fallback.

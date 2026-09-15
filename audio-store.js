@@ -611,7 +611,7 @@
         const req = s.segments.get([recordingId, index]);
         req.onsuccess = () => {
           const current = req.result || { recordingId, index };
-          s.segments.put({
+          const saved = s.segments.put({
             ...current,
             closed: true,
             compacted: true,
@@ -625,28 +625,33 @@
             firstSequence: data.firstSequence,
             lastSequence: data.lastSequence,
           });
+          // WebKit may dispatch pending IDB callbacks while serializing a
+          // Blob, when this transaction is temporarily inactive. Queue no
+          // dependent requests until the Blob write succeeds. All changes
+          // still commit together, so a failure keeps the original packets.
+          saved.onsuccess = () => {
+            const cursor = s.packets.index('segment').openCursor(this.keys.only([recordingId, index]));
+            cursor.onsuccess = () => {
+              if (cursor.result) {
+                // Late and incomplete packets are not represented in this snapshot.
+                if (consumed.has(cursor.result.value.sequence)) cursor.result.delete();
+                cursor.result.continue();
+              }
+            };
+            if (hasAudio && data.frames.length)
+              for (const kind of ['transcribe', 'summarize']) {
+                enqueueJob(s.jobs, {
+                  recordingId,
+                  segmentIndex: index,
+                  kind,
+                  dedupe: recordingId + ':' + index + ':' + kind,
+                  state: 'pending',
+                  attempts: 0,
+                  nextAt: 0,
+                });
+              }
+          };
         };
-        const cursor = s.packets.index('segment').openCursor(this.keys.only([recordingId, index]));
-        cursor.onsuccess = () => {
-          if (cursor.result) {
-            // Keep incomplete frames and packets that arrived after the
-            // snapshot. They are not represented in the compacted PCM.
-            if (consumed.has(cursor.result.value.sequence)) cursor.result.delete();
-            cursor.result.continue();
-          }
-        };
-        if (hasAudio && data.frames.length)
-          for (const kind of ['transcribe', 'summarize']) {
-            enqueueJob(s.jobs, {
-              recordingId,
-              segmentIndex: index,
-              kind,
-              dedupe: recordingId + ':' + index + ':' + kind,
-              state: 'pending',
-              attempts: 0,
-              nextAt: 0,
-            });
-          }
       });
       return true;
     }
