@@ -435,14 +435,14 @@ async function until(page, predicate, arg) {
       await page.locator('#visualClose').click();
       await page.locator('#librarySearch').fill('station north');
       await page.locator('#libraryFavourites').click();
-      await page.waitForFunction(() => document.querySelectorAll('.library-media-card:not([hidden])').length === 1);
-      assert.equal(await page.locator('.library-media-card:not([hidden]) .recording-row-name').textContent(), 'Station sign');
-      await page.locator('.library-media-card:not([hidden]) .library-media-open').click();
+      await page.waitForFunction(() => [...document.querySelectorAll('.library-media-card')].filter(card => card.checkVisibility()).length === 1);
+      assert.equal(await page.locator('.library-media-card:visible .recording-row-name').textContent(), 'Station sign');
+      await page.locator('.library-media-card:visible .library-media-open').click();
       assert.equal(await page.locator('#visualNotes').inputValue(), 'Return platform <b>north</b>');
       assert.equal(await page.locator('#visualFavourite').getAttribute('aria-pressed'), 'true');
       await page.locator('#visualClose').click();
       await page.locator('#librarySearch').fill('no matching visual');
-      await page.waitForFunction(() => document.querySelectorAll('.library-media-card:not([hidden])').length === 0);
+      await page.waitForFunction(() => [...document.querySelectorAll('.library-media-card')].filter(card => card.checkVisibility()).length === 0);
       assert.match(await page.locator('#librarySearchStatus').textContent(), /No matching/);
       await page.locator('#clearLibrarySearch').click();
       await page.locator('#visualPhotoAudio').click();
@@ -554,7 +554,10 @@ async function until(page, predicate, arg) {
       const paired = await page.evaluate(async () =>
         (await SynapChakshu.store.list()).find((r) => r.name === 'paired.mjpeg'),
       );
-      await page.locator('[data-media-id="' + paired.id + '"]').click();
+      await page.locator('#librarySearch').fill('paired.mjpeg');
+      await page.waitForFunction(id => document.getElementById('recording-' + id), paired.audioId);
+      await page.locator('[id="recording-' + paired.audioId + '"] > summary').click();
+      await page.locator('[data-media-id="' + paired.id + '"] .library-media-open').click();
       await page.waitForFunction(() => !document.getElementById('visualAudio').hidden);
       await page.locator('#visualAudioSource').click();
       await page.waitForFunction(
@@ -562,7 +565,7 @@ async function until(page, predicate, arg) {
         paired.audioId,
       );
       assert.equal(await page.locator('#visualDialog').evaluate((el) => el.open), false);
-      await page.locator('[data-media-id="' + paired.id + '"]').click();
+      await page.locator('[data-media-id="' + paired.id + '"] .library-media-open').click();
       await page.locator('#visualNextFrame').click();
       assert.equal(await page.locator('#visualSeek').inputValue(), '500');
       assert.equal(await page.locator('#visualNextFrame').isDisabled(), true);
@@ -624,7 +627,7 @@ async function until(page, predicate, arg) {
           paired.audioId,
         ),
       );
-      await page.locator('[data-media-id="' + framePhoto.id + '"]').click();
+      await page.locator('[data-media-id="' + framePhoto.id + '"] .library-media-open').click();
       const downloadEvent = page.waitForEvent('download');
       await page.locator('#visualDownload').click();
       const exported = await downloadEvent;
@@ -659,7 +662,7 @@ async function until(page, predicate, arg) {
         await SynapChakshu.sync();
       });
       assert.equal(await page.locator('#visualAccess').textContent(), 'Unavailable');
-      assert.equal(await page.locator('.library-media-card:not([hidden])').count(), 0);
+      assert.equal(await page.locator('.library-media-card:visible').count(), 0);
       assert.equal(await page.locator('#visualDialog').evaluate((el) => el.open), false);
       assert.equal(await page.locator('#visualPreview').getAttribute('src'), null);
       assert.equal(await page.locator('#capturePreview').evaluate((el) => el.open), false);
@@ -682,10 +685,10 @@ async function until(page, predicate, arg) {
         );
         await SynapChakshu.sync();
       });
-      await page.waitForFunction(() => document.querySelectorAll('.library-media-card:not([hidden])').length >= 3);
+      await page.waitForFunction(() => [...document.querySelectorAll('#recordingsList > :not([hidden])')].some(card => SynapMemoryLibrary.types(card.synapRecording).includes('video')));
       // Shared type filters keep the mounted audio players and local media together.
       await page.locator('#libraryTypeFilter').selectOption('video');
-      assert(await page.locator('.library-media-card:not([hidden])').count() > 0);
+      assert(await page.locator('#recordingsList > :not([hidden])').count() > 0);
       assert(await page.locator('#recordingsList > :not([hidden])').evaluateAll(cards =>
         cards.every(card => SynapMemoryLibrary.types(card.synapRecording).includes('video'))));
       await page.locator('#libraryTypeFilter').selectOption('audio');
@@ -700,10 +703,11 @@ async function until(page, predicate, arg) {
         cards.map(card => Date.parse(card.synapRecording.createdAt)));
       assert.deepEqual(times, times.slice().sort((a,b) => b-a));
       // One explicitly linked capture has one selectable memory, searchable by its details.
-      const grouped = await page.evaluate(async () => {
+      const grouped = await page.evaluate(async jpegBytes => {
         const audioId = 'joined-memory-fixture';
         const photo = await SynapChakshu.store.create({ kind: 'image', name: 'Prototype photo' });
         const video = await SynapChakshu.store.create({ kind: 'video', name: 'Prototype video' });
+        for (const row of [photo, video]) await SynapChakshu.store.append(row.id, { blob: new Blob([new Uint8Array(jpegBytes)], {type:'image/jpeg'}), atMs:0 });
         for (const row of [photo, video]) await SynapChakshu.store.patch(row.id, {
           state: 'complete', audioId, notes: 'Enclosure review', favourite: true,
         });
@@ -718,7 +722,7 @@ async function until(page, predicate, arg) {
         dispatchEvent(new CustomEvent('synap-chakshu-changed'));
         dispatchEvent(new CustomEvent('synap-recording-saved'));
         return { audioId, photoId: photo.id, videoId: video.id };
-      });
+      }, Array.from(jpeg));
       await page.locator('#librarySearch').fill('Priya revised plan');
       await page.waitForFunction(() => document.querySelectorAll('#recordingsList > :not([hidden])').length === 1);
       const joined = page.locator('#recordingsList > :not([hidden])');
@@ -731,6 +735,9 @@ async function until(page, predicate, arg) {
       await joined.locator('summary').click();
       assert.equal(await joined.locator('.memory-attachments .library-media-card').count(), 2);
       assert.equal(await joined.locator('.recording-select-input').count(), 1, 'attachments are not duplicated selections');
+      await page.locator('#libraryAddClose').click();
+      await joined.scrollIntoViewIfNeeded();
+      await page.screenshot({path:'artifacts/workflows/chakshu-library/grouped-memory-' + width + '.png'});
       const player = await joined.locator('audio').elementHandle();
       await joined.locator('.library-media-open').first().click();
       await page.waitForFunction(() => document.getElementById('visualDialog').open);
@@ -796,8 +803,8 @@ async function until(page, predicate, arg) {
       await page.waitForFunction(() => SynapChakshu.state.available);
       await page.locator('nav a[href="#library"]').click();
       await page.locator('#libraryFavourites').click();
-      await page.waitForFunction(() => document.querySelectorAll('.library-media-card:not([hidden])').length === 1);
-      assert.equal(await page.locator('.library-media-card:not([hidden]) .recording-row-name').textContent(), 'Station sign');
+      await page.waitForFunction(() => [...document.querySelectorAll('.library-media-card')].filter(card => card.checkVisibility()).length === 1);
+      assert.equal(await page.locator('.library-media-card:visible .recording-row-name').textContent(), 'Station sign');
       assert.equal(descriptions.length, 0);
       assert.deepEqual(errors, []);
       await context.close();
