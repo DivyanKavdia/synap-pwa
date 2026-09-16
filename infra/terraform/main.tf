@@ -538,12 +538,40 @@ resource "google_cloud_run_v2_service" "backend" {
 
       resources {
         limits = {
-          cpu    = "2"
+          # One vCPU. The request path is IO-bound waiting on Gemini, not
+          # compute-bound, so the second core bought throughput this service
+          # never used — and under always-allocated billing it was charged for
+          # the whole instance lifetime, idle included.
+          cpu    = "1"
           memory = "2Gi"
         }
-        # Transcription is IO-bound on Gemini; without this the instance is
-        # throttled between requests and a queued batch crawls.
-        cpu_idle = false
+
+        # CPU throttled between requests (request-based billing).
+        #
+        # This was false, on the reasoning that "transcription is IO-bound on
+        # Gemini; without this the instance is throttled between requests and a
+        # queued batch crawls." That describes a real Cloud Run failure mode,
+        # but not one this backend can hit. Throttling applies only *between*
+        # requests; during a request CPU is fully allocated either way. A queued
+        # batch is a sequence of Cloud Tasks requests, and every handler here
+        # finishes its work before responding:
+        #
+        #   POST /tasks/process              await processRecording() -> res
+        #   POST /recordings/:id/process-now await processRecording() -> res
+        #   PUT  /recordings/:id/segments/:i await transcribeUploadedWindow() -> res
+        #   POST /recordings/:id/finalize    await enqueueProcessing()  -> 202
+        #
+        # Nothing is deferred past the response and there is no background
+        # timer outside a handler (the only setTimeout in index.ts is the
+        # .unref()'d shutdown grace period), so there is no work for throttling
+        # to starve. If that ever stops being true — if some handler starts
+        # replying early and continuing in the background — this must go back
+        # to false, and the comment above is the reason why.
+        #
+        # Measured cost of the old setting: Cloud Run CPU was ~₹1,199 of a
+        # ~₹2,788 bill over 13 days, at ~7.5 hours of billed instance time per
+        # day against a workload that was mostly idle.
+        cpu_idle = true
       }
 
       env {
