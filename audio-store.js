@@ -417,7 +417,7 @@
         s.jobs.delete(id);
       });
     }
-    async begin(name, association = null) {
+    async begin(name, association = null, { localOnly = false } = {}) {
       if (this.failed) throw this.failed;
       const id = root.crypto.randomUUID();
       await this.atomic(['recordings'], (s) =>
@@ -427,6 +427,8 @@
           name,
           createdAt: new Date().toISOString(),
           journal: true,
+          localOnly,
+          ...(localOnly ? { processingState: 'local', processingStage: 'local' } : {}),
           status: 'recording',
           sampleRate: 16000,
           deviceId: association?.deviceId || null,
@@ -604,7 +606,7 @@
         const req = s.recordings.get(recordingId);
         req.onsuccess = () => {
           const r = req.result;
-          if (!r || r.journal || r.queuedLegacy || !r.blob) return;
+          if (!r || r.localOnly || r.journal || r.queuedLegacy || !r.blob) return;
           s.recordings.put({ ...r, queuedLegacy: true });
           const transcribed =
             preserveTranscript &&
@@ -636,7 +638,7 @@
       return this.atomic(['recordings', 'jobs'], (s) => {
         const record = s.recordings.get(recordingId);
         record.onsuccess = () => {
-          if (!record.result) return;
+          if (!record.result || record.result.localOnly) return;
           const dedupe = recordingId + ':cloud-monitor',
             get = s.jobs.index('dedupe').get(dedupe);
           get.onsuccess = () =>
@@ -679,7 +681,7 @@
         offset += frame.byteLength;
       }
       const consumed = new Set(data.completeSequences || []);
-      await this.atomic(['segments', 'packets', 'jobs'], (s, result, tx, abort) => {
+      await this.atomic(['recordings', 'segments', 'packets', 'jobs'], (s, result, tx, abort) => {
         const req = s.segments.get([recordingId, index]);
         req.onsuccess = () => {
           const current = req.result || { recordingId, index };
@@ -711,7 +713,9 @@
                   cursor.result.continue();
                 }
               };
-              if (hasAudio && data.frames.length)
+              const recording = s.recordings.get(recordingId);
+              recording.onsuccess = () => {
+                if (recording.result?.localOnly || !hasAudio || !data.frames.length) return;
                 for (const kind of ['transcribe', 'summarize']) {
                   enqueueJob(s.jobs, {
                     recordingId,
@@ -723,6 +727,7 @@
                     nextAt: 0,
                   });
                 }
+              };
             } catch (error) {
               abort(error);
             }
@@ -835,7 +840,7 @@
             sealed: true,
             compacted: true,
           });
-          if (!previous.sealed && complete)
+          if (!previous.localOnly && !previous.sealed && complete)
             enqueueJob(s.jobs, {
               recordingId,
               kind: 'consolidate',

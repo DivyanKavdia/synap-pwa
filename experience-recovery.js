@@ -61,7 +61,7 @@
       var get = stores.recordings.get(id);
       get.onsuccess = function () {
         var current = get.result;
-        if (!current) { result(false); return; }
+        if (!current || current.localOnly) { result(false); return; }
         var fields = {};
         if (source.state === 'ready' && (source.executive_summary || source.title || source.conversations) &&
             root.SynapBackend && typeof root.SynapBackend.toRecordingFields === 'function') {
@@ -97,12 +97,12 @@
     var recording = node.synapRecording || {};
     var state = transcriptNotices.get(String(recording.id)) || {};
     var hasText = Boolean(String(recording.transcript || '').trim());
-    var message = state.message || '';
+    var message = recording.localOnly ? 'This soundtrack stays on this device and is not sent for transcription or summaries.' : state.message || '';
     if (!message && !hasText) {
       message = recording.transcriptComplete ? 'No speech was found in this recording.'
         : recording.sourceHydratedAt ? 'The transcript is not ready yet. Check memory processing in Library.'
         : signedIn() ? 'Load this recording’s transcript.' : 'No transcript saved yet. Process this recording to create one.';
-    } else if (!message && recording.sourceHydratedAt && !recording.transcriptComplete) {
+    } else if (!message && hasText && recording.transcriptComplete === false) {
       message = 'Transcript available so far. Some audio still needs transcription.';
     }
     var text = node.querySelector('p');
@@ -111,7 +111,7 @@
     var button = node.querySelector('button');
     button.textContent = state.error ? 'Retry transcript' : hasText ? 'Refresh transcript' : 'Load transcript';
     button.disabled = state.loading === true;
-    button.hidden = !recording.id || !signedIn();
+    button.hidden = recording.localOnly || !recording.id || !signedIn();
     node.setAttribute('aria-busy', String(state.loading === true));
   }
 
@@ -165,11 +165,14 @@
 
     updateTranscriptNotices(id, { loading: true, message: 'Loading transcript…' });
 
-    var task = json('/v1/recordings/' + encodeURIComponent(id) + '/source')
-      .then(function (source) { return saveSource(id, source).then(function (saved) { return [source, saved]; }); })
+    var task = openJournal().then(journal => journal.get('recordings', id)).then(async recording => {
+      if (recording?.localOnly) return [null, recording];
+      const source = await json('/v1/recordings/' + encodeURIComponent(id) + '/source');
+      return [source, await saveSource(id, source)];
+    })
       .then(function (values) {
         var source = values[0], saved = values[1];
-        if (saved && source.transcript_complete === true && source.state === 'ready') hydrated.add(id);
+        if (saved && source?.transcript_complete === true && source.state === 'ready') hydrated.add(id);
         updateTranscriptNotices(id, null, saved || null);
         if (saved) refreshUi(id);
         return Boolean(saved);
@@ -233,6 +236,9 @@
   }
 
   async function cloudAudio(recordingId) {
+    const journal = await openJournal();
+    if ((await journal.get('recordings', recordingId))?.localOnly)
+      throw Object.assign(new Error('This soundtrack has no cloud copy. Recover an exported copy if browser data was cleared.'), { localOnly: true });
     if (!signedIn()) throw new Error('Sign in to recover source audio from Synap Cloud.');
     var response = await request('/v1/recordings/' + encodeURIComponent(recordingId) + '/audio');
     if (!response.ok) {
@@ -254,7 +260,7 @@
     var task = cloudAudio(id)
       .then(function (blob) { return attachBlob(audio, blob, 'cloud'); })
       .catch(function (error) {
-        playbackStatus(audio, error && error.status === 410
+        playbackStatus(audio, error?.localOnly ? error.message : error && error.status === 410
           ? 'Source audio is no longer retained in Synap Cloud.'
           : 'Audio could not be loaded. The recording itself is still preserved.', true);
         return false;
@@ -283,7 +289,7 @@
         return cloudAudio(id).then(function (blob) { return attachBlob(audio, blob, 'cloud'); });
       })
       .catch(function (error) {
-        playbackStatus(audio, error && error.status === 410
+        playbackStatus(audio, error?.localOnly ? error.message : error && error.status === 410
           ? 'Source audio is no longer retained in Synap Cloud.'
           : 'Audio could not be loaded. The recording itself is still preserved.', true);
         return false;

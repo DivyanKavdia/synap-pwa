@@ -14,6 +14,20 @@ function load(){
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 async function until(check){for(let i=0;i<100;i++){if(check())return;await tick();}assert.fail('queue did not reach the expected state');}
 
+test('local soundtracks are playable library items without missing transcription or retry states', () => {
+  const { state, matchesStatus } = load().SynapLibraryTools;
+  const record = { localOnly: true, sealed: true, status: 'saved', processingStage: 'local' };
+  for (const provider of ['synap', 'custom']) {
+    const jobs = [{ kind: 'transcribe', state: 'failed' }];
+    assert.equal(state(record, jobs, provider).canProcess, false);
+    for (const status of ['transcript', 'summary', 'retry', 'processing', 'ready'])
+      assert.equal(matchesStatus(record, status, jobs, provider), false);
+    assert.equal(matchesStatus(record, 'local', jobs, provider), true);
+    assert.equal(matchesStatus(record, 'all', jobs, provider), true);
+  }
+  assert.equal(state({ ...record, status: 'recording', sealed: false }).protectedRecording, true);
+});
+
 test('recording filters distinguish missing work, partial text and completed cloud metadata',()=>{
   const {state,matchesStatus}=load().SynapLibraryTools;
   for(const record of [{processingStage:'ready'}, {processingState:'done',transcript:'',summary:''}]){

@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio2";
-  const APP_SHELL_REVISION = "1.0.0-shell120-chakshu";
+  const APP_SHELL_REVISION = "1.0.0-shell121-chakshu";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -1743,7 +1743,7 @@
     return id === recordingSessionId && id !== finalizedSessionId;
   }
 
-  async function startRecording() {
+  async function startRecording(captureOptions = {}) {
     if (globalThis.SynapModules?.busy || globalThis.SynapChakshu?.state?.offline || globalThis.SynapChakshu?.state?.wifi?.active) { toast("Finish the SD recording or Wi-Fi downloads before starting audio.", "error"); return; }
     if (firmwareBusy) return;
     if (globalThis.SynapDesktopCapture?.state?.().active) {
@@ -1771,7 +1771,7 @@
           navigator.storage.persist().then(granted=>log("Persistent storage request",{granted}))
             .catch(error=>log("Persistent storage request failed",friendlyError(error,"Storage")));
         }
-        openingCapture = journal.begin(defaultRecordingName(new Date()), deviceAssociation);
+        openingCapture = journal.begin(defaultRecordingName(new Date()), deviceAssociation, { localOnly: captureOptions.localOnly === true });
         currentRecordingId = await openingCapture;
         openingCapture = null;
         if (!isCurrentSession(sessionId) || appState !== "starting") return;
@@ -2714,6 +2714,7 @@
           const recording=await journal.get('recordings',id);
           if(!recording)throw new Error("This recording is no longer available.");
           let jobs=await journal.all('jobs','recording',id);
+          if(recording.localOnly){result.skipped.push({id,message:'This soundtrack is stored only on this device.'});continue;}
           const model=globalThis.SynapLibraryTools.state(recording,jobs,provider);
           if(protectedLibraryRecording(recording)||model.protectedRecording)throw new Error("This recording must be stopped and saved first.");
           if(model.ready||(model.failed&&recording.processingRetryable===false)){
@@ -3079,7 +3080,7 @@
     const date = new Date(recording.createdAt);
     const label = date.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
     const gaps = globalThis.SynapAudioQuality?.gaps(recording.stats, recording.durationMs);
-    return label + " · " + date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " · " + formatDuration(recording.durationMs)
+    return (recording.localOnly ? "On this device · " : "") + label + " · " + date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " · " + formatDuration(recording.durationMs)
       + (gaps ? " · Audio incomplete: " + gaps.label : "")
       + (recording.audioQuality?.longestNearSilentMs >= 3000 ? " · Microphone signal was nearly silent" : "");
   }
@@ -3114,7 +3115,7 @@
       content.appendChild(recordingDisclosure("Transcript", transcript, globalThis.SynapExperienceRecovery.createTranscriptNotice(recording)));
     }
     if (transcript) {
-      if (recording.sourceHydratedAt || recording.processingStage === "ready" || recording.summary) transcript.readOnly = true;
+      if (recording.sourceHydratedAt || recording.provider === "synap" || recording.processingStage === "ready" || recording.summary) transcript.readOnly = true;
       if (transcript.readOnly) transcript.value = recording.transcript || "";
       transcript.hidden = !transcript.value.trim();
       const notice = content.querySelector('.synap-transcript-notice');
@@ -3301,7 +3302,7 @@
       transcript.value = recording.transcript || "";
       transcript.hidden = !transcript.value.trim();
       transcript.setAttribute("aria-label", "Transcript");
-      if (!recording.transcript || recording.sourceHydratedAt || recording.processingStage === "ready" || recording.processingState === "done" || recording.summary) {
+      if (!recording.transcript || recording.localOnly || recording.provider === "synap" || recording.sourceHydratedAt || recording.processingStage === "ready" || recording.processingState === "done" || recording.summary) {
         transcript.readOnly = true;
         transcript.title = "Transcript is source evidence for this memory. Refresh memory to rebuild it safely.";
       } else {
@@ -3973,6 +3974,9 @@
       renderLibraryPage();
       document.getElementById("librarySearch")?.focus();
     });
+    window.addEventListener("synap-recording-saved", () => {
+      if (startupReady) void renderRecordings();
+    });
     window.addEventListener("synap-library-source", function (event) {
       resetLibrarySearch();
       globalThis.SynapLibraryTools?.reset();
@@ -4236,7 +4240,7 @@
       ['starting', 'stopping', 'saving', 'updating'].includes(appState));
   }
 
-  async function startMediaAudio() {
+  async function startMediaAudio(options = {}) {
     // A completed journal may no longer have a session ID while capture cleanup
     // is still running. Starting the next media take must wait for its owner.
     const settleDeadline = Date.now() + 15000;
@@ -4251,7 +4255,7 @@
       if (!recordingState().active) {
         if (appState !== 'idle') throw Error('Finish the current recording first.');
         const previous = recordingSessionId;
-        const starting = startRecording();
+        const starting = startRecording(options);
         // startRecording claims its session before its first await. A later
         // cancelled/replacement take must never become ours to stop.
         if (recordingSessionId !== previous) ownedSession = recordingSessionId;
@@ -4263,7 +4267,18 @@
         const state = recordingState();
         if (ownedSession !== null && !isCurrentSession(ownedSession)) break;
         if (expected && state.sessionId !== expected) break;
-        if (state.active && state.receivedMs > 0) return state;
+        if (state.active && state.receivedMs > 0) {
+          if (options.localOnly === true) {
+            // Another microphone action may have started while the previous
+            // take was saving. Never attach private video to a cloud journal.
+            const recording = await journal.get('recordings', state.recordingId);
+            if (!recording?.localOnly)
+              throw Error('Stop standalone audio before starting a local photo or video soundtrack.');
+            if (recordingState().sessionId !== state.sessionId)
+              throw Error('The recording changed while starting this soundtrack. Try again.');
+          }
+          return state;
+        }
         if (!['starting', 'recording'].includes(appState) || !isGattConnected()) break;
         expected ||= state.sessionId;
         await new Promise(resolve => setTimeout(resolve, 50));

@@ -177,6 +177,8 @@
 
   function derive(recording, jobs, context) {
     recording = recording || {};
+    if (recording.localOnly) return { status: recording.status === 'recording' ? 'Recording on this device' : 'On this device',
+      tone: 'local', percent: null, steps: [step('local', 'Saved on this device', recording.status === 'recording' ? 'active' : 'done')] };
     jobs = Array.isArray(jobs) ? jobs : [];
     context = context || runtimeContext(recording);
     return context.provider === 'custom'

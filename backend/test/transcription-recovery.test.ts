@@ -57,7 +57,7 @@ test('legacy and free-form language preferences cannot enter the ASR request unc
   }
 });
 
-test('a rejected language hint retries with automatic detection and keeps diarization', async () => {
+test('a rejected language hint retries with automatic detection without timestamp constraints', async () => {
   const original = fetch;
   const requests: any[] = [];
   globalThis.fetch = async (_url, init) => {
@@ -68,7 +68,7 @@ test('a rejected language hint retries with automatic detection and keeps diariz
   try {
     const result = await transcribeSegment(audio, 'audio/wav', { language: 'hi-IN', baseOffsetMs: 30000 });
     assert.equal(requests.length, 2);
-    assert.equal(requests[1].generation_config.transcription_config.mode.diarization_mode, 'speaker');
+    assert.equal(requests[1].generation_config.transcription_config.mode, 'verbatim');
     assert.deepEqual(requests[1].input, requests[0].input);
     assert.ok(requests.every(request => request.store === false && !('usage_label' in request)));
     assert.equal(result.words[0]?.start_ms, 30000);
@@ -76,7 +76,7 @@ test('a rejected language hint retries with automatic detection and keeps diariz
   } finally { globalThis.fetch = original; }
 });
 
-test('rejected annotation options recover full text with honest segment timing and no repair loop', async () => {
+test('rejected mode recovers full text with provider defaults and a bounded annotation pass', async () => {
   const original = fetch;
   const requests: any[] = [];
   globalThis.fetch = async (_url, init) => {
@@ -86,15 +86,15 @@ test('rejected annotation options recover full text with honest segment timing a
   };
   try {
     const result = await transcribeSegment(audio, 'audio/wav', { baseOffsetMs: 30000 });
-    assert.equal(requests.length, 2);
-    assert.deepEqual(requests[1].generation_config.transcription_config, { mode: 'verbatim' });
+    assert.equal(requests.length, 3);
+    assert.deepEqual(requests[1].generation_config.transcription_config, {});
     assert.deepEqual(requests[1].input, requests[0].input);
     assert.equal(requests[1].store, false);
     assert.equal(result.text, '[00:30] S?: Keep every word.');
     assert.deepEqual(result.words, []);
     assert.deepEqual(result.speakers, []);
     assert.equal(result.review.annotationsComplete, false);
-    assert.equal(result.review.attempted, false);
+    assert.equal(result.review.attempted, true);
   } finally { globalThis.fetch = original; }
 });
 

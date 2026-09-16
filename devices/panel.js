@@ -34,6 +34,23 @@
     const caps = root.SynapCapabilities,
       chakshu = caps.isChakshu(info),
       status = client?.status;
+    const experience = byId('moduleExperience');
+    if (experience) {
+      const recoveryMs = root.SynapDisconnectProtection?.capacityMs() || 0;
+      experience.textContent = !info
+        ? ''
+        : chakshu
+          ? 'Audio builds transcripts and memories. Photos, video and soundtracks save only to this phone. Bluetooth video uses a limited frame rate. Local voice commands are off.'
+          : caps.profile(info)
+            ? 'Audio recording, transcripts and memories.' +
+              (caps.ready(info, 'touch') ? ' Touch control is available.' : '') +
+              (recoveryMs
+                ? ' Audio recovery: up to ' +
+                  Math.round(recoveryMs / 10) / 100 +
+                  ' seconds across brief disconnects.'
+                : ' Keep the app open and your pendant nearby for continuous audio.')
+            : 'Capabilities could not be verified. Refresh status before recording.';
+    }
     byId('chakshuChecks').hidden = !chakshu;
     byId('moduleRefresh').disabled = !client || client.pending || client.busy;
     if (!chakshu) {

@@ -203,6 +203,7 @@
     async create(fields) {
       const row = {
         ...fields,
+        localOnly: true,
         id: root.crypto.randomUUID(),
         ownerUid: this.uid,
         createdAt: new Date().toISOString(),

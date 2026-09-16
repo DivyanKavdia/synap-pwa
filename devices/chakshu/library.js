@@ -1,4 +1,4 @@
-/* Mounted photo/video surface. Model output is always text, never executable markup. */
+/* Phone-only photo/video library, playback, notes and exports. */
 (function (root) {
   'use strict';
   const $ = (id) => document.getElementById(id),
@@ -66,7 +66,6 @@
     $('visualStage').classList.remove('zoomed');
     $('visualZoom').setAttribute('aria-pressed', 'false');
     $('visualZoom').textContent = 'Zoom view';
-    $('visualPrompt').value = '';
     $('visualName').value = '';
     $('visualNotes').value = '';
     $('visualTitle').textContent = 'Photo';
@@ -77,14 +76,7 @@
     $('visualDescriptions').replaceChildren();
     $('visualAudioLink').replaceChildren();
     document.querySelector('.visual-edit').open = false;
-    for (const id of [
-      'visualSaveFrame',
-      'visualFavourite',
-      'visualSaveDetails',
-      'visualDescribe',
-      'visualReadText',
-      'visualSaveLink',
-    ])
+    for (const id of ['visualSaveFrame', 'visualFavourite', 'visualSaveDetails', 'visualSaveLink'])
       $(id).disabled = false;
   }
   function pause() {
@@ -208,8 +200,6 @@
     for (const id of ['visualPreviousFrame', 'visualNextFrame', 'visualSaveFrame'])
       $(id).hidden = row.kind !== 'video';
     $('visualSaveFrame').disabled = !frames.length;
-    $('visualDescribe').disabled = !frames.length;
-    $('visualReadText').disabled = !frames.length;
     $('visualDownload').disabled = !frames.length;
     $('visualDownload').textContent = row.previewOnly ? 'Download preview' : 'Download original';
     $('visualZoom').disabled = !frames.length;
@@ -226,7 +216,7 @@
           row.sourcePath +
           '. Use Browse SD card or Wi-Fi downloads to retrieve it. '
         : '') +
-      'Saved on this browser.';
+      'Saved in this browser on this device. Export a copy before clearing browser data.';
     renderDescriptions();
     $('visualDetailStatus').textContent = '';
     showFrame(0);
@@ -304,7 +294,6 @@
       visualPhoto: state.cameraReady,
       visualPhotoAudio: state.cameraReady,
       visualOnline: state.videoReady,
-      visualOffline: state.offlineReady,
       visualSD: state.storageReady,
     }))
       $(id).disabled = busy || !state.connected || !available;
@@ -316,13 +305,9 @@
     $('visualWifi').title = state.wifiSupported
       ? ''
       : 'Update Chakshu firmware for Wi-Fi downloads.';
-    $('visualStorageHint').textContent = !state.connected
-      ? 'Connect Chakshu to check its SD card.'
-      : state.storageReady
-        ? state.sdVideoPreferred
-          ? 'SD card ready. The video button records to SD; phone preview is available below.'
-          : 'SD card ready. Update firmware for faster SD video and Wi-Fi downloads.'
-        : 'Insert an SD card, then choose Check SD card. Phone photos and previews remain available.';
+    $('visualStorageHint').textContent = state.storageReady
+      ? 'Existing SD files can be imported. New photos, video and soundtracks save only to this phone.'
+      : 'No SD card is needed. Photos, video and soundtracks save only to this phone.';
     $('visualWifiDetails').hidden = !state.wifi?.active;
     $('visualWifiName').textContent = state.wifi?.ssid || '';
     $('visualWifiPassword').textContent = state.wifi?.password || '';
@@ -330,7 +315,6 @@
     else $('visualWifiOpen').removeAttribute('href');
     $('visualWifiStop').disabled = !state.connected || state.working;
     $('visualMode').disabled = busy;
-    $('visualExplainLive').hidden = !state.session?.id;
     $('visualAudioOnly').disabled =
       state.offline || state.working || deviceBusy || state.wifi?.active;
     $('visualLive').hidden = !state.session?.id;
@@ -344,7 +328,7 @@
     $('visualConnectionStatus').textContent =
       state.error ||
       (state.session
-        ? 'Recording camera frames and separate audio…'
+        ? 'Saving camera frames and soundtrack on this phone…'
         : state.offline
           ? 'Recording to SD · ' +
             ((state.offlineStatus?.audioMs || 0) / 1000).toFixed(1) +
@@ -508,10 +492,7 @@
     $('visualPhotoAudio').addEventListener('click', () =>
       action(async () => open(await api().photo(true))),
     );
-    $('visualOnline').addEventListener('click', () =>
-      action(() => api().startLive($('visualInference').checked)),
-    );
-    $('visualOffline').addEventListener('click', () => action(() => api().startOffline()));
+    $('visualOnline').addEventListener('click', () => action(() => api().startVideo()));
     $('visualCheckSD').addEventListener('click', () => action(() => api().refreshSD()));
     $('visualWifi').addEventListener('click', () => action(() => api().startWifi()));
     $('visualWifiStop').addEventListener('click', () => action(() => api().stopWifi()));
@@ -525,16 +506,6 @@
       else status('Select and copy the displayed password.');
     });
     $('visualStop').addEventListener('click', () => action(() => api().stop()));
-    $('visualExplainLive').addEventListener('click', () =>
-      action(async () => {
-        const id = api().state.session?.id;
-        if (id) {
-          const audio = root.SynapAppControls.recordingState();
-          const result = await api().describe(id, audio.offsetMs);
-          return result.text;
-        }
-      }),
-    );
     $('visualImport').addEventListener('click', () => $('visualFiles').click());
     $('visualFiles').addEventListener('change', () =>
       action(async () => {
@@ -648,30 +619,6 @@
         if (context.current()) await render();
         return 'Photo saved to your library. Its audio link is kept.';
       }),
-    );
-    const describe = (id, prompt) =>
-      detailAction(id, async (context) => {
-        pause();
-        await api().describe(context.id, selectedFrames[frameIndex]?.atMs || 0, prompt);
-        const row = await context.store.get(context.id);
-        if (context.current() && row) {
-          selected.descriptions = row.descriptions;
-          renderDescriptions();
-          await render();
-        }
-        return 'Description saved.';
-      });
-    $('visualDescribe').addEventListener('click', () =>
-      describe(
-        'visualDescribe',
-        $('visualPrompt').value.trim() || 'Describe what is visible here.',
-      ),
-    );
-    $('visualReadText').addEventListener('click', () =>
-      describe(
-        'visualReadText',
-        'Read the text visible in this view. Preserve its reading order and say when text is unclear.',
-      ),
     );
     $('visualSaveLink').addEventListener('click', () =>
       detailAction('visualSaveLink', async (context) => {

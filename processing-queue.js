@@ -258,6 +258,10 @@
       }
     }
     async process(job, config, url) {
+      // A stale or manually retried job must never upload a local soundtrack,
+      // regardless of which cloud/custom adapter was selected.
+      if ((await this.store.get('recordings', job.recordingId))?.localOnly)
+        return { localOnly: true, processingState: 'local', processingStage: 'local' };
       const name = config.provider || this.provider(),
         adapter = providers.get(name);
       if (name !== 'custom' && !adapter) throw new Error('Unknown processing provider: ' + name);

@@ -41,7 +41,7 @@ test('segment commits preserve accepted sources, completed results and parent st
   await db.acceptSegment('u','r',f.source,'first');
   assert.equal(f.rows.get(f.parent).uploadedSegments,1);
   const dek=generateDek(),bind=(field:string)=>({uid:'u',scope:'recording/r/segment/0',field});
-  const complete={...f.source,state:'transcribed',sealedTranscript:sealText(dek,'first result',bind('transcript')),sealedWords:sealJson(dek,[],bind('words')),transcribedAt:'done',transcriptionReview:{attempted:false,annotationsComplete:true}} as SegmentDoc;
+  const complete={...f.source,state:'transcribed',sealedTranscript:sealText(dek,'first result',bind('transcript')),sealedWords:sealJson(dek,[],bind('words')),transcribedAt:'done',transcriptionAudioPolicy:'stored-upload-v1',transcriptionReview:{attempted:false,annotationsComplete:true}} as SegmentDoc;
   await db.completeSegmentTranscription('u','r',complete);
   f.rows.set(f.parent,{...f.rows.get(f.parent),state:'ready',endedAt:'ended',processingLease:'current'});
   const before=structuredClone(f.rows.get(f.parent));
@@ -68,6 +68,22 @@ test('a rejected acceptance transaction leaves both the counter and segment unch
   const f=fixture();t.after(()=>db.setFirestoreForTest(null));f.fail();
   await assert.rejects(db.acceptSegment('u','r',f.source,'first'),/Commit unavailable/);
   assert.equal(f.rows.has(f.child),false);assert.equal(f.rows.get(f.parent).uploadedSegments,0);
+});
+
+test('a reviewed retry replaces only the exact legacy empty result; concurrent completions keep the winner', async t => {
+  const f = fixture(), dek = generateDek();
+  t.after(() => db.setFirestoreForTest(null));
+  const bind = (field: string) => ({ uid: 'u', scope: 'recording/r/segment/0', field });
+  await db.acceptSegment('u', 'r', f.source, 'first');
+  const legacy = await db.completeSegmentTranscription('u', 'r', { ...f.source, state: 'transcribed',
+    sealedTranscript: sealText(dek, '', bind('transcript')), sealedWords: sealJson(dek, [], bind('words')) });
+  const recovered = { ...legacy, sealedTranscript: sealText(dek, 'Recovered complete speech', bind('transcript')),
+    transcriptionReview: { attempted: true, annotationsComplete: false, policy: 'text-first-v1' as const, outcome: 'speech' as const } };
+  assert.deepEqual(await db.completeSegmentTranscription('u', 'r', recovered), legacy, 'replacement requires the original empty envelope');
+  const winner = await db.completeSegmentTranscription('u', 'r', recovered, legacy.sealedTranscript);
+  assert.deepEqual(winner.sealedTranscript, recovered.sealedTranscript);
+  const late = { ...recovered, sealedTranscript: sealText(dek, 'Late duplicate', bind('transcript')) };
+  assert.deepEqual(await db.completeSegmentTranscription('u', 'r', late, legacy.sealedTranscript), winner);
 });
 
 test('finalization checks complete segments atomically and preserves later processing on retries',async t=>{

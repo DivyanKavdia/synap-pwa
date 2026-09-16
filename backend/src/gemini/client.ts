@@ -180,6 +180,9 @@ export async function createInteraction(
     { model: request.model, stage: usageLabel || 'generation' }, signal);
   const fields = usageLogFields(request.model, usageLabel, response.usage);
   if (fields) log.info('Gemini usage', fields);
+  if (response.status && response.status !== 'completed') {
+    throw new GeminiError(`Gemini ${usageLabel || 'generation'} did not complete (${response.status}).`, 0, true);
+  }
   return response;
 }
 
@@ -199,6 +202,7 @@ export function interactionText(response: InteractionResponse): string {
 export function interactionWords(response: InteractionResponse): WordAnnotation[] {
   const words: WordAnnotation[] = [];
   for (const step of response.steps ?? []) {
+    if (step.type !== 'model_output') continue;
     for (const content of step.content ?? []) {
       for (const annotation of content.annotations ?? []) {
         if (annotation.type === 'word_info') words.push(annotation);

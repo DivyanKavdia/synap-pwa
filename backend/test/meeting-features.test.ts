@@ -53,5 +53,5 @@ test('person preparation falls back safely when the optional index is not availa
 
 test("empty speech does not create a paid or invented meeting summary",async()=>{
   const result=await extractMemory({transcript:"",durationMs:30000,highlightOffsetsMs:[],knownPeople:["Asha"],language:"auto"});
-  assert.deepEqual(result.conversations,[]);assert.deepEqual(result.people,[]);assert.equal(result.executive_summary,"");
+  assert.deepEqual(result.conversations,[]);assert.deepEqual(result.people,[]);assert.match(result.executive_summary,/No recognizable speech/);
 });

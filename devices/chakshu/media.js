@@ -1,7 +1,7 @@
-/* Account association, capture and selected-frame inference. Audio retains its existing owner. */
+/* Phone-only camera capture. Standalone audio keeps its separate transcription flow. */
 (function (root) {
   'use strict';
-  const { Store, TARGET, windowFrames, explainWords, splitMJPEG } = root.SynapVisualStore;
+  const { Store, TARGET, splitMJPEG } = root.SynapVisualStore;
   const capabilities = root.SynapCapabilities;
   const moduleInfo = () => root.SynapModules?.client?.module;
   const CACHE = 'synap-account-chakshu-v1:';
@@ -24,7 +24,6 @@
     wifiPoll = null;
   const controllers = new Set();
   let workController = null;
-  const voicePending = new Set();
   let associatedConnection = null;
   const MAX_VIDEO_BYTES = 32 * 1024 * 1024;
   const notify = () => root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
@@ -165,7 +164,7 @@
     } catch (e) {
       if (owner === expected)
         error = ready()
-          ? 'Using saved account association. Cloud descriptions will retry when online.'
+          ? 'Using the saved account association. Photos and videos stay on this phone.'
           : e.message;
     } finally {
       if (owner === expected) {
@@ -202,13 +201,13 @@
       notify();
     }
   }
-  async function snapshot(client, signal, preview = false, saved = false) {
+  async function snapshot(client, signal, preview = false) {
     const expected = owner;
     let lastProgressAt = 0;
     transferProgress = { percent: 0, totalBytes: 0, receivedBytes: 0 };
     notify();
     try {
-      return await client[saved ? 'savedPreview' : 'snapshot'](
+      return await client.snapshot(
         signal,
         (fraction, totalBytes) => {
           if (expected !== owner || signal?.aborted) return;
@@ -256,14 +255,15 @@
         device = connected(),
         client = camera('photo');
       let audio = root.SynapAppControls.recordingState();
-      const audioOwned = withAudio && !audio.active;
+      const audioOwned = withAudio;
       try {
-        if (audioOwned) audio = await root.SynapAppControls.startMediaAudio();
+        if (audioOwned) {
+          if (audio.active) await saveAudio(audio.sessionId);
+          audio = await root.SynapAppControls.startMediaAudio({ localOnly: true });
+        }
         check(owned.owner);
         const atMs = audio.active ? audio.offsetMs : 0;
-        const saved = Boolean(client.features & 2 && capabilities.ready(moduleInfo(), 'sd'));
-        const capture = await snapshot(client, signal, false, saved);
-        const blob = saved ? capture.blob : capture;
+        const blob = await snapshot(client, signal);
         check(owned.owner);
         const row = await owned.store.create({
           kind: 'image',
@@ -271,9 +271,8 @@
           audioId: audio.active ? audio.recordingId : null,
           audioOffsetMs: atMs,
           name: 'Photo',
-          captureMode: saved ? 'sd-photo-preview' : 'photo',
-          sourcePath: saved ? capture.path : null,
-          previewOnly: saved,
+          captureMode: 'photo',
+          localOnly: true,
         });
         await owned.store.append(row.id, { blob, atMs });
         await owned.store.patch(row.id, { state: 'saved' });
@@ -286,60 +285,9 @@
       }
     });
   }
-  async function describe(
-    id,
-    atMs = 0,
-    prompt = 'Explain what is visible here.',
-    scope = { owner, store },
-  ) {
-    check(scope.owner);
-    requireAccess();
-    const row = await scope.store.get(id);
-    if (!row) throw Error('This visual is unavailable.');
-    // Allow two following frames to arrive for an explicit live explanation.
-    // A stopped take or a stalled radio uses only the frames actually retained.
-    const deadline = Date.now() + 12000;
-    let allFrames = await scope.store.frames(id);
-    while (
-      /^explain\b/i.test(prompt) &&
-      session?.id === id &&
-      !session.cancelled &&
-      allFrames.filter((frame) => frame.atMs > atMs).length < 2 &&
-      Date.now() < deadline
-    ) {
-      await delay(250);
-      check(scope.owner);
-      allFrames = await scope.store.frames(id);
-    }
-    const frames = windowFrames(allFrames, atMs);
-    if (!frames.length) throw Error('No camera frame was saved close enough to this moment.');
-    const input = [];
-    for (const frame of frames) {
-      const bytes = new Uint8Array(await frame.blob.arrayBuffer());
-      let binary = '';
-      for (let i = 0; i < bytes.length; i += 8192)
-        binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-      input.push({ atMs: frame.atMs, jpeg: btoa(binary) });
-    }
-    const reply = await api(
-      '/v1/chakshu/describe',
-      { deviceId: row.deviceId, prompt, frames: input },
-      scope.owner,
-    );
-    check(scope.owner);
-    const current = await scope.store.get(id);
-    if (!current) return;
-    const description = {
-      id: crypto.randomUUID(),
-      atMs,
-      prompt,
-      text: reply.description,
-      frameTimesMs: reply.frameTimesMs,
-      createdAt: new Date().toISOString(),
-    };
-    await scope.store.addDescription(id, description);
-    notify();
-    return description;
+  // Old cached callers cannot opt back into cloud visual processing.
+  async function describe() {
+    throw Error('Photos and videos stay on this phone. Cloud descriptions are disabled.');
   }
   async function saveAudio(sessionId) {
     if (!sessionId) return;
@@ -357,7 +305,7 @@
       await delay(50);
     }
   }
-  async function startLive(inference = true) {
+  async function startLive() {
     if (session || working || offline || wifi?.active)
       throw Error('Finish the current capture or download session first.');
     await prepareCamera();
@@ -371,7 +319,6 @@
       controller: new AbortController(),
       cancelled: false,
       audioOwned: true,
-      inference,
       bytes: 0,
       phase: 'starting',
     };
@@ -387,7 +334,7 @@
       if (previous.active) await saveAudio(previous.sessionId);
       check(take.owner);
       if (take.cancelled) throw Error('Video start cancelled.');
-      const audio = await root.SynapAppControls.startMediaAudio();
+      const audio = await root.SynapAppControls.startMediaAudio({ localOnly: true });
       take.audioSession = audio.sessionId;
       take.audioId = audio.recordingId;
       check(take.owner);
@@ -397,7 +344,8 @@
         deviceId,
         audioId: audio.recordingId,
         name: 'Live video',
-        captureMode: 'online',
+        captureMode: 'phone',
+        localOnly: true,
         startedAt: audio.startedAt,
       });
       take.id = row.id;
@@ -424,20 +372,6 @@
           await take.store.append(take.id, { blob, atMs });
           take.bytes += blob.size;
           notify();
-          // One inference at a time; slow networks cannot pile up model requests.
-          if (take.inference && !take.analysis && Date.now() - (take.lastAnalysis || 0) >= 10000) {
-            take.lastAnalysis = Date.now();
-            take.analysis = describe(take.id, atMs, 'Briefly describe this current view.', take)
-              .catch((e) => {
-                if (owner === take.owner) {
-                  error = e.message;
-                  notify();
-                }
-              })
-              .finally(() => {
-                take.analysis = null;
-              });
-          }
           // Capture/transfer time counts toward cadence. Yield more airtime
           // when the audio clock falls behind; never build a frame request queue.
           const current = root.SynapAppControls.recordingState();
@@ -520,25 +454,12 @@
     }
   }
   async function startOffline() {
-    return operation(async (signal) => {
-      camera('video', true);
-      if (root.SynapAppControls.recordingState().active)
-        throw Error('Stop audio capture before recording to SD.');
-      await transfer.request(5, 0, '', signal);
-      offline = true;
-      offlineStatus = { active: true, audioMs: 0, frames: 0, progress: 0 };
-      notify();
-      pollOffline();
-    });
+    throw Error(
+      'New photos and videos save to this phone. Existing SD files can still be imported.',
+    );
   }
   async function startVideo() {
-    await prepareCamera();
-    if (moduleInfo()?.mediaFeatures & 8 && capabilities.canCapture(moduleInfo(), 'video', true)) {
-      const audio = root.SynapAppControls.recordingState();
-      if (audio.active) await saveAudio(audio.sessionId);
-      return startOffline();
-    }
-    return startLive(false);
+    return startLive();
   }
   async function refreshSD() {
     if (root.SynapAppControls.recordingState().active)
@@ -653,7 +574,7 @@
       return files;
     });
   }
-  async function importAudio(blob, deviceId, scope, onBegin) {
+  async function importAudio(blob, deviceId, scope, onBegin, localOnly = false) {
     const bytes = new Uint8Array(await blob.arrayBuffer()),
       view = new DataView(bytes.buffer);
     const text = (at, n) => new TextDecoder().decode(bytes.subarray(at, at + n));
@@ -680,7 +601,11 @@
         uploadAudioProcessing: 'none',
       }),
     });
-    const id = await journal.begin('Chakshu audio', { deviceId });
+    const id = await journal.begin(
+      localOnly ? 'Video soundtrack' : 'Chakshu audio',
+      { deviceId },
+      { localOnly },
+    );
     try {
       // Attach the visual before any sealed audio window can trigger transcription.
       await onBegin(id);
@@ -693,7 +618,9 @@
       }
       await journal.close(id);
       root.dispatchEvent(
-        new CustomEvent('synap-desktop-capture-saved', { detail: { recordingId: id } }),
+        new CustomEvent('synap-recording-saved', {
+          detail: { recordingId: id, source: 'chakshu-import' },
+        }),
       );
       return id;
     } catch (e) {
@@ -735,7 +662,8 @@
         deviceId,
         name: file.name,
         audioId: null,
-        captureMode: 'offline',
+        captureMode: 'import',
+        localOnly: true,
         timingEstimated: !image && !timing,
         sourceName: file.name,
       });
@@ -745,8 +673,12 @@
           await scope.store.append(row.id, frame);
         }
         if (audioFile)
-          await importAudio(audioFile, deviceId, scope, (audioId) =>
-            scope.store.patch(row.id, { audioId }),
+          await importAudio(
+            audioFile,
+            deviceId,
+            scope,
+            (audioId) => scope.store.patch(row.id, { audioId }),
+            true,
           );
         await scope.store.patch(row.id, {
           state: 'saved',
@@ -761,7 +693,11 @@
     for (const file of files) {
       if (
         !/\.wav$/i.test(file.name) ||
-        files.some((f) => f.name === file.name.replace(/\.wav$/i, '.mjpeg'))
+        files.some(
+          (f) =>
+            /\.(mjpeg|jpe?g)$/i.test(f.name) &&
+            f.name.replace(/\.[^.]+$/, '') === file.name.replace(/\.wav$/i, ''),
+        )
       )
         continue;
       if (file.size > MAX_VIDEO_BYTES) throw Error('Import audio files up to 32 MiB each.');
@@ -798,37 +734,6 @@
       return importFilesNow(files, deviceId);
     });
   }
-  async function transcribed(event) {
-    const detail = event.detail;
-    if (!ready() || detail.ownerUid !== owner) return;
-    const scope = { owner, store },
-      rows = (await store.list()).filter(
-        (row) => row.kind === 'video' && row.audioId === detail.recordingId,
-      );
-    for (const row of rows)
-      for (const atMs of explainWords(detail.words)) {
-        if (row.timingEstimated) continue;
-        const key = 'voice:' + atMs;
-        const pendingKey = scope.owner + ':' + row.id + ':' + key;
-        const current = await scope.store.get(row.id);
-        if (current?.voiceRequests?.includes(key) || voicePending.has(pendingKey)) continue;
-        const frames = windowFrames(await scope.store.frames(row.id), atMs);
-        if (!frames.length) continue;
-        if (voicePending.has(pendingKey)) continue;
-        voicePending.add(pendingKey);
-        try {
-          await describe(row.id, atMs, 'Explain what is visible around this moment.', scope);
-          await scope.store.ackVoiceRequest(row.id, key);
-        } catch (e) {
-          if (owner === scope.owner) {
-            error = e.message;
-            notify();
-          }
-        } finally {
-          voicePending.delete(pendingKey);
-        }
-      }
-  }
   const apiObject = {
     sync,
     photo,
@@ -854,7 +759,7 @@
         connectionStatus: connectionStatus(),
         cameraReady: capabilities.canCapture(moduleInfo(), 'photo'),
         videoReady: capabilities.canCapture(moduleInfo(), 'video'),
-        offlineReady: capabilities.canCapture(moduleInfo(), 'video', true),
+        offlineReady: false,
         storageReady: capabilities.hasMedia(moduleInfo()) && capabilities.ready(moduleInfo(), 'sd'),
         mediaSupported: capabilities.hasMedia(moduleInfo()),
         voiceSupported: false,
@@ -865,7 +770,7 @@
         offlineStatus,
         wifi,
         wifiSupported: Boolean(moduleInfo()?.mediaFeatures & 4),
-        sdVideoPreferred: Boolean(moduleInfo()?.mediaFeatures & 8),
+        sdVideoPreferred: false,
         session: session ? { id: session.id, phase: session.phase } : null,
       };
     },
@@ -877,11 +782,6 @@
     },
   };
   root.SynapChakshu = apiObject;
-  root.addEventListener('synap-audio-transcribed', (e) =>
-    transcribed(e).catch((error) => {
-      if (error.name !== 'AbortError') console.warn('Chakshu explanation deferred', error.message);
-    }),
-  );
   root.addEventListener('synap-device-identified', sync);
   root.addEventListener('synap-module-changed', () => {
     const next = connected();

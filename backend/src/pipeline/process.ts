@@ -42,7 +42,7 @@ import { log } from '../util/log.js';
 import { rebuildDay } from './brief.js';
 import { indexMemory } from './index-memory.js';
 import { chooseTranscript } from './source-materialize.js';
-import { transcribeUploadedWindow } from './rolling-transcription.js';
+import { transcribeUploadedWindow, hasUsableTranscription } from './rolling-transcription.js';
 import { requireCompleteSegments, transcribeRecordingSegments } from './recording-segments.js';
 
 const SEGMENT_MS = 30_000;
@@ -158,6 +158,7 @@ async function transcribeAll(
     recording.segmentCount || segments.length,
     segment => transcribeUploadedWindow(uid, recordingId, segment.index, dek),
     (done, total) => patch({ progress: 0.05 + 0.5 * (done / total) }),
+    segment => !hasUsableTranscription(uid, recordingId, dek, segment),
   );
 }
 
@@ -262,8 +263,6 @@ async function understand(
     }
     if(grounded)flat.push(grounded);
   }
-
-  if (flat.length === 0) throw new Error('No transcript was produced for this recording');
 
   let transcript = flat.join('\n');
   if(recording.sealedSpeakerNames && recording.sealedTranscript) {

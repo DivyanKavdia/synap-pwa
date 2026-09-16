@@ -1,13 +1,16 @@
 /* Recording filters and selection share the existing mounted Library cards. */
 (function(root){
   'use strict';
-  const filters=[['all','All statuses'],['transcript','Needs transcript'],['summary','Needs summary'],['retry','Needs retry'],['processing','Processing'],['ready','Ready']];
+  const filters=[['all','All statuses'],['transcript','Needs transcript'],['summary','Needs summary'],['retry','Needs retry'],['processing','Processing'],['ready','Ready'],['local','On this device']];
   const selected=new Set();
   let config=null,installed=false,selecting=false,busy=false,filter='all',jobs=new Map(),records=[],matches=[],deleteIds=[];
   const $=id=>root.document?.getElementById(id);
   const text=value=>String(value||'').trim();
   function provider(){try{return JSON.parse(root.localStorage.getItem('synap-ai-provider-settings')||'{}').provider||'synap';}catch(_){return 'synap';}}
   function state(recording,recordingJobs=[],currentProvider='synap'){
+    if(recording.localOnly)return {localOnly:true,ready:false,active:recording.status==='recording',failed:false,
+      protectedRecording:recording.status==='recording'||recording.sealed===false,
+      transcriptDone:false,summaryDone:false,canProcess:false};
     const stage=text(recording.processingStage).toLowerCase();
     const failure=stage==='failed'||recordingJobs.some(job=>job.state==='failed');
     const protectedRecording=recording.status==='recording'||recording.sealed===false;
@@ -28,6 +31,8 @@
   }
   function matchesStatus(recording,key,recordingJobs=[],currentProvider='synap'){
     const value=state(recording,recordingJobs,currentProvider);
+    if(key==='local')return Boolean(recording.localOnly);
+    if(recording.localOnly)return key==='all'||(key==='processing'&&value.active);
     if(key==='transcript')return !value.transcriptDone;
     if(key==='summary')return !value.summaryDone;
     if(key==='retry')return value.failed;

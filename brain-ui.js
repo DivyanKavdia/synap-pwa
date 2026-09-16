@@ -195,7 +195,7 @@
 
   function renderBrief(list) {
     const summaries = list.filter((r) => summaryOf(r)),
-      pending = list.length - summaries.length;
+      pending = list.filter(r => !r.localOnly && !summaryOf(r)).length;
     const todayKey = today(),
       isToday = selected() === todayKey;
     $('.brief-intro')?.classList.toggle('is-empty', !list.length);
@@ -204,7 +204,7 @@
       text.textContent = summaries.length
         ? summaries.map(summaryOf).join('\n\n')
         : list.length
-          ? 'Summaries will appear after processing.'
+          ? pending ? 'Summaries will appear after processing.' : 'Your media soundtracks are saved on this device.'
           : readError
             ? 'Saved recordings are unavailable.'
             : isToday

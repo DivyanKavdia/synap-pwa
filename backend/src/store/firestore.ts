@@ -237,16 +237,19 @@ export async function acceptSegment(uid: string, recordingId: string, doc: Segme
 }
 
 /** Commit only to the exact live source. The first complete result wins. */
-export async function completeSegmentTranscription(uid: string, recordingId: string, doc: SegmentDoc): Promise<SegmentDoc> {
+export async function completeSegmentTranscription(uid: string, recordingId: string, doc: SegmentDoc, supersededEmpty?: SegmentDoc['sealedTranscript']): Promise<SegmentDoc> {
   const parent = paths.recording(uid, recordingId), ref = paths.segments(uid, recordingId).doc(String(doc.index));
   return firestore().runTransaction(async tx => {
     const recording = (await tx.get(parent)).data() as RecordingDoc | undefined;
     const current = (await tx.get(ref)).data() as SegmentDoc | undefined;
     if (!recording || recording.deleting || !current) throw new SegmentWriteError(404, 'Unknown recording or segment');
     if (!sameSegmentSource(current, doc) || current.storagePath !== doc.storagePath) throw new SegmentWriteError(409, 'Segment source changed');
-    if (current.state === 'transcribed' && current.sealedTranscript && current.sealedWords) return current;
+    if (current.state === 'transcribed' && current.sealedTranscript && current.sealedWords &&
+        (!supersededEmpty || current.transcriptionReview?.policy === 'text-first-v1' ||
+         JSON.stringify(current.sealedTranscript) !== JSON.stringify(supersededEmpty))) return current;
     const fields = { state: doc.state, language: doc.language, transcribedAt: doc.transcribedAt,
-      transcriptionReview: doc.transcriptionReview, sealedTranscript: doc.sealedTranscript, sealedWords: doc.sealedWords };
+      transcriptionReview: doc.transcriptionReview, transcriptionAudioPolicy: doc.transcriptionAudioPolicy || 'stored-upload-v1',
+      sealedTranscript: doc.sealedTranscript, sealedWords: doc.sealedWords };
     tx.update(ref, fields);
     return { ...current, ...fields };
   });

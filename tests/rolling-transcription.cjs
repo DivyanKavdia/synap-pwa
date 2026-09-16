@@ -40,7 +40,7 @@ test('backend upload performs idempotent rolling transcription', () => {
   const worker = source('backend/src/pipeline/rolling-transcription.ts');
   assert.match(route, /transcribeUploadedWindow/);
   assert.match(route, /transcript_ready/);
-  assert.match(route, /existing\.sealedTranscript/);
+  assert.match(route, /hasUsableTranscription/);
   assert.match(worker, /hasTranscription\(segment\)/);
   assert.match(worker, /diarize: true/);
   assert.match(worker, /wordTimestamps: true/);

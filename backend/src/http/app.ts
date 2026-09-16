@@ -13,7 +13,7 @@ import { speakerNameRoutes } from './routes/speaker-names.js';
 import { knownSpeakerRoutes } from './routes/known-speakers.js';
 import { taskRoutes } from './routes/tasks.js';
 import { voiceProfileRoutes } from './routes/voice-profile.js';
-import { chakshuRoutes } from './routes/chakshu.js';
+import { chakshuRoutes, localMediaOnly } from './routes/chakshu.js';
 
 /**
  * CORS.
@@ -82,6 +82,7 @@ export function createApp(): Express {
 
   // Segment/voice upload routes parse their own raw audio bodies; JSON parsing
   // ignores audio/wav and remains scoped to normal API payloads.
+  app.all('/v1/chakshu/describe', localMediaOnly);
   app.use(express.json({ limit: '2mb' }));
 
   app.get('/health', (_req, res) => {

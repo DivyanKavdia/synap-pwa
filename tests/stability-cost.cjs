@@ -44,6 +44,10 @@ function costTests() {
   assert.equal(emptyDay.minutes.toFixed(1),'0.0','empty-day breakdown must remain renderable');
   assert.equal(emptyDay.totalInr,0);
   assert.equal(emptyDay.projectedTotalInr,0);
+  const local = api.estimate({localOnly:true,durationMs:60000,processingStage:'local'});
+  assert.equal(local.totalInr,0);
+  assert.equal(local.projectedTotalInr,0);
+  assert.equal(local.embeddingTokens,0);
 
   const ready = api.estimate({
     durationMs: 60 * 60 * 1000,

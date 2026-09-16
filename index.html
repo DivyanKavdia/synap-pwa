@@ -11,7 +11,7 @@
   <link rel="icon" href="icon.svg?v=1.0.0-brand2" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png?v=1.0.0-brand2">
   <script src="touch-event-bridge.js?v=1.0.0-compact2"></script>
-  <script src="audio-codec-v3.js?v=1.0.0-chakshu-core5"></script>
+  <script src="audio-codec-v3.js?v=1.0.0-chakshu-core6"></script>
   <script src="battery-v2-ui.js?v=1.0.0-battery5"></script>
   <script>globalThis.SYNAP_STATIC_BOOTSTRAP=true;</script>
   <link rel="stylesheet" href="first-memory.css?v=1.0.0-compact-workspace1">
@@ -24,7 +24,7 @@
   <link rel="stylesheet" href="library-tools.css?v=1.0.0-compact-workspace1">
   <script src="theme.js?v=1.0.0-navigation1"></script>
 <link rel="stylesheet" href="meeting-tools.css?v=1.0.0-meetings2"><link rel="stylesheet" href="devices/panel.css?v=1.0.0-devices1">
-<link rel="stylesheet" href="devices/chakshu/library.css?v=1.0.0-chakshu-core5">
+<link rel="stylesheet" href="devices/chakshu/library.css?v=1.0.0-chakshu-core6">
 </head>
 <body data-startup="loading" data-state="disconnected" class="synap-refresh">
   <a class="skip-link" href="#today">Skip to your day</a>
@@ -130,10 +130,10 @@
       <p id="visualDeviceHint"></p>
       <div class="visual-actions"><label>Capture mode <select id="visualMode"><option value="audio">Audio only</option><option value="image">Image</option><option value="video">Video</option></select></label></div>
       <div id="visualMode-audio"><p>Record, transcribe and build memories using the usual audio controls.</p><button id="visualAudioOnly" type="button">Start / stop audio</button></div>
-      <div id="visualMode-image" hidden><div class="visual-actions"><button id="visualPhoto" type="button">Take photo</button><button id="visualPhotoAudio" type="button">Photo with audio</button></div><p>Open a photo to describe it or link a saved audio recording. Photo with audio starts listening; use Stop audio when you finish.</p></div>
-      <div id="visualMode-video" hidden><div class="visual-actions"><button id="visualOnline" type="button">Record phone preview</button><button id="visualOffline" type="button">Record to SD</button></div><label><input id="visualInference" type="checkbox" checked> Describe the live view</label><details class="visual-help"><summary>Recording options</summary><p>Phone preview: adaptive camera frames and a separate audio recording. Switching from audio-only saves that take and starts a new video soundtrack, up to 32 MiB of video per clip. Keep synap open. Say “explain” for the nearby frames; voice requests run as audio transcription arrives. SD: up to 60 seconds of video and raw audio recorded on Chakshu, with timestamps for synchronized playback. No phone preview or internet is needed while recording. The header video button prefers SD when a card is ready.</p></details></div>
+      <div id="visualMode-image" hidden><div class="visual-actions"><button id="visualPhoto" type="button">Take photo</button><button id="visualPhotoAudio" type="button">Photo with audio</button></div><p>Photos and accompanying audio stay on this phone. Photo with audio saves any standalone audio take first; use Stop audio when you finish.</p></div>
+      <div id="visualMode-video" hidden><div class="visual-actions"><button id="visualOnline" type="button">Record video on phone</button></div><details class="visual-help"><summary>About phone video</summary><p>Camera frames and soundtrack stay in this browser on your phone. Bluetooth limits the frame rate; keep synap open and Chakshu nearby. Starting video saves any standalone audio take first. Clips hold up to 32 MiB of video. Export a copy to keep it outside the browser.</p></details></div>
       <figure id="visualLive" hidden><img id="visualLiveFrame" alt="Latest camera frame"><figcaption id="visualLiveDescription" aria-live="polite"></figcaption></figure>
-      <div class="visual-actions"><button id="visualStop" type="button" hidden>Stop video</button><button id="visualExplainLive" type="button" hidden>Explain this moment</button></div>
+      <div class="visual-actions"><button id="visualStop" type="button" hidden>Stop video</button></div>
       <p id="visualConnectionStatus" role="status"></p>
       <p id="visualStorageHint" role="status"></p>
       <div class="visual-actions"><button id="visualCheckSD" type="button">Check SD card</button><button id="visualSD" type="button">Browse SD card</button><button id="visualWifi" type="button">Wi-Fi downloads</button><button id="visualImport" type="button">Import SD files</button></div>
@@ -209,14 +209,15 @@
         <p id="chakshuCamera" class="settings-hint"></p><p id="chakshuStorage" class="settings-hint"></p>
         <div class="chakshu-actions">
           <button type="button" data-chakshu-operation="1">Check hardware</button>
-          <button type="button" data-chakshu-operation="2">Photo to SD</button>
+
           <button type="button" data-chakshu-operation="3">10-second WAV to SD</button>
-          <button type="button" data-chakshu-operation="4">10-second clip to SD</button>
+
         </div>
-        <p class="settings-hint">Chakshu stays awake while powered. Use the main microphone button for synap recordings. These short checks save directly to the SD card; read the card to review them. Camera clips are silent MJPEG at 2 frames per second.</p>
+        <p class="settings-hint">Chakshu stays awake while powered. Use the main microphone for standalone audio and transcripts. The ten-second microphone check saves a WAV to SD; import it to review. Photos and videos save to this phone.</p>
         <p id="chakshuFile" class="chakshu-file"></p>
         <progress id="chakshuProgress" value="0" max="100" aria-label="Chakshu hardware check progress" hidden></progress>
       </div>
+      <p id="moduleExperience" class="settings-hint"></p>
       <p id="moduleStatus" class="settings-hint" role="status"></p>
     </section>
     <section class="settings-card settings-preferences"><h3 class="settings-card-title">While listening</h3>
@@ -283,8 +284,8 @@
   <details class="visual-edit"><summary>Title &amp; notes</summary><label for="visualName">Title</label><input id="visualName" maxlength="160"><label for="visualNotes">Notes</label><textarea id="visualNotes" maxlength="2000" rows="3" placeholder="What would you like to remember?"></textarea><button id="visualSaveDetails" type="button">Save details</button></details>
   <audio id="visualAudio" controls hidden></audio><a id="visualAudioSource" hidden>Open audio transcript</a>
   <div class="visual-actions"><label>Linked audio <select id="visualAudioLink"></select></label><button id="visualSaveLink" type="button">Save audio link</button></div>
-  <label for="visualPrompt">Ask about this view</label><input id="visualPrompt" placeholder="Describe what is visible here." maxlength="1000">
-  <div class="visual-actions"><button id="visualDescribe" type="button">Describe selected moment</button><button id="visualReadText" type="button">Read text in view</button></div><p id="visualDetailStatus" role="status"></p><div id="visualDescriptions"></div>
+  <p>Photos, video and their soundtracks stay on this device. Cloud descriptions are disabled.</p>
+  <p id="visualDetailStatus" role="status"></p><div id="visualDescriptions"></div>
   <div class="visual-actions"><button id="visualDownload" type="button">Download original</button><button id="visualDelete" type="button">Delete visual from this browser</button></div>
 </dialog>
 <dialog id="capturePreview" class="visual-dialog capture-preview" aria-labelledby="capturePreviewTitle">
@@ -293,25 +294,25 @@
   <p id="capturePreviewStatus" role="status"></p><p id="capturePreviewHint"></p>
   <div class="visual-actions"><button id="capturePreviewPhoto" type="button">Take photo</button><button id="capturePreviewStop" type="button">Stop &amp; save video</button><button id="capturePreviewOpen" type="button">Open in library</button></div>
 </dialog>
-<script src="devices/profiles.js?v=1.0.0-chakshu-core5"></script>
+<script src="devices/profiles.js?v=1.0.0-chakshu-core6"></script>
 <script src="devices/capabilities.js?v=1.0.0-stop1"></script>
-<script src="devices/identity.js?v=1.0.0-chakshu-core5"></script>
+<script src="devices/identity.js?v=1.0.0-chakshu-core6"></script>
 <script>(function(){function renderSynapDeviceId(){var el=document.getElementById('setupDeviceId');if(!el)return;try{var key=(globalThis.SynapDevices&&globalThis.SynapDevices.KEY)||'synap-device-associations-v1';var data=JSON.parse(localStorage.getItem(key)||'null');var devices=Array.isArray(data&&data.devices)?data.devices.slice():[];devices.sort(function(a,b){return String(b.lastConnectedAt||'').localeCompare(String(a.lastConnectedAt||''));});var id=devices[0]&&devices[0].deviceId?String(devices[0].deviceId):'';el.textContent=id?id.toLowerCase():'No pendant selected';el.title=id;el.dataset.deviceId=id;}catch(e){el.textContent='No pendant selected';el.title='';el.dataset.deviceId='';}}document.addEventListener('DOMContentLoaded',function(){renderSynapDeviceId();var status=document.getElementById('setupDeviceStatus');if(status)new MutationObserver(renderSynapDeviceId).observe(status,{childList:true,subtree:true,characterData:true});document.getElementById('settingsButton')?.addEventListener('click',function(){setTimeout(renderSynapDeviceId,80)});});globalThis.renderSynapDeviceId=renderSynapDeviceId;})();</script>
-<script src="devices/modules.js?v=1.0.0-chakshu-core5"></script>
+<script src="devices/modules.js?v=1.0.0-chakshu-core6"></script>
 <script src="devices/power.js?v=1.0.0-devices1"></script>
-<script src="devices/panel.js?v=1.0.0-devices1"></script>
+<script src="devices/panel.js?v=1.0.0-chakshu-core6"></script>
 <script src="runtime-compat.js?v=1.0.0-controls1"></script>
-<script src="recording/bluetooth-session.js?v=1.0.0-chakshu-core5"></script>
+<script src="recording/bluetooth-session.js?v=1.0.0-chakshu-core6"></script>
 <script src="recording/screen-wake-lock.js?v=1.0.0-ota-prep1"></script>
 <script src="recording/timeline.js?v=1.0.0-recording-core1"></script>
-<script src="audio-store.js?v=1.0.0-chakshu-core5"></script>
+<script src="audio-store.js?v=1.0.0-chakshu-core6"></script>
 <script src="memory-ready-events.js?v=1.0.0-maintenance1"></script>
-<script src="processing-queue.js?v=1.0.0-stop1"></script>
+<script src="processing-queue.js?v=1.0.0-chakshu-core6"></script>
 <script src="recording/journal.js?v=1.0.0-source-audio1"></script>
 <script src="battery-popover-fix.js?v=1.0.0-devices1"></script>
 <script src="sleep-state-guard.js?v=1.0.0-actions1"></script>
 <script src="recording-bridge.js?v=1.0.0-cleanup1"></script>
-<script src="event-channel.js?v=1.0.0-chakshu-core5"></script>
+<script src="event-channel.js?v=1.0.0-chakshu-core6"></script>
 <script src="ota.js?v=1.0.0-devices1"></script>
 <script src="releases.js?v=1.0.0-devices1"></script>
 <script src="audio-enhancement.js?v=1.0.0-source-audio1"></script>
@@ -323,43 +324,43 @@
 <script src="audio-quality.js?v=1.0.0-source-audio1"></script>
 <script src="meeting-tools.js?v=1.0.0-actions3"></script>
 <script src="disconnect-protection.js?v=1.0.0-drain1"></script>
-<script src="experience-recovery.js?v=1.0.0-maintenance1"></script>
-<script src="library-tools.js?v=1.0.0-bluefy1"></script>
+<script src="experience-recovery.js?v=1.0.0-chakshu-core6"></script>
+<script src="library-tools.js?v=1.0.0-chakshu-core6"></script>
 <script src="google-auth.js?v=1.0.0-readiness1"></script>
 <script src="processing-recovery.js?v=1.0.0-maintenance1"></script>
 <script src="ai-providers.js?v=1.0.0-maintenance1"></script>
-<script src="synap-backend.js?v=1.0.0-chakshu-core5"></script>
+<script src="synap-backend.js?v=1.0.0-chakshu-core6"></script>
 <script src="first-memory.js?v=1.0.0-compact-workspace1"></script>
-<script src="app.js?v=1.0.0-chakshu-core5"></script>
+<script src="app.js?v=1.0.0-chakshu-core6"></script>
 <script src="recording-notifications.js?v=1.0.0-background1"></script>
-<script src="enhancements.js?v=1.0.0-chakshu-core5"></script>
-<script src="processing-pipeline-ui.js?v=1.0.0-pipeline1"></script>
+<script src="enhancements.js?v=1.0.0-chakshu-core6"></script>
+<script src="processing-pipeline-ui.js?v=1.0.0-chakshu-core6"></script>
 <script src="memory-ui-fix.js?v=1.0.0-moments1"></script>
 <script src="synap-account-ui.js?v=1.0.0-compact-workspace1"></script>
 <script src="people-confirm-ui.js?v=1.0.0-workspace1"></script>
 <script src="cloud-history.js?v=1.0.0-recording-core1"></script>
 <script src="memory-tools.js?v=1.0.0-settings1"></script>
-<script src="cost-ui.js?v=1.0.0-cost3"></script>
+<script src="cost-ui.js?v=1.0.0-chakshu-core6"></script>
 <script src="transcript-repair.js?v=1.0.0-maintenance1"></script>
 <script src="voice-profile.js?v=1.0.0-voice-profile2"></script>
 <script src="ask-synap.js?v=1.0.0-actions3"></script>
-<script src="brain-ui.js?v=1.0.0-glance1"></script>
+<script src="brain-ui.js?v=1.0.0-chakshu-core6"></script>
 <script src="action-state.js?v=1.0.0-workspace1"></script>
 <script src="memory-workspace.js?v=1.0.0-navigation1"></script>
 <script src="my-actions.js?v=1.0.0-workspace1"></script>
 <script src="dashboard-ui.js?v=1.0.0-compact-workspace1"></script>
 <script src="compact-layout.js?v=1.0.0-workspace1"></script>
 <script src="runtime-ui.js?v=1.0.0-controls1"></script>
-<script src="capture-ui.js?v=1.0.0-chakshu-core5"></script>
+<script src="capture-ui.js?v=1.0.0-chakshu-core6"></script>
 <script src="product-ui.js?v=1.0.0-actions1"></script>
 <script src="provenance-links.js?v=1.0.0-actions3"></script>
 <script src="productivity-tools.js?v=1.0.0-compact2"></script>
 <script src="desktop-capture.js?v=1.0.0-source-audio1"></script>
 <script src="interaction-surfaces.js?v=1.0.0-workspace1"></script>
-<script src="devices/chakshu/store.js?v=1.0.0-devices1"></script>
-<script src="devices/chakshu/transfer.js?v=1.0.0-chakshu-core5"></script>
-<script src="devices/chakshu/media.js?v=1.0.0-chakshu-core5"></script>
+<script src="devices/chakshu/store.js?v=1.0.0-chakshu-core6"></script>
+<script src="devices/chakshu/transfer.js?v=1.0.0-chakshu-core6"></script>
+<script src="devices/chakshu/media.js?v=1.0.0-chakshu-core6"></script>
 <script src="devices/chakshu/player.js?v=1.0.0-devices1"></script>
-<script src="devices/chakshu/library.js?v=1.0.0-chakshu-core5"></script>
-<script src="devices/chakshu/capture-preview.js?v=1.0.0-chakshu-core5"></script>
+<script src="devices/chakshu/library.js?v=1.0.0-chakshu-core6"></script>
+<script src="devices/chakshu/capture-preview.js?v=1.0.0-chakshu-core6"></script>
 </body></html>

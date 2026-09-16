@@ -86,7 +86,14 @@ function cloud(recording,jobs,extra={}){
   assert.equal(model.steps[2].state,'active');
 }
 
-assert.match(html,/processing-pipeline-ui\.js\?v=1\.0\.0-pipeline1/);
+{
+  const model=cloud({localOnly:true,sealed:true,processingStage:'local'},[{kind:'transcribe',state:'failed'}]);
+  assert.equal(model.status,'On this device');
+  assert.equal(model.steps.length,1);
+  assert.equal(model.steps[0].state,'done');
+}
+
+assert.match(html,/processing-pipeline-ui\.js\?v=1\.0\.0-chakshu-core6/);
 assert.match(sw,/\.\/processing-pipeline-ui\.js/);
 // These are semantic contracts, not whitespace/style contracts. Cleanup should
 // never be blocked because an object literal gained normal formatting.

@@ -29,9 +29,10 @@ export async function transcribeRecordingSegments(
   expected: number,
   transcribe: (segment: SegmentDoc) => Promise<SegmentDoc>,
   progress: (done: number, total: number) => Promise<void>,
+  needsTranscription: (segment: SegmentDoc) => boolean = segment => !hasTranscription(segment),
 ): Promise<SegmentDoc[]> {
   const ordered = requireCompleteSegments(segments, expected);
-  const pending = ordered.filter((segment) => !hasTranscription(segment));
+  const pending = ordered.filter(needsTranscription);
   let done = ordered.length - pending.length;
   let failure: unknown;
   const workers = Array.from({ length: Math.min(4, pending.length) }, async () => {

@@ -64,42 +64,66 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       );
       await page.locator('nav a[href="#library"]').click();
       assert(await page.locator('#visualWifi').isDisabled());
-      assert.match(await page.locator('#visualStorageHint').textContent(), /Insert an SD card/);
+      assert.match(await page.locator('#visualStorageHint').textContent(), /No SD card is needed/);
       await page.locator('#visualCheckSD').click();
       await page.waitForFunction(() => SynapChakshu.state.storageReady && !SynapChakshu.busy);
       assert.equal(
         await page.evaluate(() => bleFixture.mediaCommands.filter((op) => op === 14).length),
         1,
       );
-      assert.match(await page.locator('#visualStorageHint').textContent(), /SD card ready/);
+      assert.match(
+        await page.locator('#visualStorageHint').textContent(),
+        /Existing SD files can be imported/,
+      );
       await page.locator('#headerPhoto').click();
       await page.waitForFunction(
         () =>
           !SynapChakshu.busy &&
-          document
-            .getElementById('capturePreviewStatus')
-            .textContent.includes('Original photo saved to SD'),
+          document.getElementById('capturePreviewStatus').textContent.includes('Photo saved'),
       );
       const photo = await page.evaluate(async () => ({
         rows: await SynapChakshu.store.list(),
         ops: bleFixture.mediaCommands,
       }));
-      assert(photo.rows[0].previewOnly);
-      assert.equal(photo.rows[0].sourcePath, '/synap/abcdef01-00000001.jpg');
-      assert(photo.ops.includes(13) && photo.ops.includes(12));
+      assert(!photo.rows[0].previewOnly);
+      assert(!photo.rows[0].sourcePath);
+      assert(photo.ops.includes(1) && photo.ops.includes(12));
+      assert(!photo.ops.includes(13), 'inserting a card never enables SD photo writes');
       assert(!photo.ops.includes(2), 'photo chunks use notifications');
       await page.locator('#capturePreviewClose').click();
       await page.locator('#headerVideo').click();
-      await page.waitForFunction(() => SynapChakshu.state.offline && !SynapChakshu.state.working);
+      await page.waitForFunction(() => SynapChakshu.state.session?.phase === 'recording');
+      const frameDeadline = Date.now() + 20000;
+      while (
+        !(await page.evaluate(async () => {
+          const id = SynapChakshu.state.session?.id;
+          return id && (await SynapChakshu.store.get(id)).frameCount > 1;
+        }))
+      ) {
+        assert(Date.now() < frameDeadline, 'phone video receives actual saved frames');
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
       assert.equal(
-        await page.evaluate(() => bleFixture.starts),
-        0,
-        'SD video does not send a competing audio stream',
+        await page.evaluate(() => bleFixture.mediaCommands.includes(5)),
+        false,
+        'SD video does not start',
       );
-      assert.match(await page.locator('#capturePreviewStatus').textContent(), /Recording to SD/);
+      assert.equal(
+        await page.evaluate(() => SynapAppControls.recordingState().active),
+        true,
+        'phone video has a local soundtrack',
+      );
       await page.locator('#capturePreviewStop').click();
-      await page.waitForFunction(() => !SynapChakshu.state.offline);
-      assert.match(await page.locator('#capturePreviewStatus').textContent(), /saved to SD/);
+      await page.waitForFunction(
+        () => !SynapChakshu.state.session && document.body.dataset.state === 'idle',
+      );
+      const privacy = await page.evaluate(async () => {
+        const journal = new DKAudioStore();
+        return { rows: await journal.all('recordings'), jobs: await journal.all('jobs') };
+      });
+      assert.equal(privacy.rows.length, 1);
+      assert.equal(privacy.rows[0].localOnly, true);
+      assert.deepEqual(privacy.jobs, []);
       await page.locator('#capturePreviewClose').click();
       await page.locator('#visualWifi').click();
       await page.waitForFunction(
@@ -114,7 +138,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       assert(await page.locator('#visualCheckSD').isDisabled());
       assert(await page.locator('#headerPhoto').isDisabled());
       await page.evaluate(() => SynapAppControls.toggleCapture());
-      assert.equal(await page.evaluate(() => bleFixture.starts), 0);
+      assert.equal(await page.evaluate(() => SynapAppControls.recordingState().active), false);
       const log = await page.locator('#diagnosticsLog').textContent();
       assert(
         !log.includes('a'.repeat(32)) && !log.includes('b'.repeat(32)),
@@ -141,7 +165,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       await context.close();
     }
     console.log(
-      'PASS inserted SD, notification photo, retained original, SD video, private Wi-Fi UI and return to audio',
+      'PASS phone-only media with SD inserted, local soundtrack without cloud jobs, existing SD downloads and return to audio',
     );
   } finally {
     await browser.close();

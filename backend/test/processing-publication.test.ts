@@ -215,6 +215,30 @@ test.afterEach(() => {
   delete process.env.SYNAP_DISABLE_VECTOR_INDEX;
 });
 
+test('reviewed no-speech windows reach ready without invented conversations or an endless summary retry', async () => {
+  const f = fixture(), scope = `recording/${recordingId}/segment/0`;
+  f.rows.set(recordingPath, { ...f.recording, state: 'uploaded', processingLease: null,
+    processingHeartbeat: null, sealedMemory: null, sealedTranscript: null, segmentCount: 1, durationMs: 1000 });
+  f.rows.set(recordingPath + '/segments/0', { index: 0, startMs: 0, endMs: 1000, state: 'transcribed',
+    sealedTranscript: sealText(f.dek, '', binding(scope, 'transcript')),
+    sealedWords: sealJson(f.dek, [], binding(scope, 'words')),
+    transcriptionReview: { policy: 'text-first-v1', outcome: 'no-speech', annotationsComplete: true, attempted: true } });
+  mock.method(keyring, 'unwrap', async () => f.dek);
+  let requests = 0;
+  mock.method(globalThis, 'fetch', async () => { requests++; throw Error('Empty speech must not call a model'); });
+  await processRecording(uid, recordingId);
+  const saved = f.rows.get(recordingPath)!;
+  assert.equal(saved.state, 'ready');
+  const result = openJson<StructuredMemory>(f.dek, saved.sealedMemory, binding(`recording/${recordingId}`, 'memory'));
+  assert.match(result.title, /No recognizable speech/);
+  assert.deepEqual(result.conversations, []);
+  assert.deepEqual(result.people, []);
+  assert.equal(f.list('followUps').length, 0);
+  await processRecording(uid, recordingId);
+  assert.equal(f.rows.get(recordingPath)!.state, 'ready');
+  assert.equal(requests, 0);
+});
+
 test('failed publication rolls back all derived writes; retry keeps completed tasks and counts once', async () => {
   const f = fixture();
   f.failNextCommit();

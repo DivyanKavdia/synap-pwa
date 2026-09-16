@@ -1,4 +1,4 @@
-import { openBytes, sealJson, sealText, type Binding } from '../crypto/envelope.js';
+import { openBytes, openText, sealJson, sealText, type Binding } from '../crypto/envelope.js';
 import { transcribeSegment } from '../gemini/transcribe.js';
 import { parsePcm16Wav } from '../speaker/audio.js';
 import * as db from '../store/firestore.js';
@@ -8,6 +8,14 @@ import { hasTranscription } from './recording-segments.js';
 
 function binding(uid: string, scope: string, field: string): Binding {
   return { uid, scope, field };
+}
+
+/** Older empty results need a real ASR retry; valid existing words stay intact. */
+export function hasUsableTranscription(uid: string, recordingId: string, dek: Buffer, segment: SegmentDoc): boolean {
+  if (!hasTranscription(segment)) return false;
+  if (segment.transcriptionReview?.policy === 'text-first-v1') return true;
+  return Boolean(openText(dek, segment.sealedTranscript!,
+    binding(uid, `recording/${recordingId}/segment/${segment.index}`, 'transcript')).trim());
 }
 
 /**
@@ -26,7 +34,7 @@ export async function transcribeUploadedWindow(
 
   const segment = await db.getSegment(uid, recordingId, segmentIndex);
   if (!segment) throw new db.SegmentWriteError(404, 'Unknown segment');
-  if (hasTranscription(segment)) return segment;
+  if (hasUsableTranscription(uid, recordingId, dek, segment)) return segment;
 
   const completed = await transcribeOne(uid, recordingId, dek, recording, segment);
   return completed;
@@ -79,5 +87,5 @@ async function transcribeOne(
     ),
   };
 
-  return db.completeSegmentTranscription(uid, recordingId, completed);
+  return db.completeSegmentTranscription(uid, recordingId, completed, segment.sealedTranscript);
 }

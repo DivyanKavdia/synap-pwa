@@ -23,21 +23,16 @@ const server=createStaticServer(path.resolve(__dirname,'..'));
       assert.match(await page.locator('#chakshuStorage').textContent(),/1,800 MiB free/);
       await page.locator('[data-chakshu-operation="3"]').click();
       await page.waitForFunction(()=>bleFixture.mediaWrites===1&&SynapModules.busy);
-      assert.equal(await page.locator('[data-chakshu-operation="2"]').isDisabled(),true);
+      assert.equal(await page.locator('[data-chakshu-operation="3"]').isDisabled(),true);
+      assert.equal(await page.locator('[data-chakshu-operation="2"]').count(),0);
+      assert.equal(await page.locator('[data-chakshu-operation="4"]').count(),0);
       await page.evaluate(()=>SynapAppControls.toggleCapture());
       assert.equal(await page.evaluate(()=>bleFixture.starts),0,'SD check blocks competing live recording');
       await page.evaluate(async()=>{bleFixture.finishMedia();await SynapModules.refresh();});
       await page.waitForFunction(()=>!SynapModules.busy);
       assert.match(await page.locator('#chakshuFile').textContent(),/\.wav$/);
-      for(const op of [2,4]) {
-        await page.locator('[data-chakshu-operation="'+op+'"]').click();
-        await page.waitForFunction(op=>SynapModules.client?.status?.operation===op&&SynapModules.busy&&!SynapModules.client.pending,op);
-        await page.evaluate(async()=>{bleFixture.finishMedia();await SynapModules.refresh();});
-        await page.waitForFunction(()=>!SynapModules.busy);
-        assert.match(await page.locator('#chakshuFile').textContent(),op===2?/\.jpg$/:/\.mjpeg$/);
-      }
       await page.evaluate(async()=>{bleFixture.setSdAvailable(false);await SynapModules.refresh();});
-      assert.equal(await page.locator('[data-chakshu-operation="2"]').isDisabled(),true);
+      assert.equal(await page.locator('[data-chakshu-operation="3"]').isDisabled(),true);
       assert.match(await page.locator('#chakshuStorage').textContent(),/unavailable/);
       assert.equal(await page.locator('[data-chakshu-operation="1"]').isDisabled(),false);
       await page.evaluate(async()=>{bleFixture.setSdAvailable(true);await SynapModules.refresh();});

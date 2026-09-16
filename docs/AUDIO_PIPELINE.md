@@ -7,7 +7,7 @@ The pendant path is microphone → PCM16 → Bluetooth → local PCM journal →
 | Stage              | Contract                                                                                                                                           |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | C3/S3 microphone   | Signed 32-bit INMP441 I2S slots convert with `raw >> 16`; no firmware gain, denoising, high-pass filter or silence gate                            |
-| Chakshu microphone | Onboard PDM provides PCM16; voice inference uses a separate copy                                                                                   |
+| Chakshu microphone | Onboard PDM provides PCM16; local voice recognition stays disabled                                                                                   |
 | Bluetooth          | Prefer PCM16 v2; use independent IMA ADPCM v3 frames on constrained supported links                                                                |
 | Recovery buffer    | Retain original PCM in volatile memory; encode only when the resumed link requires it                                                              |
 | Journal/playback   | Preserve received samples, transport counts and timeline gaps                                                                                      |
@@ -51,7 +51,7 @@ the existing bounded failure path seals it.
 
 Managed jobs are pinned to their capture account and abort on account changes. Legacy unowned recordings are assigned on first managed sync. Local browser storage itself is not an operating-system user boundary. Cloud restore preserves existing local recordings and never invents playable audio. Each window's source and processing result survive retries; final processing requires every expected window, not merely the expected count. Derived memory and its ready checkpoint publish atomically under a worker lease.
 
-Chakshu video frames and linked audio have separate storage and IDs. Only the soundtrack enters transcription. Vision requests receive selected JPEG frames, never a video file or audio stream.
+Chakshu video frames and linked audio have separate storage and IDs. New paired soundtracks carry a durable `localOnly` flag before the first sample is appended. Rolling compaction and sealing do not create processing jobs for them; the generic queue and cloud adapter independently reject stale jobs. They remain playable and exportable after reload, with no transcription or cloud copy. Standalone microphone recordings retain the cloud processing flow. The former vision endpoint returns `410 local_media_only` before JSON parsing; it cannot send images to inference. See [transcription quality](TRANSCRIPTION_QUALITY.md) and [Chakshu](CHAKSHU.md).
 
 ## WAV integrity and explicit repair
 

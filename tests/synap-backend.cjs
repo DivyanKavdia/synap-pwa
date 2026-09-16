@@ -142,7 +142,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell120-chakshu'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell121-chakshu'/);
 });
 
 test('the settings form offers the encrypted cloud provider and a sign-in control', () => {
@@ -314,7 +314,7 @@ test('provider registration leaves custom and other provider dispatch intact', a
   context.DKFIFOProcessor.registerProvider('fixture', {
     process: async () => ({ from: 'fixture' }),
   });
-  const processor = new context.DKFIFOProcessor({}, { provider: () => 'fixture' });
+  const processor = new context.DKFIFOProcessor({get: async () => ({})}, { provider: () => 'fixture' });
   processor.paused = false;
   const result = await processor.process({ id: 1, kind: 'transcribe' }, {}, '');
   assert.deepEqual(result, { from: 'fixture' });
@@ -324,7 +324,7 @@ test('the provider refuses to run while signed out, and does not retry', async (
   const context = load(backendSource, {
     SynapAuth: { isSignedIn: () => false, config: () => ({ backendUrl: '' }) },
   });
-  const processor = new context.DKFIFOProcessor({}, { provider: () => 'synap' });
+  const processor = new context.DKFIFOProcessor({get: async () => ({})}, { provider: () => 'synap' });
   processor.paused = false;
   await assert.rejects(
     () => processor.process({ kind: 'transcribe', id: 1 }, {}, ''),
@@ -565,7 +565,7 @@ test('finalize retries are identical and count whole missing windows in byte-buf
       },
     },
   });
-  const processor = new context.DKFIFOProcessor({}, { provider: () => 'synap' });
+  const processor = new context.DKFIFOProcessor({get: async () => ({})}, { provider: () => 'synap' });
   processor.store = store;
   processor.controllers = new Map();
   processor.paused = false;
@@ -699,7 +699,7 @@ test('marked moments reach the cloud before finalization; upload failures block 
         },
       },
     );
-    const processor = new context.DKFIFOProcessor({}, { provider: () => 'synap' });
+    const processor = new context.DKFIFOProcessor({get: async () => ({})}, { provider: () => 'synap' });
     Object.assign(processor, {
       store: {
         get: async () => recording,

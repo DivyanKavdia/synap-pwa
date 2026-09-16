@@ -409,11 +409,8 @@ async function until(page, predicate, arg) {
       await page.locator('#visualPhoto').click();
       await page.waitForFunction(() => document.getElementById('visualDialog').open);
       assert.equal(await page.locator('#visualPreview').evaluate((el) => el.naturalWidth), 160);
-      await page.locator('#visualDescribe').click();
-      await page.waitForFunction(() =>
-        document.querySelector('#visualDescriptions').textContent.includes('rectangle'),
-      );
-      assert.equal(descriptions[0].body.frames.length, 1);
+      assert.equal(await page.locator('#visualDescribe,#visualReadText,#visualInference').count(), 0);
+      assert.match(await page.locator('#visualDialog').textContent(), /stay on this device/);
       await page.locator('.visual-edit summary').click();
       await page.locator('#visualName').fill('Station sign');
       await page.locator('#visualNotes').fill('Return platform <b>north</b>');
@@ -429,12 +426,6 @@ async function until(page, predicate, arg) {
       assert.equal(await page.locator('#visualZoom').getAttribute('aria-pressed'), 'true');
       assert(await page.locator('#visualStage').evaluate((el) => el.scrollWidth > el.clientWidth));
       await page.locator('#visualZoom').click();
-      await page.locator('#visualReadText').click();
-      await page.waitForFunction(
-        () => document.querySelectorAll('#visualDescriptions article').length === 2,
-      );
-      assert.match(descriptions.at(-1).body.prompt, /Read the text/);
-      assert.equal(descriptions.at(-1).body.frames.length, 1);
       await page.locator('#visualDialog').evaluate((el) => (el.scrollTop = 0));
       await page.screenshot({
         path: 'artifacts/workflows/chakshu-library/photo-viewer-' + width + '.png',
@@ -466,16 +457,8 @@ async function until(page, predicate, arg) {
         return s.session?.id && (await SynapChakshu.store.get(s.session.id)).frameCount >= 3;
       });
       const video = await page.evaluate(() => SynapChakshu.state.session.id);
-      await until(
-        page,
-        async (id) => (await SynapChakshu.store.get(id)).descriptions.length > 0,
-        video,
-      );
-      await page.waitForFunction(
-        () =>
-          document.querySelector('#visualLiveDescription').textContent.includes('rectangle') &&
-          document.querySelector('#visualLiveFrame').naturalWidth === 160,
-      );
+      await page.waitForFunction(() => document.querySelector('#visualLiveFrame').naturalWidth === 160);
+      assert.equal(descriptions.length, 0, 'live recording never sends images to a model');
       await page.locator('#visualStop').click();
       await page.waitForFunction(() => !SynapChakshu.state.session);
       const saved = await page.evaluate((id) => SynapChakshu.store.get(id), video);
@@ -503,16 +486,17 @@ async function until(page, predicate, arg) {
         },
         { id: video, audioId: saved.audioId },
       );
-      await until(
-        page,
-        async (id) => (await SynapChakshu.store.get(id)).voiceRequests?.length === 1,
-        video,
-      );
-      assert(descriptions.at(-1).body.frames.length <= 5);
-      await page.locator('#visualOffline').click();
-      await page.waitForFunction(() => SynapChakshu.state.offline);
-      await page.locator('#visualStop').click();
-      await page.waitForFunction(() => !SynapChakshu.state.offline);
+      const privacy = await page.evaluate(async id => ({
+        record: await new DKAudioStore().get('recordings', id),
+        jobs: await new DKAudioStore().all('jobs', 'recording', id),
+        message: await SynapChakshu.describe('anything').catch(error => error.message),
+      }), saved.audioId);
+      assert(privacy.record.localOnly);
+      assert.equal(privacy.record.processingState, 'local');
+      assert.deepEqual(privacy.jobs, []);
+      assert.match(privacy.message, /Cloud descriptions are disabled/);
+      assert.equal(descriptions.length, 0, 'old spoken explain events cannot upload frames');
+      assert.equal(await page.locator('#visualOffline').count(), 0);
       await page.locator('#visualSD').click();
       const beforeImport = await page.evaluate(
         async () => (await SynapChakshu.store.list()).length,
@@ -580,21 +564,9 @@ async function until(page, predicate, arg) {
       await page.locator('#visualNextFrame').click();
       assert.equal(await page.locator('#visualSeek').inputValue(), '500');
       assert.equal(await page.locator('#visualNextFrame').isDisabled(), true);
-      await page.locator('#visualDescribe').click();
-      await page.waitForFunction(
-        () => document.querySelectorAll('#visualDescriptions article').length === 1,
-      );
-      assert.equal(
-        await page.locator('#visualSeek').inputValue(),
-        '500',
-        'description must retain the selected frame',
-      );
-      assert.deepEqual(
-        descriptions.at(-1).body.frames.map((f) => f.atMs),
-        [0, 500],
-      );
+      assert.equal(descriptions.length, 0, 'imported frames also stay local');
       await page.locator('#visualPreviousFrame').click();
-      await page.locator('#visualDescriptions button').click();
+      await page.locator('#visualNextFrame').click();
       assert.equal(await page.locator('#visualSeek').inputValue(), '500');
       await page.waitForFunction(() => document.getElementById('visualAudio').readyState >= 1);
       await page.locator('#visualPlay').click();
@@ -732,11 +704,12 @@ async function until(page, predicate, arg) {
       await page.locator('#visualFavourites').click();
       await page.waitForFunction(() => document.querySelectorAll('.visual-card').length === 1);
       assert.equal(await page.locator('.visual-card strong').textContent(), 'Station sign');
+      assert.equal(descriptions.length, 0);
       assert.deepEqual(errors, []);
       await context.close();
     }
     console.log(
-      'PASS account gating/isolation, capture, separate audio/video, gallery search/favourites, notes, text reading, frame navigation/extraction, export, persistence and layouts',
+      'PASS account gating/isolation, capture, separate audio/video, gallery search/favourites, notes, blocked cloud descriptions, frame navigation/extraction, export, persistence and layouts',
     );
   } finally {
     await browser.close();

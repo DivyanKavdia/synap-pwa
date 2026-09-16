@@ -1,183 +1,74 @@
 # Chakshu in the PWA
 
-Connect the device through the normal pendant picker. The Device panel reads firmware identity automatically and shows **Chakshu**, its camera sensor and initialized features.
+Connect through the normal pendant picker. The Device panel identifies Chakshu from the firmware descriptor and shows the camera sensor and initialized features. Chakshu uses the XIAO ESP32S3 Sense with 8 MB flash and 8 MB OPI PSRAM, an onboard PDM microphone and a camera. Local voice recognition and model loading remain disabled.
 
-- Main microphone control: standard Synap audio recording, playback, transcription and memory.
-- Settings → Device → Chakshu: hardware recheck, photo to SD, ten-second WAV to SD, and a silent two-fps MJPEG camera clip to SD.
-- Short checks report capacity, progress, errors and the saved filename. Import their files using Browse SD card or a card reader; the checks do not automatically add files to the PWA Library.
-- Live audio, OTA and SD checks cannot run together. Completed results can be read after a reconnect; reboot clears the last result but keeps saved files.
-- Chakshu stays awake and requires no touch sensor, external LED or battery divider.
+## Phone-only capture
 
-The Chakshu profile supports XIAO ESP32S3 Sense with 8 MB flash / 8 MB OPI PSRAM and probes the installed card. It does not assume the 2 GB card is empty, delete files or auto-format it.
+| Control              | Behavior                                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Microphone           | Standalone audio recording, local playback, cloud transcription and memory.                                                                |
+| Photo                | A fresh JPEG saved to this phone, with no cloud upload or description.                                                                     |
+| Photo with audio     | Save any previous standalone take, then start a new local soundtrack and photo. Stop the microphone when finished.                         |
+| Video                | Save any previous standalone take, then record timestamped JPEG frames with a new local soundtrack. Stop saves completed frames and audio. |
+| Hardware recheck     | Re-read readiness and retry initialization while idle.                                                                                     |
+| Ten-second WAV to SD | An explicit standalone audio hardware check, separate from photo/video capture.                                                            |
+| Browse/import SD     | Bring existing JPEG or matching MJPEG, WAV and JSON files into the phone library.                                                          |
+| Wi-Fi downloads      | Temporarily download existing SD files over a private local network, with capture stopped.                                                 |
 
-## Browse and work with photos and videos
+New visual captures always use phone storage even with an SD card inserted. The app does not start new photo/video writes to SD. Existing files are preserved; card rechecks never format or delete them. The firmware can still report an older SD take in progress, and its Stop control remains available.
 
-In **Library → Photos & video**, search titles, notes and saved descriptions, filter by media type, or select **Favourites**. Titles, notes and favourites are saved in this browser for the signed-in account and remain available after reconnecting or reopening the PWA. Other accounts cannot see these items.
+The microphone button's standalone recordings retain their normal transcription policy. A video soundtrack gets a durable `localOnly` flag before any samples are stored. It creates no transcription or summary jobs, and both the generic queue and cloud adapter block stale/manual jobs. Paired SD imports also keep the soundtrack local. An older independent audio recording manually linked to a photo retains its own existing policy.
 
-Open a photo to zoom the view, add a title or notes, link a saved audio recording, ask a question, or choose **Read text in view**. Text reading uses the same cloud vision service as descriptions; it does not create an audio transcript. The stored JPEG remains available to download. For an SD photo preview, the full VGA original remains on the card; import or download that original from SD.
+Photos, frames, notes and paired soundtracks are stored in IndexedDB on the current phone/browser. They are neither cloud-synced nor submitted to cloud vision. Automatic descriptions, spoken explanations and OCR controls are removed. The old `/v1/chakshu/describe` endpoint rejects all requests with `410 local_media_only` before parsing JSON. Previously saved text descriptions can still be viewed locally. This release does not delete historical cloud audio or previously submitted results.
 
-Video cards show **Play video**. Open one for play/pause, elapsed time, a seekable timeline, playback speed, and previous/next frame controls. Seeking pauses at the chosen moment. **Play linked audio** synchronizes the separately saved soundtrack with the frames; turn it off for silent playback. Playback pauses when the page is hidden or the viewer closes. Saved descriptions have **View at…** buttons that return to their frame. Describing a moment keeps the current position and sends only that frame and up to two nearby frames on either side.
+Export originals before clearing browser data. Local media has no automatic cloud backup and is not a promise of permanent storage by the mobile browser.
 
-**Save frame as photo** copies the selected JPEG into its own library item with the original video timestamp and audio link. Deleting the source video leaves both the extracted photo and its separate audio recording intact. The linked audio retains its own player and transcript, even when played in sync with video. Audio-only takes remain separate from video soundtracks.
+## Hardware and performance limits
 
-## Account photo/video library
+Camera capture requires an associated, connected Chakshu with media protocol v1 and ready camera/photo/video flags. Video also requires a ready microphone. Firmware build 1244's bounded notification windows improve transfers when advertised; older compatible firmware retains the read transport. This app/backend release does not change firmware or negotiate more aggressive radio parameters.
 
-Library → Photos & video shows **Unavailable** until a Chakshu device is associated with the signed-in account. Connecting an identified Chakshu while signed in saves that association in the backend. The library stays available after disconnection and can use the cached association offline. C3/S3 and unknown hardware do not unlock it. A public device ID is an account preference, not proof of exclusive hardware ownership.
+Standalone photos use VGA originals on current firmware; video requests QVGA frames. The phone records a sequence of timestamped JPEG images with separate PCM sound, not hardware-encoded MP4. Bluetooth throughput and simultaneous audio limit the achieved frame rate. Keep Synap visible and the pendant nearby. Camera requests remain serial; capture/transfer time counts toward cadence, and audio recovery takes priority. Clips stop at 32 MiB of visual data.
 
-Choose a capture mode:
+The transfer protocol acknowledges contiguous byte offsets and retries missing chunks without repeating the photo exposure. Commands use write without response when supported and verify a matching request ID. Failed transfers save the completed media and received audio. Stop cancels pending camera work while the native GATT queue retains ownership until that request settles.
 
-| Mode | Behavior |
-| --- | --- |
-| Audio only | Existing audio recording, playback, transcription and memory, with Chakshu's onboard PDM microphone specifications. |
-| Image | Take a fresh photo, start audio with a photo, describe it, or link an existing audio recording. Photo with audio keeps recording until the audio control is stopped. |
-| Video online | Capture periodic JPEG frames while the ordinary audio journal records independently. Optional live descriptions run at most once every ten seconds, with one automatic request in flight. Keep the PWA open; radio throughput determines frame rate. Clips stop at 32 MiB of visual data. |
-| Video to SD | Firmware records up to 60 seconds with separate silent MJPEG, PCM WAV and JSON timing files. An accepted take continues without the phone. Reconnect to check status and import it. |
+## Library and playback
 
-Camera transfers and paired SD video need firmware advertising media extension version 1. Older Chakshu firmware can still use ordinary audio and manual SD imports. New firmware adds on-demand Wi-Fi file downloads; there is no continuous Wi-Fi preview or MP4 capture.
+**Library → Photos & video** is available to a signed-in account associated with a Chakshu. Connecting identified hardware records that association; cached association works offline. Other accounts cannot open the local visual library. Account association does not prove exclusive physical ownership of a public device ID.
 
-Short camera commands use write without response when firmware advertises it; the matching request ID in the result confirms execution. Older firmware and requests containing longer SD paths retain write with response. Missing results time out, and an ambiguous write failure never repeats a photo exposure. A failed video transfer immediately enters saving while the owned audio take finishes; the preview shows that transition instead of claiming recording continues.
+Search titles, notes and historical descriptions; filter images/videos and favourites. Open a photo to zoom, rename, add notes, link audio or download the JPEG. Open a video for playback, seeking, playback speed, previous/next frame and linked audio controls. Playback follows saved timestamps and pauses when the page is hidden or the viewer closes. It supports a silent tail when frames extend past the soundtrack.
 
-Camera errors identify control discovery, data discovery, command write or
-response read. Diagnostics retain that stage, request ID, byte offset and elapsed
-time, and distinguish a queued timeout from an operation running on Bluetooth.
-The queue gives each operation its own execution deadline after bounded waiting.
-Shell 119 gives camera response reads ten seconds instead of using the
-recorder's 3.5-second control deadline. A cancelled native read retains queue
-ownership until it settles; Stop cannot overlap it. An idle read that never
-settles still causes bounded connection recovery.
-Native bridge failures reported as strings retain their message in the preview
-and diagnostic log. Startup diagnostics also identify the loaded recorder,
-camera and capture UI revisions, so an old cached module is distinguishable
-from a failure in the current build.
+**Save frame as photo** copies the selected JPEG with its original timestamp. Deleting the video keeps that extracted photo and the separately stored soundtrack. Open linked audio for playback or WAV export; local soundtracks show **On this device**, without missing-transcript warnings or a cloud-download fallback. Video export produces MJPEG plus a JSON timing sidecar; export the soundtrack separately as WAV.
 
-Module and event discovery wait until identity, audio/control subscriptions and recovery negotiation finish. The app releases optional setup explicitly after that handshake, including after a reconnect.
+Account changes close viewers, revoke object URLs and cancel owned captures. Interrupted visual takes stay accessible to their original account. Starting a new video waits for any previous standalone recording to finish saving so audio from separate takes is not mixed.
 
-Photos and video are stored in a separate, account-keyed IndexedDB library **on the current browser**. They are not cloud-synced. Audio follows the existing local/cloud processing flow. Account changes close viewers, revoke object URLs, abort pending descriptions, and stop owned online captures. Interrupted visual captures remain accessible under their original owner. Deleting a visual does not delete linked audio. Download originals before clearing browser data.
+## Existing SD files
 
-### Descriptions and spoken “explain”
+Use **Check SD card** after inserting a card. A ready card enables browsing and downloads, while phone capture works without it. Browse SD transfers files through Bluetooth; the current catalog lists up to 100 photos/clips. For faster completed-file transfers, use Wi-Fi downloads or a card reader.
 
-Only audio enters transcription. A timestamped “explain” word from an audio segment selects the nearest saved camera frame and at most two frames on either side, with a ten-second maximum distance. Explicit live requests allow up to twelve seconds for following frames to arrive. A missing frame window produces no invented explanation. Duplicate voice requests are suppressed. Voice requests follow rolling audio transcription, so they are delayed by the audio segment/transcription pipeline; the **Explain this moment** button requests a frame window directly.
+Import the matching `.mjpeg`, `.wav` and `.json` together to preserve actual timing and a local soundtrack. Earlier clips without timing JSON use an estimated two-fps timeline. JPEG photos import directly. A standalone WAV can be imported for normal transcription; a WAV paired with video is not duplicated as a cloud-eligible audio take. Imports are limited to 32 MiB per file, and incomplete JPEG streams or inconsistent timing are rejected.
 
-The backend accepts up to five JPEG images and a prompt, validates account association and size, and sends those images to vision inference. It never submits a video file or audio to that endpoint. Descriptions and their exact selected timestamps are stored locally with the visual. A user can select another saved frame and ask a question in the viewer. Text is rendered as text, not HTML.
+For Wi-Fi downloads, copy the displayed password, join **Chakshu-XXXX** in the phone settings and open the private download link. The local page is separate from the HTTPS PWA. Save the desired files, choose **Finish downloads**, return to the normal network and import them into Synap. Credentials remain in memory and stay out of logs. The network expires after three minutes without requests or fifteen minutes overall. Audio, camera capture, card remount and OTA wait until downloads finish.
 
-### Import and playback
+## Connection diagnostics
 
-Browse SD card transfers files through Bluetooth; the current firmware catalogue lists up to 100 photos/clips. For faster transfers, use Wi-Fi downloads or select files with a card reader. Import the matching `.mjpeg`, `.wav`, and `.json` together to retain audio alignment. Earlier clips without JSON use estimated two-fps playback and disable automatic spoken explanations. JPEG photos also import directly. Camera/audio imports are limited to 32 MiB per file. Incomplete JPEG streams or inconsistent timing files are rejected.
+Module/event discovery waits until identity, audio/control subscriptions and recovery negotiation finish. Passive checks are deferred during capture. Logs include operation stage, request ID, offset, queue time and native Bluetooth time. Camera response reads have their own ten-second deadline; a native read that never settles causes bounded recovery.
 
-The viewer plays frames at their saved timestamps and follows the linked audio clock when enabled. It also supports silent clips and a silent video tail after a shorter soundtrack ends. Audio remains independently stored with its own transcript link. Audio can be linked or replaced from recordings belonging to the same account. Original video export is MJPEG plus a JSON timing sidecar; original audio remains downloadable through the audio recording.
+The build-1242 logs showed 720 ms link supervision timeouts. The firmware follow-up requests the standard S3's six-second timeout once outside the connection callback, with bounded busy retries. Later user diagnostics observed 6000 ms; that improvement does not establish end-to-end RF reliability. The app separately reports **Audio delayed** when received audio falls far behind elapsed time.
 
-See [device capabilities](DEVICE_CAPABILITIES.md) for supported/readiness/permission gates and catalog synchronization.
+See the [startup audit](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/chakshu-startup-audit.md), [transport audit](CHAKSHU_TRANSPORT_AUDIT.md) and [audio pipeline](AUDIO_PIPELINE.md). A screenshot or simulated test cannot certify microphone quality, physical radio endurance or mobile background delivery.
 
-## Code boundaries
+## Code and protocol boundaries
 
-| Responsibility | Owner |
-| --- | --- |
-| BLE connection, serialized queue and audio ownership | app.js, recording/bluetooth-session.js, devices/identity.js |
-| Module descriptor and hardware checks | devices/modules.js, devices/panel.js |
-| Camera/file transport | devices/chakshu/transfer.js |
-| Account association, capture and audio links | devices/chakshu/media.js |
-| Account-keyed media and frame storage | devices/chakshu/store.js |
-| Library and selected-frame descriptions | devices/chakshu/library.js, devices/chakshu/library.css |
-| Timestamped playback and linked audio clock | devices/chakshu/player.js |
-| Header photo/video preview popup | devices/chakshu/capture-preview.js |
-| Encrypted account device association and vision endpoint | backend/src/http/routes/chakshu.ts |
-| Timestamped audio transcription events | synap-backend.js, backend/src/http/routes/recordings.ts |
-| Firmware capture and SD worker | synap-firmware repository |
+| Responsibility                                        | Owner                                                             |
+| ----------------------------------------------------- | ----------------------------------------------------------------- |
+| Connection, serialized GATT queue and audio ownership | `app.js`, `recording/bluetooth-session.js`, `devices/identity.js` |
+| Hardware descriptors and checks                       | `devices/modules.js`, `devices/panel.js`                          |
+| Camera and file transfer                              | `devices/chakshu/transfer.js`                                     |
+| Account association and capture                       | `devices/chakshu/media.js`                                        |
+| Visual persistence and playback                       | `devices/chakshu/store.js`, `library.js`, `player.js`             |
+| Local soundtrack policy                               | `audio-store.js`, `processing-queue.js`, `synap-backend.js`       |
+| Legacy cloud image rejection                          | `backend/src/http/routes/chakshu.ts`, `backend/src/http/app.ts`   |
 
-Native media operations use the app-owned GATT queue. Media has explicit permission during confirmed audio recording; passive metadata reads retain their existing idle-only policy. Recovery, finalization, OTA, another tab's ownership and stale connections block media access. An SD take blocks starting live audio; online camera capture shares ordinary audio notifications.
+The existing `4fa12350` descriptor and `4fa12351`–`53` hardware-check protocol remain. Descriptor byte 14 advertises media, byte 15 is zero for local voice, and byte 16 advertises optional transfer/download features. `4fa12354`/`55` provide frame/file requests and responses. See the [firmware protocol](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/CHAKSHU.md) and [capability guide](DEVICE_CAPABILITIES.md).
 
-## Protocols
-
-The existing `4fa12350` descriptor and `4fa12351`–`53` SD-check protocol remain. Descriptor byte 14 advertises the media extension version; byte 15 is zero (local voice removed). `4fa12354`/`55` provide request/response frame and file transfer. All UUIDs share suffix `-0000-1000-8000-00805f9b34fb`.
-
-See the [firmware media protocol and setup](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/CHAKSHU.md) for wire fields and limits.
-
-## Header controls
-
-The microphone button starts/stops audio, the camera button takes a photo, and the video button records to SD when supported with a ready card, or opens phone preview otherwise. Local voice recognition, voice settings, model installation and background voice BLE services are removed for this release. Descriptor voice version is zero in the matching firmware. The PWA also avoids voice/model discovery against older firmware.
-
-Video requests use QVGA frames on the new firmware, while standalone photo originals remain VGA. Independent SD video uses QVGA. The preview reports camera transfer percentage. Bluefy read latency still limits the achieved frame rate; this is a sequence of timestamped JPEGs, not a guaranteed continuous-motion video stream. Stopping video cancels its pending camera read and preserves completed frames and received audio. An AbortError at that exact Stop boundary alone does not establish a failed camera or a disconnected link.
-
-Update Chakshu firmware and reconnect after updating this page. A PWA reload does not change the firmware already running on the pendant.
-
-## Startup stability audit
-
-Shell 117 fixes startup queue timeouts that could disconnect a healthy pendant,
-defers automatic firmware discovery for five seconds, and keeps passive checks
-out of manual camera/video capture. Slow Bluetooth requests log queue and native
-durations separately. Chakshu diagnostics v3 includes measured boot/media time,
-the previous link's duration and parameters, and the stage reached before a drop.
-
-The build-1242 follow-up log then exposed repeated link supervision timeouts
-with a negotiated timeout of only 720 ms. Shell 118 decodes diagnostics v4:
-`linkSupervisionMs` is the currently observed timeout; `linkParamRequestCode:0`
-means only that a request was submitted. `lastLinkSupervisionMs` and
-`lastLinkParamRequestCode` retain the previous connection's evidence.
-
-The matching firmware keeps the host-owned data-length negotiation and requests
-the standard S3's six-second supervision timeout once, deferred outside the
-connect callback, if the observed timeout is shorter. Immediate busy responses
-have bounded retries; central rejection or replacement does not cause a loop.
-See the
-[full startup audit](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/chakshu-startup-audit.md)
-for evidence, validation and physical-device limits.
-
-The [build-1243 camera and audio follow-up audit](CHAKSHU_TRANSPORT_AUDIT.md)
-distinguishes the app's camera deadline from radio supervision failures and
-documents the remaining slow-audio uncertainty. Shell 119 shows **Audio delayed**
-when a visible recording has received less than half its elapsed audio after
-the foreground grace period, even when packets keep arriving. Stop remains
-available; moment marking returns when reception catches up. Slow-audio logs
-include camera activity and rejected diagnostic response versions.
-
-Reload the app after saving any active take to load the new recorder and
-diagnostics decoder. Updating pendant firmware does not replace JavaScript
-already running in an open page. That shell-119 follow-up used firmware 1243; the SD performance release below
-requires the newer matching firmware. Local voice recognition stays disabled.
-
-## Shell 120: SD capture and faster media
-
-Update both the app and Chakshu firmware. The app startup log should show
-`1.0.0-shell120-chakshu` and `1.0.0-chakshu-core5`. Features are enabled only when
-advertised by descriptor byte 16; older firmware keeps its existing transport.
-
-With your card inserted, open **Library → Photos & video → Check SD card**.
-This remounts the card while idle and never formats it. The status must say
-**SD card ready** before SD capture/download controls become available.
-
-| Control | Result |
-| --- | --- |
-| Header photo | Save a VGA original on SD and transfer a smaller preview of the same exposure; no-card captures still transfer a normal photo. |
-| Header video | Prefer SD video with separate PCM audio and real frame timestamps when supported and ready. No live image is shown during an SD take. |
-| Record phone preview | Capture adaptive QVGA frames alongside the normal audio journal. Yield camera requests when audio falls behind. |
-| Stop SD recording | Finish and close files on the pendant; the preview shows saved status. |
-| Browse SD card | Import selected original files over Bluetooth without deleting them. |
-| Wi-Fi downloads | Start a temporary private network for faster completed-file downloads while recording is stopped. |
-
-The SD recorder targets up to 10 fps, with a maximum of 60 seconds or 32 MiB
-of visual data. It buffers audio independently of camera and card writes.
-Slow visual writes can drop frames with their real timing preserved. If the
-card cannot keep up with PCM, the take stops and reports a partial recording.
-Physical throughput and synchronization are not established by simulated tests.
-
-Camera transfers use bounded notification windows, acknowledge contiguous byte
-offsets and retry missing data without recapturing. The old read transport is
-retained. Phone preview cadence includes time already spent capturing/transferring,
-rather than adding a fixed 1.5-second delay after every image.
-
-For Wi-Fi downloads, copy the displayed password, join the **Chakshu-XXXX**
-network in the phone's Wi-Fi settings, stay connected despite the no-internet
-notice, and open the private download link. This is a separate local page, so
-the HTTPS PWA does not fetch an insecure local address in the background.
-Save JPEG originals or matching **MJPEG + WAV + JSON** video files. Choose
-**Finish downloads** on the local page or in Synap, return to your usual network,
-and use **Import SD files** to play the video with its soundtrack. The network
-expires after three minutes without requests or fifteen minutes overall.
-Credentials remain in memory for the active session and are excluded from logs.
-Audio, camera capture, card remount and OTA stay blocked until downloads finish.
-
-The new native tests cover concurrent SD queues, byte-identical PCM under slow
-camera/card conditions, overflow and worker failures, image conversion fallback,
-notification credit/cancellation and the read-only download handler. Browser
-coverage checks card insertion, SD photo metadata, SD video controls, download
-setup, return to audio, legacy media capture and account isolation.
+The current app revision is `1.0.0-shell121-chakshu` with capture UI revision `1.0.0-chakshu-core6`. A PWA reload updates the app; it does not flash the pendant.

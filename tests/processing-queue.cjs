@@ -30,6 +30,7 @@ function fixture(options = {}) {
     { id: 1, recordingId: 'r1', kind: 'consolidate', state: 'pending', segmentIndex: 0 },
   ];
   const store = {
+    get: async (_table, id) => ({ id }),
     recoveryFailures: new Map(),
     all: async () => jobs,
     nextRunnable: context.DKAudioStore.prototype.nextRunnable,
@@ -184,4 +185,16 @@ test('a failed UI callback cannot requeue a committed memory', async () => {
   await queue.resume();
   assert.equal(jobs[0].state, 'done');
   assert.equal(events.filter((event) => event.type === 'synap-memory-ready').length, 1);
+});
+
+for (const provider of ['custom', 'fixture']) test('local soundtrack cannot enter ' + provider + ' processing, including stale jobs', async () => {
+  const { queue, context, store, jobs, events } = fixture({provider: () => provider,
+    fetch: () => assert.fail('local audio must never be uploaded')});
+  store.get = async () => ({ id: 'r1', localOnly: true });
+  context.DKFIFOProcessor.registerProvider('fixture', {
+    process: () => assert.fail('no adapter receives a local soundtrack'),
+  });
+  await queue.resume();
+  assert.equal(jobs[0].state, 'done');
+  assert(!events.some(event => event.type === 'synap-memory-ready'));
 });

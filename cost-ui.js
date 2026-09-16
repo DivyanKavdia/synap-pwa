@@ -39,6 +39,7 @@
   }
 
   function transcriptionCharged(recording) {
+    if (recording?.localOnly) return false;
     const s = stage(recording);
     return Boolean(String(recording?.transcript || '').trim()) ||
       ['transcribing', 'understanding', 'indexing', 'ready'].includes(s) ||
@@ -46,6 +47,7 @@
   }
 
   function memoryCharged(recording) {
+    if (recording?.localOnly) return false;
     const s = stage(recording);
     return Boolean(String(recording?.summary || '').trim()) ||
       Boolean(recording?.meeting) ||
@@ -54,6 +56,7 @@
   }
 
   function embeddingCharged(recording) {
+    if (recording?.localOnly) return false;
     const s = stage(recording);
     return ['indexing', 'ready'].includes(s) || recording?.processingState === 'done';
   }
@@ -85,10 +88,10 @@
   }
 
   function estimate(recording) {
-    const mins = minutes(recording);
+    const mins = recording?.localOnly ? 0 : minutes(recording);
     const memoryInputTokens = Math.ceil(mins * MEMORY_INPUT_TOKENS_PER_MIN);
     const memoryOutputTokens = Math.ceil(mins * MEMORY_OUTPUT_TOKENS_PER_MIN);
-    const embeddingTokens = estimateEmbeddingTokens(recording);
+    const embeddingTokens = recording?.localOnly ? 0 : estimateEmbeddingTokens(recording);
 
     const transcribeInr = transcriptionCharged(recording)
       ? mins * TRANSCRIBE_USD_PER_MIN * USD_INR

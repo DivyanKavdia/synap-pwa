@@ -1,7 +1,7 @@
 /* Product-facing capture controls. Core BLE/recording behavior remains in app.js. */
 (function () {
   'use strict';
-  globalThis.SynapCaptureUIRevision = '1.0.0-chakshu-core5';
+  globalThis.SynapCaptureUIRevision = '1.0.0-chakshu-core6';
   const TAGLINE = 'Stay present. Keep the memory.';
   const PUBLIC_VERSION = '1.0.0';
   const logoSource = () =>
@@ -184,6 +184,7 @@
     actions.insertBefore(photo, settings);
     actions.insertBefore(video, settings);
     window.addEventListener('synap-chakshu-changed', sync);
+    window.addEventListener('synap-module-changed', sync);
 
     let desktopClock = null;
     function updateDesktopClock() {
@@ -275,6 +276,9 @@
       toggle.title = action;
       const media = window.SynapChakshu?.state,
         visualActive = Boolean(media?.session || media?.offline);
+      const module = window.SynapModules?.client?.module;
+      const audioOnly = module && window.SynapCapabilities?.profile(module) && !window.SynapCapabilities.supports(module, 'camera');
+      photo.hidden = video.hidden = Boolean(audioOnly && !visualActive);
       const visualReady =
         ready &&
         media?.available &&
@@ -309,7 +313,7 @@
         visualActive
           ? 'Stop video recording'
           : visualReady && media?.videoReady
-            ? 'Start video with separate audio'
+            ? 'Record video on phone'
             : unavailable,
       );
       video.title = video.getAttribute('aria-label');

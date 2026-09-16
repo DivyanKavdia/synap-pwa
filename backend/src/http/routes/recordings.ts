@@ -6,7 +6,7 @@ import { GeminiError } from '../../gemini/client.js';
 import { openJson, openText, sealBytes } from '../../crypto/envelope.js';
 import { enqueueProcessing } from '../../pipeline/queue.js';
 import { binding } from '../../pipeline/process.js';
-import { transcribeUploadedWindow } from '../../pipeline/rolling-transcription.js';
+import { transcribeUploadedWindow, hasUsableTranscription } from '../../pipeline/rolling-transcription.js';
 import * as db from '../../store/firestore.js';
 import { deleteSegment, segmentPath, writeSealedSegment } from '../../store/gcs.js';
 import type {
@@ -165,11 +165,7 @@ export function recordingRoutes(): Router {
         // A retry after upload but before/while ASR completed must continue the
         // missing transcription rather than returning early and leaving a hole.
         let completed = existing;
-        if (
-          !existing.sealedTranscript ||
-          !existing.sealedWords ||
-          existing.state !== 'transcribed'
-        ) {
+        if (!hasUsableTranscription(req.uid, recordingId, req.dek, existing)) {
           try {
             completed = await transcribeUploadedWindow(req.uid, recordingId, index, req.dek);
           } catch (cause) {
@@ -187,6 +183,8 @@ export function recordingRoutes(): Router {
           state: completed.state,
           sha256: digest,
           transcript_ready: completed.state === 'transcribed',
+          transcript: completed.sealedTranscript ? openText(req.dek, completed.sealedTranscript, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'transcript')) : '',
+          transcription_outcome: completed.transcriptionReview?.outcome || 'speech',
           words: completed.sealedWords ? openJson(req.dek, completed.sealedWords, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'words')) : [],
         });
         return;
@@ -250,6 +248,8 @@ export function recordingRoutes(): Router {
         state: completed.state,
         sha256: digest,
         transcript_ready: true,
+        transcript: completed.sealedTranscript ? openText(req.dek, completed.sealedTranscript, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'transcript')) : '',
+        transcription_outcome: completed.transcriptionReview?.outcome || 'speech',
         words: completed.sealedWords ? openJson(req.dek, completed.sealedWords, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'words')) : [],
       });
     }),

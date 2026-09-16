@@ -1,30 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { associationBody, describeBody, imageParts } from '../src/http/routes/chakshu.js';
-test('media boundary accepts only the Chakshu account association and bounded JPEG windows', () => {
+import { associationBody } from '../src/http/routes/chakshu.js';
+test('media association accepts only a real Chakshu target and identifier', () => {
   const device = { deviceId: 'SYNAP-112233445566', target: 'xiao-esp32s3-sense-8m' };
   assert.deepEqual(associationBody.parse(device), device);
   assert.throws(() => associationBody.parse({ ...device, target: 'esp32c3-supermini-4m' }));
   assert.throws(() => associationBody.parse({ ...device, deviceId: 'SYNAP-000000000000' }));
-  const input = {
-    deviceId: device.deviceId,
-    prompt: 'Explain',
-    frames: [{ atMs: 100, jpeg: Buffer.from([255, 216, 1, 2, 255, 217]).toString('base64') }],
-  };
-  const parts = imageParts(describeBody.parse(input));
-  assert.equal(parts.filter((p) => p.type === 'image').length, 1);
-  assert(!parts.some((p) => p.type === 'audio'));
-  assert.throws(() => describeBody.parse({ ...input, frames: Array(6).fill(input.frames[0]) }));
-  assert.throws(() => describeBody.parse({ ...input, video: 'base64 video' }));
-  assert.throws(() =>
-    imageParts({ ...input, frames: [...input.frames, { ...input.frames[0]!, atMs: 1 }] }),
-  );
-  assert.throws(() =>
-    imageParts({
-      ...input,
-      frames: [{ atMs: 0, jpeg: Buffer.from('not jpeg').toString('base64') }],
-    }),
-  );
 });
 
 import http from 'node:http';
@@ -36,7 +17,7 @@ import { generateDek } from '../src/crypto/envelope.js';
 import { keyring } from '../src/crypto/keyring.js';
 import { setFirestoreForTest } from '../src/store/firestore.js';
 import type { UserDoc } from '../src/store/types.js';
-test('real media routes enforce account isolation and never send video/audio to vision', async (t) => {
+test('account association remains isolated and cloud media is rejected before parsing', async (t) => {
   const docs = new Map<string, any>(),
     dek = generateDek();
   const snapshot = (path: string) => ({
@@ -72,16 +53,8 @@ test('real media routes enforce account isolation and never send video/audio to 
   let modelCalls = 0;
   globalThis.fetch = async (input, init) => {
     if (String(input).includes('generativelanguage.googleapis.com')) {
-      const body = JSON.parse(String(init?.body));
       modelCalls++;
-      assert.equal(body.store, false);
-      assert.equal(body.input.filter((p: any) => p.type === 'image').length, 1);
-      assert(!body.input.some((p: any) => p.type === 'audio' || p.type === 'video'));
-      return new Response(
-        JSON.stringify({
-          steps: [{ type: 'model_output', content: [{ type: 'text', text: 'A table.' }] }],
-        }),
-      );
+      throw Error('Cloud media processing must never run');
     }
     return originalFetch(input, init);
   };
@@ -112,26 +85,27 @@ test('real media routes enforce account isolation and never send video/audio to 
       frames: [{ atMs: 0, jpeg: Buffer.from([255, 216, 1, 2, 255, 217]).toString('base64') }],
     };
   try {
-    assert.equal((await request('/chakshu/describe', 'POST', input)).status, 403);
-    assert.equal(modelCalls, 0);
     assert.equal((await request('/devices/chakshu', 'PUT', device)).status, 200);
     assert.equal((await request('/devices')).data.devices.length, 1);
     assert.equal((await request('/devices', 'GET', undefined, 'b')).data.devices.length, 0);
-    assert.equal((await request('/chakshu/describe', 'POST', input, 'b')).status, 403);
-    const result = await request('/chakshu/describe', 'POST', input);
-    assert.equal(result.status, 200);
-    assert.equal(result.data.description, 'A table.');
-    assert.equal(modelCalls, 1);
-    assert.equal(
-      (
-        await request('/chakshu/describe', 'POST', {
-          ...input,
-          frames: Array(6).fill(input.frames[0]),
-        })
-      ).status,
-      400,
-    );
-    assert.equal(modelCalls, 1);
+    const before = JSON.stringify([...docs]);
+    for (const owner of ['a', 'b', 'no-account']) {
+      const result = await request('/chakshu/describe', 'POST', input, owner);
+      assert.equal(result.status, 410);
+      assert.equal(result.data.error.code, 'local_media_only');
+      assert.equal(result.data.error.retryable, false);
+    }
+    // Even malformed/oversized cached image bodies bypass the JSON parser.
+    for (const body of ['{broken json', 'x'.repeat(2_100_000)]) {
+      const response = await originalFetch(origin + '/v1/chakshu/describe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+      assert.equal(response.status, 410);
+    }
+    assert.equal(JSON.stringify([...docs]), before, 'no cloud writes or model side effects');
+    assert.equal(modelCalls, 0);
     assert.equal((await request('/devices', 'GET', undefined, 'no-account')).status, 401);
     assert(
       !JSON.stringify(docs.get('users/a/devices/' + device.deviceId)).includes(device.deviceId),

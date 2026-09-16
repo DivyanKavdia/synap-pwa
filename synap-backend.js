@@ -198,6 +198,7 @@
   function createRecording(processor, recordingId, signal) {
     return processor.store.get('recordings', recordingId).then(function (recording) {
       if (!recording) throw permanent('Recording is no longer in local storage.');
+      if (recording.localOnly) throw permanent('This soundtrack stays on this device.');
       var startedAt = recording.createdAt || new Date().toISOString();
       var timezone = 'UTC';
       try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (_) {}
@@ -257,8 +258,9 @@
   }
 
   async function uploadSegment(processor, job, signal) {
-    if((await processor.store.get('segments',[job.recordingId,job.segmentIndex]))?.uploadedToBackend)
-      return {transcript:'',uploadedToBackend:true,provider:'synap'};
+    const savedSegment = await processor.store.get('segments', [job.recordingId, job.segmentIndex]);
+    if (savedSegment?.uploadedToBackend)
+      return { transcript: savedSegment.transcript || '', transcriptionOutcome: savedSegment.transcriptionOutcome, uploadedToBackend: true, provider: 'synap' };
     var recording = null;
     let audioStage = 'registering recording';
     return safePatchLocalProcessing(processor, job.recordingId, {
@@ -296,14 +298,31 @@
       });
     }).then(async function (response) {
       audioStage = 'saving upload result';
-      if(processor.store.atomic)await processor.store.atomic(['segments'],function(stores){
-        const get=stores.segments.get([job.recordingId,job.segmentIndex]);
-        get.onsuccess=function(){if(get.result){const meta={...get.result,uploadedToBackend:true};delete meta.transcriptionBlob;stores.segments.put(meta)}};
+      const transcript = typeof response?.transcript === 'string' ? response.transcript : '';
+      const outcome = response?.transcription_outcome || (transcript.trim() ? 'speech' : 'pending');
+      if (processor.store.atomic) await processor.store.atomic(['segments', 'recordings'], function(stores) {
+        const get = stores.segments.get([job.recordingId, job.segmentIndex]);
+        get.onsuccess = function() {
+          if (!get.result) return;
+          const meta = { ...get.result, uploadedToBackend: true, transcript, transcriptionOutcome: outcome };
+          delete meta.transcriptionBlob;
+          stores.segments.put(meta);
+          const segments = stores.segments.index('recording').getAll(job.recordingId);
+          segments.onsuccess = function() {
+            const getRecording = stores.recordings.get(job.recordingId);
+            getRecording.onsuccess = function() {
+              const current = getRecording.result;
+              if (!current || current.localOnly || current.transcriptComplete || current.processingStage === 'ready') return;
+              const windows = segments.result.sort((a, b) => a.index - b.index);
+              const text = windows.map(segment => segment.transcript || '').filter(Boolean).join('\n');
+              stores.recordings.put({ ...current, transcript: text || current.transcript || '',
+                transcriptComplete: false,
+                transcriptSegments: windows.filter(segment => segment.uploadedToBackend).length });
+            };
+          };
+        };
       });
-      if (Array.isArray(response?.words)) root.dispatchEvent?.(new CustomEvent('synap-audio-transcribed', {
-        detail: { ownerUid: recording.ownerUid, recordingId: job.recordingId, segmentIndex: job.segmentIndex, words: response.words }
-      }));
-      return { transcript: '', uploadedToBackend: true, provider: 'synap', uploadedAt: new Date().toISOString() };
+      return { transcript, transcriptionOutcome: outcome, uploadedToBackend: true, provider: 'synap', uploadedAt: new Date().toISOString() };
     }).catch(function (error) {
       error.audioStage = audioStage;
       throw error;
@@ -497,6 +516,7 @@
         };
         const record = await processor.store.get('recordings', job.recordingId);
         check(record);
+        if (record.localOnly) return { localOnly: true, processingState: 'local', processingStage: 'local' };
         // Recordings made offline or before ownership metadata was introduced
         // are bound once, before their first managed request.
         if (!record.ownerUid && processor.store.atomic) await processor.store.atomic(['recordings'], stores => {
