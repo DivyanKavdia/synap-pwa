@@ -70,6 +70,8 @@ export async function indexMemory(
               conversation.summary,
               conversation.topics.join(', '),
               conversation.decisions.map((decision) => decision.text).join(' '),
+              (conversation.key_facts || []).map(item => item.text).join(' '),
+              (conversation.risks || []).map(item => item.text).join(' '),
             ]
               .filter(Boolean)
               .join('\n'),
@@ -98,6 +100,9 @@ export async function indexMemory(
             summary: conversation.summary,
             topics: conversation.topics,
             decisions: conversation.decisions,
+            outcomes: conversation.outcomes || [],
+            keyFacts: conversation.key_facts || [],
+            risks: conversation.risks || [],
             actionItems: conversation.action_items,
             followUps: conversation.follow_ups,
             participants: conversation.participants || [],

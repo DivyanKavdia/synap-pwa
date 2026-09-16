@@ -23,6 +23,22 @@ function memory(): StructuredMemory {
         participants: ['Priya'],
         mentioned_people: [],
         topics: ['pilot'],
+        key_facts: [
+          {
+            text: 'The prototype passed',
+            evidence: 'The prototype passed.',
+            start_ms: 0,
+            end_ms: 5000,
+          },
+        ],
+        risks: [
+          {
+            text: 'Invoice still needs checking',
+            evidence: 'Someone still needs to check the invoice.',
+            start_ms: 10000,
+            end_ms: 15000,
+          },
+        ],
         outcomes: [
           {
             text: 'Prototype passed',
@@ -85,6 +101,8 @@ test('memory extraction uses the upgraded structured model without resending aud
     timezone: 'Asia/Kolkata',
   });
   assert.equal(calls, 1);
+  assert.equal(result.conversations[0]?.key_facts?.length, 1);
+  assert.equal(result.conversations[0]?.risks?.length, 1);
   assert.equal(result.conversations[0]?.outcomes?.[0]?.text, 'Prototype passed');
   assert.equal(result.conversations[0]?.action_items[0]?.due_date, null);
   assert.equal(result.conversations[0]?.follow_ups[0]?.owner, '');
@@ -147,4 +165,30 @@ test('source-language quotes retain Hindi evidence and normalize typography with
   const result = validateMemory(input, 15000, source);
   assert.equal(result.people[0]?.name, 'प्रिया');
   assert.equal(result.conversations[0]?.outcomes?.length, 1);
+});
+
+test('new summary facts and risks require quotes, valid conversation bounds and unique text', () => {
+  const input = memory(),
+    c = input.conversations[0]!;
+  const fact = c.key_facts![0]!,
+    risk = c.risks![0]!;
+  c.key_facts!.push(
+    { ...fact },
+    { ...fact, text: 'Budget is 5 million', evidence: 'Budget is 5 million' },
+    { ...fact, text: 'Missing source', evidence: '' },
+    { ...fact, text: 'Outside this conversation', end_ms: 16000 },
+  );
+  c.risks!.push(
+    { ...risk },
+    { ...risk, text: 'Predicted bankruptcy', evidence: 'Bankruptcy is likely' },
+    { ...risk, text: 'Negative timestamp', start_ms: -1 },
+  );
+  const result = validateMemory(input, 20000, transcript).conversations[0]!;
+  assert.deepEqual(result.key_facts, [fact]);
+  assert.deepEqual(result.risks, [risk]);
+  delete c.key_facts;
+  delete c.risks;
+  const legacy = validateMemory(input, 20000, transcript).conversations[0]!;
+  assert.deepEqual(legacy.key_facts, []);
+  assert.deepEqual(legacy.risks, []);
 });

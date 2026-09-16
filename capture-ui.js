@@ -1,7 +1,7 @@
 /* Product-facing capture controls. Core BLE/recording behavior remains in app.js. */
 (function () {
   'use strict';
-  globalThis.SynapCaptureUIRevision = '1.0.0-chakshu-core12';
+  globalThis.SynapCaptureUIRevision = '1.0.0-chakshu-core13';
   const TAGLINE = 'Stay present. Keep the memory.';
   const PUBLIC_VERSION = '1.0.0';
   const logoSource = () =>
@@ -327,6 +327,15 @@
           !visualReady ||
           media?.session?.phase === 'starting' ||
           media?.session?.phase === 'saving';
+      }
+      if (media?.offline) {
+        if (label) label.textContent = 'Recording to SD';
+        status.classList.add('is-recording');
+        sessionBar.hidden = false;
+        reception.hidden = false;
+        reception.textContent = 'Saved on SD · ' + ((media.offlineStatus?.clipLimitMs || 60000) / 1000) + ' s limit';
+        reception.dataset.waiting = 'false';
+        if (timer) timer.textContent = window.SynapChakshuPlayer.timeLabel(media.offlineStatus?.audioMs || 0);
       }
       const desktop = window.SynapDesktopCapture?.state();
       if (desktop?.active) {

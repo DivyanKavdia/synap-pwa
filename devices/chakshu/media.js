@@ -1,4 +1,4 @@
-/* Phone-only camera capture. Standalone audio keeps its separate transcription flow. */
+/* Local camera capture on phone or SD. Standalone audio keeps its transcription flow. */
 (function (root) {
   'use strict';
   const { Store, TARGET, splitMJPEG } = root.SynapVisualStore;
@@ -453,10 +453,34 @@
       } while (offline);
     }
   }
-  async function startOffline() {
-    throw Error(
-      'New photos and videos save to this phone. Existing SD files can still be imported.',
-    );
+  async function startOffline(profile = 0, seconds = 30) {
+    if (![0, 1].includes(profile) || ![15, 30, 60].includes(seconds))
+      throw Error('Choose an available SD quality and clip length.');
+    return operation(async (signal) => {
+      const expected = owner;
+      await prepareCamera();
+      if (!(moduleInfo()?.mediaFeatures & 16))
+        throw Error('Update Chakshu firmware for SD video quality controls.');
+      const client = camera('video', true);
+      const audio = root.SynapAppControls.recordingState();
+      if (audio.active) await saveAudio(audio.sessionId);
+      check(expected);
+      await client.request(5, profile | (seconds << 8), '', signal);
+      check(expected);
+      offline = true;
+      offlineStatus = {
+        active: true,
+        audioMs: 0,
+        frames: 0,
+        clipLimitMs: seconds * 1000,
+        width: profile === 0 ? 1280 : 640,
+        height: profile === 0 ? 720 : 480,
+        targetFps: profile === 0 ? 10 : 20,
+        videoProfile: profile,
+      };
+      notify();
+      await pollOffline();
+    });
   }
   async function startVideo() {
     return startLive();
@@ -562,7 +586,8 @@
     } catch (e) {
       if (owner !== expected) return;
       if (offline)
-        error = 'SD recording continues on Chakshu, up to 60 seconds. Reconnect to check it.';
+        error =
+          'SD recording may still be running on Chakshu. It stops at the selected clip limit. Reconnect to check it.';
       notify();
     }
     if (offline && connected()) offlineTimer = setTimeout(pollOffline, 2000);
@@ -666,6 +691,27 @@
         localOnly: true,
         timingEstimated: !image && !timing,
         sourceName: file.name,
+        ...(!image &&
+        timing &&
+        Number.isInteger(timing.width) &&
+        timing.width > 0 &&
+        timing.width <= 2048 &&
+        Number.isInteger(timing.height) &&
+        timing.height > 0 &&
+        timing.height <= 1536
+          ? {
+              sdCapture: {
+                width: timing.width,
+                height: timing.height,
+                audioMs: timing.durationMs,
+                frames: frames.length,
+                droppedFrames:
+                  Number.isSafeInteger(timing.droppedFrames) && timing.droppedFrames >= 0
+                    ? timing.droppedFrames
+                    : 0,
+              },
+            }
+          : {}),
       });
       try {
         for (const frame of frames) {
@@ -759,7 +805,10 @@
         connectionStatus: connectionStatus(),
         cameraReady: capabilities.canCapture(moduleInfo(), 'photo'),
         videoReady: capabilities.canCapture(moduleInfo(), 'video'),
-        offlineReady: false,
+        offlineReady:
+          Boolean(moduleInfo()?.mediaFeatures & 16) &&
+          capabilities.canCapture(moduleInfo(), 'video', true),
+        sdProfilesSupported: Boolean(moduleInfo()?.mediaFeatures & 16),
         storageReady: capabilities.hasMedia(moduleInfo()) && capabilities.ready(moduleInfo(), 'sd'),
         mediaSupported: capabilities.hasMedia(moduleInfo()),
         voiceSupported: false,

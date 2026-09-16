@@ -70,6 +70,22 @@ const server = createStaticServer(root);
                   { title: 'Invoice', summary: 'Send tomorrow.', start_ms: 10000, end_ms: 30000 },
                 ],
                 decisions: [{ text: 'Budget approved', start_ms: 1000, end_ms: 3000 }],
+                key_facts: [
+                  {
+                    text: 'Budget ₹5,000',
+                    evidence: 'Budget is ₹5,000.',
+                    start_ms: 4000,
+                    end_ms: 6000,
+                  },
+                ],
+                risks: [
+                  {
+                    text: 'Approval pending',
+                    evidence: 'Approval is pending.',
+                    start_ms: 16000,
+                    end_ms: 18000,
+                  },
+                ],
                 action_items: [
                   {
                     task: 'Send invoice',
@@ -95,10 +111,42 @@ const server = createStaticServer(root);
       await page.locator('.brain-tabs a[href="#library"]').click();
       await page.locator('#recording-qa-meeting > summary').click();
       const details = page.locator('#recording-qa-meeting .meeting-detail');
-      await details.locator('summary').click();
+      await details.locator(':scope > summary').click();
       assert((await details.innerText()).includes('Suggested reminder'));
       assert((await details.innerText()).includes('Who signs?'));
       assert((await details.innerText()).includes('Very quiet'));
+      assert((await details.innerText()).includes('Budget ₹5,000'));
+      assert((await details.innerText()).includes('Risks & blockers'));
+      await details.locator('.meeting-agenda > summary').click();
+      assert((await details.locator('.meeting-agenda').innerText()).includes('Who signs?'));
+      // Exercise both the mobile clipboard and its manual fallback without a network request.
+      await page.evaluate(() => {
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable: true,
+          value: {
+            writeText: async (text) => {
+              window.qaRecap = text;
+            },
+          },
+        });
+      });
+      await details.getByRole('button', { name: 'Copy recap', exact: true }).click();
+      assert.match(await page.evaluate(() => window.qaRecap), /Budget ₹5,000/);
+      await page.evaluate(() => {
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable: true,
+          value: {
+            writeText: async () => {
+              throw Error('denied');
+            },
+          },
+        });
+      });
+      await details.getByRole('button', { name: 'Copy recap', exact: true }).click();
+      assert.match(
+        await details.getByRole('textbox', { name: 'Recap to copy' }).inputValue(),
+        /Approval pending/,
+      );
       await details.screenshot({ path: '/tmp/synap-meeting-detail-' + mode + '.png' });
       await details.getByRole('button', { name: 'Invoice · 0:10', exact: true }).click();
       await page.waitForFunction(

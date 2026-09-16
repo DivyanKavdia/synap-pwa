@@ -20,3 +20,16 @@ test('local preparation keeps legacy evidence without claiming old actions are o
   assert.equal(data.mentioned_actions.length,1);assert.equal(data.mentioned_actions[0].source.start_ms,3000);
   assert.equal(data.open_actions.length,0);assert.match(data.scope,/may already be complete/);
 });
+
+test('recap and next conversation use saved evidence, preserve owners and omit resolved agenda items',()=>{
+  const api=load('meeting-tools.js').SynapMeetingTools;
+  const c={title:'Launch',summary:'Pilot planned.',start_ms:2000,key_facts:[{text:'Budget ₹5,000',start_ms:4000}],risks:[{text:'Approval pending',start_ms:6000}],action_items:[{task:'Send plan',owner:'self',due_date:'2026-09-20',start_ms:8000}],unresolved_questions:[{text:'Who approves?',start_ms:10000},{text:'Resolved question',state:'resolved'}],follow_ups:[{text:'Who approves?',start_ms:11000},{text:'Check venue',owner:'Priya',start_ms:12000},{text:'Already done',status:'done'}]};
+  assert.deepEqual(Array.from(api.agenda(c),i=>i.text),['Who approves?','Check venue']);
+  const recap=api.recap({name:'Planning',meeting:{executive_summary:'Pilot planned.',conversations:[c]}});
+  assert.match(recap,/Key facts\n- Budget ₹5,000 \[0:04\]/);
+  assert.match(recap,/Risks & blockers\n- Approval pending/);
+  assert.match(recap,/Send plan — You · 2026-09-20 \[0:08\]/);
+  assert.equal(recap.split('Who approves?').length,2);
+  assert.doesNotMatch(recap,/Already done|Resolved question/);
+  assert.equal(api.recap({name:'Old memory',summary:'Existing summary'}),'Old memory\n\nExisting summary');
+});

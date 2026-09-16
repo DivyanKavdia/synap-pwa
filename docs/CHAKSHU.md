@@ -2,20 +2,20 @@
 
 Connect through the normal pendant picker. The Device panel identifies Chakshu from the firmware descriptor and shows the camera sensor and initialized features. Chakshu uses the XIAO ESP32S3 Sense with 8 MB flash and 8 MB OPI PSRAM, an onboard PDM microphone and a camera. Local voice recognition and model loading remain disabled.
 
-## Phone-only capture
+## Local capture
 
 | Control              | Behavior                                                                                                                                   |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | Microphone           | Standalone audio recording, local playback, cloud transcription and memory.                                                                |
 | Photo                | A fresh JPEG saved to this phone, with no cloud upload or description.                                                                     |
 | Photo with audio     | Save any previous standalone take, then start a new local soundtrack and photo. Stop the microphone when finished.                         |
-| Video                | Save any previous standalone take, then record timestamped JPEG frames with a new local soundtrack. Stop saves completed frames and audio. |
+| Phone video          | Save any previous standalone take, then record timestamped JPEG frames with a new local soundtrack. Stop saves completed frames and audio. |
 | Hardware recheck     | Re-read readiness and retry initialization while idle.                                                                                     |
 | Ten-second WAV to SD | An explicit standalone audio hardware check, separate from photo/video capture.                                                            |
 | Browse/import SD     | Bring existing JPEG or matching MJPEG, WAV and JSON files into the phone library.                                                          |
 | Wi-Fi downloads      | Temporarily download existing SD files over a private local network, with capture stopped.                                                 |
 
-New visual captures always use phone storage even with an SD card inserted. The app does not start new photo/video writes to SD. Existing files are preserved; card rechecks never format or delete them. The firmware can still report an older SD take in progress, and its Stop control remains available.
+Phone capture remains the default. **Library → Add / import → Video → Record video on SD** explicitly opts into card recording. Choose HD detail (1280×720, 10 fps target) or Smooth (640×480, 20 fps target), and a 15-, 30- or 60-second clip limit. Actual frame rate depends on light and the card. Clips stop at the selected duration or 32 MiB of JPEG data, whichever comes first. The app shows recorded resolution, achieved frame rate and dropped frames. Card checks never format or delete files. SD recording continues across a Bluetooth loss and stops at its firmware-enforced limit.
 
 The microphone button's standalone recordings retain their normal transcription policy. A video soundtrack gets a durable `localOnly` flag before any samples are stored. It creates no transcription or summary jobs, and both the generic queue and cloud adapter block stale/manual jobs. Paired SD imports also keep the soundtrack local. An older independent audio recording manually linked to a photo retains its own existing policy.
 
@@ -25,15 +25,15 @@ Export originals before clearing browser data. Local media has no automatic clou
 
 ## Hardware and performance limits
 
-Camera capture requires an associated, connected Chakshu with media protocol v1 and ready camera/photo/video flags. Video also requires a ready microphone. Firmware build 1244's bounded notification windows improve transfers when advertised; older compatible firmware retains the read transport. This app/backend release does not change firmware or negotiate more aggressive radio parameters.
+Camera capture requires an associated, connected Chakshu with media protocol v1 and ready camera/photo/video flags. Video also requires a ready microphone. Firmware build 1244's bounded notification windows improve transfers when advertised; older compatible firmware retains the read transport. SD quality profiles require media feature bit 16; older firmware can still use phone capture and import existing SD files. Radio parameters are unchanged by these quality controls.
 
-Standalone photos use VGA originals on current firmware; video requests QVGA frames. The phone records a sequence of timestamped JPEG images with separate PCM sound, not hardware-encoded MP4. Bluetooth throughput and simultaneous audio limit the achieved frame rate. Keep Synap visible and the pendant nearby. Camera requests remain serial; capture/transfer time counts toward cadence, and audio recovery takes priority. Clips stop at 32 MiB of visual data.
+Standalone phone photos use VGA originals; phone video requests QVGA frames. SD capture reinitializes the camera at its selected resolution with two JPEG framebuffers, then restores the single-buffer phone camera when finished. Higher-quality SD camera work is not loaded at boot. The phone records a sequence of timestamped JPEG images with separate PCM sound, not hardware-encoded MP4. Bluetooth throughput and simultaneous audio limit the achieved frame rate. Keep Synap visible and the pendant nearby. Camera requests remain serial; capture/transfer time counts toward cadence, and audio recovery takes priority. Clips stop at 32 MiB of visual data.
 
 The transfer protocol acknowledges contiguous byte offsets and retries missing chunks without repeating the photo exposure. Commands use write without response when supported and verify a matching request ID. Failed transfers save the completed media and received audio. Stop cancels pending camera work while the native GATT queue retains ownership until that request settles.
 
 ## Library and playback
 
-**Library → Photos & video** is available to a signed-in account associated with a Chakshu. Connecting identified hardware records that association; cached association works offline. Other accounts cannot open the local visual library. Account association does not prove exclusive physical ownership of a public device ID.
+The unified **Memory library** is available to a signed-in account associated with a Chakshu. Connecting identified hardware records that association; cached association works offline. Other accounts cannot open the local visual library. Account association does not prove exclusive physical ownership of a public device ID.
 
 Search titles, notes and historical descriptions; filter images/videos and favourites. Open a photo to zoom, rename, add notes, link audio or download the JPEG. Open a video for playback, seeking, playback speed, previous/next frame and linked audio controls. Playback follows saved timestamps and pauses when the page is hidden or the viewer closes. It supports a silent tail when frames extend past the soundtrack.
 
@@ -72,3 +72,9 @@ See the [startup audit](https://github.com/DivyanKavdia/synap-firmware/blob/main
 The existing `4fa12350` descriptor and `4fa12351`–`53` hardware-check protocol remain. Descriptor byte 14 advertises media, byte 15 is zero for local voice, and byte 16 advertises optional transfer/download features. `4fa12354`/`55` provide frame/file requests and responses. See the [firmware protocol](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/CHAKSHU.md) and [capability guide](DEVICE_CAPABILITIES.md).
 
 The current app revision is `1.0.0-shell125-chakshu` with capture UI revision `1.0.0-chakshu-core10`. A PWA reload updates the app; it does not flash the pendant.
+
+## Capture design reference
+
+Meta glasses demonstrate convenient short captures, a detail/motion choice, and importing captures after recording. We adopt timed clips, visible recording status and local Wi-Fi import using Chakshu’s own capabilities. Existing frame extraction, favourites, notes and playback speed stay in the same memory library.
+
+References: [Meta capture modes](https://www.meta.com/blog/ray-ban-meta-gen-2-now-available-ai-glasses-extended-battery-life-3k-video/), [Ray-Ban import guidance](https://www.ray-ban.com/usa/c/frequently-asked-questions-meta-ray-ban-display), and [Espressif camera buffer guidance](https://github.com/espressif/esp32-camera). These do not establish Meta-equivalent quality on an ESP32-S3. HDR, stabilization, native H.264/MP4, 3K/60 fps and cloud vision are not implemented. Higher resolution cannot replace good lighting or a steady, clean lens.

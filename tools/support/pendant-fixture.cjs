@@ -37,7 +37,7 @@ module.exports = function pendantFixture() {
   };
   const mediaCommands=[];let sdInserted=true,wifiRunning=false;
   const wifiInfo=()=>wifiRunning?{active:true,ssid:'Chakshu-AB12',password:'a'.repeat(32),url:'http://192.168.4.1/?key='+ 'b'.repeat(32)}:{active:false};
-  let transferReply=new DataView(new ArrayBuffer(16)),transferBytes=new Uint8Array(),offlineRecording=false;
+  let transferReply=new DataView(new ArrayBuffer(16)),transferBytes=new Uint8Array(),offlineRecording=false,sdVideoOptions=0;
   let delayCameraReply=false,uninitializedMediaReads=0,cameraReadDelay=0;
   function cameraJPEG(){const c=document.createElement('canvas');c.width=160;c.height=120;const ctx=c.getContext('2d');ctx.fillStyle='#776ac4';ctx.fillRect(0,0,160,120);ctx.fillStyle='#fff';ctx.fillRect(20,20,80,50);return Uint8Array.from(atob(c.toDataURL('image/jpeg').split(',')[1]),x=>x.charCodeAt(0));}
   function transferCommand(bytes){const v=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),op=bytes[1],id=v.getUint32(2,true),offset=v.getUint32(6,true);let payload=new Uint8Array(),total=0;
@@ -45,7 +45,7 @@ module.exports = function pendantFixture() {
     if(op===1||op===13)transferBytes=cameraJPEG();
     if(op===7)transferBytes=new TextEncoder().encode(JSON.stringify([{path:'/synap/abcdef01-00000001.jpg',bytes:1200}]));
     if(op===3)transferBytes=cameraJPEG();
-    if(op===5)offlineRecording=true;if(op===6)offlineRecording=false;
+    if(op===5){offlineRecording=true;sdVideoOptions=offset;}if(op===6)offlineRecording=false;
     if(op===14)sdAvailable=sdInserted;
     if(op===20)wifiRunning=true;if(op===22)wifiRunning=false;
     if(op===12){
@@ -58,7 +58,7 @@ module.exports = function pendantFixture() {
     }
     if(op===2||op===4)payload=transferBytes.slice(offset,offset+480);
     total=transferBytes.length;
-    if(op===9)payload=new TextEncoder().encode(JSON.stringify({active:offlineRecording,state:offlineRecording?1:2,error:0,progress:20,path:'/synap/abcdef01-00000001.mjpeg',audioMs:2000,frames:18,droppedFrames:2}));
+    if(op===9)payload=new TextEncoder().encode(JSON.stringify({active:offlineRecording,state:offlineRecording?1:2,error:0,progress:20,path:'/synap/abcdef01-00000001.mjpeg',audioMs:2000,frames:18,droppedFrames:2,width:sdVideoOptions&255?640:1280,height:sdVideoOptions&255?480:720,targetFps:sdVideoOptions&255?20:10,clipLimitMs:(sdVideoOptions>>8||60)*1000}));
     if([20,21,22].includes(op))payload=new TextEncoder().encode(JSON.stringify(wifiInfo()));
     if(op===15)payload=new TextEncoder().encode('/synap/abcdef01-00000001.jpg');
     transferReply=new DataView(new ArrayBuffer(16+payload.length));[0xCB,1,1,0].forEach((n,i)=>transferReply.setUint8(i,n));transferReply.setUint32(4,id,true);transferReply.setUint32(8,total,true);transferReply.setUint32(12,offset,true);new Uint8Array(transferReply.buffer).set(payload,16);
@@ -73,7 +73,7 @@ module.exports = function pendantFixture() {
     const v=new DataView(new ArrayBuffer(20));
     [0xC7,1,3,1].forEach((x,i)=>v.setUint8(i,x));
     v.setUint16(4,911,true);v.setUint16(6,sdAvailable?911:651,true);
-    v.setUint16(8,0x3660,true);v.setUint16(10,16000,true);v.setUint8(12,8);v.setUint8(13,8);v.setUint8(14,location.search.includes('chakshu-media')?1:0);v.setUint8(15,location.search.includes('voice')?1:0);v.setUint8(16,location.search.includes('sd-fast')?15:0);return v;
+    v.setUint16(8,0x3660,true);v.setUint16(10,16000,true);v.setUint8(12,8);v.setUint8(13,8);v.setUint8(14,location.search.includes('chakshu-media')?1:0);v.setUint8(15,location.search.includes('voice')?1:0);v.setUint8(16,location.search.includes('sd-profiles')?31:location.search.includes('sd-fast')?15:0);return v;
   }
   function mediaStatus() {
     const v=new DataView(new ArrayBuffer(20));
@@ -576,6 +576,7 @@ module.exports = function pendantFixture() {
     get model(){return {state:modelState,offset:modelOffset,begins:modelBegins};},
     get mediaWrites(){return mediaWrites;},
     get mediaCommands(){return mediaCommands;},
+    get sdVideoOptions(){return sdVideoOptions;},
     setCardInserted(value){sdInserted=value;},
     get wifiRunning(){return wifiRunning;},
     delayNextCameraReply(){delayCameraReply=true;},

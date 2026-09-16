@@ -47,6 +47,8 @@ Evidence rules, in order of priority:
 20. People evidence, outcome evidence, decision evidence and action evidence must be exact short quotes from the supplied transcript. Use the supplied source language for these quotes even when the recap is in another language. Never paraphrase a quote or use a name from the known-people list as evidence by itself.
 21. Capture useful specifics: subject and context, actual result, constraints or reasons when stated, and next steps. Prefer a few precise sentences and distinct key points over a generic recap. Keep family conversations, personal notes and meetings in their own natural context.
 22. Explicitly separate people who spoke from people merely mentioned. Anonymous speakers can remain anonymous in the recap. Unassigned follow-ups use an empty owner; do not drop an important unresolved task merely because no person owns it. Never infer age, gender, identity or attendance from the topic.
+23. Preserve useful key_facts: explicitly established numbers, dates, requirements and constraints, with exact source quotes and timestamps. Retain the final corrected version, not superseded claims; avoid duplicating outcomes or decisions. Return at most 12, and fewer for short notes.
+24. Extract risks only when speakers explicitly describe an unresolved concern, blocker or dependency. Preserve conditional language and uncertainty. Exclude resolved concerns, hypothetical examples and your own predictions. Use an exact supporting quote and timestamps for each; at most 8. No evidence means an empty list.
 
 Return only the requested schema.`;
 
@@ -186,6 +188,8 @@ export function validateMemory(memory: StructuredMemory, durationMs: number, tra
         participants,
         mentioned_people: mentionedPeople,
         outcomes: unique((conversation.outcomes ?? []).filter(outcome => outcome.text?.trim() && within(outcome) && supported(outcome.evidence)), outcome => outcome.text),
+        key_facts: unique((conversation.key_facts ?? []).filter(item => item.text?.trim() && within(item) && supported(item.evidence)), item => item.text).slice(0,12),
+        risks: unique((conversation.risks ?? []).filter(item => item.text?.trim() && within(item) && supported(item.evidence)), item => item.text).slice(0,8),
         decisions: unique((conversation.decisions ?? []).filter(
           (decision) => decision.text?.trim() && within(decision) && (decision.evidence === undefined || supported(decision.evidence)),
         ), decision => decision.text),

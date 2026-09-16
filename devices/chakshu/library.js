@@ -1,4 +1,4 @@
-/* Phone-only photo/video library, playback, notes and exports. */
+/* Local photo/video library, playback, SD capture controls, notes and exports. */
 (function (root) {
   'use strict';
   const $ = (id) => document.getElementById(id),
@@ -21,6 +21,21 @@
   };
   function status(message) {
     $('visualStatus').textContent = message || '';
+  }
+  function sdQuality(info) {
+    if (!info?.width || !info?.height) return '';
+    const fps =
+      info.audioMs > 0
+        ? ' · ' + ((info.frames * 1000) / info.audioMs).toFixed(1) + ' fps captured'
+        : '';
+    return (
+      ' · ' +
+      info.width +
+      '×' +
+      info.height +
+      fps +
+      (info.droppedFrames ? ' · ' + info.droppedFrames + ' dropped frames' : '')
+    );
   }
   async function action(fn) {
     try {
@@ -209,6 +224,7 @@
     $('visualInfo').textContent =
       (row.state === 'interrupted' ? 'Interrupted capture · ' : '') +
       (video ? 'Video playback · linked audio is part of this memory. ' : '') +
+      (row.sdCapture ? 'SD capture' + sdQuality(row.sdCapture) + '. ' : '') +
       (row.timingEstimated ? 'Frame times estimated from the earlier 2 fps capture. ' : '') +
       (row.previewOnly
         ? 'Preview only. Original on SD: ' +
@@ -266,7 +282,9 @@
       root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
       $('visualSDList').replaceChildren();
     }
-    $('visualAccess').textContent = state.available ? 'Chakshu capture & SD imports' : 'Unavailable';
+    $('visualAccess').textContent = state.available
+      ? 'Chakshu capture & SD imports'
+      : 'Unavailable';
     $('visualGate').hidden = state.available;
     $('visualGate').textContent = state.owner
       ? 'Connect Chakshu to associate it with this account and unlock photos and video.'
@@ -293,6 +311,7 @@
       visualPhoto: state.cameraReady,
       visualPhotoAudio: state.cameraReady,
       visualOnline: state.videoReady,
+      visualRecordSD: state.offlineReady,
       visualSD: state.storageReady,
     }))
       $(id).disabled = busy || !state.connected || !available;
@@ -305,8 +324,15 @@
       ? ''
       : 'Update Chakshu firmware for Wi-Fi downloads.';
     $('visualStorageHint').textContent = state.storageReady
-      ? 'Existing SD files can be imported. New photos, video and soundtracks save only to this phone.'
+      ? 'SD card ready. Record higher-quality video on the card, then import it here. Photos and phone video stay on this phone.'
       : 'No SD card is needed. Photos, video and soundtracks save only to this phone.';
+    $('visualSDQuality').disabled = busy;
+    $('visualSDLength').disabled = busy;
+    $('visualSDVideoHint').textContent = !state.sdProfilesSupported
+      ? 'Update Chakshu firmware to enable HD and smooth SD video.'
+      : !state.storageReady
+        ? 'Insert a card, then choose Check SD card.'
+        : 'HD favours detail; Smooth favours motion. Frame rate varies with light and card speed. Clips stop at the selected length or 32 MiB, whichever comes first.';
     $('visualWifiDetails').hidden = !state.wifi?.active;
     $('visualWifiName').textContent = state.wifi?.ssid || '';
     $('visualWifiPassword').textContent = state.wifi?.password || '';
@@ -333,11 +359,17 @@
             ((state.offlineStatus?.audioMs || 0) / 1000).toFixed(1) +
             ' s · ' +
             (state.offlineStatus?.frames || 0) +
-            ' frames · up to 60 seconds.'
+            ' frames' +
+            sdQuality(state.offlineStatus) +
+            ' · limit ' +
+            (state.offlineStatus?.clipLimitMs || 60000) / 1000 +
+            ' s.'
           : state.wifi?.active
             ? 'Wi-Fi downloads active. Finish downloads before recording.'
             : state.offlineStatus?.path
-              ? 'SD recording saved. Choose Browse SD card or Wi-Fi downloads.'
+              ? 'SD recording saved' +
+                sdQuality(state.offlineStatus) +
+                '. Choose Browse SD card or Wi-Fi downloads.'
               : '');
     if (!state.available) return;
     const store = api().store,
@@ -503,7 +535,7 @@
     for (const key of ['audio', 'image', 'video']) $('visualMode-' + key).hidden = value !== key;
   }
   function init() {
-    const showAdd = visible => {
+    const showAdd = (visible) => {
       $('visualLibrary').hidden = !visible;
       $('libraryAdd').setAttribute('aria-expanded', String(visible));
       if (visible) {
@@ -530,6 +562,11 @@
       action(async () => open(await api().photo(true))),
     );
     $('visualOnline').addEventListener('click', () => action(() => api().startVideo()));
+    $('visualRecordSD').addEventListener('click', () =>
+      action(() =>
+        api().startOffline(Number($('visualSDQuality').value), Number($('visualSDLength').value)),
+      ),
+    );
     $('visualCheckSD').addEventListener('click', () => action(() => api().refreshSD()));
     $('visualWifi').addEventListener('click', () => action(() => api().startWifi()));
     $('visualWifiStop').addEventListener('click', () => action(() => api().stopWifi()));

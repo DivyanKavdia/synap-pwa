@@ -1,5 +1,9 @@
 'use strict';
-const { createStaticServer, launchChromium, clickLibraryAction } = require('./support/browser-fixture.cjs');
+const {
+  createStaticServer,
+  launchChromium,
+  clickLibraryAction,
+} = require('./support/browser-fixture.cjs');
 const fs = require('node:fs'),
   path = require('node:path'),
   assert = require('node:assert/strict');
@@ -53,7 +57,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
         errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.setDefaultTimeout(20000);
-      await page.goto(origin + '/?chakshu-media&sd-fast&missing-sd&inventory');
+      await page.goto(origin + '/?chakshu-media&sd-fast&sd-profiles&missing-sd&inventory');
       await page.waitForFunction(() => document.body.dataset.startup === 'ready');
       await page.locator('#headerPendantStatus').click();
       await page.waitForFunction(
@@ -72,10 +76,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
         await page.evaluate(() => bleFixture.mediaCommands.filter((op) => op === 14).length),
         1,
       );
-      assert.match(
-        await page.locator('#visualStorageHint').textContent(),
-        /Existing SD files can be imported/,
-      );
+      assert.match(await page.locator('#visualStorageHint').textContent(), /SD card ready/);
       await page.locator('#headerPhoto').click();
       await page.waitForFunction(
         () =>
@@ -126,6 +127,32 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       assert.equal(privacy.rows[0].localOnly, true);
       assert.deepEqual(privacy.jobs, []);
       await page.locator('#capturePreviewClose').click();
+      await page.locator('#visualMode').selectOption('video');
+      await page.locator('#visualSDQuality').selectOption('1');
+      await page.locator('#visualSDLength').selectOption('15');
+      await page.locator('#visualRecordSD').click();
+      await page.waitForFunction(() => SynapChakshu.state.offline && !SynapChakshu.state.working);
+      assert.equal(await page.evaluate(() => bleFixture.sdVideoOptions), 1 | (15 << 8));
+      assert.match(
+        await page.locator('#visualConnectionStatus').textContent(),
+        /640×480.*9.0 fps captured.*2 dropped frames.*limit 15 s/,
+      );
+      assert(await page.locator('#visualSDQuality').isDisabled());
+      assert(await page.locator('#headerPhoto').isDisabled());
+      await page.evaluate(() => SynapAppControls.toggleCapture());
+      assert.equal(await page.evaluate(() => SynapAppControls.recordingState().active), false);
+      await page.locator('#visualStop').click();
+      await page.waitForFunction(() => !SynapChakshu.busy);
+      assert.match(
+        await page.locator('#visualConnectionStatus').textContent(),
+        /SD recording saved/,
+      );
+      const afterSD = await page.evaluate(async () => {
+        const journal = new DKAudioStore();
+        return { rows: await journal.all('recordings'), jobs: await journal.all('jobs') };
+      });
+      assert.equal(afterSD.rows.length, 1, 'SD capture does not create a cloud audio journal');
+      assert.deepEqual(afterSD.jobs, [], 'no photo or video upload jobs');
       await page.locator('#visualWifi').click();
       await page.waitForFunction(
         () => SynapChakshu.state.wifi?.active && !SynapChakshu.state.working,
@@ -158,8 +185,11 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       await page.locator('#headerCaptureToggle').click();
       // The pendant counter still contains the previous video soundtrack until
       // START is acknowledged. Wait for this app-owned recording's samples.
-      await page.waitForFunction(() => SynapAppControls.recordingState().active &&
-        SynapAppControls.recordingState().receivedMs >= 200);
+      await page.waitForFunction(
+        () =>
+          SynapAppControls.recordingState().active &&
+          SynapAppControls.recordingState().receivedMs >= 200,
+      );
       await page.evaluate(() =>
         SynapAppControls.stopCapture(SynapAppControls.recordingState().sessionId),
       );
@@ -169,7 +199,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       await context.close();
     }
     console.log(
-      'PASS phone-only media with SD inserted, local soundtrack without cloud jobs, existing SD downloads and return to audio',
+      'PASS phone capture, explicit SD quality/clip selection, local soundtrack without cloud jobs, SD downloads and return to audio',
     );
   } finally {
     await browser.close();

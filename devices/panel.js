@@ -49,7 +49,7 @@
       experience.textContent = !info
         ? ''
         : chakshu
-          ? 'Audio builds transcripts and memories. Photos, video and soundtracks save only to this phone. Bluetooth video uses a limited frame rate. Local voice commands are off.'
+          ? 'Audio builds transcripts and memories. Photos, video and soundtracks stay local. Use SD video for higher quality, then import it to your phone. Bluetooth preview has a limited frame rate. Local voice commands are off.'
           : caps.profile(info)
             ? 'Audio recording, transcripts and memories.' +
               (caps.ready(info, 'touch') ? ' Touch control is available.' : '') +

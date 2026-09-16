@@ -4,6 +4,47 @@
   const signatures=new WeakMap();
   const text=(tag,value)=>{const node=document.createElement(tag);node.textContent=value;return node};
   const clock=ms=>{const s=Math.floor(Math.max(0,Number(ms)||0)/1000);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+  const conversationList=recording=>recording.meeting?.conversations||recording.conversations||[];
+  function agenda(conversation){
+    const seen=new Set();
+    return [...(conversation.unresolved_questions||[]),...(conversation.follow_ups||[])].filter(item=>{
+      if(['done','dismissed','resolved'].includes(item.state||item.status))return false;
+      const key=String(item.text||'').normalize('NFKC').trim().toLowerCase();
+      if(!key||seen.has(key))return false;seen.add(key);return true;
+    });
+  }
+  function recap(recording){
+    const memory=recording.meeting||{},lines=[memory.title||recording.name||'Memory recap'];
+    const summary=memory.executive_summary||recording.summary;if(summary)lines.push('',summary);
+    for(const c of conversationList(recording)){
+      lines.push('',(c.title||'Conversation')+' · '+clock(c.start_ms));
+      if(c.summary&&c.summary!==summary)lines.push(c.summary);
+      for(const [title,items] of [['Key facts',c.key_facts],['Outcomes',c.outcomes],['Decisions',c.decisions],['Actions to review',c.action_items],['Risks & blockers',c.risks],['Next conversation',agenda(c)]]){
+        if(!items?.length)continue;lines.push('',title);
+        for(const item of items){
+          const meta=[item.owner==='self'?'You':item.owner,item.due_date].filter(Boolean).join(' · ');
+          lines.push('- '+(item.text||item.task||item.title)+(meta?' — '+meta:'')+' ['+clock(item.start_ms)+']');
+        }
+      }
+    }
+    return lines.join('\n');
+  }
+  function copyRecap(host,recording){
+    const row=document.createElement('div');row.className='meeting-recap-actions';
+    const button=text('button','Copy recap');button.type='button';
+    const status=text('small','');status.setAttribute('role','status');row.append(button,status);host.append(row);
+    button.addEventListener('click',async()=>{
+      const value=recap(recording);button.disabled=true;
+      try{
+        if(!root.navigator?.clipboard?.writeText)throw Error('Clipboard unavailable');
+        await root.navigator.clipboard.writeText(value);status.textContent='Recap copied';
+      }catch(_){
+        let field=host.querySelector('.meeting-recap-text');
+        if(!field){field=document.createElement('textarea');field.className='meeting-recap-text';field.readOnly=true;field.setAttribute('aria-label','Recap to copy');row.after(field)}
+        field.value=value;field.focus();field.select();status.textContent='Select and copy the recap below';
+      }finally{button.disabled=false}
+    });
+  }
   function sourceButton(id,ms,label){const b=text('button',label+' · '+clock(ms));b.type='button';b.className='source-jump meeting-source';b.dataset.id=id;b.dataset.offsetMs=String(ms||0);return b}
   function group(host,title,items,id){
     if(!items.length)return;
@@ -16,20 +57,25 @@
   }
   function attach(card,recording){
     const host=card.matches?.('.recording-content')?card:card.querySelector('.recording-content');if(!host)return;
-    const conversations=recording.meeting?.conversations||recording.conversations||[];
-    const signature=JSON.stringify([conversations,recording.audioQuality,recording.stats]);if(signatures.get(host)===signature)return;signatures.set(host,signature);
+    const conversations=conversationList(recording);
+    const signature=JSON.stringify([recording.meeting,recording.name,recording.summary,conversations,recording.audioQuality,recording.stats]);if(signatures.get(host)===signature)return;signatures.set(host,signature);
     let details=host.querySelector('.meeting-detail');
     if(!details){details=document.createElement('details');details.className='meeting-detail';host.append(details)}
     const open=details.open;details.replaceChildren(text('summary','Meeting details'));details.open=open;
     const body=document.createElement('div');body.className='meeting-detail-body';details.append(body);
+    if(conversations.length||recording.meeting?.executive_summary||recording.summary)copyRecap(body,recording);
     for(const conversation of conversations){
       const section=document.createElement('section');if(conversations.length>1)section.append(text('h3',conversation.title||'Conversation'));
       group(section,'Chapters',conversation.chapters||[],recording.id);
+      group(section,'Key facts',conversation.key_facts||[],recording.id);
       group(section,'Outcomes',conversation.outcomes||[],recording.id);
       group(section,'Decisions',conversation.decisions||[],recording.id);
       group(section,'Actions to review',conversation.action_items||[],recording.id);
       group(section,'Follow-ups',conversation.follow_ups||[],recording.id);
       group(section,'Open questions',conversation.unresolved_questions||[],recording.id);
+      group(section,'Risks & blockers',conversation.risks||[],recording.id);
+      const next=agenda(conversation);
+      if(next.length){const follow=document.createElement('details');follow.className='meeting-agenda';follow.append(text('summary','Next conversation · '+next.length));follow.append(text('small','Questions and follow-ups from this recording. Check whether they are still open.'));group(follow,'Agenda',next,recording.id);section.append(follow)}
       if(section.querySelector('ul'))body.append(section);
     }
     const quality=root.SynapAudioQuality?.describe(recording.audioQuality,recording.stats)||[];
@@ -127,6 +173,6 @@
     }
   }
   function init(){root.SynapAuth?.onChange?.(()=>{if(preparationAccount!==null&&preparationAccount!==accountKey()){cancelPreparation();preparationAccount=null;document.querySelector('.meeting-preparation')?.remove()}})}
-  root.SynapMeetingTools=Object.freeze({attach,decoratePeople,localPreparation});
+  root.SynapMeetingTools=Object.freeze({attach,decoratePeople,localPreparation,agenda,recap});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })(globalThis);

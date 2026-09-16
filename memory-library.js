@@ -71,6 +71,8 @@
         ...list(item.participants),
         ...list(item.mentioned_people),
         ...list(item.outcomes).map((value) => value.text),
+        ...list(item.key_facts).map((value) => value.text),
+        ...list(item.risks).map((value) => value.text),
         ...list(item.decisions).map((value) => value.text),
         ...list(item.action_items).flatMap((value) => [value.task, value.owner, value.due_date]),
         ...list(item.follow_ups).map((value) => value.text),

@@ -230,6 +230,8 @@ export interface MemoryConversation {
   people: MemoryPerson[];
   topics: string[];
   outcomes?: MemoryStatement[];
+  key_facts?: MemoryStatement[];
+  risks?: MemoryStatement[];
   decisions: MemoryStatement[];
   action_items: MemoryAction[];
   follow_ups: { text: string; owner: string; start_ms: number; end_ms: number }[];

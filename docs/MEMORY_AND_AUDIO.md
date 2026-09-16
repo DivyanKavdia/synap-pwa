@@ -72,3 +72,11 @@ Browser workflows cover merge/retry/unmerge, transcript/source recovery, date an
 account races, notes, audio and narrow/light/dark layouts. Run
 `npm run test:browser -- workflow transcript actions-functional audio-enhancement`
 or the complete suite described in [Contributing](../CONTRIBUTING.md).
+
+## Rich summary details
+
+Newly extracted memories include key facts (numbers, dates, requirements and constraints) and explicitly stated unresolved risks/blockers, alongside outcomes, decisions, people, chapters and actions. Each new fact/risk requires a source quote and an in-range timestamp. The validator rejects unsupported quotes, duplicates and out-of-conversation spans. Semantic accuracy still depends on the transcript and model; original audio remains the source of truth.
+
+Inside a recording’s Meeting details, **Next conversation** collects saved unanswered questions and follow-ups, omitting items marked resolved/done. It is a historical agenda for review, not a live task-status claim. **Copy recap** creates a text recap locally with owners, dates and source timestamps; browsers that refuse clipboard access show selectable text. Key facts and risks are searchable in the memory library.
+
+The existing model request produces these fields; there is no additional model call for an agenda or copied recap. Old records remain readable. Use Refresh memory on a saved transcript to obtain the new fields; existing recordings are not automatically reprocessed. Photos/video and their soundtracks stay local and do not become model input.
