@@ -20,13 +20,48 @@
     return id;
   }
   let connection = null;
-  async function discoverService(service, queue, assertConnection) {
+  async function discoverService(service, queue, assertConnection, options = {}) {
+    const core = new Map(options.coreCharacteristics || []);
+    function cachedService(inventory, audioOnly = false) {
+      return Object.freeze({
+        uuid: service.uuid,
+        device: service.device,
+        isPrimary: service.isPrimary,
+        characteristicCount: inventory.size,
+        audioOnly,
+        async getCharacteristic(uuid) {
+          assertConnection();
+          const found = inventory.get(uuid.toLowerCase());
+          if (found) return found;
+          const error = new Error('This connection does not expose characteristic ' + uuid + '.');
+          error.name = 'NotFoundError';
+          throw error;
+        },
+      });
+    }
+    function useCore(error) {
+      // These are native objects already discovered on THIS connection. Never
+      // infer optional firmware support from the advertised device name.
+      if (core.size !== 2 || [...core.values()].some((value) => !value)) throw error;
+      options.onFallback?.(error);
+      return cachedService(core, true);
+    }
+    if (options.audioOnly) {
+      assertConnection();
+      return useCore(
+        new Error('Optional feature setup was unavailable on the previous connection.'),
+      );
+    }
     if (typeof service.getCharacteristics !== 'function') return service;
     let discovered;
     try {
       discovered = await queue(() => service.getCharacteristics(), 'Find pendant characteristics');
     } catch (error) {
       assertConnection();
+      // A settled bridge failure need not discard usable audio/control handles.
+      // A timeout is different: the native request may still be running, so the
+      // app disconnects and can use core discovery on its next connection.
+      if (options.allowAudioOnly && error?.name !== 'TimeoutError') return useCore(error);
       // A bridge may expose the method without implementing it. Only a settled,
       // explicit unsupported reply permits the older individual discovery path.
       if (error?.name === 'NotSupportedError') return service;
@@ -36,28 +71,21 @@
     if (
       !Array.isArray(discovered) ||
       !discovered.length ||
-      discovered.some((item) => typeof item?.uuid !== 'string' || !item.uuid)
+      discovered.some((item) => typeof item?.uuid !== 'string' || !item.uuid) ||
+      [...core.keys()].some((uuid) => !discovered.some((item) => item.uuid.toLowerCase() === uuid))
     ) {
-      throw Error('Pendant characteristic discovery was incomplete. Reconnect to retry.');
+      const error = Error('Pendant characteristic discovery was incomplete. Reconnect to retry.');
+      if (options.allowAudioOnly) return useCore(error);
+      throw error;
     }
     const inventory = new Map(discovered.map((item) => [item.uuid.toLowerCase(), item]));
     // Use a facade rather than modifying native objects. Absence in a complete
     // inventory is local NotFoundError, not another native request that an older
     // firmware/bridge combination can stall on. Rebuild for every connection.
-    return Object.freeze({
-      uuid: service.uuid,
-      device: service.device,
-      isPrimary: service.isPrimary,
-      characteristicCount: inventory.size,
-      async getCharacteristic(uuid) {
-        assertConnection();
-        const found = inventory.get(uuid.toLowerCase());
-        if (found) return found;
-        const error = new Error('This pendant does not expose characteristic ' + uuid + '.');
-        error.name = 'NotFoundError';
-        throw error;
-      },
-    });
+    // Keep the handles on which the app installs notifications identical to
+    // the ones exposed to other consumers, even if enumeration wraps them anew.
+    for (const [uuid, characteristic] of core) inventory.set(uuid, characteristic);
+    return cachedService(inventory);
   }
   function clearService() {
     connection = null;

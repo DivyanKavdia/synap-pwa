@@ -24,7 +24,7 @@ function harness({ initial = packet(), resuming = false, ackStop = true, delayed
     SERVICE_UUID: 'service', AUDIO_CHAR_UUID: 'audio', CONTROL_CHAR_UUID: 'control',
     document: { body: { dataset: {} }, visibilityState: 'visible' }, navigator: { bluetooth: {} },
     ui: { settingsDialog: { open: false } }, localStorage: { setItem() {} },
-    connectionEpoch: 0, connectInProgress: false, needsDeviceSelection: false, manualDisconnect: false,
+    connectionEpoch: 0, audioOnlyConnections: new Set(), connectInProgress: false, needsDeviceSelection: false, manualDisconnect: false,
     deviceStatus: { state: 0, error: 0 }, appState: 'disconnected', finalizing: false,
     recordingSessionId: 1, recordingConfirmed: resuming, recordingReconnectPending: resuming,
     recordingStopRequested: false, currentRecordingId: resuming ? 'owned-take' : null,
@@ -100,4 +100,13 @@ test('a write receipt without an idle status cannot declare the old stream stopp
 test('a late rejected status from a replaced connection cannot send STOP', async () => {
   const h = harness({ beforeRead: c => c.connectionEpoch++ }); await h.connect();
   assert(!h.commands.includes(0)); assert.equal(h.c.appState, 'disconnected');
+});
+
+test('firmware error status does not publish a ready connection', async () => {
+  const h = harness({ initial: packet({ state: 3, error: 5 }) });
+  await h.connect();
+  assert.equal(h.c.appState, 'disconnected');
+  assert.equal(h.c.isGattConnected(), false);
+  assert(!h.logs.some(entry => entry.text === 'Connection setup complete'));
+  assert.equal(h.logs.find(entry => entry.text === 'Connection failure details').detail.stage, 'status acknowledgement');
 });

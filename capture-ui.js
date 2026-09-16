@@ -1,7 +1,7 @@
 /* Product-facing capture controls. Core BLE/recording behavior remains in app.js. */
 (function () {
   'use strict';
-  globalThis.SynapCaptureUIRevision = '1.0.0-chakshu-core7';
+  globalThis.SynapCaptureUIRevision = '1.0.0-chakshu-core8';
   const TAGLINE = 'Stay present. Keep the memory.';
   const PUBLIC_VERSION = '1.0.0';
   const logoSource = () =>

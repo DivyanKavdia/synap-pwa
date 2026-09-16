@@ -76,6 +76,71 @@ const server = createStaticServer(process.env.SYNAP_UI_ROOT || path.resolve(__di
       );
       await context.close();
     }
+    for (const failure of ['reject', 'incomplete', 'hang']) {
+      const context = await browser.newContext();
+      await context.route('**/*', (route) =>
+        new URL(route.request().url()).origin === origin ? route.continue() : route.abort(),
+      );
+      await context.addInitScript(require('./support/pendant-fixture.cjs'));
+      const page = await context.newPage(),
+        errors = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      page.setDefaultTimeout(20000);
+      await page.goto(origin + '/?inventory-' + failure + '&ota&buffered');
+      await page.waitForFunction(() =>
+        document.querySelector('#diagnosticsLog')?.textContent.includes('Application started'),
+      );
+      await page.evaluate(() => localStorage.setItem('dk-pendant-auto-reconnect', 'on'));
+      await page.locator('#headerPendantStatus').click();
+      if (failure === 'hang') {
+        await page.waitForFunction(() => document.body.dataset.state === 'disconnected');
+        assert.match(
+          await page.locator('#diagnosticsLog').textContent(),
+          /"stage":"optional features"/,
+        );
+        // This is a fresh user retry after the previous native request was
+        // cancelled by link teardown, not a race around an unresolved request.
+        await page.locator('#headerPendantStatus').click();
+      }
+      await page.waitForFunction(
+        () => document.body.dataset.state === 'idle' && SynapDevices.connection?.service.audioOnly,
+      );
+      assert.equal(await page.evaluate(() => bleFixture.inventoryReads), 1);
+      assert.equal(
+        await page.evaluate(() => bleFixture.appDisconnects),
+        failure === 'hang' ? 1 : 0,
+      );
+      await page.waitForTimeout(5500); // Automatic metadata/OTA checks stay local.
+      await page.locator('#headerCaptureToggle').click();
+      await page.waitForFunction(
+        () => document.body.dataset.state === 'recording' && bleFixture.captured >= 12,
+      );
+      await page.locator('#headerCaptureToggle').click();
+      await page.waitForFunction(() => document.body.dataset.state === 'idle');
+      const recording = await page.evaluate(
+        async () => (await new DKAudioStore().all('recordings'))[0],
+      );
+      assert(recording.stats.completeFrames >= 12);
+      assert.equal(recording.stats.missingFrames, 0);
+      await page.evaluate(() => bleFixture.disconnect());
+      await page.waitForFunction(
+        () => document.body.dataset.state === 'idle' && SynapDevices.connection?.service.audioOnly,
+      );
+      assert.equal(
+        await page.evaluate(() => bleFixture.inventoryReads),
+        1,
+        'reconnect uses fresh core discovery without repeating the failed inventory',
+      );
+      assert.equal(await page.evaluate(() => bleFixture.missingProbes), 0);
+      assert.equal(await page.evaluate(() => bleFixture.maximum), 1);
+      assert.deepEqual(errors, []);
+      console.log(
+        'PASS inventory ' +
+          failure +
+          ': audio-only fallback, record, save, reconnect and serialized native requests',
+      );
+      await context.close();
+    }
   } finally {
     await browser.close();
     server.close();

@@ -3,8 +3,8 @@ const APP_VERSION='1.0.0';
 /* app.js owns the client compatibility revision used for update signalling. */
 const CLIENT_REVISION='1.0.0-audio2';
 /* Refresh the installed shell without changing audio protocol compatibility. */
-const UI_RECOVERY_REVISION='1.0.0-chakshu-core7';
-const CACHE_REVISION='1.0.0-shell122-chakshu';
+const UI_RECOVERY_REVISION='1.0.0-chakshu-core8';
+const CACHE_REVISION='1.0.0-shell123-chakshu';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './devices/chakshu/player.js','./devices/chakshu/capture-preview.js',

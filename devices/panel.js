@@ -17,8 +17,17 @@
       info = client?.module;
     if (!panel) return;
     panel.hidden = !client;
-    byId('moduleName').textContent = info ? info.name : 'Detecting module…';
-    byId('moduleBoard').textContent = info ? info.board : 'Reading connected hardware';
+    const detailsUnavailable = client?.available && !info;
+    byId('moduleName').textContent = info
+      ? info.name
+      : detailsUnavailable
+        ? 'Audio pendant'
+        : 'Detecting module…';
+    byId('moduleBoard').textContent = info
+      ? info.board
+      : detailsUnavailable
+        ? 'Extra device features are unavailable on this connection.'
+        : 'Reading connected hardware';
     const chips = byId('moduleFeatures');
     chips.replaceChildren();
     if (info)

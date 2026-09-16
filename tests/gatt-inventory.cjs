@@ -67,6 +67,115 @@ test('only an explicit unsupported inventory API uses individual discovery', asy
   }
 });
 
+test('settled inventory failures and incomplete lists preserve discovered audio without probing extras', async () => {
+  const controlId = audioId.replace('46-', '47-');
+  const audio = { uuid: audioId },
+    control = { uuid: controlId };
+  const coreCharacteristics = [
+    [audioId, audio],
+    [controlId, control],
+  ];
+  for (const discover of [
+    () => Promise.reject(2),
+    () => Promise.reject(Object.assign(Error('unavailable'), { name: 'NotSupportedError' })),
+    () => Promise.reject(Object.assign(Error('bridge failed'), { name: 'NetworkError' })),
+    ...[null, [], [{}], [audio]].map((value) => async () => value),
+  ]) {
+    let probes = 0;
+    const service = {
+      getCharacteristics: discover,
+      getCharacteristic() {
+        probes++;
+        throw Error('must not probe');
+      },
+    };
+    const connected = await discoverService(service, queue, () => {}, {
+      coreCharacteristics,
+      allowAudioOnly: true,
+    });
+    assert.equal(connected.audioOnly, true);
+    assert.equal(await connected.getCharacteristic(audioId), audio);
+    assert.equal(await connected.getCharacteristic(controlId), control);
+    await assert.rejects(connected.getCharacteristic(UUID), { name: 'NotFoundError' });
+    assert.equal(probes, 0);
+  }
+});
+
+test('an unresolved inventory timeout or changed connection cannot fall through to more native work', async () => {
+  const coreCharacteristics = [
+    [audioId, {}],
+    [audioId.replace('46-', '47-'), {}],
+  ];
+  for (const stale of [false, true]) {
+    let fallbacks = 0;
+    const service = {
+      getCharacteristics: () =>
+        Promise.reject(Object.assign(Error('pending'), { name: 'TimeoutError' })),
+    };
+    await assert.rejects(
+      discoverService(
+        service,
+        queue,
+        () => {
+          if (stale) throw Error('changed');
+        },
+        {
+          coreCharacteristics,
+          allowAudioOnly: true,
+          onFallback() {
+            fallbacks++;
+          },
+        },
+      ),
+      stale ? /changed/ : { name: 'TimeoutError' },
+    );
+    assert.equal(fallbacks, 0);
+  }
+});
+
+test('audio-only retry uses fresh core handles and never rediscovers optional features', async () => {
+  let nativeCalls = 0,
+    current = true;
+  const audio = {},
+    control = {};
+  const service = {
+    getCharacteristics() {
+      nativeCalls++;
+      throw Error('must not probe');
+    },
+  };
+  const connected = await discoverService(
+    service,
+    queue,
+    () => {
+      if (!current) throw Error('changed');
+    },
+    {
+      coreCharacteristics: [
+        [audioId, audio],
+        [audioId.replace('46-', '47-'), control],
+      ],
+      audioOnly: true,
+    },
+  );
+  assert.equal(await connected.getCharacteristic(audioId), audio);
+  assert.equal(nativeCalls, 0);
+  current = false;
+  await assert.rejects(connected.getCharacteristic(audioId), /changed/);
+});
+
+test('an interrupted recording keeps strict discovery rather than discarding recovery features', async () => {
+  await assert.rejects(
+    discoverService({ getCharacteristics: () => Promise.reject(2) }, queue, () => {}, {
+      coreCharacteristics: [
+        [audioId, {}],
+        [audioId.replace('46-', '47-'), {}],
+      ],
+      allowAudioOnly: false,
+    }),
+  );
+});
+
 test('a legacy pendant with neither capability nor build identity finishes optional setup once', async () => {
   const calls = [];
   const client = new Client({

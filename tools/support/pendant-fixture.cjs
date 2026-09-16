@@ -402,6 +402,11 @@ module.exports = function pendantFixture() {
   };
   if (inventoryFixture) service.getCharacteristics = () => operation(() => {
     inventoryReads++;
+    if (location.search.includes('inventory-reject')) return Promise.reject(2);
+    if (location.search.includes('inventory-incomplete')) return [chars.get(uuid('46'))];
+    if (location.search.includes('inventory-hang')) return new Promise((resolve, reject) => {
+      device.addEventListener('gattserverdisconnected', () => reject(2), { once: true });
+    });
     return [...chars.values()];
   });
   const device = new EventTarget();

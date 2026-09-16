@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio2";
-  const APP_SHELL_REVISION = "1.0.0-shell122-chakshu";
+  const APP_SHELL_REVISION = "1.0.0-shell123-chakshu";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -140,6 +140,9 @@
   let manualDisconnect = false;
   let connectInProgress = false;
   let needsDeviceSelection = false;
+  // Session-local fallback for a pendant whose optional discovery broke setup.
+  // Reloading retries full discovery; changing devices never inherits this mode.
+  const audioOnlyConnections = new Set();
   let firmwareBusy = false;
   let firmwareUpdater = null;
   let checkFirmwareRelease = null;
@@ -1094,6 +1097,17 @@
     if (globalThis.document?.body) document.body.dataset.autoReconnecting = String(Boolean(settings.recoveryAttempt));
     manualDisconnect = false;
     setAppState("connecting");
+    const setupStartedAt = performance.now();
+    let setupStage = "device selection";
+    let setupDevice = null;
+    let probingExtras = false;
+    let setupSucceeded = false;
+    let audioOnly = false;
+    function connectionStage(stage) {
+      setupStage = stage;
+      log("Connection setup", { stage, elapsedMs: Math.round(performance.now() - setupStartedAt),
+        name: setupDevice?.name || null, audioOnly });
+    }
 
     try {
       // A failed restored handle must not trap the user in the same retry loop.
@@ -1125,6 +1139,9 @@
 
       const epoch = connectionEpoch;
       const connectingDevice = bluetoothDevice;
+      setupDevice = connectingDevice;
+      audioOnly = audioOnlyConnections.has(connectingDevice.id);
+      connectionStage("Bluetooth link");
       lastGattDisconnectRequest = null;
       try {
         // Change opens the chooser in the tap, then waits for the old native
@@ -1158,17 +1175,43 @@
       assertConnection();
       log("GATT connected");
 
+      connectionStage("pendant service");
       const nativeService =
         await queueGattOperation(function () { return gattServer.getPrimaryService(SERVICE_UUID); }, "Find pendant service");
       assertConnection();
       log("Pendant service resolved");
+
+      // Find the two required protocol-v2 endpoints directly. A bridge's bulk
+      // inventory API must not be the only way to obtain working audio handles.
+      connectionStage("audio characteristic");
+      audioCharacteristic = await queueGattOperation(() => nativeService.getCharacteristic(AUDIO_CHAR_UUID), "Find pendant audio");
+      assertConnection();
+      connectionStage("control characteristic");
+      controlCharacteristic = await queueGattOperation(() => nativeService.getCharacteristic(CONTROL_CHAR_UUID), "Find pendant controls");
+      assertConnection();
+      log("Audio and control characteristics resolved");
+
+      probingExtras = !audioOnly;
+      connectionStage("optional features");
       const service = globalThis.SynapDevices?.discoverService
-        ? await globalThis.SynapDevices.discoverService(nativeService, queueGattOperation, assertServiceConnection)
+        ? await globalThis.SynapDevices.discoverService(nativeService, queueGattOperation, assertServiceConnection, {
+          coreCharacteristics: [[AUDIO_CHAR_UUID, audioCharacteristic], [CONTROL_CHAR_UUID, controlCharacteristic]],
+          audioOnly, allowAudioOnly: !resumingRecording,
+          onFallback(error) {
+            audioOnly = true;
+            audioOnlyConnections.add(connectingDevice.id);
+            log("Audio-only connection", { reason: friendlyError(error), device: connectingDevice.name || "unnamed" });
+          }
+        })
         : nativeService;
       assertConnection();
       if (service.characteristicCount) log("Pendant characteristics discovered", { count: service.characteristicCount });
+      if (audioOnly) probingExtras = false;
+      connectionStage("device identity");
       let connectedDeviceId = null;
-      let identityMessage = "This firmware has no permanent device ID. Recording is available; install identity-enabled firmware to remember this device.";
+      let identityMessage = audioOnly
+        ? "Audio connected. Device identity and extra features were not checked on this connection."
+        : "This firmware has no permanent device ID. Recording is available; install identity-enabled firmware to remember this device.";
       try {
         // Discovery belongs to the interrupted recording; the established
         // service must remain usable after that take is saved or replaced.
@@ -1184,14 +1227,6 @@
         throw new Error("Pendant identity changed. The interrupted recording was not attached to another device.");
       }
 
-      audioCharacteristic =
-        await queueGattOperation(function () { return service.getCharacteristic(AUDIO_CHAR_UUID); }, "Find pendant audio");
-      assertConnection();
-      controlCharacteristic =
-        await queueGattOperation(function () { return service.getCharacteristic(CONTROL_CHAR_UUID); }, "Find pendant controls");
-      assertConnection();
-      log("Audio and control characteristics resolved");
-
       audioCharacteristic.addEventListener(
         "characteristicvaluechanged",
         handleAudioNotification
@@ -1201,18 +1236,22 @@
         handleStatusNotification
       );
 
+      connectionStage("audio recovery");
       const protection = globalThis.SynapDisconnectProtection;
       const recoveryInfo = await protection?.discover(service, queueGattOperation, assertConnection, resumingRecording);
       const resumeBuffered = resumingRecording && protection?.canResume(recoveryInfo);
       if(resumingRecording && recoveryInfo?.waiting && !resumeBuffered)throw new Error("Buffered audio belongs to a different app session. Waiting for the pendant to return to idle.");
       if(resumeBuffered && recoveryInfo.finishing)recordingStopRequested=true;
       if (resumingRecording) await prepareRecordingTransportResume(Boolean(resumeBuffered));
+      probingExtras = false;
 
+      connectionStage("control notifications");
       await queueGattOperation(function () {
         return controlCharacteristic.startNotifications();
       }, "Subscribe pendant controls", { timeoutMs: 10000 });
       log("Control notifications enabled");
 
+      connectionStage("audio notifications");
       await queueGattOperation(function () {
         return audioCharacteristic.startNotifications();
       }, "Subscribe pendant audio", { timeoutMs: 10000 });
@@ -1220,6 +1259,7 @@
 
       // Let the CCCD subscription reach the peripheral before START is possible.
       await delay(180);
+      connectionStage("status acknowledgement");
       if(resumeBuffered) { await protection.resume(); log("Recovering buffered pendant audio", {capacityMs:protection.capacityMs()}); }
       await writeCommand(CMD_GET_STATUS);
       await delay(120);
@@ -1315,18 +1355,26 @@
         throw new Error(
           "Pendant is still streaming without a matching recording session. Reconnect it."
         );
-      } else if (deviceStatus.state !== DEVICE_STATE.ERROR) {
+      } else {
         throw new Error("No valid idle acknowledgement. Check that both firmware and PWA are updated.");
       }
+      setupSucceeded = true;
     } catch (error) {
       const message = friendlyError(error);
+      if (probingExtras && setupDevice && !resumingRecording &&
+          (error?.name === "TimeoutError" || !isGattConnected())) {
+        audioOnlyConnections.add(setupDevice.id);
+        log("Optional setup interrupted; next connection will use audio only", { stage: setupStage });
+      }
+      log("Connection failure details", { stage: setupStage, elapsedMs: Math.round(performance.now() - setupStartedAt),
+        name: setupDevice?.name || null, error: message, nativeReason: error?.nativeReason, audioOnly });
       log("Connection failed", message);
       needsDeviceSelection = Boolean(bluetoothDevice) || needsDeviceSelection;
       if (isGattConnected()) disconnectGatt("Connection setup failed: " + message);
       cleanupCharacteristics();
       setAppState("disconnected", recordingReconnectPending
         ? "Connection is still unavailable. The current recording remains preserved for reconnect."
-        : message);
+        : "Could not connect at " + setupStage + ": " + message);
 
       if (!silent) {
         setReconnectCapability("Manual connection failed", error?.name === "NotFoundError"
@@ -1342,9 +1390,12 @@
       connectInProgress = false;
       renderDeviceSetup();
       if (globalThis.document?.body) delete document.body.dataset.autoReconnecting;
-      if (isGattConnected()) {
+      if (setupSucceeded && isGattConnected()) {
         connectionReadyAt = performance.now();
-        setReconnectCapability("Pendant connection ready");
+        setReconnectCapability(audioOnly
+          ? "Audio connected. Extra device features are unavailable on this connection. Reload to retry full setup."
+          : "Pendant connection ready");
+        log("Connection setup complete", { elapsedMs: Math.round(performance.now() - setupStartedAt), audioOnly });
         globalThis.dispatchEvent(new CustomEvent('synap-gatt-ready'));
       }
       syncRememberedMonitoring();
