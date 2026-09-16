@@ -629,7 +629,7 @@ async function run() {
           await page.locator('#librarySearch').fill('prototype');
           await page.waitForFunction(
             () =>
-              document.querySelector('#librarySearchStatus').textContent === '1 matching recording',
+              document.querySelector('#librarySearchStatus').textContent === '1 matching item',
           );
           await page.locator('#clearLibrarySearch').click();
           await page.locator('.brain-tabs a[href="#library"]').click();
@@ -799,12 +799,12 @@ async function run() {
           assert(await page.locator('#recording-ui-older-8').isVisible());
           assert.match(
             await page.locator('#librarySearchStatus').innerText(),
-            /1 matching recording$/,
+            /1 matching item$/,
           );
           await librarySearch.fill('enclosure');
           assert.match(
             await page.locator('#librarySearchStatus').innerText(),
-            /9 matching recordings/,
+            /9 matching items/,
             'search includes transcript and summary',
           );
           await page.locator('#showMoreRecordingsButton').click();
@@ -813,7 +813,7 @@ async function run() {
           assert.equal(await page.locator('.recording-card:visible').count(), 0);
           assert.match(
             await page.locator('#librarySearchStatus').innerText(),
-            /No matching recordings/,
+            /No matching items/,
           );
           await page.evaluate(() => SynapProvenance.openSource('ui-older-8', 0));
           await page.waitForFunction(() => document.getElementById('recording-ui-older-8')?.open);
@@ -835,7 +835,7 @@ async function run() {
           );
           assert.match(
             await page.locator('#librarySearchStatus').innerText(),
-            /No matching recordings/,
+            /No matching items/,
             'date and query filters combine',
           );
           await page.locator('#clearLibrarySearch').click();

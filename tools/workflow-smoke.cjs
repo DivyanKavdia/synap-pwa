@@ -377,7 +377,7 @@ async function run() {
       await page.locator('[data-library-scope="all"]').click();
       await page.locator('#librarySearch').fill('Original note 3');
       await page.waitForFunction(
-        () => document.querySelector('#librarySearchStatus').textContent === '1 matching recording',
+        () => document.querySelector('#librarySearchStatus').textContent === '1 matching item',
       );
       await page.locator('#recording-journey-3 > summary').click();
       await page.locator('#recording-journey-3 .recording-content').waitFor({ state: 'visible' });
