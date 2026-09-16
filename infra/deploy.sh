@@ -23,6 +23,7 @@ IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/backend:${TAG}"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "==> Verifying the build before it can reach production"
+command -v ffmpeg >/dev/null || { echo "Install FFmpeg before running the ASR validation and deployment." >&2; exit 1; }
 ( cd "${here}/backend" && npm ci && npm test )
 
 echo "==> Ensuring the Artifact Registry repository exists"
