@@ -58,7 +58,7 @@ async function connect({id=A, local=storage(), stale=false, mismatch=false, resu
       if(id===null)throw Object.assign(Error('old firmware'),{name:'NotFoundError'});
       return {readValue:async()=>{if(stale)c.connectionEpoch++;if(cancelOnRead)c.autoReconnect=false;if(expireOnRead)c.finalizedSessionId=1;return value(id);}};
     }};}}};
-  const c={console,globalThis:{SynapDevices:devices},checkFirmwareRelease:null,connectInProgress:false,finalizing:false,
+  const c={console,performance,globalThis:{SynapDevices:devices},checkFirmwareRelease:null,connectInProgress:false,finalizing:false,
     ui:{settingsDialog:{open:false}},
     needsDeviceSelection:false,bluetoothDevice:device,manualDisconnect:false,connectionEpoch:0,gattServer:null,
     recordingReconnectPending:resuming,disconnectGatt:(reason,d=device)=>d.gatt.disconnect(),

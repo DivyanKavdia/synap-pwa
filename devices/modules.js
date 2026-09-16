@@ -130,14 +130,22 @@
       return value;
     }
     async identify(queue = this.context.queue) {
+      // S3/C3 features and legacy absence do not change during a connection.
+      // Chakshu still refreshes readiness as cards and media state change.
+      if (this.available && !capabilities.isChakshu(this.module)) return;
       let value;
       try {
         value = await this.read(UUID, queue);
       } catch (error) {
         if (error.name !== 'NotFoundError') throw error;
-        this.module = legacy(
-          new TextDecoder('utf-8', { fatal: true }).decode(await this.read(IDENTITY, queue)),
-        );
+        try {
+          this.module = legacy(
+            new TextDecoder('utf-8', { fatal: true }).decode(await this.read(IDENTITY, queue)),
+          );
+        } catch (identityError) {
+          if (identityError.name !== 'NotFoundError') throw identityError;
+          this.module = null;
+        }
         this.available = true;
         return;
       }

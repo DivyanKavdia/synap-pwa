@@ -17,6 +17,16 @@ Commit the catalog and generated profiles together. `npm test` rejects stale gen
 | 2         | `esp32c3-supermini-4m`  | C3 / external I2S     | Touch, battery telemetry, standby                 |
 | 3         | `xiao-esp32s3-sense-8m` | Chakshu / onboard PDM | Camera, photo, video and SD; local voice disabled |
 
+## Connection compatibility
+
+Shell 122 discovers the pendant's complete characteristic inventory once per connection when the browser supports `getCharacteristics()`. Audio, identity, recovery, events, diagnostics, module checks and OTA share this inventory. Missing optional extensions produce a local `NotFoundError`; they do not repeatedly enter native discovery. Older S3/C3 firmware can continue recording without a module descriptor, device ID, recovery buffer or OTA extension. A missing required audio/control characteristic still fails setup. An explicit unsupported inventory API falls back to individual discovery; an incomplete response or lost connection does not authorize fallback.
+
+Inventories are rebuilt after every reconnect, including firmware updates, and stale inventories reject further use. S3/C3 profiles and absence of legacy identity are identified once per link. Chakshu continues refreshing camera and card readiness. Subscription setup has a separate ten-second deadline; recording commands retain their shorter deadline and all native operations remain serialized.
+
+Reconnect backoff survives drops during the first thirty seconds after setup. Only a link that remained ready for at least thirty seconds resets the retry count, or an explicit user connection attempt starts again. Disconnect logs include `readyDurationMs`. This prevents rapid successful-handshake/disconnect loops from repeatedly restarting at attempt one. It cannot repair a physical radio, power, firmware or OS failure; pendant diagnostics are still needed to distinguish those causes.
+
+The `device-connection` browser suite covers older audio-only S3 firmware, S3/C3 with OTA, and Chakshu. Its bridge fixture deliberately hangs on native discovery of absent optional UUIDs: the previous shell disconnects during setup, while inventory discovery avoids those calls and completes connect, recording, save and reconnect. These are simulated tests, not physical-device RF measurements.
+
 ## Three independent checks
 
 1. **Supported:** the known device profile permits a feature and firmware advertises its capability bit. Unexpected extra bits cannot enable a camera on C3/S3. Media services additionally require their advertised protocol version. Local voice/model clients remain disabled.

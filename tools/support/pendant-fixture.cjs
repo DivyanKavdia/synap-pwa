@@ -11,6 +11,7 @@ module.exports = function pendantFixture() {
   const connectedReplay = location.search.includes('background');
   const recoveryCapacity = connectedReplay && location.search.includes('c3') ? 25 : 600;
   const chakshu=location.search.includes('chakshu');
+  const inventoryFixture=location.search.includes('inventory');
   const chakshu1227=chakshu&&location.search.includes('chakshu1227');
   const legacyPathBuffer=new Uint8Array(64);
   const ota = location.search.includes('ota');
@@ -369,6 +370,11 @@ module.exports = function pendantFixture() {
   if(chakshu&&location.search.includes('model'))for(const id of ['58','59'])chars.set(uuid(id),new Characteristic(uuid(id)));
   if (buffered) chars.set(uuid('4f'), new Characteristic(uuid('4f')));
   if (ota) for (const id of ['48', '49', '4b']) chars.set(uuid(id), new Characteristic(uuid(id)));
+  if (location.search.includes('minimal-pendant')) {
+    for (const id of ['4c', '4e']) chars.delete(uuid(id));
+  }
+  for (const [id, characteristic] of chars) characteristic.uuid = id;
+  let inventoryReads=0,missingProbes=0;
   let discoveryBusy = false;
   const discoveryDelays = new Map(), discoveries = [];
   if (location.search.includes('slow-startup'))
@@ -384,10 +390,20 @@ module.exports = function pendantFixture() {
           try { await new Promise(resolve => setTimeout(resolve, ms)); }
           finally { discoveryBusy = false; }
         }
-        if (!chars.has(id)) throw new DOMException('No optional characteristic', 'NotFoundError');
+        if (!chars.has(id)) {
+          missingProbes++;
+          // Emulate a native bridge that never completes discovery for an
+          // unsupported extension. Core audio/control remain usable.
+          if (inventoryFixture) await new Promise(() => {});
+          throw new DOMException('No optional characteristic', 'NotFoundError');
+        }
         return chars.get(id);
       }),
   };
+  if (inventoryFixture) service.getCharacteristics = () => operation(() => {
+    inventoryReads++;
+    return [...chars.values()];
+  });
   const device = new EventTarget();
   device.id = 'fixture-device';
   device.name = 'synap';
@@ -501,6 +517,8 @@ module.exports = function pendantFixture() {
     get: () => (bluetoothAvailable ? bluetooth : undefined),
   });
   window.bleFixture = {
+    get inventoryReads() { return inventoryReads; },
+    get missingProbes() { return missingProbes; },
     delayNextDiscovery(id, ms) { discoveryDelays.set(uuid(id), ms); },
     get discoveries() { return discoveries; },
     get discoveryBusy() { return discoveryBusy; },

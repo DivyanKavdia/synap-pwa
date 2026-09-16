@@ -20,6 +20,45 @@
     return id;
   }
   let connection = null;
+  async function discoverService(service, queue, assertConnection) {
+    if (typeof service.getCharacteristics !== 'function') return service;
+    let discovered;
+    try {
+      discovered = await queue(() => service.getCharacteristics(), 'Find pendant characteristics');
+    } catch (error) {
+      assertConnection();
+      // A bridge may expose the method without implementing it. Only a settled,
+      // explicit unsupported reply permits the older individual discovery path.
+      if (error?.name === 'NotSupportedError') return service;
+      throw error;
+    }
+    assertConnection();
+    if (
+      !Array.isArray(discovered) ||
+      !discovered.length ||
+      discovered.some((item) => typeof item?.uuid !== 'string' || !item.uuid)
+    ) {
+      throw Error('Pendant characteristic discovery was incomplete. Reconnect to retry.');
+    }
+    const inventory = new Map(discovered.map((item) => [item.uuid.toLowerCase(), item]));
+    // Use a facade rather than modifying native objects. Absence in a complete
+    // inventory is local NotFoundError, not another native request that an older
+    // firmware/bridge combination can stall on. Rebuild for every connection.
+    return Object.freeze({
+      uuid: service.uuid,
+      device: service.device,
+      isPrimary: service.isPrimary,
+      characteristicCount: inventory.size,
+      async getCharacteristic(uuid) {
+        assertConnection();
+        const found = inventory.get(uuid.toLowerCase());
+        if (found) return found;
+        const error = new Error('This pendant does not expose characteristic ' + uuid + '.');
+        error.name = 'NotFoundError';
+        throw error;
+      },
+    });
+  }
   function clearService() {
     connection = null;
     root.dispatchEvent?.(new CustomEvent('synap-gatt-disconnected'));
@@ -182,6 +221,7 @@
     UUID,
     KEY,
     decode,
+    discoverService,
     read,
     Registry,
     publishService,

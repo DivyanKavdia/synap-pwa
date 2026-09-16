@@ -16,7 +16,7 @@ function harness({ initial = packet(), resuming = false, ackStop = true, delayed
   let wire = initial, stopped = false;
   const commands = [], logs = [];
   const c = {
-    Error, Promise, Uint8Array, Boolean, String, console,
+    Error, Promise, Uint8Array, Boolean, String, console, performance,
     PROTOCOL_VERSION: 2, STATUS_MAGIC: 0x5a, AUDIO_HEADER_BYTES: 8, PCM_BYTES_PER_FRAME: 1600,
     DEFAULT_SAMPLE_RATE: 16000, MIN_STREAM_MTU: 32, MIN_CHUNKS_PER_FRAME: 1, MAX_CHUNKS_PER_FRAME: 20, MAX_AUDIO_PAYLOAD_BYTES: 500,
     CMD_STOP: 0, CMD_START: 1, CMD_GET_STATUS: 2, COMMAND_TIMEOUT_MS: 3500,

@@ -16,13 +16,13 @@
   async function discover(service,operation,assertConnection,resuming=false){
     detach();queue=operation;
     try{
-      const found=await queue(()=>service.getCharacteristic(UUID));assertConnection();
-      const info=status(await queue(()=>found.readValue()));assertConnection();
+      const found=await queue(()=>service.getCharacteristic(UUID),'Find audio recovery');assertConnection();
+      const info=status(await queue(()=>found.readValue(),'Read audio recovery',{timeoutMs:10000}));assertConnection();
       if(!info && resuming && token)throw new Error("Pendant recovery information was incomplete. Retrying the connection.");
       if(!info?.available){report("Audio recovery is unavailable on this connection.");return null;}
       characteristic=found;capacity=info.frames;latestInfo=info;
       found.addEventListener("characteristicvaluechanged",onStatus);
-      await queue(()=>found.startNotifications());assertConnection();return info;
+      await queue(()=>found.startNotifications(),'Subscribe audio recovery',{timeoutMs:10000});assertConnection();return info;
     }catch(error){detach();assertConnection();if(resuming&&token&&error.name!=="NotFoundError")throw error;return null;}
   }
   function tokenHash(){let hash=2166136261;for(const byte of token||[])hash=Math.imul(hash^byte,16777619)>>>0;return hash;}

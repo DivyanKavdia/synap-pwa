@@ -130,6 +130,36 @@ test('advertisements cannot cancel backoff or reset the failed-connection attemp
   }
   assert.deepEqual(timers.map(t=>t.ms),[1200,2600,5200]);
 });
+test('early link drops retain reconnect backoff; thirty seconds ready resets it',async()=>{
+  let now=100000;
+  const timers=[],logs=[];
+  const c={Date:{now:()=>now},performance:{now:()=>now},Math,
+    bluetoothDevice:{},connectionReadyAt:null,lastGattDisconnectRequest:null,
+    manualDisconnect:false,recordingSessionId:0,recordingConfirmed:false,
+    completedPcmFrames:[],currentRecordingId:null,openingCapture:null,connectInProgress:false,
+    appState:'idle',lastAudioAt:0,isCurrentSession:()=>false,recordingReconnectPending:false,
+    document:{visibilityState:'visible'},reconnectAttempts:0,reconnectNotBefore:0,reconnectTimer:null,
+    autoReconnectEnabled:()=>true,MAX_AUTO_RECONNECT_ATTEMPTS:8,
+    AUTO_RECONNECT_DELAYS_MS:[1200,2600,5200,10000,15000,20000,30000,30000],
+    syncRememberedMonitoring(){},setAppState(state){c.appState=state;},toast(){},
+    cleanupCharacteristics(){c.connectionReadyAt=null;},
+    log:(message,detail)=>logs.push({message,detail}),
+    window:{setTimeout(fn,ms){timers.push({fn,ms});return timers.length;}}
+  };
+  vm.createContext(c);
+  vm.runInContext(slice('  async function handleGattDisconnected(', '  function cleanupCharacteristics(')+
+    slice('  function scheduleAutoReconnect()', '  async function connectPendant('),c);
+  for(let n=0;n<3;n++){
+    c.connectionReadyAt=now-1000;c.reconnectTimer=null;
+    await c.handleGattDisconnected({target:c.bluetoothDevice});
+    now+=10000;
+  }
+  assert.deepEqual(timers.map(t=>t.ms),[1200,2600,5200]);
+  c.connectionReadyAt=now-30000;c.reconnectTimer=null;
+  await c.handleGattDisconnected({target:c.bluetoothDevice});
+  assert.equal(timers.at(-1).ms,1200);
+  assert.equal(logs.filter(x=>x.message==='GATT disconnected').at(-1).detail.readyDurationMs,30000);
+});
 test('capture metrics batch frame updates and the clock only writes changed seconds',()=>{
   const timers=[];let renders=0,writes=0,text='00:01';
   const c={metricsTimer:null,window:{setTimeout(fn){timers.push(fn);return timers.length}},renderMetrics(){renders++},recordingConfirmed:true,recordingStartedAt:1,recordingStoppedAt:null,document:{body:{dataset:{}}},performance:{now:()=>1501},ui:{timer:{get textContent(){return text},set textContent(v){text=v;writes++}}},formatClock:()=> '00:01',appState:'starting'};

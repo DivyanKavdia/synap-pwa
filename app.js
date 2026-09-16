@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio2";
-  const APP_SHELL_REVISION = "1.0.0-shell121-chakshu";
+  const APP_SHELL_REVISION = "1.0.0-shell122-chakshu";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -182,6 +182,7 @@
   const recordingControlOwnerId = globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
   let finalizedSessionId = 0;
   let connectionEpoch = 0;
+  let connectionReadyAt = null;
 
   let reconnectTimer = null;
   let reconnectAttempts = 0;
@@ -780,7 +781,6 @@
       recordingStartedAt += Math.max(0, now - recordingDisconnectedAt);
     }
     clearRecordingReconnectState();
-    reconnectAttempts = 0;
     clearStartTimeout();
     lastAudioAt = now;
     foregroundAt = now;
@@ -1158,10 +1158,15 @@
       assertConnection();
       log("GATT connected");
 
-      const service =
+      const nativeService =
         await queueGattOperation(function () { return gattServer.getPrimaryService(SERVICE_UUID); }, "Find pendant service");
       assertConnection();
       log("Pendant service resolved");
+      const service = globalThis.SynapDevices?.discoverService
+        ? await globalThis.SynapDevices.discoverService(nativeService, queueGattOperation, assertServiceConnection)
+        : nativeService;
+      assertConnection();
+      if (service.characteristicCount) log("Pendant characteristics discovered", { count: service.characteristicCount });
       let connectedDeviceId = null;
       let identityMessage = "This firmware has no permanent device ID. Recording is available; install identity-enabled firmware to remember this device.";
       try {
@@ -1205,12 +1210,12 @@
 
       await queueGattOperation(function () {
         return controlCharacteristic.startNotifications();
-      });
+      }, "Subscribe pendant controls", { timeoutMs: 10000 });
       log("Control notifications enabled");
 
       await queueGattOperation(function () {
         return audioCharacteristic.startNotifications();
-      });
+      }, "Subscribe pendant audio", { timeoutMs: 10000 });
       log("Audio notifications enabled");
 
       // Let the CCCD subscription reach the peripheral before START is possible.
@@ -1275,7 +1280,6 @@
           deviceStatus.error === 0) {
         assertConnection();
         rememberDeviceAssociation(connectedDeviceId, connectingDevice, identityMessage);
-        reconnectAttempts = 0;
         needsDeviceSelection = false;
         try { localStorage.setItem("dk-pendant-device-id", bluetoothDevice.id); }
         catch (_) { log("Device preference could not be saved; current recording remains attached to this connection."); }
@@ -1295,7 +1299,6 @@
         // Persist only after identity read and idle acknowledgement belong to the same connection.
         assertConnection();
         rememberDeviceAssociation(connectedDeviceId, connectingDevice, identityMessage);
-        reconnectAttempts = 0;
         needsDeviceSelection = false;
         try { localStorage.setItem("dk-pendant-device-id", bluetoothDevice.id); }
         catch (_) { log("Device preference could not be saved; name-based reload recovery remains available."); }
@@ -1340,6 +1343,7 @@
       renderDeviceSetup();
       if (globalThis.document?.body) delete document.body.dataset.autoReconnecting;
       if (isGattConnected()) {
+        connectionReadyAt = performance.now();
         setReconnectCapability("Pendant connection ready");
         globalThis.dispatchEvent(new CustomEvent('synap-gatt-ready'));
       }
@@ -1373,6 +1377,10 @@
 
   async function handleGattDisconnected(event) {
     if (event && event.target !== bluetoothDevice) return;
+    const readyDurationMs = connectionReadyAt === null ? null : Math.round(performance.now() - connectionReadyAt);
+    // A completed handshake is not yet a stable link. Keep increasing backoff
+    // across early disconnects instead of restarting at attempt one forever.
+    if (readyDurationMs !== null && readyDurationMs >= 30000) reconnectAttempts = 0;
     const request = lastGattDisconnectRequest;
     const requestedByApp = request?.device === bluetoothDevice && Date.now() - request.at < 15000;
     lastGattDisconnectRequest = null;
@@ -1381,6 +1389,7 @@
       reason: requestedByApp ? request.reason : "No app disconnect request",
       manual: manualDisconnect,
       state: appState,
+      readyDurationMs,
       firmwareBuild: globalThis.SynapPowerLifecycle?.firmwareBuild || null,
       recordingId: currentRecordingId,
       visibility: document.visibilityState,
@@ -1445,6 +1454,7 @@
     deviceIdentityMessage = "Not connected";
     firmwareUpdater?.reset();
     connectionEpoch += 1;
+    connectionReadyAt = null;
     bluetoothSession.reset();
     clearStartTimeout();
     clearFinalizeTimer();
@@ -3559,7 +3569,7 @@
     }
     firmwareUpdater = new globalThis.SynapOTA.Client({
       connected:isGattConnected, queue:firmwareGattOperation,
-      getService:()=>firmwareGattOperation(()=>gattServer.getPrimaryService(SERVICE_UUID),"Find pendant service"),
+      getService:()=>firmwareGattOperation(()=>globalThis.SynapDevices?.connection?.service || gattServer.getPrimaryService(SERVICE_UUID),"Find pendant service"),
       progress:showProgress
     });
     const lock = value=>{
@@ -3594,7 +3604,7 @@
     async function identity() {
       const epoch=connectionEpoch;
       try {
-        const service=await firmwareGattOperation(()=>gattServer.getPrimaryService(SERVICE_UUID),"Find firmware identity service");
+        const service=await firmwareGattOperation(()=>globalThis.SynapDevices?.connection?.service || gattServer.getPrimaryService(SERVICE_UUID),"Find firmware identity service");
         const characteristic=await firmwareGattOperation(()=>service.getCharacteristic(releases.IDENTITY_UUID),"Find firmware identity");
         const value=await firmwareGattOperation(()=>characteristic.readValue(),"Read firmware identity");
         if(epoch!==connectionEpoch)throw Error("Pendant connection changed.");

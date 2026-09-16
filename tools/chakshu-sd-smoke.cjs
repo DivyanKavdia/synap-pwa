@@ -53,7 +53,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
         errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.setDefaultTimeout(20000);
-      await page.goto(origin + '/?chakshu-media&sd-fast&missing-sd');
+      await page.goto(origin + '/?chakshu-media&sd-fast&missing-sd&inventory');
       await page.waitForFunction(() => document.body.dataset.startup === 'ready');
       await page.locator('#headerPendantStatus').click();
       await page.waitForFunction(
@@ -155,7 +155,10 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       await page.waitForFunction(() => !SynapChakshu.state.wifi?.active && !SynapChakshu.busy);
       assert.equal(await page.evaluate(() => bleFixture.wifiRunning), false);
       await page.locator('#headerCaptureToggle').click();
-      await page.waitForFunction(() => bleFixture.captured >= 4);
+      // The pendant counter still contains the previous video soundtrack until
+      // START is acknowledged. Wait for this app-owned recording's samples.
+      await page.waitForFunction(() => SynapAppControls.recordingState().active &&
+        SynapAppControls.recordingState().receivedMs >= 200);
       await page.evaluate(() =>
         SynapAppControls.stopCapture(SynapAppControls.recordingState().sessionId),
       );
