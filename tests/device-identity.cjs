@@ -61,7 +61,7 @@ async function connect({id=A, local=storage(), stale=false, mismatch=false, resu
   const c={console,performance,globalThis:{SynapDevices:devices},checkFirmwareRelease:null,connectInProgress:false,finalizing:false,audioOnlyConnections:new Set(),
     ui:{settingsDialog:{open:false}},
     needsDeviceSelection:false,bluetoothDevice:device,manualDisconnect:false,connectionEpoch:0,gattServer:null,
-    recordingReconnectPending:resuming,disconnectGatt:(reason,d=device)=>d.gatt.disconnect(),
+    recordingReconnectPending:resuming,recordingWasConfirmedBeforeDisconnect:resuming,disconnectGatt:(reason,d=device)=>d.gatt.disconnect(),
     recordingSessionId:1,finalizedSessionId:0,currentRecordingId:resuming?'take-1':null,openingCapture:null,
     recordingResumeBluetoothId:device.id,recordingResumeDeviceId:A,recordingStopRequested:false,autoReconnect:true,
     isCurrentSession:id=>id===c.recordingSessionId&&id!==c.finalizedSessionId,reconnectRequested:()=>c.autoReconnect,

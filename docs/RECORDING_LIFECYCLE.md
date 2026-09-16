@@ -42,6 +42,14 @@ Stop intent survives a transport interruption; reconnect must not issue another
 START for a take that is stopping. Notification controls use the same recording
 actions and bind each command to its owning client and recording session.
 
+When the physical Stop occurs during disconnection, firmware retains buffered
+audio for the existing bounded drain and exposes a Stop receipt in recovery flag
+bit 5. The receipt remains after the audio expires. The app checks its token
+against an already-confirmed interrupted take before ARM can replace that token.
+It saves the existing journal, without sending START, even when no buffer remains.
+An unconfirmed new Start does not inherit the previous take's receipt. The idle
+reconnect still publishes connection readiness so device controls can resume.
+
 ## Recovery limits
 
 | Layer                         | Limit and meaning                                                           |
@@ -59,7 +67,7 @@ volatile and does not record to flash.
 Recovery is negotiated with an ephemeral session token on characteristic `4f`.
 RESUME includes the last complete frame received by the same journal. Token
 matching binds recovery to that take; it is not Bluetooth authentication. See
-the [firmware recovery contract](https://github.com/DivyanKavdia/synap-firmware/blob/346b819caf89d3ed3ac2d401dce939237f9c5390/docs/DISCONNECT_RECOVERY.md)
+the [firmware recovery contract](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/DISCONNECT_RECOVERY.md)
 for the packet layout and acknowledgement rules.
 
 ## Visibility, sleep and reload

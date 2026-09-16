@@ -9,7 +9,7 @@ module.exports = function pendantFixture() {
   const orphanTransport = location.search.includes('orphan-transport');
   const buffered = location.search.includes('buffered') || orphanTransport;
   const connectedReplay = location.search.includes('background');
-  const recoveryCapacity = connectedReplay && location.search.includes('c3') ? 25 : 600;
+  const recoveryCapacity = location.search.includes('c3') ? 25 : 600;
   const chakshu=location.search.includes('chakshu');
   const inventoryFixture=location.search.includes('inventory');
   const chakshu1227=chakshu&&location.search.includes('chakshu1227');
@@ -87,11 +87,12 @@ module.exports = function pendantFixture() {
   let armed = orphanTransport,
     waiting = orphanTransport,
     finishing = false,
+    stopRequested = false,
     owner = [],
     buffer = [],
     sendTimer = null, sendIntervalMs = 15;
   let retained = [], replayAck = 0, replayCommands = 0, blockAudio = false, audioSubscriptions = 0, restoreOnSubscribe = false;
-  let stopDisconnect = null,
+  let stopDisconnect = null, dropStart = false,
     echoStop = false,
     rejectStopResponse = false,
     rejectStops = 0,
@@ -104,7 +105,7 @@ module.exports = function pendantFixture() {
     const v = new DataView(new ArrayBuffer(16));
     v.setUint8(0, 0x52);
     v.setUint8(1, 1);
-    v.setUint8(2, 1 + (armed ? 2 : 0) + (waiting ? 4 : 0) + (finishing ? 8 : 0) + (connectedReplay ? 16 : 0));
+    v.setUint8(2, 1 + (armed ? 2 : 0) + (waiting ? 4 : 0) + (finishing ? 8 : 0) + (connectedReplay ? 16 : 0) + (stopRequested ? 32 : 0));
     v.setUint8(3, replayAck);
     v.setUint16(4, recoveryCapacity, true);
     let hash = 2166136261;
@@ -284,6 +285,7 @@ module.exports = function pendantFixture() {
         if (this.id === uuid('4f')) {
           if (value[0] === 1 && state === 1) {
             armed = true;
+            stopRequested = false;
             owner = [...value.slice(1, 9)];
           }
           if (value[0] === 2 && waiting && owner.every((x, i) => x === value[i + 1])) {
@@ -317,6 +319,7 @@ module.exports = function pendantFixture() {
           }
           clearInterval(audioTimer);
           finishing = true;
+          stopRequested = true;
           if(echoStop)this.value=new DataView(value.slice().buffer);
           const recovery = chars.get(uuid('4f'));
           recovery.value = recoveryStatus();
@@ -331,12 +334,18 @@ module.exports = function pendantFixture() {
           return;
         }
         if (value[0] === 1) {
+          if (dropStart) {
+            dropStart = false;
+            setVisibility('hidden'); loseLink();
+            throw new DOMException('Link lost before START arrived', 'NetworkError');
+          }
           increment('qa-starts');
           state = 2;
           sequence = 0;
           buffer = [];
           retained = [];
           finishing = false;
+          stopRequested = false;
           waiting = false;
           clearInterval(sendTimer);
           sendTimer = null;
@@ -432,6 +441,8 @@ module.exports = function pendantFixture() {
           idleOnReconnect = false;
           waiting = false;
           finishing = false;
+          armed = false;
+          if (!stopRequested) owner = [];
           buffer = [];
           clearInterval(audioTimer);
         }
@@ -483,6 +494,7 @@ module.exports = function pendantFixture() {
       if (buffer.length) emit(buffer.shift());
       else if (finishing) {
         clearInterval(sendTimer);
+        sendTimer = null;
         state = 1;
         finishing = false;
         control.value = status();
@@ -501,20 +513,24 @@ module.exports = function pendantFixture() {
     sequence = (sequence + 1) & 65535;
   }
   function pendantDoubleTap() {
-    if (!device.gatt.connected) return;
+    if (!device.gatt.connected && state !== 2) return;
     if (state === 2) {
       clearInterval(audioTimer);
       if (buffered && armed) {
         finishing = true;
+        stopRequested = true;
         const recovery = chars.get(uuid('4f'));
         recovery.value = recoveryStatus();
-        recovery.dispatchEvent(new Event('characteristicvaluechanged'));
-        startSender();
+        if (device.gatt.connected) {
+          recovery.dispatchEvent(new Event('characteristicvaluechanged'));
+          startSender();
+        }
         return;
       }
       state = 1;
     } else {
-      state = 2; sequence = 0; buffer = []; retained = []; finishing = waiting = false;
+      state = 2; sequence = 0; buffer = []; retained = []; finishing = waiting = stopRequested = false;
+      clearInterval(sendTimer); sendTimer = null;
       clearInterval(audioTimer);
       audioTimer = setInterval(frame, 50);
     }
@@ -571,7 +587,7 @@ module.exports = function pendantFixture() {
     setAudioSendInterval(ms) { sendIntervalMs=ms;if(sendTimer)startSender(); },
     loseNotifications() { blockAudio=true;restoreOnSubscribe=true; },
     pendantStop() {
-      clearInterval(audioTimer);finishing=true;
+      clearInterval(audioTimer);finishing=true;stopRequested=true;
       const recovery=chars.get(uuid('4f'));recovery.value=recoveryStatus();
       recovery.dispatchEvent(new Event('characteristicvaluechanged'));startSender();
     },
@@ -624,6 +640,7 @@ module.exports = function pendantFixture() {
     interruptNextStop(mode) {
       stopDisconnect = mode;
     },
+    interruptNextStart() { dropStart = true; },
     holdReplay(value) {
       pauseReplay = value;
     },

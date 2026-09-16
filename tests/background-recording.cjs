@@ -124,21 +124,21 @@ test('Bluefy dimming control is released when recording ends, including an inter
 });
 
 function protection({supported=true,acknowledge=true,ack=0}={}) {
-  const calls=[],state={armed:false,hash:0,ack,generation:7,waiting:false,finishing:false},owner=[];
+  const calls=[],state={armed:false,hash:0,ack,generation:7,waiting:false,finishing:false,stopped:false},owner=[];
   const value=()=>{const v=new DataView(new ArrayBuffer(16));v.setUint8(0,0x52);v.setUint8(1,1);
-    v.setUint8(2,1+(state.armed?2:0)+(state.waiting?4:0)+(state.finishing?8:0)+(supported?16:0));
+    v.setUint8(2,1+(state.armed?2:0)+(state.waiting?4:0)+(state.finishing?8:0)+(supported?16:0)+(state.stopped?32:0));
     v.setUint8(3,state.ack);v.setUint16(4,600,true);v.setUint32(8,state.generation,true);v.setUint32(12,state.hash,true);return v;};
   let pending=0,reads=0,listener=null;
   const characteristic={addEventListener(type,fn){listener=fn;},removeEventListener(){listener=null;},async startNotifications(){},
     async readValue(){reads++;if(pending && --pending===0)state.ack=(state.ack+1)&255;return value();},
     async writeValueWithResponse(bytes){calls.push(bytes[0]);
-      if(bytes[0]===1){owner.splice(0,owner.length,...bytes.slice(1));state.armed=true;let hash=2166136261;for(const b of owner)hash=Math.imul(hash^b,16777619)>>>0;state.hash=hash;}
+      if(bytes[0]===1){owner.splice(0,owner.length,...bytes.slice(1));state.armed=true;state.stopped=false;let hash=2166136261;for(const b of owner)hash=Math.imul(hash^b,16777619)>>>0;state.hash=hash;}
       if(bytes[0]===3&&acknowledge)pending=3;
     }};
   const c={console,Uint8Array,DataView,Promise,DOMException,CustomEvent:class{},document:{getElementById:()=>null},
     setTimeout:fn=>queueMicrotask(fn),crypto:{getRandomValues:v=>v.fill(9)},dispatchEvent(){}};
   vm.createContext(c);vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../disconnect-protection.js'),'utf8'),c);
-  return {api:c.SynapDisconnectProtection,calls,state,get reads(){return reads;},notify(){listener?.({target:{value:value()}});},
+  return {api:c.SynapDisconnectProtection,calls,state,get reads(){return reads;},info:()=>c.SynapDisconnectProtection.status(value()),notify(){listener?.({target:{value:value()}});},
     async connect(){await this.api.discover({getCharacteristic:async()=>characteristic},fn=>Promise.resolve().then(fn),()=>{});await this.api.arm();}};
 }
 
@@ -157,6 +157,16 @@ test('Stop drain acknowledgements belong to the current recovery token and reset
   t.state.waiting=false;t.notify();assert.equal(t.api.isDraining(),true);
   t.api.resetRecording();assert.equal(t.api.isDraining(),false);
   t.notify();t.api.detach();assert.equal(t.api.isDraining(),false);
+});
+
+test('a Stop receipt survives audio expiry but only the matching session can consume it',async()=>{
+  const t=protection();t.state.stopped=true;
+  assert.equal(t.api.hasStopIntent(t.info()),false,'an unowned receipt cannot stop a take');
+  await t.connect();assert.equal(t.api.hasStopIntent(t.info()),false,'ARM clears old Stop intent');
+  t.state.stopped=true;t.state.armed=false;t.state.waiting=false;t.state.finishing=false;
+  t.api.detach();assert.equal(t.api.hasStopIntent(t.info()),true,'ownership survives a link change and buffer expiry');
+  t.state.hash^=1;assert.equal(t.api.hasStopIntent(t.info()),false,'another owner cannot stop this take');
+  t.state.hash^=1;t.state.stopped=false;assert.equal(t.api.hasStopIntent(t.info()),false,'older firmware does not claim Stop intent');
 });
 
 test('old firmware and a finishing or disconnected stream cannot claim connected replay',async()=>{

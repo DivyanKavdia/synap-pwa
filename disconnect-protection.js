@@ -9,7 +9,7 @@
     if(!value||value.byteLength!==16||value.getUint8(0)!==0x52||value.getUint8(1)!==1)return null;
     const flags=value.getUint8(2),frames=value.getUint16(4,true);
     if(frames>600)return null;
-    return {tokenHash:value.getUint32(12,true),generation:value.getUint32(8,true),replaySupported:Boolean(flags&16),replayAck:value.getUint8(3),finishing:Boolean(flags&8),available:Boolean(flags&1)&&frames>0,armed:Boolean(flags&2),waiting:Boolean(flags&4),frames};
+    return {tokenHash:value.getUint32(12,true),generation:value.getUint32(8,true),replaySupported:Boolean(flags&16),replayAck:value.getUint8(3),stopped:Boolean(flags&32),finishing:Boolean(flags&8),available:Boolean(flags&1)&&frames>0,armed:Boolean(flags&2),waiting:Boolean(flags&4),frames};
   }
   function onStatus(event){const info=status(event.target.value);if(!info)return;latestInfo=info;if(isDraining())root.dispatchEvent(new CustomEvent("synap-recording-draining"));}
   function isDraining(){return Boolean(characteristic&&token&&latestInfo?.armed&&latestInfo.finishing&&!latestInfo.waiting&&latestInfo.tokenHash===tokenHash());}
@@ -48,6 +48,7 @@
     const info=await send(1);if(!info?.armed || info.tokenHash!==tokenHash()){return false;}report("Audio recovery: up to "+(capacity/20)+" seconds across brief disconnects.");return true;
   }
   function canResume(info){return Boolean(info?.waiting&&info?.armed&&token&&info.tokenHash===tokenHash())}
+  function hasStopIntent(info){return Boolean(info?.stopped&&token&&info.tokenHash===tokenHash());}
   async function resume(){
     const info=await send(2,lastSequence);
     if(!info?.armed||info.waiting||info.tokenHash!==tokenHash())throw new Error('Pendant audio recovery was not acknowledged. Retrying the connection.');
@@ -69,7 +70,7 @@
     // reconnect checkpoint at the newest complete frame, including uint16 wrap.
     if(!hasSequence||((sequence-lastSequence+65536)&65535)<32768){lastSequence=sequence;hasSequence=true;}
   }
-  function resetRecording(){lastSequence=0xffff;hasSequence=false;if(latestInfo)latestInfo={...latestInfo,finishing:false};}
+  function resetRecording(){lastSequence=0xffff;hasSequence=false;if(latestInfo)latestInfo={...latestInfo,finishing:false,stopped:false};}
   function detach(){report("");characteristic?.removeEventListener("characteristicvaluechanged",onStatus);characteristic=null;queue=null;capacity=0;latestInfo=null;}
-  root.SynapDisconnectProtection=Object.freeze({discover,arm,canResume,resume,received,resetRecording,detach,status,canReplay,replay,isDraining,lastSequence:()=>hasSequence?lastSequence:null,capacityMs:()=>capacity*50});
+  root.SynapDisconnectProtection=Object.freeze({discover,arm,canResume,hasStopIntent,resume,received,resetRecording,detach,status,canReplay,replay,isDraining,lastSequence:()=>hasSequence?lastSequence:null,capacityMs:()=>capacity*50});
 })(globalThis);

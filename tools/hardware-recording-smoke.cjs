@@ -8,7 +8,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
   const origin = 'http://127.0.0.1:' + server.address().port;
   const browser = await launchChromium();
   try {
-    for (const query of ['inventory&ota', 'inventory&ota&c3&buffered', 'inventory-reject&ota']) {
+    for (const query of ['inventory&ota', 'inventory&ota&buffered', 'inventory&ota&c3&buffered', 'inventory-reject&ota']) {
       const context = await browser.newContext();
       await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
       await context.addInitScript(require('./support/pendant-fixture.cjs'));
@@ -47,6 +47,46 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       await page.evaluate(() => bleFixture.pendantDoubleTap());
       await page.waitForFunction(() => document.body.dataset.state === 'idle');
       assert.equal(await page.evaluate(() => (new DKAudioStore()).all('recordings').then(rows => rows.length)), 3);
+      if (query.includes('buffered')) {
+        await page.evaluate(() => {
+          const input=document.getElementById('autoReconnectInput');input.checked=true;input.dispatchEvent(new Event('change'));
+          window.qaHardwareReady=0;
+          addEventListener('synap-gatt-ready',()=>window.qaHardwareReady++);
+        });
+        // The last take's Stop receipt cannot cancel a new START that has not
+        // reached the firmware when the connection drops.
+        await page.evaluate(() => bleFixture.interruptNextStart());
+        await page.locator('#headerCaptureToggle').click();
+        await page.waitForFunction(() => document.body.dataset.recordingInterrupted==='true');
+        await page.evaluate(() => {bleFixture.show();bleFixture.wake();});
+        await page.waitForFunction(() => document.body.dataset.state==='recording' && SynapAppControls.recordingState().receivedMs>=150);
+        await page.evaluate(() => bleFixture.pendantDoubleTap());
+        await page.waitForFunction(() => document.body.dataset.state==='idle');
+        assert.equal(await page.evaluate(() => (new DKAudioStore()).all('recordings').then(rows=>rows.length)),4);
+        console.log('PASS previous Stop cannot cancel an undelivered new Start: '+query);
+        let saved=4;
+        for (const mode of ['retained','expired']) {
+          await page.evaluate(() => bleFixture.pendantDoubleTap());
+          await page.waitForFunction(() => SynapAppControls.recordingState().recordingId && SynapAppControls.recordingState().receivedMs >= 250);
+          const before=await page.evaluate(() => ({received:SynapAppControls.recordingState().receivedMs/50,starts:Number(sessionStorage.getItem('qa-starts')||0),captured:bleFixture.captured}));
+          await page.evaluate(() => {bleFixture.hide();bleFixture.disconnect();});
+          await page.waitForFunction(n=>bleFixture.captured>=n+4,before.captured);
+          await page.evaluate(() => bleFixture.pendantDoubleTap());
+          const captured=await page.evaluate(() => bleFixture.captured);
+          if (mode==='expired') await page.evaluate(() => bleFixture.expireBuffer());
+          await page.evaluate(() => {bleFixture.show();bleFixture.wake();});
+          await page.waitForFunction(starts=>document.body.dataset.state==='idle'||Number(sessionStorage.getItem('qa-starts')||0)>starts,before.starts);
+          assert.equal(await page.evaluate(() => Number(sessionStorage.getItem('qa-starts')||0)),before.starts,'physical Stop cannot restart after '+mode+' recovery');
+          const rows=await page.evaluate(() => new DKAudioStore().all('recordings'));
+          assert.equal(rows.length,++saved);
+          const latest=rows.sort((a,b)=>a.createdAt.localeCompare(b.createdAt)).at(-1);
+          assert.equal(latest.status,'saved');
+          assert.equal(latest.stats.completeFrames,mode==='retained'?captured:before.received);
+          assert.equal(await page.evaluate(() => bleFixture.captured),captured,'microphone remains stopped');
+          assert.equal(await page.evaluate(() => window.qaHardwareReady),saved-3,'recovered idle connection publishes readiness');
+          console.log('PASS physical Stop while disconnected: '+query+' · '+mode);
+        }
+      }
       assert.equal(await page.evaluate(() => bleFixture.maximum), 1);
       assert.equal(await page.evaluate(() => bleFixture.appDisconnects), 0);
       assert.deepEqual(errors, []);

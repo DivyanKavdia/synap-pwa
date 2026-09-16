@@ -4,8 +4,8 @@
   // Shared BLE Protocol v2
 
   const APP_VERSION = "1.0.0";
-  const APP_REVISION = "1.0.0-audio3";
-  const APP_SHELL_REVISION = "1.0.0-shell124-chakshu";
+  const APP_REVISION = "1.0.0-audio4";
+  const APP_SHELL_REVISION = "1.0.0-shell125-chakshu";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -1242,7 +1242,11 @@
       const recoveryInfo = await protection?.discover(service, queueGattOperation, assertConnection, resumingRecording);
       const resumeBuffered = resumingRecording && protection?.canResume(recoveryInfo);
       if(resumingRecording && recoveryInfo?.waiting && !resumeBuffered)throw new Error("Buffered audio belongs to a different app session. Waiting for the pendant to return to idle.");
-      if(resumeBuffered && recoveryInfo.finishing)recordingStopRequested=true;
+      // Stop remains meaningful after the volatile audio expires. Only apply
+      // its owned receipt to a confirmed take; a new START may not have arrived.
+      const stoppedByPendant = resumingRecording && recordingWasConfirmedBeforeDisconnect && protection?.hasStopIntent(recoveryInfo);
+      if(stoppedByPendant || (resumeBuffered && recoveryInfo.finishing))recordingStopRequested=true;
+      if(stoppedByPendant)log("Pendant stopped during connection loss", {buffered:Boolean(resumeBuffered)});
       if (resumingRecording) await prepareRecordingTransportResume(Boolean(resumeBuffered));
       probingExtras = false;
 
@@ -1344,7 +1348,8 @@
         try { localStorage.setItem("dk-pendant-device-id", bluetoothDevice.id); }
         catch (_) { log("Device preference could not be saved; name-based reload recovery remains available."); }
         if(resumingRecording && recordingStopRequested){
-          await finalizeRecording("normal",resumingSessionId);
+          await finalizeRecording(stoppedByPendant && !resumeBuffered ? "peripheral-stopped-offline" : "normal",resumingSessionId);
+          setupSucceeded = true;
           return;
         }
         setReconnectCapability(typeof navigator.bluetooth.getDevices === "function"
