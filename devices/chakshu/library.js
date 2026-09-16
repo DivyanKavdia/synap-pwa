@@ -507,6 +507,7 @@
       $('visualLibrary').hidden = !visible;
       $('libraryAdd').setAttribute('aria-expanded', String(visible));
       if (visible) {
+        root.SynapCompactLayout?.reveal('library');
         $('libraryAddTitle').tabIndex = -1;
         $('libraryAddTitle').focus({ preventScroll: true });
         $('visualLibrary').scrollIntoView({ block: 'nearest' });

@@ -5,7 +5,7 @@
     tiles = new Map();
   const configs = [
     ['myActions', '.section-heading', 'My actions', true],
-    ['library', '.section-heading', 'Library', false],
+    ['library', '.section-heading', 'Memory library', false],
     ['dayConversations', 'header', 'Conversation details', false],
   ];
   let preferences = {};

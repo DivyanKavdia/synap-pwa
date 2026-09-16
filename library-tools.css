@@ -344,3 +344,20 @@
 .library-add-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .library-add-heading h3 { margin: 0; font-size: 1rem; }
 #visualAccess { font-size: 0.75rem; color: var(--muted); }
+
+/* The Library title and controls must not squeeze each other in compact tiles. */
+#library.workspace-tile > .tile-heading {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 0.5rem !important;
+  padding: 0.75rem !important;
+}
+#library > .tile-heading > div:first-child { grid-column: 1; grid-row: 1; }
+#library > .tile-heading > .library-heading-actions { grid-column: 1 / -1; grid-row: 2; }
+#library > .tile-heading > .tile-toggle { grid-column: 2; grid-row: 1; align-self: start; }
+#library :is(#libraryAdd, #libraryAddClose) { min-height: 44px; }
+@media (min-width: 700px) {
+  #library.workspace-tile > .tile-heading { grid-template-columns: minmax(0, 1fr) auto 44px; }
+  #library > .tile-heading > .library-heading-actions { grid-column: 2; grid-row: 1; }
+  #library > .tile-heading > .tile-toggle { grid-column: 3; }
+}
