@@ -127,11 +127,93 @@ this setup exists to avoid, and unlike the strings above it *is* a secret.
 **Actions → Deploy Synap Backend → Run workflow.** It will test, build, deploy,
 then verify that the commit now serving traffic is the one it just built.
 
-That last step matters more than it sounds. Cloud Run serves the same service on
-two hostnames and numbers revisions independently of git, so a green deploy step
-only proves `gcloud` exited zero. The workflow reads `/health`, compares the
-reported commit against `GITHUB_SHA`, and fails if traffic is still on an older
-revision.
+`infra/deploy.sh` first captures the revision receiving 100% of traffic and its
+configuration. It creates one tagged revision with **no production traffic**,
+checks the configuration and tagged `/health` commit, then explicitly promotes
+that revision. It checks the traffic assignment and public `/health` commit
+again. A failed promotion or live verification attempts to restore the captured
+revision and verifies rollback. The workflow keeps deployments serialized; do
+not run a manual deploy or change traffic while one is running.
+
+The exact rollback command is printed **before** deployment and saved in the job
+summary. This also covers an interrupted runner where automatic cleanup cannot
+finish. Never select a rollback revision by guessing from the most recent list:
+the latest created revision is not necessarily the one that was serving users.
+
+## Backend CPU cost rollout
+
+The September 16 cost commit updated only Terraform. The deployment script now
+sets `--cpu=1 --cpu-throttling` explicitly, so the existing image deployment path
+can apply that policy without running Terraform. Memory stays at its existing
+value (the repository config is `2Gi`), as do concurrency, timeout, scaling and
+runtime identity. The optional speaker service is only discovered; its CPU
+policy is not changed.
+
+The candidate check compares against the **serving revision**, including after
+a rollback. It rejects unexpected environment changes or secret-reference
+changes and requires the configured Cloud Tasks URL, queue, location and caller
+identity. Model routing, build identity and service URLs are the only intentional
+environment updates, using `--update-env-vars`. No secret versions, indexes, IAM
+policies or queue resources are updated by the cost change.
+
+This preflight assumes one healthy backend revision serving 100% of traffic,
+with `SYNAP_SERVICE_URL` equal to the service's canonical URL. A split rollout,
+unfinished deployment or incompatible configuration stops deployment for review.
+It does not silently normalize an unfamiliar production setup.
+
+### First rollout checks
+
+1. Before merging or dispatching, record current processing latency, Cloud Run
+   CPU/memory utilization, error rate and Cloud Tasks backlog/retry behavior.
+   Confirm there is no concurrent manual infrastructure work.
+2. Merge the reviewed deployment patch, or run the workflow on that commit once
+   it is on `main`. Preserve the job summary's previous revision and rollback
+   command. The deploy job runs backend tests and deployment failure-path tests.
+3. Confirm the workflow verifies one CPU, throttling enabled, preserved runtime
+   configuration, and the expected commit at the candidate and public URLs.
+4. Using an existing signed-in test account, upload and finalize a short test
+   recording. Confirm a **Cloud Tasks dispatch** completes, the transcript and
+   memory appear, and Ask Synap retrieves that recording. Repeat after idle and
+   with representative concurrent recordings. This exercises Gemini, queue OIDC,
+   Firestore indexes and the current FFmpeg preprocessing path.
+5. Compare processing latency, queue progress, errors and CPU/memory under
+   comparable load. Roll back for new secret/auth/index errors, stuck or growing
+   retries, audio-preparation timeouts, memory failures or sustained processing
+   latency regression. Inspect subsequent billed usage before claiming savings.
+
+`/health` proves startup and build identity, **not** successful transcription or
+queue dispatch. The startup code even logs a placeholder Gemini key without
+failing health. The request path awaits processing when Cloud Tasks is configured;
+its missing-URL fallback runs work in the background and is unsafe to rely on
+with idle throttling. Later September 16 commits also added FFmpeg CPU work, so
+the original cost commit's entirely-I/O-bound rationale needs production
+measurement. No performance guarantee follows from the CPU setting alone.
+
+### Rollback
+
+Run the **exact command in the deployment job summary** to send 100% of traffic
+back to the captured revision. Then check Cloud Run's traffic assignment, the
+previous commit at `/health`, and a queued test recording. Traffic changes take
+time to propagate and do not instantly end requests already in flight.
+
+Before promotion, a failed candidate keeps production traffic on the old
+revision. After promotion is attempted, the script tries rollback even if the
+traffic-update command itself fails, since the API may already have applied it.
+If a different deployment or operator has visibly taken over, automatic rollback
+stops for manual inspection rather than overwriting that traffic change.
+Any failed rollback check leaves the job failed and prints an explicit warning.
+Temporary candidate tags are removed on exit; if the runner is killed, remove
+the named tag manually after verifying traffic. Configuration snapshots are local
+temporary files and are never uploaded as CI artifacts.
+
+Rollback restores the old revision's image and CPU settings for serving traffic;
+it does not change the newer service template. Pause further deployments while
+investigating: every run of the patched script deliberately requests one CPU and
+throttling again. Keep Terraform excluded from deployment triggers.
+
+Google references: [CPU throttling flags](https://docs.cloud.google.com/sdk/gcloud/reference/run/services/update),
+[billing and CPU allocation](https://docs.cloud.google.com/run/docs/configuring/billing-settings),
+and [revision tags, traffic and rollback](https://docs.cloud.google.com/run/docs/rollouts-rollbacks-traffic-migration).
 
 ## Checking what is live, any time
 
@@ -165,5 +247,7 @@ That is not caution for its own sake: `terraform apply` on this project is
 currently unsafe. It wants to add a placeholder version to the Gemini API key
 secret, which would become `latest` and break transcription; it wants to strip
 `SYNAP_SERVICE_URL` from Cloud Run, which would stop Cloud Tasks; and it fails on
-three Firestore indexes created by hand and never imported. Use `-target` until
-that is repaired, and never let CI near it.
+three Firestore indexes created by hand and never imported. These issues still
+require a separate Terraform/state reconciliation. Do not use a targeted apply
+as a shortcut for this CPU change: a targeted plan can include dependencies and
+other changes to the Cloud Run resource. Keep infrastructure apply out of CI.
