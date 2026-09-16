@@ -89,6 +89,7 @@ async function call<T>(
   body: unknown,
   context: { model: string; stage: string },
   signal?: AbortSignal,
+  onAttempt?: () => void,
 ): Promise<T> {
   signal?.throwIfAborted();
   const { geminiApiKey } = await loadSecrets();
@@ -103,6 +104,7 @@ async function call<T>(
     signal?.addEventListener('abort', onAbort, { once: true });
 
     try {
+      onAttempt?.();
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -134,7 +136,7 @@ async function call<T>(
         }
         lastError = cause;
       } else {
-        // Network-level failure: worth retrying, the request never landed.
+        // A lost response may still have been billed; count every submission attempt.
         const error = new GeminiError(`Gemini ${context.stage} (${context.model}) request failed: ${(cause as Error).message}`, 0, true);
         if (attempt === MAX_ATTEMPTS) throw error;
         lastError = error;
@@ -174,10 +176,11 @@ export function usageLogFields(
 export async function createInteraction(
   request: InteractionRequest,
   signal?: AbortSignal,
+  onAttempt?: () => void,
 ): Promise<InteractionResponse> {
   const { usage_label: usageLabel, ...apiRequest } = request;
   const response = await call<InteractionResponse>('/interactions', { ...apiRequest, store: false },
-    { model: request.model, stage: usageLabel || 'generation' }, signal);
+    { model: request.model, stage: usageLabel || 'generation' }, signal, onAttempt);
   const fields = usageLogFields(request.model, usageLabel, response.usage);
   if (fields) log.info('Gemini usage', fields);
   if (response.status && response.status !== 'completed') {

@@ -2,7 +2,7 @@
 
 ## Source-preserving capture
 
-The pendant path is microphone → PCM16 → Bluetooth → local PCM journal → original WAV upload → encrypted cloud source → the same stored WAV to ASR. Entirely zero windows retain their source and get an empty transcript without a model call. Optional noise reduction produces a preview/export copy; it is not automatically selected for upload.
+The pendant path is microphone → PCM16 → Bluetooth → local PCM journal → original WAV upload → encrypted cloud source → disposable pitch-preserving 1.5× copy to ASR. Entirely zero windows retain their source and get an empty transcript without a model call. Optional noise reduction produces a preview/export copy; it is not automatically selected for upload.
 
 | Stage              | Contract                                                                                                                                           |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -12,7 +12,7 @@ The pendant path is microphone → PCM16 → Bluetooth → local PCM journal →
 | Recovery buffer    | Retain original PCM in volatile memory; encode only when the resumed link requires it                                                              |
 | Journal/playback   | Preserve received samples, transport counts and timeline gaps                                                                                      |
 | Cloud upload/retry | Persist the exact request body; new original-source bodies are marked `source-pcm-v1`                                                              |
-| ASR                | Send every nonzero stored WAV unchanged, including quiet samples and silent boundaries; skip only an entirely zero window                          |
+| ASR                | Prepare a bounded 1.5× ASR copy without changing the stored source; retain short windows, retry empty recognition at 1×, skip only digital zero                          |
 | Speaker identity   | Derive speaker-specific excerpts for embeddings without replacing source or ASR audio                                                              |
 | Desktop capture    | Mix/resample browser input; noise suppression and gain control are disabled, echo cancellation remains to avoid recapturing meeting speaker output |
 
@@ -99,3 +99,20 @@ Upload jobs retain `failureDetail` (stage, code, expected/actual bytes, and boun
 Camera gating uses capabilities owned by the current physical connection. The library distinguishes disconnected, detecting, unreadable device identity/capabilities, another connected module, and identified Chakshu. Camera clicks join in-flight descriptor reads. A saved account association never grants camera capabilities to a connected C3/S3.
 
 WebKit regression: concurrent job lookup callbacks could run while IndexedDB serialized the segment Blob, producing `TransactionInactiveError` in `enqueueJob` and stalling close. Compaction now waits for the Blob write success event before enqueueing packet cleanup and jobs, all in the same transaction. Failed writes still roll back and preserve raw packets. The WebKit CI fixture covers sealing, reload, a missing frame, original-byte upload retries and native FileReader fallback.
+
+## ASR preparation and the unified Library
+
+Source uploads, hashes, duration bounds and encrypted storage remain unchanged.
+Only the in-memory copy sent to managed transcription uses FFmpeg `atempo=1.5`.
+Speaker extraction and playback use the source WAV with timestamps mapped back
+to its timeline. See [transcription cost controls](TRANSCRIPTION_COST.md).
+
+The Library combines audio and owner-scoped local photo/video metadata in one
+newest-first timeline. All media / Audio / Photos / Videos share search, date,
+favourite and status filters. Media IDs carry a `visual:` UI prefix so a camera
+item and audio row can never collide in selection. Deletion routes visuals and
+paired soundtracks only to their local stores, even with cloud deletion selected.
+Day summaries and transcription continue to use audio records alone. Source
+players remain mounted during refresh; thumbnails load only for mounted cards
+and are revoked on deletion or account changes. Camera controls and SD imports
+remain in the Camera & imports disclosure; this release changes no firmware.

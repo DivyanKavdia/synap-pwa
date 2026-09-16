@@ -1,4 +1,9 @@
 /** Source-preserving ASR. Recognized words take precedence over speaker/timing enrichment. */
+import {
+  originalAudio,
+  prepareTranscriptionAudio,
+  type TranscriptionAudio,
+} from './transcription-audio.js';
 import { isDigitalSilence } from './digital-silence.js';
 import { config } from '../config.js';
 import { offsetToMs } from '../util/retry.js';
@@ -20,15 +25,26 @@ export interface TranscriptionReview {
   policy: 'text-first-v1';
   outcome: 'speech' | 'no-speech' | 'digital-silence';
 }
+export interface TranscriptionAudioUsage {
+  policy: 'atempo-1.5-v1' | 'stored-upload-v1';
+  speed: 1 | 1.5;
+  sourceDurationMs: number;
+  preparedDurationMs: number;
+  submittedAudioMs: number;
+  requestAttempts: number;
+  fallback?: TranscriptionAudio['fallback'];
+}
 export interface TranscriptionResult {
   text: string;
   words: TranscriptWord[];
   speakers: string[];
   model: string;
   review: TranscriptionReview;
+  audioUsage?: TranscriptionAudioUsage;
 }
 export interface TranscribeOptions {
   baseOffsetMs?: number;
+  speed?: 1 | 1.5;
   language?: string;
   diarize?: boolean;
   wordTimestamps?: boolean;
@@ -48,6 +64,21 @@ export async function transcribeSegment(
     signal,
   } = options;
   signal?.throwIfAborted();
+  let prepared: TranscriptionAudio | undefined;
+  let submittedAudioMs = 0,
+    requestAttempts = 0;
+  const audioUsage = (): TranscriptionAudioUsage | undefined =>
+    prepared
+      ? {
+          policy: prepared.speed === 1.5 ? 'atempo-1.5-v1' : 'stored-upload-v1',
+          speed: prepared.speed,
+          sourceDurationMs: prepared.sourceDurationMs,
+          preparedDurationMs: prepared.durationMs,
+          submittedAudioMs,
+          requestAttempts,
+          ...(prepared.fallback ? { fallback: prepared.fallback } : {}),
+        }
+      : undefined;
   const empty = (
     outcome: 'no-speech' | 'digital-silence',
     attempted: boolean,
@@ -57,13 +88,19 @@ export async function transcribeSegment(
     speakers: [],
     model: config.gemini.transcribeModel,
     review: { attempted, annotationsComplete: true, policy: 'text-first-v1', outcome },
+    audioUsage: audioUsage(),
   });
-  if (mimeType === 'audio/wav' && isDigitalSilence(audio)) return empty('digital-silence', false);
-  const input: InteractionPart[] = [
-    { type: 'audio', data: audio.toString('base64'), mime_type: mimeType },
-  ];
+  if (mimeType === 'audio/wav' && isDigitalSilence(audio)) {
+    prepared = originalAudio(audio);
+    return empty('digital-silence', false);
+  }
+  if (mimeType === 'audio/wav' && options.speed)
+    prepared = await prepareTranscriptionAudio(audio, options.speed, signal);
   const languageCodes = transcriptionLanguageCodes(language);
   const run = async (settings: Record<string, unknown>, requestSignal = signal) => {
+    const input: InteractionPart[] = [
+      { type: 'audio', data: (prepared?.audio || audio).toString('base64'), mime_type: mimeType },
+    ];
     const response = await createInteraction(
       {
         model: config.gemini.transcribeModel,
@@ -72,6 +109,18 @@ export async function transcribeSegment(
         usage_label: 'transcription',
       },
       requestSignal,
+      () => {
+        requestAttempts++;
+        submittedAudioMs += prepared?.durationMs || 0;
+        // Includes HTTP retries and the annotation pass. This is submitted input,
+        // not a bill: a timeout may have been charged without a response.
+        log.info('Transcription audio submission', {
+          model: config.gemini.transcribeModel,
+          speed: prepared?.speed || 1,
+          audio_ms: prepared?.durationMs || 0,
+          attempt: requestAttempts,
+        });
+      },
     );
     // A missing output is a provider failure, not evidence of silence.
     if (
@@ -127,16 +176,25 @@ export async function transcribeSegment(
     // One fresh, automatic-language pass for an explicitly empty result. Never
     // seal transport failures as empty speech or repeatedly summarize emptiness.
     attempted = true;
+    if (prepared?.speed === 1.5)
+      prepared = { ...originalAudio(audio), fallback: 'empty-recognition' };
     response = await run({ mode: 'verbatim' });
     rawText = interactionText(response).trim();
     if (!rawText) return empty('no-speech', true);
   }
+  const sourceOffset = (offset: string | undefined) => {
+    const ms = offsetToMs(offset) * (prepared?.speed || 1);
+    return (
+      baseOffsetMs +
+      Math.round(prepared ? Math.min(prepared.sourceDurationMs, Math.max(0, ms)) : ms)
+    );
+  };
   const convert = (value: InteractionResponse): TranscriptWord[] =>
     interactionWords(value).map((word) => ({
       text: word.text,
       speaker: word.speaker ?? null,
-      start_ms: baseOffsetMs + offsetToMs(word.start_offset),
-      end_ms: baseOffsetMs + offsetToMs(word.end_offset),
+      start_ms: sourceOffset(word.start_offset),
+      end_ms: sourceOffset(word.end_offset),
     }));
   let words = convert(response);
   if ((diarize || wordTimestamps) && !annotationsComplete(rawText, words)) {
@@ -176,6 +234,7 @@ export async function transcribeSegment(
       8,
     ) as string[],
     model: config.gemini.transcribeModel,
+    audioUsage: audioUsage(),
     review: {
       attempted,
       annotationsComplete: complete,

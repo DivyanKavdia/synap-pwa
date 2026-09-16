@@ -304,7 +304,8 @@
         const get = stores.segments.get([job.recordingId, job.segmentIndex]);
         get.onsuccess = function() {
           if (!get.result) return;
-          const meta = { ...get.result, uploadedToBackend: true, transcript, transcriptionOutcome: outcome };
+          const meta = { ...get.result, uploadedToBackend: true, transcript, transcriptionOutcome: outcome,
+            ...(response?.transcription_audio ? { transcriptionAudioUsage: response.transcription_audio } : {}) };
           delete meta.transcriptionBlob;
           stores.segments.put(meta);
           const segments = stores.segments.index('recording').getAll(job.recordingId);
@@ -312,10 +313,24 @@
             const getRecording = stores.recordings.get(job.recordingId);
             getRecording.onsuccess = function() {
               const current = getRecording.result;
-              if (!current || current.localOnly || current.transcriptComplete || current.processingStage === 'ready') return;
+              if (!current || current.localOnly) return;
               const windows = segments.result.sort((a, b) => a.index - b.index);
+              const transcriptionAudioUsage = windows.reduce((sum, segment) => {
+                const usage = segment.transcriptionAudioUsage;
+                if (!usage) return sum;
+                sum.windows++;
+                for (const key of ['sourceDurationMs','preparedDurationMs','submittedAudioMs','requestAttempts'])
+                  sum[key] += Math.max(0, Number(usage[key]) || 0);
+                if (usage.speed === 1.5) sum.acceleratedWindows++;
+                if (usage.fallback) sum.fallbackWindows++;
+                return sum;
+              }, { windows:0, acceleratedWindows:0, fallbackWindows:0, sourceDurationMs:0,
+                preparedDurationMs:0, submittedAudioMs:0, requestAttempts:0 });
+              if (current.transcriptComplete || current.processingStage === 'ready') {
+                stores.recordings.put({ ...current, transcriptionAudioUsage }); return;
+              }
               const text = windows.map(segment => segment.transcript || '').filter(Boolean).join('\n');
-              stores.recordings.put({ ...current, transcript: text || current.transcript || '',
+              stores.recordings.put({ ...current, transcriptionAudioUsage, transcript: text || current.transcript || '',
                 transcriptComplete: false,
                 transcriptSegments: windows.filter(segment => segment.uploadedToBackend).length });
             };

@@ -11,7 +11,7 @@
   <link rel="icon" href="icon.svg?v=1.0.0-brand2" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png?v=1.0.0-brand2">
   <script src="touch-event-bridge.js?v=1.0.0-compact2"></script>
-  <script src="audio-codec-v3.js?v=1.0.0-chakshu-core10"></script>
+  <script src="audio-codec-v3.js?v=1.0.0-chakshu-core11"></script>
   <script src="battery-v2-ui.js?v=1.0.0-battery5"></script>
   <script>globalThis.SYNAP_STATIC_BOOTSTRAP=true;</script>
   <link rel="stylesheet" href="first-memory.css?v=1.0.0-compact-workspace1">
@@ -21,10 +21,10 @@
   <link rel="stylesheet" href="brain.css?v=1.0.0-actions1">
   <link rel="stylesheet" href="compact.css?v=1.0.0-devices1" data-synap-compact="refresh1">
   <link rel="stylesheet" href="settings.css?v=1.0.0-compact-workspace1">
-  <link rel="stylesheet" href="library-tools.css?v=1.0.0-compact-workspace1">
+  <link rel="stylesheet" href="library-tools.css?v=1.0.0-chakshu-core11">
   <script src="theme.js?v=1.0.0-navigation1"></script>
 <link rel="stylesheet" href="meeting-tools.css?v=1.0.0-meetings2"><link rel="stylesheet" href="devices/panel.css?v=1.0.0-devices1">
-<link rel="stylesheet" href="devices/chakshu/library.css?v=1.0.0-chakshu-core10">
+<link rel="stylesheet" href="devices/chakshu/library.css?v=1.0.0-chakshu-core11">
 </head>
 <body data-startup="loading" data-state="disconnected" class="synap-refresh">
   <a class="skip-link" href="#today">Skip to your day</a>
@@ -122,8 +122,32 @@
   </div>
 </section>
 <section id="library" class="section-card recordings-section" aria-labelledby="libraryTitle">
-  <details id="visualLibrary" class="visual-library" open>
-    <summary>Photos &amp; video <span id="visualAccess">Unavailable</span></summary>
+  <div class="section-heading"><div><p class="section-eyebrow">THE ORIGINALS</p><h2 id="libraryTitle">Your library <span id="recordingsCount" class="count-badge">0</span></h2></div><button id="selectRecordingsButton" class="text-button" type="button" aria-pressed="false">Select</button></div>
+  <div class="library-controls">
+  <div class="library-search"><svg aria-hidden="true"><use href="#i-search"/></svg><input id="librarySearch" type="search" aria-label="Search library" placeholder="Search audio, photos &amp; videos…" autocomplete="off"><button id="clearLibrarySearch" type="button" aria-label="Clear search" hidden>Clear</button></div>
+  <div class="library-toolbar">
+    <label class="library-status-control"><span class="sr-only">Media type</span><select id="libraryTypeFilter" aria-label="Filter library by type"><option value="all">All media</option><option value="audio">Audio</option><option value="image">Photos</option><option value="video">Videos</option></select></label>
+    <button id="libraryFavourites" type="button" aria-pressed="false">Favourites</button>
+    <div class="library-scope" role="group" aria-label="Recording date filter"><button type="button" data-library-scope="all" aria-pressed="true">All dates</button><button type="button" data-library-scope="day" aria-pressed="false" aria-label="Selected day" title="Selected day">Day</button></div>
+    <label class="library-status-control"><span class="sr-only">Processing status</span><select id="libraryStatusFilter" aria-label="Filter recordings by processing status"></select></label>
+  </div>
+  </div>
+  <div class="library-context">
+    <p id="libraryScopeHint" hidden></p>
+    <p id="librarySearchStatus" class="library-search-status" role="status" hidden></p>
+    <button id="clearRecordingFilters" type="button" hidden>Reset status</button>
+  </div>
+  <div id="librarySelectionBar" class="library-selection-bar" aria-label="Selected library actions" hidden>
+    <div class="library-selection-summary"><label><input id="selectAllRecordings" type="checkbox" aria-describedby="librarySelectionHint"><span id="selectAllRecordingsLabel">Select all</span></label><strong id="librarySelectedCount" role="status">0 selected</strong></div>
+    <button id="processSelectedRecordings" type="button" aria-label="Process selected recordings" disabled>Process</button><button id="deleteSelectedRecordings" type="button" aria-label="Delete selected recordings" disabled>Delete</button>
+    <p id="librarySelectionHint" class="sr-only">Select all includes every matching item across pages.</p>
+  </div>
+  <p id="libraryActionStatus" class="library-action-status" role="status" hidden></p>
+  <div id="emptyRecordings" class="empty-state"><span class="empty-state-icon" aria-hidden="true"><svg><use href="#i-wave"/></svg></span><h3>Your library is empty</h3><p>Use the microphone above to start recording.</p></div>
+  <div id="recordingsList" class="recordings-list"></div>
+  <div id="libraryPagination" class="library-pagination" hidden><p id="libraryCountLabel"></p><div class="library-page-actions"><button id="showMoreRecordingsButton" type="button">Show more</button><button id="showLessRecordingsButton" type="button" hidden>Show less</button></div></div>
+  <details id="visualLibrary" class="visual-library">
+    <summary>Camera &amp; imports <span id="visualAccess">Unavailable</span></summary>
     <p id="visualGate">Sign in and associate a Chakshu device to unlock photos and video.</p>
     <button id="visualRetryAccess" type="button">Refresh account association</button>
     <div id="visualTools" hidden>
@@ -145,38 +169,11 @@
         <p>Save the matching MJPEG, WAV and JSON files, finish downloads, then return here and choose Import SD files. This private network turns off after three minutes without a request. Finish downloads before recording again.</p>
       </section>
       <input id="visualFiles" type="file" accept=".jpg,.jpeg,.mjpeg,.wav,.json" multiple hidden>
-      <p>Saved in this browser · only audio is transcribed.</p><details class="visual-help"><summary>Descriptions &amp; SD imports</summary><p>Descriptions send selected camera frames to synap Cloud. For SD video, import the matching MJPEG, WAV and JSON files together.</p></details>
+      <p>Photos, videos and their soundtracks stay in this browser.</p><details class="visual-help"><summary>SD imports</summary><p>For SD video, import the matching MJPEG, WAV and JSON files together.</p></details>
       <div id="visualSDList" class="visual-sd-list"></div>
-      <div class="visual-browse" role="search" aria-label="Photo and video library">
-        <label for="visualSearch">Search photos &amp; videos</label><input id="visualSearch" type="search" maxlength="300" placeholder="Titles, notes or descriptions…" autocomplete="off">
-        <div class="visual-actions"><label>Show <select id="visualFilter"><option value="all">Photos &amp; video</option><option value="image">Photos</option><option value="video">Videos</option></select></label><button id="visualFavourites" type="button" aria-pressed="false">Favourites</button><button id="visualClearSearch" type="button" hidden>Clear filters</button></div>
-        <p id="visualCount" role="status"></p>
-      </div>
     </div>
-    <p id="visualStatus" role="status"></p><div id="visualGrid" class="visual-grid" hidden></div>
+    <p id="visualStatus" role="status"></p>
   </details>
-  <div class="section-heading"><div><p class="section-eyebrow">THE ORIGINALS</p><h2 id="libraryTitle">Your recordings <span id="recordingsCount" class="count-badge">0</span></h2></div><button id="selectRecordingsButton" class="text-button" type="button" aria-pressed="false">Select</button></div>
-  <div class="library-controls">
-  <div class="library-search"><svg aria-hidden="true"><use href="#i-search"/></svg><input id="librarySearch" type="search" aria-label="Search recordings" placeholder="Search recordings…" autocomplete="off"><button id="clearLibrarySearch" type="button" aria-label="Clear search" hidden>Clear</button></div>
-  <div class="library-toolbar">
-    <div class="library-scope" role="group" aria-label="Recording date filter"><button type="button" data-library-scope="all" aria-pressed="true">All dates</button><button type="button" data-library-scope="day" aria-pressed="false" aria-label="Selected day" title="Selected day">Day</button></div>
-    <label class="library-status-control"><span class="sr-only">Processing status</span><select id="libraryStatusFilter" aria-label="Filter recordings by processing status"></select></label>
-  </div>
-  </div>
-  <div class="library-context">
-    <p id="libraryScopeHint" hidden></p>
-    <p id="librarySearchStatus" class="library-search-status" role="status" hidden></p>
-    <button id="clearRecordingFilters" type="button" hidden>Reset status</button>
-  </div>
-  <div id="librarySelectionBar" class="library-selection-bar" aria-label="Selected recording actions" hidden>
-    <div class="library-selection-summary"><label><input id="selectAllRecordings" type="checkbox" aria-describedby="librarySelectionHint"><span id="selectAllRecordingsLabel">Select all</span></label><strong id="librarySelectedCount" role="status">0 selected</strong></div>
-    <button id="processSelectedRecordings" type="button" aria-label="Process selected recordings" disabled>Process</button><button id="deleteSelectedRecordings" type="button" aria-label="Delete selected recordings" disabled>Delete</button>
-    <p id="librarySelectionHint" class="sr-only">Select all includes every matching recording across pages.</p>
-  </div>
-  <p id="libraryActionStatus" class="library-action-status" role="status" hidden></p>
-  <div id="emptyRecordings" class="empty-state"><span class="empty-state-icon" aria-hidden="true"><svg><use href="#i-wave"/></svg></span><h3>No recordings</h3><p>Use the microphone above to start recording.</p></div>
-  <div id="recordingsList" class="recordings-list"></div>
-  <div id="libraryPagination" class="library-pagination" hidden><p id="libraryCountLabel"></p><div class="library-page-actions"><button id="showMoreRecordingsButton" type="button">Show more</button><button id="showLessRecordingsButton" type="button" hidden>Show less</button></div></div>
 </section><section id="processing" hidden><p id="queueStatus">Ready.</p><button id="runQueueButton" type="button">Process pending memories</button><button id="pauseQueueButton" type="button">Pause</button></section></main><footer><span>synap</span><span id="appVersion">1.0.0</span></footer></div>
 <nav class="wireframe-tabs brain-tabs" aria-label="Primary"><a href="#today" class="active" aria-current="page"><svg><use href="#i-spark"/></svg><span>Today</span></a><a href="#memoryWeekPanel"><svg><use href="#i-calendar"/></svg><span>Weekly</span></a><a href="#library"><svg><use href="#i-library"/></svg><span>Library</span></a></nav><div id="toastRegion"></div>
 <dialog id="settingsDialog" class="modal" aria-labelledby="settingsTitle">
@@ -266,9 +263,9 @@
 </form></dialog>
 <dialog id="deleteRecordingsDialog" class="library-delete-dialog" aria-labelledby="deleteRecordingsTitle" aria-describedby="deleteRecordingsDescription">
   <h2 id="deleteRecordingsTitle">Delete recordings?</h2>
-  <p id="deleteRecordingsDescription">Permanently remove the selected audio, transcripts, notes and queued work from this browser. This cannot be undone.</p>
-  <label class="library-cloud-delete"><input id="deleteRecordingsCloud" type="checkbox"><span><strong>Also delete cloud copies</strong><small>Remove these recordings and their derived memories from your synap Cloud account.</small></span></label>
-  <p class="library-delete-note">Cloud copies remain available to restore unless you select this option.</p><p id="deleteRecordingsCloudHint" class="library-delete-note">Sign in to also delete cloud copies.</p>
+  <p id="deleteRecordingsDescription">Permanently remove the selected items and their notes from this browser. Audio deletion also removes its transcript and queued work. This cannot be undone.</p>
+  <label class="library-cloud-delete"><input id="deleteRecordingsCloud" type="checkbox"><span><strong>Also delete cloud copies</strong><small>Remove selected standalone audio and its derived memories from your synap Cloud account. Photos, videos and paired soundtracks are device-only.</small></span></label>
+  <p class="library-delete-note">Existing cloud audio copies remain available to restore unless you select this option.</p><p id="deleteRecordingsCloudHint" class="library-delete-note">Sign in to also delete cloud copies.</p>
   <p id="deleteRecordingsStatus" role="status"></p>
   <div class="library-delete-actions"><button id="cancelDeleteRecordings" type="button">Cancel</button><button id="confirmDeleteRecordings" type="button">Delete</button></div>
 </dialog>
@@ -294,25 +291,25 @@
   <p id="capturePreviewStatus" role="status"></p><p id="capturePreviewHint"></p>
   <div class="visual-actions"><button id="capturePreviewPhoto" type="button">Take photo</button><button id="capturePreviewStop" type="button">Stop &amp; save video</button><button id="capturePreviewOpen" type="button">Open in library</button></div>
 </dialog>
-<script src="devices/profiles.js?v=1.0.0-chakshu-core10"></script>
+<script src="devices/profiles.js?v=1.0.0-chakshu-core11"></script>
 <script src="devices/capabilities.js?v=1.0.0-stop1"></script>
-<script src="devices/identity.js?v=1.0.0-chakshu-core10"></script>
+<script src="devices/identity.js?v=1.0.0-chakshu-core11"></script>
 <script>(function(){function renderSynapDeviceId(){var el=document.getElementById('setupDeviceId');if(!el)return;try{var key=(globalThis.SynapDevices&&globalThis.SynapDevices.KEY)||'synap-device-associations-v1';var data=JSON.parse(localStorage.getItem(key)||'null');var devices=Array.isArray(data&&data.devices)?data.devices.slice():[];devices.sort(function(a,b){return String(b.lastConnectedAt||'').localeCompare(String(a.lastConnectedAt||''));});var id=devices[0]&&devices[0].deviceId?String(devices[0].deviceId):'';el.textContent=id?id.toLowerCase():'No pendant selected';el.title=id;el.dataset.deviceId=id;}catch(e){el.textContent='No pendant selected';el.title='';el.dataset.deviceId='';}}document.addEventListener('DOMContentLoaded',function(){renderSynapDeviceId();var status=document.getElementById('setupDeviceStatus');if(status)new MutationObserver(renderSynapDeviceId).observe(status,{childList:true,subtree:true,characterData:true});document.getElementById('settingsButton')?.addEventListener('click',function(){setTimeout(renderSynapDeviceId,80)});});globalThis.renderSynapDeviceId=renderSynapDeviceId;})();</script>
-<script src="devices/modules.js?v=1.0.0-chakshu-core10"></script>
+<script src="devices/modules.js?v=1.0.0-chakshu-core11"></script>
 <script src="devices/power.js?v=1.0.0-devices1"></script>
-<script src="devices/panel.js?v=1.0.0-chakshu-core10"></script>
+<script src="devices/panel.js?v=1.0.0-chakshu-core11"></script>
 <script src="runtime-compat.js?v=1.0.0-controls1"></script>
-<script src="recording/bluetooth-session.js?v=1.0.0-chakshu-core10"></script>
+<script src="recording/bluetooth-session.js?v=1.0.0-chakshu-core11"></script>
 <script src="recording/screen-wake-lock.js?v=1.0.0-ota-prep1"></script>
 <script src="recording/timeline.js?v=1.0.0-recording-core1"></script>
-<script src="audio-store.js?v=1.0.0-chakshu-core10"></script>
+<script src="audio-store.js?v=1.0.0-chakshu-core11"></script>
 <script src="memory-ready-events.js?v=1.0.0-maintenance1"></script>
-<script src="processing-queue.js?v=1.0.0-chakshu-core10"></script>
+<script src="processing-queue.js?v=1.0.0-chakshu-core11"></script>
 <script src="recording/journal.js?v=1.0.0-source-audio1"></script>
 <script src="battery-popover-fix.js?v=1.0.0-devices1"></script>
 <script src="sleep-state-guard.js?v=1.0.0-actions1"></script>
-<script src="recording-bridge.js?v=1.0.0-chakshu-core10"></script>
-<script src="event-channel.js?v=1.0.0-chakshu-core10"></script>
+<script src="recording-bridge.js?v=1.0.0-chakshu-core11"></script>
+<script src="event-channel.js?v=1.0.0-chakshu-core11"></script>
 <script src="ota.js?v=1.0.0-devices1"></script>
 <script src="releases.js?v=1.0.0-devices1"></script>
 <script src="audio-enhancement.js?v=1.0.0-source-audio1"></script>
@@ -324,43 +321,43 @@
 <script src="audio-quality.js?v=1.0.0-source-audio1"></script>
 <script src="meeting-tools.js?v=1.0.0-actions3"></script>
 <script src="disconnect-protection.js?v=1.0.0-drain1"></script>
-<script src="experience-recovery.js?v=1.0.0-chakshu-core10"></script>
-<script src="library-tools.js?v=1.0.0-chakshu-core10"></script>
+<script src="experience-recovery.js?v=1.0.0-chakshu-core11"></script>
+<script src="library-tools.js?v=1.0.0-chakshu-core11"></script>
 <script src="google-auth.js?v=1.0.0-readiness1"></script>
 <script src="processing-recovery.js?v=1.0.0-maintenance1"></script>
 <script src="ai-providers.js?v=1.0.0-maintenance1"></script>
-<script src="synap-backend.js?v=1.0.0-chakshu-core10"></script>
+<script src="synap-backend.js?v=1.0.0-chakshu-core11"></script>
 <script src="first-memory.js?v=1.0.0-compact-workspace1"></script>
-<script src="app.js?v=1.0.0-chakshu-core10"></script>
+<script src="app.js?v=1.0.0-chakshu-core11"></script>
 <script src="recording-notifications.js?v=1.0.0-background1"></script>
-<script src="enhancements.js?v=1.0.0-chakshu-core10"></script>
-<script src="processing-pipeline-ui.js?v=1.0.0-chakshu-core10"></script>
+<script src="enhancements.js?v=1.0.0-chakshu-core11"></script>
+<script src="processing-pipeline-ui.js?v=1.0.0-chakshu-core11"></script>
 <script src="memory-ui-fix.js?v=1.0.0-moments1"></script>
 <script src="synap-account-ui.js?v=1.0.0-compact-workspace1"></script>
 <script src="people-confirm-ui.js?v=1.0.0-workspace1"></script>
 <script src="cloud-history.js?v=1.0.0-recording-core1"></script>
 <script src="memory-tools.js?v=1.0.0-settings1"></script>
-<script src="cost-ui.js?v=1.0.0-chakshu-core10"></script>
+<script src="cost-ui.js?v=1.0.0-chakshu-core11"></script>
 <script src="transcript-repair.js?v=1.0.0-maintenance1"></script>
 <script src="voice-profile.js?v=1.0.0-voice-profile2"></script>
 <script src="ask-synap.js?v=1.0.0-actions3"></script>
-<script src="brain-ui.js?v=1.0.0-chakshu-core10"></script>
+<script src="brain-ui.js?v=1.0.0-chakshu-core11"></script>
 <script src="action-state.js?v=1.0.0-workspace1"></script>
 <script src="memory-workspace.js?v=1.0.0-navigation1"></script>
 <script src="my-actions.js?v=1.0.0-workspace1"></script>
 <script src="dashboard-ui.js?v=1.0.0-compact-workspace1"></script>
 <script src="compact-layout.js?v=1.0.0-workspace1"></script>
 <script src="runtime-ui.js?v=1.0.0-controls1"></script>
-<script src="capture-ui.js?v=1.0.0-chakshu-core10"></script>
+<script src="capture-ui.js?v=1.0.0-chakshu-core11"></script>
 <script src="product-ui.js?v=1.0.0-actions1"></script>
 <script src="provenance-links.js?v=1.0.0-actions3"></script>
 <script src="productivity-tools.js?v=1.0.0-compact2"></script>
 <script src="desktop-capture.js?v=1.0.0-source-audio1"></script>
 <script src="interaction-surfaces.js?v=1.0.0-workspace1"></script>
-<script src="devices/chakshu/store.js?v=1.0.0-chakshu-core10"></script>
-<script src="devices/chakshu/transfer.js?v=1.0.0-chakshu-core10"></script>
-<script src="devices/chakshu/media.js?v=1.0.0-chakshu-core10"></script>
+<script src="devices/chakshu/store.js?v=1.0.0-chakshu-core11"></script>
+<script src="devices/chakshu/transfer.js?v=1.0.0-chakshu-core11"></script>
+<script src="devices/chakshu/media.js?v=1.0.0-chakshu-core11"></script>
 <script src="devices/chakshu/player.js?v=1.0.0-devices1"></script>
-<script src="devices/chakshu/library.js?v=1.0.0-chakshu-core10"></script>
-<script src="devices/chakshu/capture-preview.js?v=1.0.0-chakshu-core10"></script>
+<script src="devices/chakshu/library.js?v=1.0.0-chakshu-core11"></script>
+<script src="devices/chakshu/capture-preview.js?v=1.0.0-chakshu-core11"></script>
 </body></html>

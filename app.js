@@ -4,8 +4,8 @@
   // Shared BLE Protocol v2
 
   const APP_VERSION = "1.0.0";
-  const APP_REVISION = "1.0.0-audio4";
-  const APP_SHELL_REVISION = "1.0.0-shell125-chakshu";
+  const APP_REVISION = "1.0.0-audio5";
+  const APP_SHELL_REVISION = "1.0.0-shell126-chakshu";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -152,6 +152,7 @@
   let libraryRecordings = [];
   let libraryScope = "all";
   let libraryQuery = "";
+  let libraryType = "all", libraryFavourites = false;
   let libraryVisibleCount = LIBRARY_PAGE_SIZE;
   let libraryRenderEpoch = 0;
   let libraryMutationActive = false;
@@ -2778,7 +2779,7 @@
 
   function protectedLibraryRecording(recording) {
     const id=String(recording.id);
-    return id===String(currentRecordingId)||id===String(globalThis.SynapDesktopCapture?.state()?.recordingId);
+    return (recording.mediaKind && (recording.status==='recording'||recording.sealed===false))||id===String(currentRecordingId)||id===String(globalThis.SynapDesktopCapture?.state()?.recordingId);
   }
 
   function requireLibraryAction() {
@@ -2805,6 +2806,7 @@
       await processor.pause();
       for(const [index,id] of ids.entries()){
         try{
+          if(id.startsWith('visual:')){result.skipped.push({id,message:'Photos and videos stay on this device.'});continue;}
           const recording=await journal.get('recordings',id);
           if(!recording)throw new Error("This recording is no longer available.");
           let jobs=await journal.all('jobs','recording',id);
@@ -2850,9 +2852,13 @@
       await processor.pause();
       for(const [index,id] of ids.entries()){
         try{
+          if(id.startsWith('visual:')){
+            await globalThis.SynapChakshuLibrary.remove(id.slice(7),account);
+            result.done.push(id);continue;
+          }
           const recording=await journal.get('recordings',id);
           if(recording&&protectedLibraryRecording(recording))throw new Error("The active recording cannot be deleted.");
-          if(cloud){
+          if(cloud&&!recording?.localOnly){
             if(!globalThis.SynapAuth.isSignedIn()||account!==globalThis.SynapAuth.session()?.profile?.uid)throw new Error("The signed-in account changed. Please try again.");
             await globalThis.SynapBackend.deleteRecording(id);
           }
@@ -3080,15 +3086,20 @@
     });
     renderDayLens(dayRecordings);
     renderInsights(dayRecordings);
-    if (libraryScope === "day") recordings = dayRecordings;
+    let media = [];
+    try { media = await globalThis.SynapChakshuLibrary?.list() || []; }
+    catch (error) { log('Could not load local photos and videos', friendlyError(error)); }
+    if (epoch !== libraryRenderEpoch) return;
+    recordings = [...recordings, ...media].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    if (libraryScope === "day") recordings = recordings.filter(row => localDateKey(row.createdAt) === dayKey);
     ui.recordingsCount.textContent = String(recordings.length);
     const hint = document.getElementById("libraryScopeHint");
     if (hint) {
       hint.hidden = libraryScope === "all";
-      hint.textContent = "Recordings for " + formatDate(dateFromKey(dayKey));
+      hint.textContent = "Items for " + formatDate(dateFromKey(dayKey));
     }
     const emptyCopy = document.querySelector("#emptyRecordings p");
-    if (emptyCopy) emptyCopy.textContent = libraryScope === "all" ? "No recordings saved in this browser yet. Capture a moment, or sign in to restore your history." : "No recordings for this day. Choose All dates to see your other recordings.";
+    if (emptyCopy) emptyCopy.textContent = libraryScope === "all" ? "No items saved yet. Record audio, capture a photo or import a video." : "No items for this day. Choose All dates to see your library.";
 
     ui.emptyRecordings.classList.toggle(
       "hidden",
@@ -3099,21 +3110,24 @@
   }
 
   function renderLibraryPage() {
-    const queryMatches = libraryRecordings.filter(recording => recordingMatchesQuery(recording, libraryQuery));
+    const queryMatches = libraryRecordings.filter(recording =>
+      (libraryType === 'all' || (recording.mediaKind || 'audio') === libraryType) &&
+      (!libraryFavourites || recording.favourite) && recordingMatchesQuery(recording, libraryQuery));
     const matches = queryMatches.filter(recording => !globalThis.SynapLibraryTools||globalThis.SynapLibraryTools.matches(recording));
     globalThis.SynapLibraryTools?.update(queryMatches,matches);
     const count = Math.min(libraryVisibleCount, matches.length);
     const searchStatus = document.getElementById("librarySearchStatus");
     if (searchStatus) {
-      searchStatus.hidden = !libraryQuery.trim()&&!globalThis.SynapLibraryTools?.filtered;
-      searchStatus.textContent = matches.length ? matches.length + " matching recording" + (matches.length === 1 ? "" : "s") :
-        "No matching recordings. Try another search or status filter.";
+      searchStatus.hidden = !libraryQuery.trim()&&libraryType === "all"&&!libraryFavourites&&!globalThis.SynapLibraryTools?.filtered;
+      searchStatus.textContent = matches.length ? matches.length + " matching item" + (matches.length === 1 ? "" : "s") :
+        "No matching items. Try another type, date or search filter.";
     }
     const clearSearch = document.getElementById("clearLibrarySearch");
     if (clearSearch) clearSearch.hidden = !libraryQuery;
     const validIds = new Set(libraryRecordings.map(recording => "recording-" + recording.id));
     Array.from(ui.recordingsList.children).forEach(function (card) {
       if (validIds.has(card.id)) return;
+      globalThis.SynapChakshuLibrary?.disposeCard(card);
       globalThis.SynapSpeechUI?.dispose(card);
       const urls = card.querySelector('.recording-content')?.synapAudioUrls || [];
       card.querySelectorAll("audio").forEach(function (audio) {
@@ -3130,8 +3144,13 @@
     for (let index = 0; index < count; index += 1) {
       const recording = matches[index];
       let card = Array.from(ui.recordingsList.children).find(node => node.id === "recording-" + recording.id);
-      if (card) updateRecordingCard(card, recording);
-      else card = createRecordingCard(recording);
+      if (recording.mediaKind) {
+        if (card) globalThis.SynapChakshuLibrary.updateCard(card, recording);
+        else card = globalThis.SynapChakshuLibrary.createCard(recording);
+      } else {
+        if (card) updateRecordingCard(card, recording);
+        else card = createRecordingCard(recording);
+      }
       globalThis.SynapLibraryTools?.decorate(card,recording);
       const position = ui.recordingsList.children[index];
       if (position !== card) {
@@ -3181,6 +3200,9 @@
 
   function resetLibrarySearch() {
     libraryQuery = "";
+    libraryType = 'all'; libraryFavourites = false;
+    const type = document.getElementById('libraryTypeFilter'); if (type) type.value = 'all';
+    document.getElementById('libraryFavourites')?.setAttribute('aria-pressed', 'false');
     const input = document.getElementById("librarySearch");
     if (input) input.value = "";
   }
@@ -4067,6 +4089,23 @@
       libraryVisibleCount = LIBRARY_PAGE_SIZE;
       renderLibraryPage();
       document.getElementById("librarySearch")?.focus();
+    });
+    document.getElementById('libraryTypeFilter')?.addEventListener('change', event => {
+      libraryType = event.target.value; libraryVisibleCount = LIBRARY_PAGE_SIZE; renderLibraryPage();
+    });
+    document.getElementById('libraryFavourites')?.addEventListener('click', event => {
+      libraryFavourites = !libraryFavourites;
+      event.currentTarget.setAttribute('aria-pressed', String(libraryFavourites));
+      libraryVisibleCount = LIBRARY_PAGE_SIZE; renderLibraryPage();
+    });
+    let mediaLibraryTimer;
+    window.addEventListener('synap-visual-library-updated', () => {
+      const access = globalThis.SynapChakshu?.state;
+      libraryRecordings = libraryRecordings.filter(row => !row.mediaKind ||
+        (access?.available && row.ownerUid === access.owner));
+      if (startupReady) renderLibraryPage();
+      clearTimeout(mediaLibraryTimer);
+      mediaLibraryTimer = setTimeout(() => { if (startupReady) void renderRecordings(); }, 80);
     });
     window.addEventListener("synap-recording-saved", () => {
       if (startupReady) void renderRecordings();

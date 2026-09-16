@@ -13,7 +13,7 @@ class Element {
 const fixture=i=>({id:String(i),name:'Moment '+i,createdAt:'2026-09-02T09:00:00Z',durationMs:60000,sizeBytes:100,journal:true,notes:'My note',transcript:'Transcript text',summary:'Summary text'});
 const ui={recordingsList:new Element('div'),libraryPagination:new Element('div'),libraryCountLabel:new Element('p'),showMoreRecordingsButton:new Element('button'),showLessRecordingsButton:new Element('button')};
 const searchStatus=new Element('p'),searchClear=new Element('button');
-const c={ui,document:{getElementById:id=>id==='librarySearchStatus'?searchStatus:id==='clearLibrarySearch'?searchClear:null,createElement:tag=>new Element(tag),createElementNS:(_,tag)=>new Element(tag)},libraryQuery:'',libraryVisibleCount:5,libraryRecordings:[],LIBRARY_PAGE_SIZE:5,
+const c={ui,document:{getElementById:id=>id==='librarySearchStatus'?searchStatus:id==='clearLibrarySearch'?searchClear:null,createElement:tag=>new Element(tag),createElementNS:(_,tag)=>new Element(tag)},libraryQuery:'',libraryType:'all',libraryFavourites:false,libraryVisibleCount:5,libraryRecordings:[],LIBRARY_PAGE_SIZE:5,
   formatDuration:()=> '01:00',formatDate:()=> '2 Sep',formatBytes:()=> '100 B',DEFAULT_SAMPLE_RATE:16000,renderedObjectUrls:[],bindDebouncedSave(){},
   SynapExperienceRecovery:{createTranscriptNotice(){const node=new Element('div');node.className='synap-transcript-notice';return node;},updateTranscriptNotice(){}}};
 vm.createContext(c);
@@ -58,13 +58,13 @@ ui.recordingsList.children=[];
 c.libraryRecordings=Array.from({length:12},(_,i)=>({...fixture(i),summary:i<7?'Enclosure discussion':'Audio notes'}));
 c.libraryVisibleCount=5;c.libraryQuery='enclosure';c.renderLibraryPage();
 assert.equal(ui.libraryCountLabel.textContent,'5 of 7');
-assert.equal(searchStatus.textContent,'7 matching recordings');
+assert.equal(searchStatus.textContent,'7 matching items');
 c.libraryVisibleCount=10;c.renderLibraryPage();
 assert.equal(ui.libraryCountLabel.textContent,'7 of 7');
 c.libraryQuery='unmatched';c.renderLibraryPage();
 assert(ui.recordingsList.children.every(card=>card.hidden));
 assert.equal(ui.libraryPagination.hidden,true);
-assert.match(searchStatus.textContent,/No matching recordings/);
+assert.match(searchStatus.textContent,/No matching items/);
 c.libraryQuery='';c.renderLibraryPage();
 assert.equal(searchStatus.hidden,true);
 assert.equal(searchClear.hidden,true);

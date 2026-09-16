@@ -64,6 +64,17 @@ function costTests() {
   assert(Math.abs(ready.totalInr - 29.28161775) < 0.001);
   assert.equal(api.money(ready.totalInr), '₹29.3');
 
+  const sped = api.estimate({ durationMs: 3600000, processingStage: 'ready',
+    transcriptionAudioUsage: { windows:120, acceleratedWindows:120, sourceDurationMs:3600000,
+      preparedDurationMs:2400000, submittedAudioMs:7200000, requestAttempts:360 } });
+  assert.equal(sped.sourceAudioMs,3600000);
+  assert.equal(sped.preparedAudioMs,2400000);
+  assert.equal(sped.submittedAudioMs,7200000,'all known annotation and retry submissions remain visible');
+  assert.equal(sped.transcribeInr,ready.transcribeInr,'a blended rate cannot be discounted as if all charges were audio input');
+  const sums=api.aggregate([sped,sped]);assert.equal(sums.requestAttempts,720);
+  assert.equal(sums.acceleratedWindows,240);
+  const localUsage=api.estimate({localOnly:true,transcriptionAudioUsage:{windows:2,submittedAudioMs:60000}});
+  assert.equal(localUsage.submittedAudioMs,0,'local media never acquires cloud usage');
   const unprocessed = api.estimate({ durationMs: 10 * 60 * 1000, processingStage: 'uploaded' });
   assert.equal(unprocessed.totalInr, 0);
   assert(unprocessed.projectedTranscribeInr > 4.7, 'projected transcription should be broken out');

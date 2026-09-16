@@ -62,10 +62,12 @@ env_vars="SYNAP_SERVICE_URL=${url}"
 # full Flash is the baseline for extraction and query interpretation. Flash-Lite
 # is intentionally not used on these quality-critical paths.
 stt_model="${SYNAP_GEMINI_STT_MODEL:-gemini-3.5-transcribe}"
+transcription_speed="${SYNAP_TRANSCRIPTION_SPEED:-1.5}"
+case "$transcription_speed" in 1|1.5) ;; *) echo "SYNAP_TRANSCRIPTION_SPEED must be 1 or 1.5" >&2; exit 1;; esac
 memory_model="${SYNAP_GEMINI_MEMORY_MODEL:-gemini-3.5-flash}"
 query_model="${SYNAP_GEMINI_QUERY_MODEL:-gemini-3.5-flash}"
 ask_model="${SYNAP_GEMINI_ASK_MODEL:-gemini-3.8-flash}"
-env_vars="${env_vars},SYNAP_GEMINI_STT_MODEL=${stt_model},SYNAP_GEMINI_MEMORY_MODEL=${memory_model},SYNAP_GEMINI_QUERY_MODEL=${query_model},SYNAP_GEMINI_ASK_MODEL=${ask_model}"
+env_vars="${env_vars},SYNAP_GEMINI_STT_MODEL=${stt_model},SYNAP_TRANSCRIPTION_SPEED=${transcription_speed},SYNAP_GEMINI_MEMORY_MODEL=${memory_model},SYNAP_GEMINI_QUERY_MODEL=${query_model},SYNAP_GEMINI_ASK_MODEL=${ask_model}"
 
 build_sha="${GITHUB_SHA:-${TAG}}"
 build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

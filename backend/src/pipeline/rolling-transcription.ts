@@ -1,4 +1,5 @@
 import { openBytes, openText, sealJson, sealText, type Binding } from '../crypto/envelope.js';
+import { config } from '../config.js';
 import { transcribeSegment } from '../gemini/transcribe.js';
 import { parsePcm16Wav } from '../speaker/audio.js';
 import * as db from '../store/firestore.js';
@@ -63,6 +64,7 @@ async function transcribeOne(
 
   const result = await transcribeSegment(audio, 'audio/wav', {
     baseOffsetMs: segment.startMs,
+    speed: config.gemini.transcriptionSpeed,
     language: recording.language,
     diarize: true,
     wordTimestamps: true,
@@ -74,7 +76,8 @@ async function transcribeOne(
     language: recording.language,
     transcribedAt: new Date().toISOString(),
     transcriptionReview:result.review,
-    transcriptionAudioPolicy:'stored-upload-v1',
+    transcriptionAudioPolicy: result.audioUsage?.policy || 'stored-upload-v1',
+    transcriptionAudioUsage: result.audioUsage,
     sealedTranscript: sealText(
       dek,
       result.text,

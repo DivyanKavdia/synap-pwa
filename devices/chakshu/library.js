@@ -6,16 +6,15 @@
   let owner = '',
     generation = 0,
     viewerGeneration = 0,
-    urls = [],
     viewerUrls = [],
     player = null,
     selected = null,
     selectedFrames = [],
     frameIndex = 0,
-    pageSize = 40,
     liveUrl = null,
     liveKey = '',
-    renderSignature = '';
+    renderSignature = '',
+    access = '';
   const revoke = (list) => {
     for (const url of list) URL.revokeObjectURL(url);
     list.length = 0;
@@ -253,17 +252,18 @@
   async function render() {
     const state = api().state,
       token = ++generation;
-    if (owner !== state.owner) {
+    const nextAccess = state.owner + ':' + state.available;
+    if (owner !== state.owner || access !== nextAccess) {
+      access = nextAccess;
       owner = state.owner;
-      pageSize = 40;
-      $('visualSearch').value = '';
-      $('visualFilter').value = 'all';
-      $('visualFavourites').setAttribute('aria-pressed', 'false');
-      $('visualCount').textContent = '';
       renderSignature = '';
       closeViewer();
-      revoke(urls);
-      $('visualGrid').replaceChildren();
+      // Revoke old-account thumbnails immediately, before any asynchronous read.
+      document.querySelectorAll('#recordingsList .library-media-card').forEach((card) => {
+        disposeCard(card);
+        card.remove();
+      });
+      root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
       $('visualSDList').replaceChildren();
     }
     $('visualAccess').textContent = state.available ? 'Chakshu library' : 'Unavailable';
@@ -272,7 +272,6 @@
       ? 'Connect Chakshu to associate it with this account and unlock photos and video.'
       : 'Sign in and associate a Chakshu device to unlock photos and video.';
     $('visualTools').hidden = !state.available;
-    $('visualGrid').hidden = !state.available;
     $('visualDeviceHint').textContent = !state.connected
       ? 'Your library is available. ' + state.connectionStatus.message
       : !state.mediaSupported
@@ -362,18 +361,8 @@
           ? 'Camera frame · ' + (frame.atMs / 1000).toFixed(1) + ' s'
           : 'Waiting for the camera…';
     }
-    const filter = $('visualFilter').value,
-      query = $('visualSearch').value,
-      favourites = $('visualFavourites').getAttribute('aria-pressed') === 'true',
-      visible = root.SynapVisualStore.filterMedia(rows, { kind: filter, query, favourites });
-    $('visualCount').textContent = visible.length + ' of ' + rows.length + ' saved items';
-    $('visualClearSearch').hidden = !query && filter === 'all' && !favourites;
     const signature = JSON.stringify([
       state.owner,
-      filter,
-      query,
-      favourites,
-      pageSize,
       rows.map((row) => [
         row.id,
         row.name,
@@ -382,77 +371,131 @@
         row.frameCount,
         row.state,
         row.audioId,
-        row.descriptions?.length,
+        row.durationMs,
       ]),
     ]);
-    if (signature === renderSignature) return;
-    const grid = $('visualGrid');
-    const fragment = document.createDocumentFragment(),
-      nextUrls = [];
-    if (!visible.length) {
-      const p = document.createElement('p');
-      p.className = 'visual-empty';
-      p.textContent = rows.length
-        ? 'No matching photos or videos. Try clearing the filters.'
-        : 'Your photos and video clips will appear here.';
-      fragment.append(p);
+    if (signature !== renderSignature) {
+      renderSignature = signature;
+      root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
     }
-    // Keep a large library responsive; its original media is loaded only on open.
-    for (const row of visible.slice(0, pageSize)) {
-      const first = await store.firstFrame(row.id);
-      if (token !== generation || store !== api().store) {
-        revoke(nextUrls);
-        return;
-      }
-      const card = document.createElement('button');
-      card.type = 'button';
-      card.className = 'visual-card';
-      card.setAttribute(
+  }
+
+  // Audio and visuals share the app's chronology, search, dates and pagination.
+  // Prefix visual IDs so selection can never mistake them for cloud audio IDs.
+  async function list() {
+    const state = api().state,
+      store = api().store;
+    if (!state.available || !store) return [];
+    const rows = await store.list();
+    if (store !== api().store || state.owner !== api().state.owner || !api().state.available)
+      return [];
+    return rows.map((row) => ({
+      ...row,
+      id: 'visual:' + row.id,
+      mediaId: row.id,
+      mediaKind: row.kind,
+      localOnly: true,
+      sealed: row.state !== 'capturing',
+      status: row.state === 'capturing' ? 'recording' : 'saved',
+    }));
+  }
+  function disposeCard(card) {
+    card.synapThumbnailToken = null;
+    if (card.synapThumbnailUrl) URL.revokeObjectURL(card.synapThumbnailUrl);
+    card.synapThumbnailUrl = null;
+  }
+  function updateCard(card, row) {
+    card.synapRecording = row;
+    const title = row.name || (row.mediaKind === 'video' ? 'Video' : 'Photo');
+    card.querySelector('.recording-row-name').textContent = title;
+    card
+      .querySelector('.library-media-open')
+      .setAttribute(
         'aria-label',
-        (row.kind === 'video' ? 'Play video: ' : 'Open photo: ') + (row.name || row.kind),
+        (row.mediaKind === 'video' ? 'Play video: ' : 'Open photo: ') + title,
       );
-      card.dataset.mediaId = row.id;
-      if (first) {
-        const image = document.createElement('img'),
-          url = URL.createObjectURL(first.blob);
-        nextUrls.push(url);
-        image.src = url;
-        image.alt = '';
-        image.loading = 'lazy';
-        card.append(image);
-      }
-      if (row.kind === 'video') {
-        const badge = document.createElement('span');
-        badge.className = 'visual-play-badge';
-        badge.textContent = '▶ Play video';
-        card.append(badge);
-      }
-      const title = document.createElement('strong');
-      title.textContent = row.name || (row.kind === 'video' ? 'Video' : 'Photo');
-      const meta = document.createElement('span');
-      meta.textContent =
-        (row.kind === 'video' ? 'Video' : 'Photo') +
-        (row.favourite ? ' · Favourite' : '') +
-        (row.kind === 'video' ? ' · ' + ((row.durationMs || 0) / 1000).toFixed(1) + ' s' : '') +
-        ' · ' +
-        new Date(row.createdAt).toLocaleDateString() +
-        (row.audioId ? ' · with audio' : '') +
-        (row.state === 'interrupted' ? ' · interrupted' : '');
-      card.append(title, meta);
-      card.addEventListener('click', () => action(() => open(row.id)));
-      fragment.append(card);
+    card.querySelector('.recording-row-meta').textContent =
+      (row.mediaKind === 'video'
+        ? 'Video · ' + ((row.durationMs || 0) / 1000).toFixed(1) + ' s'
+        : 'Photo') +
+      ' · On this device · ' +
+      new Date(row.createdAt).toLocaleString([], {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      }) +
+      (row.favourite ? ' · Favourite' : '') +
+      (row.audioId ? ' · with audio' : '') +
+      (row.state === 'interrupted' ? ' · interrupted' : '');
+    const preview = card.querySelector('.recording-row-preview');
+    preview.textContent = row.notes || '';
+    preview.hidden = !row.notes;
+    const key = row.ownerUid + ':' + row.mediaId + ':' + Boolean(row.frameCount);
+    if (card.synapThumbnailKey === key) return;
+    disposeCard(card);
+    card.synapThumbnailKey = key;
+    const store = api().store,
+      token = {};
+    card.synapThumbnailToken = token;
+    store
+      .firstFrame(row.mediaId)
+      .then((first) => {
+        if (
+          !first ||
+          token !== card.synapThumbnailToken ||
+          store !== api().store ||
+          row.ownerUid !== api().state.owner ||
+          !api().state.available
+        )
+          return;
+        const image = card.querySelector('img');
+        card.synapThumbnailUrl = URL.createObjectURL(first.blob);
+        image.src = card.synapThumbnailUrl;
+        image.hidden = false;
+      })
+      .catch(() => {});
+  }
+  function createCard(row) {
+    const card = document.createElement('article');
+    card.id = 'recording-' + row.id;
+    card.className = 'recording-card library-media-card';
+    card.dataset.mediaId = row.mediaId;
+    const header = document.createElement('div');
+    header.className = 'recording-row';
+    const opener = document.createElement('button');
+    opener.type = 'button';
+    opener.className = 'library-media-open';
+    const image = document.createElement('img');
+    image.alt = '';
+    image.loading = 'lazy';
+    image.hidden = true;
+    const copy = document.createElement('span');
+    for (const cls of ['recording-row-name', 'recording-row-meta', 'recording-row-preview']) {
+      const part = document.createElement('span');
+      part.className = cls;
+      copy.append(part);
     }
-    if (visible.length > pageSize)
-      fragment.append(
-        button('Show more', async () => {
-          pageSize += 40;
-          await render();
-        }),
-      );
-    revoke(urls);
-    urls = nextUrls;
-    grid.replaceChildren(fragment);
-    renderSignature = signature;
+    opener.append(image, copy);
+    opener.addEventListener('click', () => action(() => open(row.mediaId)));
+    header.append(opener);
+    card.append(header);
+    updateCard(card, row);
+    return card;
+  }
+  async function remove(id, expectedOwner) {
+    const state = api().state,
+      store = api().store;
+    if (!store || !state.available || state.owner !== expectedOwner)
+      throw Error('The signed-in account changed. Please try again.');
+    if (state.session?.id === id) throw Error('Stop video before deleting it.');
+    const row = await store.get(id);
+    if (store !== api().store || api().state.owner !== expectedOwner)
+      throw Error('The signed-in account changed. Please try again.');
+    if (row?.state === 'capturing') throw Error('Stop and save this capture before deleting it.');
+    await store.remove(id);
+    if (selected?.id === id) closeViewer();
+    await render();
   }
   function mode() {
     const value = $('visualMode').value;
@@ -460,25 +503,6 @@
   }
   function init() {
     $('visualMode').addEventListener('change', mode);
-    const refreshFilters = () => {
-      pageSize = 40;
-      render().catch((e) => status(e.message));
-    };
-    $('visualFilter').addEventListener('change', refreshFilters);
-    $('visualSearch').addEventListener('input', refreshFilters);
-    $('visualFavourites').addEventListener('click', () => {
-      $('visualFavourites').setAttribute(
-        'aria-pressed',
-        String($('visualFavourites').getAttribute('aria-pressed') !== 'true'),
-      );
-      refreshFilters();
-    });
-    $('visualClearSearch').addEventListener('click', () => {
-      $('visualSearch').value = '';
-      $('visualFilter').value = 'all';
-      $('visualFavourites').setAttribute('aria-pressed', 'false');
-      refreshFilters();
-    });
     $('visualRetryAccess').addEventListener('click', () =>
       action(async () => {
         await root.SynapModules?.refresh();
@@ -683,7 +707,15 @@
     mode();
     render().catch((e) => status(e.message));
   }
-  root.SynapChakshuLibrary = { open, close: closeViewer };
+  root.SynapChakshuLibrary = {
+    open,
+    close: closeViewer,
+    list,
+    createCard,
+    updateCard,
+    disposeCard,
+    remove,
+  };
   if (document.readyState === 'loading')
     document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();

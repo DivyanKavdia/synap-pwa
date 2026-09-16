@@ -33,7 +33,7 @@ async function until(page, predicate, arg) {
           serviceWorkers: 'block',
         }),
         associations = new Map(),
-        descriptions = [];
+        descriptions = [], cloudDeletes = [];
       await context.route('**/*', (r) =>
         new URL(r.request().url()).origin === origin ? r.continue() : r.abort(),
       );
@@ -42,6 +42,7 @@ async function until(page, predicate, arg) {
           url = new URL(req.url()),
           owner = req.headers().authorization;
         let result = {};
+        if (req.method() === 'DELETE' && url.pathname.includes('/recordings/')) cloudDeletes.push(url.pathname);
         if (url.pathname === '/v1/devices') result = { devices: associations.get(owner) || [] };
         else if (url.pathname === '/v1/devices/chakshu') {
           const device = req.postDataJSON();
@@ -405,6 +406,7 @@ async function until(page, predicate, arg) {
         path: 'artifacts/workflows/chakshu-library/header-' + width + '.png',
       });
       await page.locator('nav a[href="#library"]').click();
+      await page.locator('#visualLibrary > summary').click();
       await page.locator('#visualMode').selectOption('image');
       await page.locator('#visualPhoto').click();
       await page.waitForFunction(() => document.getElementById('visualDialog').open);
@@ -431,18 +433,18 @@ async function until(page, predicate, arg) {
         path: 'artifacts/workflows/chakshu-library/photo-viewer-' + width + '.png',
       });
       await page.locator('#visualClose').click();
-      await page.locator('#visualSearch').fill('station north');
-      await page.locator('#visualFavourites').click();
-      await page.waitForFunction(() => document.querySelectorAll('.visual-card').length === 1);
-      assert.equal(await page.locator('.visual-card strong').textContent(), 'Station sign');
-      await page.locator('.visual-card').click();
+      await page.locator('#librarySearch').fill('station north');
+      await page.locator('#libraryFavourites').click();
+      await page.waitForFunction(() => document.querySelectorAll('.library-media-card:not([hidden])').length === 1);
+      assert.equal(await page.locator('.library-media-card:not([hidden]) .recording-row-name').textContent(), 'Station sign');
+      await page.locator('.library-media-card:not([hidden]) .library-media-open').click();
       assert.equal(await page.locator('#visualNotes').inputValue(), 'Return platform <b>north</b>');
       assert.equal(await page.locator('#visualFavourite').getAttribute('aria-pressed'), 'true');
       await page.locator('#visualClose').click();
-      await page.locator('#visualSearch').fill('no matching visual');
-      await page.waitForFunction(() => document.querySelectorAll('.visual-card').length === 0);
-      assert.match(await page.locator('.visual-empty').textContent(), /No matching/);
-      await page.locator('#visualClearSearch').click();
+      await page.locator('#librarySearch').fill('no matching visual');
+      await page.waitForFunction(() => document.querySelectorAll('.library-media-card:not([hidden])').length === 0);
+      assert.match(await page.locator('#librarySearchStatus').textContent(), /No matching/);
+      await page.locator('#clearLibrarySearch').click();
       await page.locator('#visualPhotoAudio').click();
       await page.waitForFunction(() => document.getElementById('visualDialog').open);
       assert.equal(await page.evaluate(() => SynapAppControls.recordingState().active), true);
@@ -657,7 +659,7 @@ async function until(page, predicate, arg) {
         await SynapChakshu.sync();
       });
       assert.equal(await page.locator('#visualAccess').textContent(), 'Unavailable');
-      assert.equal(await page.locator('.visual-card').count(), 0);
+      assert.equal(await page.locator('.library-media-card:not([hidden])').count(), 0);
       assert.equal(await page.locator('#visualDialog').evaluate((el) => el.open), false);
       assert.equal(await page.locator('#visualPreview').getAttribute('src'), null);
       assert.equal(await page.locator('#capturePreview').evaluate((el) => el.open), false);
@@ -680,9 +682,51 @@ async function until(page, predicate, arg) {
         );
         await SynapChakshu.sync();
       });
-      await page.waitForFunction(() => document.querySelectorAll('.visual-card').length >= 3);
+      await page.waitForFunction(() => document.querySelectorAll('.library-media-card:not([hidden])').length >= 3);
+      // Shared type filters keep the mounted audio players and local media together.
+      await page.locator('#libraryTypeFilter').selectOption('video');
+      assert(await page.locator('.library-media-card:not([hidden])').count() > 0);
+      assert(await page.locator('#recordingsList > :not([hidden])').evaluateAll(cards =>
+        cards.every(card => card.synapRecording.mediaKind === 'video')));
+      await page.locator('#libraryTypeFilter').selectOption('audio');
+      assert(await page.locator('#recordingsList > :not([hidden])').count() > 0);
+      assert(await page.locator('#recordingsList > :not([hidden])').evaluateAll(cards =>
+        cards.every(card => !card.synapRecording.mediaKind)));
+      await page.locator('#libraryTypeFilter').selectOption('image');
+      assert(await page.locator('#recordingsList > :not([hidden])').evaluateAll(cards =>
+        cards.every(card => card.synapRecording.mediaKind === 'image')));
+      await page.locator('#libraryTypeFilter').selectOption('all');
+      const times = await page.locator('#recordingsList > :not([hidden])').evaluateAll(cards =>
+        cards.map(card => Date.parse(card.synapRecording.createdAt)));
+      assert.deepEqual(times, times.slice().sort((a,b) => b-a));
+      // Identical IDs in the two stores must remain independently selectable.
+      const deletePhoto = await page.evaluate(async () => {
+        const row = await SynapChakshu.store.create({kind:'image',name:'Delete fixture photo'});
+        await SynapChakshu.store.patch(row.id,{state:'complete'});
+        await new DKAudioStore().atomic(['recordings'], stores => stores.recordings.put({
+          id:row.id,name:'Delete fixture audio',createdAt:row.createdAt,durationMs:1000,
+          localOnly:true,sealed:true,status:'complete',ownerUid:'owner-a'}));
+        dispatchEvent(new CustomEvent('synap-chakshu-changed'));
+        dispatchEvent(new CustomEvent('synap-recording-saved'));
+        return row.id;
+      });
+      await page.locator('#librarySearch').fill('Delete fixture');
+      await page.waitForFunction(() => document.querySelectorAll('#recordingsList > :not([hidden])').length === 2);
+      await page.locator('#selectRecordingsButton').click();
+      await page.locator('#selectAllRecordings').check();
+      assert(await page.locator('#processSelectedRecordings').isDisabled());
+      await page.locator('#deleteSelectedRecordings').click();
+      await page.locator('#deleteRecordingsCloud').check();
+      const deletesBefore = cloudDeletes.length;
+      await page.locator('#confirmDeleteRecordings').click();
+      await page.waitForFunction(() => !document.getElementById('deleteRecordingsDialog').open);
+      assert.equal(cloudDeletes.length, deletesBefore,'local media and its audio never send cloud delete requests');
+      assert.equal(await page.evaluate(id => SynapChakshu.store.get(id), deletePhoto), undefined);
+      assert.equal(await page.evaluate(id => new DKAudioStore().get('recordings',id), deletePhoto), undefined);
+      await page.locator('#selectRecordingsButton').click();
+      await page.locator('#clearLibrarySearch').click();
       fs.mkdirSync('artifacts/workflows/chakshu-library', { recursive: true });
-      await page.locator('#visualLibrary').scrollIntoViewIfNeeded();
+      await page.locator('#libraryTitle').scrollIntoViewIfNeeded();
       await page.screenshot({
         path: 'artifacts/workflows/chakshu-library/library-' + width + '.png',
       });
@@ -701,15 +745,15 @@ async function until(page, predicate, arg) {
       await page.reload();
       await page.waitForFunction(() => SynapChakshu.state.available);
       await page.locator('nav a[href="#library"]').click();
-      await page.locator('#visualFavourites').click();
-      await page.waitForFunction(() => document.querySelectorAll('.visual-card').length === 1);
-      assert.equal(await page.locator('.visual-card strong').textContent(), 'Station sign');
+      await page.locator('#libraryFavourites').click();
+      await page.waitForFunction(() => document.querySelectorAll('.library-media-card:not([hidden])').length === 1);
+      assert.equal(await page.locator('.library-media-card:not([hidden]) .recording-row-name').textContent(), 'Station sign');
       assert.equal(descriptions.length, 0);
       assert.deepEqual(errors, []);
       await context.close();
     }
     console.log(
-      'PASS account gating/isolation, capture, separate audio/video, gallery search/favourites, notes, blocked cloud descriptions, frame navigation/extraction, export, persistence and layouts',
+      'PASS account gating/isolation, capture, unified audio/photo/video Library search/favourites, notes, blocked cloud descriptions, frame navigation/extraction, export, persistence and layouts',
     );
   } finally {
     await browser.close();

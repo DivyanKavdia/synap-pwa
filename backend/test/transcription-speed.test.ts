@@ -1,0 +1,108 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { prepareTranscriptionAudio } from '../src/gemini/transcription-audio.js';
+import { transcribeSegment } from '../src/gemini/transcribe.js';
+import { makePcm16Wav, parsePcm16Wav } from '../src/speaker/audio.js';
+
+function tone(seconds = 3) {
+  const pcm = Buffer.alloc(seconds * 32000);
+  for (let i = 0; i < pcm.length / 2; i++)
+    pcm.writeInt16LE(
+      Math.round(9000 * Math.sin((2 * Math.PI * (i < 40000 ? 440 : 880) * i) / 16000)),
+      i * 2,
+    );
+  return makePcm16Wav(pcm);
+}
+function frequency(pcm: Buffer, start: number, end: number) {
+  let crossings = 0;
+  for (let i = start + 1; i < end; i++)
+    if (pcm.readInt16LE((i - 1) * 2) <= 0 && pcm.readInt16LE(i * 2) > 0) crossings++;
+  return crossings / ((end - start) / 16000);
+}
+const response = (text: string, annotations: unknown[] = []) =>
+  new Response(
+    JSON.stringify({
+      status: 'completed',
+      steps: [{ type: 'model_output', content: [{ type: 'text', text, annotations }] }],
+    }),
+  );
+
+test('real atempo shortens PCM at 1.5x, keeps pitch and the tail, without changing the original', async () => {
+  const source = tone(),
+    before = Buffer.from(source);
+  const result = await prepareTranscriptionAudio(source, 1.5);
+  assert.equal(result.speed, 1.5, 'ffmpeg must be installed in the test and runtime images');
+  assert.deepEqual(source, before);
+  assert(Math.abs(result.durationMs - 2000) < 100);
+  const pcm = parsePcm16Wav(result.audio).data;
+  assert(Math.abs(frequency(pcm, 1600, 16000) - 440) < 5);
+  assert(Math.abs(frequency(pcm, pcm.length / 2 - 3200, pcm.length / 2 - 320) - 880) < 10);
+});
+
+test('short speech windows and cancellation do not disappear', async () => {
+  const source = tone(0.25);
+  const result = await prepareTranscriptionAudio(source, 1.5);
+  assert.deepEqual(result.audio, source);
+  assert.equal(result.fallback, 'short-window');
+  await assert.rejects(prepareTranscriptionAudio(tone(), 1.5, AbortSignal.abort()));
+});
+
+test('ASR receives only the faster copy and word times return to the source timeline', async (t) => {
+  const source = tone();
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    assert(parsePcm16Wav(Buffer.from(body.input[0].data, 'base64')).data.length < 68000);
+    return response('Hello', [
+      { type: 'word_info', text: 'Hello', speaker: 'S1', start_offset: '0.4s', end_offset: '1s' },
+    ]);
+  });
+  const result = await transcribeSegment(source, 'audio/wav', { speed: 1.5, baseOffsetMs: 30000 });
+  assert.deepEqual(result.words, [
+    { text: 'Hello', speaker: 'S1', start_ms: 30600, end_ms: 31500 },
+  ]);
+  assert.equal(result.audioUsage?.requestAttempts, 1);
+  assert.equal(result.audioUsage?.policy, 'atempo-1.5-v1');
+});
+
+test('empty sped-up recognition retries the original once and accounts for both inputs', async (t) => {
+  const source = tone();
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+    if (++calls === 1) return response('');
+    assert.deepEqual(Buffer.from(JSON.parse(String(init?.body)).input[0].data, 'base64'), source);
+    return response('कल मिलेंगे');
+  });
+  const result = await transcribeSegment(source, 'audio/wav', {
+    speed: 1.5,
+    diarize: false,
+    wordTimestamps: false,
+  });
+  assert.equal(calls, 2);
+  assert.match(result.text, /कल मिलेंगे/);
+  assert.equal(result.audioUsage?.fallback, 'empty-recognition');
+  assert.equal(result.audioUsage?.speed, 1);
+  assert(result.audioUsage!.submittedAudioMs > 4900);
+});
+
+test('usage counts transport retries and annotation passes, rather than claiming a fixed saving', async (t) => {
+  let calls = 0;
+  t.mock.method(Math, 'random', () => 0);
+  t.mock.method(globalThis, 'fetch', async () =>
+    ++calls === 1 ? new Response('', { status: 503 }) : response('Complete text'),
+  );
+  const result = await transcribeSegment(tone(), 'audio/wav', { speed: 1.5 });
+  assert.equal(calls, 3);
+  assert.equal(result.audioUsage?.requestAttempts, 3);
+  assert(result.audioUsage!.submittedAudioMs > 5900);
+});
+
+test('exact digital silence makes no transcription request', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => {
+    throw Error('unexpected upload');
+  });
+  const result = await transcribeSegment(makePcm16Wav(Buffer.alloc(96000)), 'audio/wav', {
+    speed: 1.5,
+  });
+  assert.equal(result.audioUsage?.submittedAudioMs, 0);
+  assert.equal(result.audioUsage?.requestAttempts, 0);
+});

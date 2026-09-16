@@ -114,7 +114,14 @@
     const projectedLlmOutputInr = memoryOutputTokens * MEMORY_OUTPUT_USD_PER_M / 1000000 * USD_INR;
     const projectedEmbeddingInr = embeddingTokens * EMBEDDING_INPUT_USD_PER_M / 1000000 * USD_INR;
 
+    const usage = recording?.localOnly ? null : recording?.transcriptionAudioUsage;
     return {
+      measuredWindows: Math.max(0, Number(usage?.windows) || 0),
+      acceleratedWindows: Math.max(0, Number(usage?.acceleratedWindows) || 0),
+      sourceAudioMs: Math.max(0, Number(usage?.sourceDurationMs) || 0),
+      preparedAudioMs: Math.max(0, Number(usage?.preparedDurationMs) || 0),
+      submittedAudioMs: Math.max(0, Number(usage?.submittedAudioMs) || 0),
+      requestAttempts: Math.max(0, Number(usage?.requestAttempts) || 0),
       minutes: mins,
       memoryInputTokens,
       memoryOutputTokens,
@@ -136,6 +143,7 @@
 
   function aggregate(values) {
     const keys = [
+        'measuredWindows','acceleratedWindows','sourceAudioMs','preparedAudioMs','submittedAudioMs','requestAttempts',
         'minutes', 'memoryInputTokens', 'memoryOutputTokens', 'embeddingTokens',
         'transcribeInr', 'llmInputInr', 'llmOutputInr', 'memoryInr', 'embeddingInr',
         'llmProcessingInr', 'totalInr', 'projectedTranscribeInr', 'projectedMemoryInr',
@@ -232,9 +240,9 @@
     details.innerHTML =
       '<summary><span class="ai-cost-label">Approx. AI spend</span><strong data-cost="total">₹0.00</strong><span class="ai-cost-chevron" aria-hidden="true">⌄</span></summary>' +
       '<div class="ai-cost-body">' +
-        '<details class="ai-cost-category" data-category="transcription"><summary><span>Transcription</span><strong data-cost="transcription">₹0.00</strong><span class="ai-cost-chevron" aria-hidden="true">⌄</span></summary><div class="ai-cost-detail"><span data-detail="transcription-model"></span><span data-detail="transcription-usage"></span></div></details>' +
+        '<details class="ai-cost-category" data-category="transcription"><summary><span>Transcription</span><strong data-cost="transcription">₹0.00</strong><span class="ai-cost-chevron" aria-hidden="true">⌄</span></summary><div class="ai-cost-detail"><span data-detail="transcription-model"></span><span data-detail="transcription-usage"></span><span data-detail="audio-preparation"></span><span data-detail="audio-submissions"></span></div></details>' +
         '<details class="ai-cost-category" data-category="llm"><summary><span>LLM processing</span><strong data-cost="llm">₹0.00</strong><span class="ai-cost-chevron" aria-hidden="true">⌄</span></summary><div class="ai-cost-detail"><span data-detail="memory-model"></span><span data-detail="memory-usage"></span><span data-detail="embedding-model"></span><span data-detail="embedding-usage"></span></div></details>' +
-        '<div class="ai-cost-note">Automatic pipeline estimate only. Ask Synap and cloud infrastructure are separate.</div>' +
+        '<div class="ai-cost-note">Historical rate illustration, not your bill: it uses the 9 Sep Flash-Lite snapshot; current summaries use Flash. No speed-up discount is assumed. Output tokens, retries and cloud infrastructure cost extra.</div>' +
       '</div>';
     parent.appendChild(details);
     return details;
@@ -247,12 +255,19 @@
     const memory = projected ? value.projectedMemoryInr : value.memoryInr;
     const embedding = projected ? value.projectedEmbeddingInr : value.embeddingInr;
 
-    setText(details.querySelector('.ai-cost-label'), projected ? 'Projected AI processing' : 'Approx. AI spend');
+    setText(details.querySelector('.ai-cost-label'), projected ? 'Historical rate projection' : 'Historical rate estimate');
     setText(details.querySelector('[data-cost="total"]'), money(total));
     setText(details.querySelector('[data-cost="transcription"]'), money(transcribe));
     setText(details.querySelector('[data-cost="llm"]'), money(llm));
     setText(details.querySelector('[data-detail="transcription-model"]'), TRANSCRIBE_MODEL + ' · ' + value.minutes.toFixed(1) + ' min');
-    setText(details.querySelector('[data-detail="transcription-usage"]'), 'Rate: $0.005/min blended');
+    setText(details.querySelector('[data-detail="transcription-usage"]'), 'Historical blended rate: $0.005/source min');
+    setText(details.querySelector('[data-detail="audio-preparation"]'), value.measuredWindows
+      ? (value.sourceAudioMs / 60000).toFixed(2) + ' min original → ' + (value.preparedAudioMs / 60000).toFixed(2) +
+        ' min transcription copy · ' + value.acceleratedWindows + ' parts at 1.5×'
+      : 'Audio preparation usage is available for newly processed windows.');
+    setText(details.querySelector('[data-detail="audio-submissions"]'), value.measuredWindows
+      ? (value.submittedAudioMs / 60000).toFixed(2) + ' min submitted across ' + value.requestAttempts +
+        ' attempts, including annotation passes and HTTP retries in completed windows. Failed jobs may add usage. Text and summary costs are separate.' : '');
     setText(details.querySelector('[data-detail="memory-model"]'), 'Memory extraction · ' + MEMORY_MODEL + ' · ' + money(memory));
     setText(details.querySelector('[data-detail="memory-usage"]'), '~' + tokens(value.memoryInputTokens) + ' input + ' + tokens(value.memoryOutputTokens) + ' output tokens');
     setText(details.querySelector('[data-detail="embedding-model"]'), 'Semantic indexing · ' + EMBEDDING_MODEL + ' · ' + money(embedding));

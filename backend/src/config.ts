@@ -86,6 +86,8 @@ export const config = {
     ),
     /** Dedicated ASR for code-switched, timestamped ambient speech. */
     transcribeModel: optional('SYNAP_GEMINI_STT_MODEL', 'gemini-3.5-transcribe'),
+    /** Reversible ASR-only optimization; originals and summary models are unchanged. */
+    transcriptionSpeed: optional('SYNAP_TRANSCRIPTION_SPEED', '1.5') === '1' ? 1 as const : 1.5 as const,
     /**
      * Memory quality is the product, not a background optimization. Flash-Lite
      * was too aggressive a cost trade-off for long, mixed-topic conversations:

@@ -4,9 +4,9 @@ Standalone audio from S3, C3 and Chakshu follows the same source-preserving pipe
 
 ## Recognition before speaker labels
 
-The first transcription pass uses verbatim text without word timestamps. It keeps the original language, including mixed-language speech. An optional speaker/timestamp pass has a bounded deadline and can contribute annotations only when its complete text agrees with the first pass. Missing or partial annotations never replace recognized words. The stored WAV is sent unchanged on both passes.
+The first transcription pass uses verbatim text without word timestamps. It keeps the original language, including mixed-language speech. An optional speaker/timestamp pass has a bounded deadline and can contribute annotations only when its complete text agrees with the first pass. Missing or partial annotations never replace recognized words. Managed ASR uses a disposable, pitch-preserving 1.5× copy for both passes; the source WAV remains unchanged in the browser and encrypted storage. See [audio cost controls](TRANSCRIPTION_COST.md).
 
-Explicitly incomplete provider responses and missing text output are retryable errors. An explicitly empty result gets one fresh pass with automatic language detection. If both results are empty, the recording completes as **No recognizable speech**, with its original audio still available; it does not enter an endless summarisation retry. Digitally zero windows retain their source and skip the model.
+Explicitly incomplete provider responses and missing text output are retryable errors. An explicitly empty result gets one fresh pass with automatic language detection using the original 1× audio. If both results are empty, the recording completes as **No recognizable speech**, with its original audio still available; it does not enter an endless summarisation retry. Digitally zero windows retain their source and skip the model.
 
 Each successful upload response includes the window transcript, which is saved in IndexedDB before the job completes. The PWA displays joined window text while final processing continues. Retrying an already uploaded window preserves this text and the exact original upload bytes.
 
@@ -26,4 +26,4 @@ Photos, video frames and newly paired soundtracks stay on the current browser. T
 
 ## Validation
 
-Contract tests cover unchanged WAV bytes, mixed-language text preservation, disagreeing annotations, incomplete output, empty-result recovery and atomic publication. Browser tests cover rolling local soundtracks across a 30-second boundary, reload, export, no cloud jobs and blocked stale jobs, plus partial transcript persistence before summaries. Fixture tests do not measure speech accuracy on the user's microphones or prove radio endurance; representative physical recordings remain the acceptance check.
+Tests cover original WAV integrity, real FFmpeg pitch and tail preservation, accelerated timestamp mapping, normal-speed empty-result recovery, retry submission counts, mixed-language text preservation, disagreeing annotations, incomplete output, empty-result recovery and atomic publication. Browser tests cover rolling local soundtracks across a 30-second boundary, reload, export, no cloud jobs and blocked stale jobs, plus partial transcript persistence before summaries. Fixture tests do not measure speech accuracy on the user's microphones or prove radio endurance; representative physical recordings remain the acceptance check.

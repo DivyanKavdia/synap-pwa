@@ -185,6 +185,7 @@ export function recordingRoutes(): Router {
           transcript_ready: completed.state === 'transcribed',
           transcript: completed.sealedTranscript ? openText(req.dek, completed.sealedTranscript, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'transcript')) : '',
           transcription_outcome: completed.transcriptionReview?.outcome || 'speech',
+          transcription_audio: completed.transcriptionAudioUsage,
           words: completed.sealedWords ? openJson(req.dek, completed.sealedWords, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'words')) : [],
         });
         return;
@@ -250,6 +251,7 @@ export function recordingRoutes(): Router {
         transcript_ready: true,
         transcript: completed.sealedTranscript ? openText(req.dek, completed.sealedTranscript, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'transcript')) : '',
         transcription_outcome: completed.transcriptionReview?.outcome || 'speech',
+          transcription_audio: completed.transcriptionAudioUsage,
         words: completed.sealedWords ? openJson(req.dek, completed.sealedWords, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'words')) : [],
       });
     }),

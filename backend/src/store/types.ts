@@ -84,7 +84,8 @@ export interface RecordingDoc {
 
 export interface SegmentDoc {
   /** ASR uses the stored WAV verbatim; an exact-zero source may skip the model. */
-  transcriptionAudioPolicy?: 'stored-upload-v1';
+  transcriptionAudioPolicy?: 'stored-upload-v1' | 'atempo-1.5-v1';
+  transcriptionAudioUsage?: import('../gemini/transcribe.js').TranscriptionAudioUsage;
   sealedSpeakerMap?: Sealed | null;
   transcriptionReview?: { attempted: boolean; annotationsComplete: boolean; policy?: 'text-first-v1'; outcome?: 'speech' | 'no-speech' | 'digital-silence' };
   index: number;

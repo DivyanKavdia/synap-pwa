@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import type { Firestore } from '@google-cloud/firestore';
 import { OAuth2Client } from 'google-auth-library';
 import { Storage, type Bucket } from '@google-cloud/storage';
-import { generateDek, sealBytes, sealJson, sealText } from '../src/crypto/envelope.js';
+import { openBytes, generateDek, sealBytes, sealJson, sealText } from '../src/crypto/envelope.js';
 import { keyring } from '../src/crypto/keyring.js';
 import { createApp } from '../src/http/app.js';
 import { issueTokens } from '../src/http/auth.js';
@@ -119,7 +119,8 @@ test('authenticated PUT preserves permanent model failures, source bytes and del
   globalThis.fetch=async(input,init)=>{
     if(String(input).startsWith(origin))return original(input,init);
     assert(String(input).endsWith('/interactions'),'no real cloud calls');modelCalls++;
-    assert.deepEqual(Buffer.from(JSON.parse(String(init?.body)).input[0].data,'base64'),audio,'encrypted storage round-trip must preserve the uploaded WAV exactly');
+    const submitted = Buffer.from(JSON.parse(String(init?.body)).input[0].data,'base64');
+    assert(submitted.length < audio.length, 'only the ephemeral ASR copy is accelerated');
     if(removeDuringModel){
       await db.beginRecordingDeletion('u','r');f.rows.delete(f.parent);f.rows.delete(f.child);
       return new Response(JSON.stringify({status:'completed',steps:[{type:'model_output',content:[{type:'text',text:'Hello',annotations:[{type:'word_info',text:'Hello',speaker:'spk_1',start_offset:'0s',end_offset:'1s'}]}]}]}));
@@ -145,6 +146,7 @@ test('authenticated PUT preserves permanent model failures, source bytes and del
     assert.equal(objects.size,1);assert.equal(f.rows.get(f.parent).uploadedSegments,1);assert.equal(f.rows.get(f.child).state,'accepted');
   }
   assert(modelCalls>0);const before=modelCalls,path=f.rows.get(f.child).storagePath,bytes=Buffer.from(objects.get(path)!);
+  assert.deepEqual(openBytes(dek, JSON.parse(bytes.toString()), {uid:'u',scope:'recording/r/segment/0',field:'audio'}), audio, 'stored source remains byte-for-byte original after ASR preparation and retries');
   // A source accepted by an older release also must not reach the model again.
   const invalidStored=Buffer.from(JSON.stringify(sealBytes(dek,malformed,{uid:'u',scope:'recording/r/segment/0',field:'audio'})));
   objects.set(path,invalidStored);

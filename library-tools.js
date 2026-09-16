@@ -74,7 +74,7 @@
     $('processSelectedRecordings').disabled=busy||!processable;
     $('deleteSelectedRecordings').disabled=busy||!count;
     $('libraryStatusFilter').disabled=busy;
-    for(const id of ['librarySearch','clearLibrarySearch','clearRecordingFilters'])if($(id))$(id).disabled=busy;
+    for(const id of ['librarySearch','clearLibrarySearch','clearRecordingFilters','libraryTypeFilter','libraryFavourites'])if($(id))$(id).disabled=busy;
     root.document.querySelectorAll('[data-library-scope]').forEach(node=>node.disabled=busy);
     $('clearRecordingFilters').hidden=filter==='all';
     root.document.querySelectorAll('#recordingsList .recording-card').forEach(card=>{if(card.synapRecording)decorate(card,card.synapRecording);});
@@ -90,7 +90,7 @@
   }
   function report(result,verb){
     const done=result.done||[],failed=result.failed||[],skipped=result.skipped||[];
-    const parts=[done.length+' recording'+(done.length===1?'':'s')+' '+verb+'.'];
+    const parts=[done.length+' item'+(done.length===1?'':'s')+' '+verb+'.'];
     if(skipped.length)parts.push(skipped.length+' skipped: '+skipped[0].message);
     if(failed.length)parts.push(failed.length+' failed: '+failed[0].message);
     return parts.join(' ');
@@ -108,7 +108,7 @@
   function requestDelete(ids){
     if(busy||!config)return;
     deleteIds=[...new Set(ids.map(String))];if(!deleteIds.length)return;
-    $('deleteRecordingsTitle').textContent='Delete '+deleteIds.length+' recording'+(deleteIds.length===1?'':'s')+'?';
+    $('deleteRecordingsTitle').textContent='Delete '+deleteIds.length+' item'+(deleteIds.length===1?'':'s')+'?';
     $('deleteRecordingsStatus').textContent='';
     $('deleteRecordingsCloud').checked=false;
     $('deleteRecordingsCloud').disabled=!root.SynapAuth?.isSignedIn?.();

@@ -249,6 +249,7 @@ export async function completeSegmentTranscription(uid: string, recordingId: str
          JSON.stringify(current.sealedTranscript) !== JSON.stringify(supersededEmpty))) return current;
     const fields = { state: doc.state, language: doc.language, transcribedAt: doc.transcribedAt,
       transcriptionReview: doc.transcriptionReview, transcriptionAudioPolicy: doc.transcriptionAudioPolicy || 'stored-upload-v1',
+      ...(doc.transcriptionAudioUsage ? { transcriptionAudioUsage: doc.transcriptionAudioUsage } : {}),
       sealedTranscript: doc.sealedTranscript, sealedWords: doc.sealedWords };
     tx.update(ref, fields);
     return { ...current, ...fields };

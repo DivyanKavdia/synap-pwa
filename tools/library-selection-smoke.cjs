@@ -205,7 +205,7 @@ async function run() {
     await page.setViewportSize({ width: 390, height: 900 });
     await page.locator('#processSelectedRecordings').click();
     await page.waitForFunction(() =>
-      document.querySelector('#libraryActionStatus').textContent.includes('7 recordings queued'),
+      document.querySelector('#libraryActionStatus').textContent.includes('7 items queued'),
     );
     await waitDb(page, async () => {
       const records = await new DKAudioStore().all('recordings'),
@@ -262,7 +262,7 @@ async function run() {
 
     await selectSearch(page, 'Batch');
     await page.locator('#deleteSelectedRecordings').click();
-    assert.equal(await page.locator('#deleteRecordingsTitle').innerText(), 'Delete 7 recordings?');
+    assert.equal(await page.locator('#deleteRecordingsTitle').innerText(), 'Delete 7 items?');
     assert.equal(await page.locator('#deleteRecordingsCloud').isChecked(), false);
     assert(await page.locator('#deleteRecordingsCloud').isDisabled());
     await page.locator('#cancelDeleteRecordings').click();
@@ -318,7 +318,7 @@ async function run() {
     );
     assert.match(
       await page.locator('#deleteRecordingsStatus').innerText(),
-      /6 recordings deleted.*1 failed/,
+      /6 items deleted.*1 failed/,
     );
     await page.waitForFunction(
       () => document.querySelector('#librarySelectedCount').textContent === '1 selected',
