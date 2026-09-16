@@ -26,6 +26,7 @@ on:
     paths:
       - 'backend/**'
       - 'infra/deploy.sh'
+      - 'infra/check-cloud-run.cjs'
       - '.github/workflows/deploy-backend.yml'
   workflow_dispatch:
 
@@ -53,6 +54,7 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: bash -n ../infra/deploy.sh && node --test ../tests/deploy-backend.cjs
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
@@ -86,34 +88,9 @@ jobs:
           chmod +x infra/deploy.sh
           ./infra/deploy.sh
 
-      # Prove the commit this workflow built is the one now serving traffic.
-      # A green deploy step only means gcloud exited 0.
-      - name: Verify the deployed commit
-        env:
-          PROJECT_ID: gen-lang-client-0697897308
-          REGION: asia-south1
-        run: |
-          set -euo pipefail
-          URL="$(gcloud run services describe synap-backend \
-            --project="$PROJECT_ID" --region="$REGION" \
-            --format='value(status.url)')"
-          echo "Production URL: $URL"
-
-          health="$(curl --fail --silent --show-error --retry 5 --retry-delay 3 \
-            --retry-all-errors "$URL/health")"
-          echo "$health"
-
-          live="$(printf '%s' "$health" | sed -n 's/.*"commit":"\([^"]*\)".*/\1/p')"
-          if [ "$live" != "${GITHUB_SHA}" ]; then
-            echo "::error::Deployed commit is '$live', expected '${GITHUB_SHA}'."
-            echo "Traffic may still be on an older revision. Check Cloud Run revisions."
-            exit 1
-          fi
-          echo "Verified: $live is live."
-
-      # Rollback is a one-liner, but only if the previous revision is written
-      # down while it is still known. Printed on failure so it is in the log of
-      # the run that broke, not somewhere else.
+      # deploy.sh owns candidate checks, promotion, commit verification and
+      # automatic rollback. Its pre-deploy snapshot supplies the exact rollback
+      # command in both the log and the job summary, including after cancellation.
       - name: Rollback instructions
         if: failure()
         env:
@@ -125,7 +102,4 @@ jobs:
             --project="$PROJECT_ID" --region="$REGION" --limit=5 \
             --format='table(name,creationTimestamp,active)' || true
           echo ""
-          echo "To route traffic back to a known-good revision:"
-          echo "  gcloud run services update-traffic synap-backend \\"
-          echo "    --project=$PROJECT_ID --region=$REGION \\"
-          echo "    --to-revisions=<PREVIOUS_REVISION>=100"
+          echo "Use the exact rollback command recorded by deploy.sh in the log and job summary."
