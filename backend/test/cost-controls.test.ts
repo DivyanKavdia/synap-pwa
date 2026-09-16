@@ -5,7 +5,7 @@ import { usageLogFields } from '../src/gemini/client.js';
 
 test('Synap keeps dedicated ASR and quality-first reasoning models', () => {
   assert.equal(config.gemini.transcribeModel, 'gemini-3.5-transcribe');
-  assert.equal(config.gemini.memoryModel, 'gemini-3.5-flash');
+  assert.equal(config.gemini.memoryModel, 'gemini-3.8-flash');
   assert.equal(config.gemini.queryModel, 'gemini-3.5-flash');
   assert.equal(config.gemini.askModel, 'gemini-3.8-flash');
   assert.equal(config.gemini.embedModel, 'gemini-embedding-001');

@@ -123,7 +123,7 @@
                 : 'Preparing video and separate audio…'
               : row
                 ? row.kind === 'video'
-                  ? 'Video saved. Audio is saved separately.'
+                  ? 'Video saved with audio in your memory library.'
                   : row.previewOnly
                     ? 'Preview saved here. Original photo saved to SD.'
                     : 'Photo saved to your library.'

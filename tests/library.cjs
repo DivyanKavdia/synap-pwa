@@ -1,8 +1,9 @@
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
 class Element {
-  constructor(tag){this.tag=tag;this.children=[];this.events={};this.attrs={};this.open=false;this.hidden=false;this.textContent='';}
+  constructor(tag){this.tag=tag;this.children=[];this.events={};this.attrs={};this.dataset={};this.open=false;this.hidden=false;this.textContent='';}
   append(...nodes){for(const node of nodes){if(node.parent)node.remove();node.parent=this;this.children.push(node);}} appendChild(node){this.append(node);return node;}
+  replaceChildren(...nodes){for(const node of [...this.children])node.remove();this.append(...nodes);}
   insertBefore(node,before){if(node.parent)node.remove();node.parent=this;this.children.splice(this.children.indexOf(before),0,node);}
   remove(){if(this.parent)this.parent.children=this.parent.children.filter(node=>node!==this);this.parent=null;}
   setAttribute(key,value){this.attrs[key]=value;} addEventListener(type,handler){this.events[type]=handler;}
@@ -17,6 +18,7 @@ const c={ui,document:{getElementById:id=>id==='librarySearchStatus'?searchStatus
   formatDuration:()=> '01:00',formatDate:()=> '2 Sep',formatBytes:()=> '100 B',DEFAULT_SAMPLE_RATE:16000,renderedObjectUrls:[],bindDebouncedSave(){},
   SynapExperienceRecovery:{createTranscriptNotice(){const node=new Element('div');node.className='synap-transcript-notice';return node;},updateTranscriptNotice(){}}};
 vm.createContext(c);
+vm.runInContext(fs.readFileSync(path.join(__dirname,'../memory-library.js'),'utf8'),c);
 vm.runInContext(source.slice(source.indexOf('  function renderLibraryPage()'),source.indexOf('  function bindDebouncedSave(')),c);
 for(const length of [0,3,5,8]){
   ui.recordingsList.children=[];c.libraryRecordings=Array.from({length},(_,i)=>fixture(i));c.libraryVisibleCount=5;c.renderLibraryPage();

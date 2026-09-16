@@ -216,6 +216,7 @@ export interface MemoryAction {
 }
 
 export interface MemoryChapter { title: string; summary: string; start_ms: number; end_ms: number; }
+export interface MemoryStatement { text: string; evidence?: string; start_ms: number; end_ms: number; }
 
 export interface MemoryConversation {
   participants?: string[];
@@ -228,7 +229,8 @@ export interface MemoryConversation {
   end_ms: number;
   people: MemoryPerson[];
   topics: string[];
-  decisions: { text: string; start_ms: number; end_ms: number }[];
+  outcomes?: MemoryStatement[];
+  decisions: MemoryStatement[];
   action_items: MemoryAction[];
   follow_ups: { text: string; owner: string; start_ms: number; end_ms: number }[];
 }

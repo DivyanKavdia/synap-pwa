@@ -27,7 +27,7 @@ const PERSON = {
       type: 'string',
       enum: ['self', 'participant', 'colleague', 'customer', 'family', 'friend', 'unknown'],
     },
-    evidence: { type: 'string', description: 'The words that established this identity' },
+    evidence: { type: 'string', description: 'Exact short transcript quote establishing this person. For a user-confirmed speaker, quote their actual utterance; never paraphrase the evidence.' },
     confidence: { type: 'number', minimum: 0, maximum: 1 },
   },
   required: ['name', 'role', 'evidence', 'confidence'],
@@ -52,9 +52,18 @@ const STATEMENT = {
   required: ['text', 'start_ms', 'end_ms'],
 } as const;
 
+const GROUNDED_STATEMENT = {
+  ...STATEMENT,
+  properties: {
+    ...STATEMENT.properties,
+    evidence: { type: 'string', description: 'Exact short supporting quote from the transcript, including any decisive correction or negation.' },
+  },
+  required: [...STATEMENT.required, 'evidence'],
+} as const;
+
 const FOLLOW_UP = {
   type: 'object',
-  properties: { text: { type: 'string' }, owner: { type: 'string' }, ...SOURCE_FIELDS },
+  properties: { text: { type: 'string' }, owner: { type: 'string', description: 'Known name or self; empty string if no owner is established.' }, ...SOURCE_FIELDS },
   required: ['text', 'owner', 'start_ms', 'end_ms'],
 } as const;
 
@@ -78,7 +87,8 @@ const CONVERSATION = {
     topics: { type: 'array', items: { type: 'string' } },
     chapters: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, summary: { type: 'string' }, ...SOURCE_FIELDS }, required: ['title', 'summary', 'start_ms', 'end_ms'] }, description: 'Non-overlapping topic chapters inside this conversation. Use real topic changes, not upload boundaries; at most 12.' },
     unresolved_questions: { type: 'array', items: STATEMENT },
-    decisions: { type: 'array', items: STATEMENT },
+    outcomes: { type: 'array', items: GROUNDED_STATEMENT, description: 'Concrete results or completed events established in this conversation. Exclude proposals, future tasks, and duplicate decisions.' },
+    decisions: { type: 'array', items: GROUNDED_STATEMENT },
     action_items: { type: 'array', items: ACTION },
     follow_ups: { type: 'array', items: FOLLOW_UP },
   },
@@ -93,6 +103,7 @@ const CONVERSATION = {
     'topics',
     'chapters',
     'unresolved_questions',
+    'outcomes',
     'decisions',
     'action_items',
     'follow_ups',

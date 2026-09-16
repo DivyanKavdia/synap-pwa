@@ -374,6 +374,6 @@
       });
     }
   }
-  root.SynapChakshuTransfer = { Client, MediaWindow, decode, revision: '1.0.0-chakshu-core11' };
+  root.SynapChakshuTransfer = { Client, MediaWindow, decode, revision: '1.0.0-chakshu-core12' };
   if (typeof module !== 'undefined') module.exports = root.SynapChakshuTransfer;
 })(globalThis);

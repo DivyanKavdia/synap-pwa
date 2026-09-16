@@ -4,8 +4,8 @@
   // Shared BLE Protocol v2
 
   const APP_VERSION = "1.0.0";
-  const APP_REVISION = "1.0.0-audio5";
-  const APP_SHELL_REVISION = "1.0.0-shell126-chakshu";
+  const APP_REVISION = "1.0.0-audio6";
+  const APP_SHELL_REVISION = "1.0.0-shell127-chakshu";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -2779,7 +2779,7 @@
 
   function protectedLibraryRecording(recording) {
     const id=String(recording.id);
-    return (recording.mediaKind && (recording.status==='recording'||recording.sealed===false))||id===String(currentRecordingId)||id===String(globalThis.SynapDesktopCapture?.state()?.recordingId);
+    return (recording.mediaKind && (recording.status==='recording'||recording.sealed===false))||recording.libraryMedia?.some(row=>row.state==='capturing')||id===String(currentRecordingId)||id===String(globalThis.SynapDesktopCapture?.state()?.recordingId);
   }
 
   function requireLibraryAction() {
@@ -2858,10 +2858,13 @@
           }
           const recording=await journal.get('recordings',id);
           if(recording&&protectedLibraryRecording(recording))throw new Error("The active recording cannot be deleted.");
+          const attachments=(await globalThis.SynapChakshuLibrary?.list()||[]).filter(row=>row.audioId===id&&row.ownerUid===recording?.ownerUid);
+          if(attachments.some(row=>row.state==='capturing'))throw new Error("Stop and save this capture before deleting it.");
           if(cloud&&!recording?.localOnly){
             if(!globalThis.SynapAuth.isSignedIn()||account!==globalThis.SynapAuth.session()?.profile?.uid)throw new Error("The signed-in account changed. Please try again.");
             await globalThis.SynapBackend.deleteRecording(id);
           }
+          for(const attachment of attachments)await globalThis.SynapChakshuLibrary.remove(attachment.mediaId,account);
           if(recording)await deleteRecording(id);
           result.done.push(id);
         }catch(error){result.failed.push({id,message:friendlyError(error)});}
@@ -3090,7 +3093,7 @@
     try { media = await globalThis.SynapChakshuLibrary?.list() || []; }
     catch (error) { log('Could not load local photos and videos', friendlyError(error)); }
     if (epoch !== libraryRenderEpoch) return;
-    recordings = [...recordings, ...media].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    recordings = globalThis.SynapMemoryLibrary.compose(recordings, media);
     if (libraryScope === "day") recordings = recordings.filter(row => localDateKey(row.createdAt) === dayKey);
     ui.recordingsCount.textContent = String(recordings.length);
     const hint = document.getElementById("libraryScopeHint");
@@ -3111,8 +3114,8 @@
 
   function renderLibraryPage() {
     const queryMatches = libraryRecordings.filter(recording =>
-      (libraryType === 'all' || (recording.mediaKind || 'audio') === libraryType) &&
-      (!libraryFavourites || recording.favourite) && recordingMatchesQuery(recording, libraryQuery));
+      (libraryType === 'all' || globalThis.SynapMemoryLibrary.types(recording).includes(libraryType)) &&
+      (!libraryFavourites || globalThis.SynapMemoryLibrary.favourite(recording)) && recordingMatchesQuery(recording, libraryQuery));
     const matches = queryMatches.filter(recording => !globalThis.SynapLibraryTools||globalThis.SynapLibraryTools.matches(recording));
     globalThis.SynapLibraryTools?.update(queryMatches,matches);
     const count = Math.min(libraryVisibleCount, matches.length);
@@ -3151,6 +3154,7 @@
         if (card) updateRecordingCard(card, recording);
         else card = createRecordingCard(recording);
       }
+      globalThis.SynapMemoryLibrary.decorate(card, recording);
       globalThis.SynapLibraryTools?.decorate(card,recording);
       const position = ui.recordingsList.children[index];
       if (position !== card) {
@@ -3180,7 +3184,7 @@
     const conversations = Array.isArray(meeting.conversations) ? meeting.conversations :
       (Array.isArray(recording.conversations) ? recording.conversations : []);
     const people = Array.isArray(meeting.people) ? meeting.people : [];
-    const text = [recording.name, recording.notes, recording.transcript, recording.summary, meeting.executive_summary,
+    const text = [globalThis.SynapMemoryLibrary.searchText(recording), recording.name, recording.notes, recording.transcript, recording.summary, meeting.executive_summary,
       ...people.map(person => person.name),
       ...conversations.flatMap(conversation => [conversation.title, conversation.summary,
         ...(Array.isArray(conversation.people) ? conversation.people.map(person => person.name) : []),
@@ -3210,12 +3214,12 @@
   function updateRecordingCard(card, recording) {
     Object.assign(card.synapRecording, recording);
     const name = card.querySelector(".recording-row-name");
-    if (name) name.textContent = recording.name || "Untitled recording";
+    if (name) name.textContent = globalThis.SynapMemoryLibrary.title(recording);
     const meta = card.querySelector(".recording-row-meta");
     if (meta) meta.textContent = recordingRowMeta(recording);
     const preview = card.querySelector(".recording-row-preview");
     if (preview) {
-      preview.textContent = recording.summary || recording.meeting?.executive_summary || "";
+      preview.textContent = globalThis.SynapMemoryLibrary.preview(recording);
       preview.hidden = !preview.textContent;
     }
     const content = card.querySelector(".recording-content");
@@ -3276,13 +3280,13 @@
     info.className = "recording-row-info";
     const name = document.createElement("span");
     name.className = "recording-row-name";
-    name.textContent = recording.name || "Untitled recording";
+    name.textContent = globalThis.SynapMemoryLibrary.title(recording);
     const meta = document.createElement("span");
     meta.className = "recording-row-meta";
     meta.textContent = recordingRowMeta(recording);
     const preview = document.createElement("span");
     preview.className = "recording-row-preview";
-    preview.textContent = recording.summary || recording.meeting?.executive_summary || "";
+    preview.textContent = globalThis.SynapMemoryLibrary.preview(recording);
     preview.hidden = !preview.textContent;
     const chevron = document.createElement("span");
     chevron.className = "recording-row-chevron";
@@ -3298,6 +3302,7 @@
     card.addEventListener("toggle", function () {
       if (card.open && !loaded) {
         card.appendChild(createRecordingContent(recording, name));
+        globalThis.SynapMemoryLibrary.decorate(card, recording);
         loaded = true;
       } else if (!card.open) {
         card.querySelectorAll("audio").forEach(function (audio) { audio.pause(); });
@@ -4103,6 +4108,7 @@
       const access = globalThis.SynapChakshu?.state;
       libraryRecordings = libraryRecordings.filter(row => !row.mediaKind ||
         (access?.available && row.ownerUid === access.owner));
+      for(const row of libraryRecordings)if(row.libraryMedia)row.libraryMedia=row.libraryMedia.filter(item=>access?.available&&item.ownerUid===access.owner);
       if (startupReady) renderLibraryPage();
       clearTimeout(mediaLibraryTimer);
       mediaLibraryTimer = setTimeout(() => { if (startupReady) void renderRecordings(); }, 80);

@@ -208,7 +208,7 @@
     renderFavourite();
     $('visualInfo').textContent =
       (row.state === 'interrupted' ? 'Interrupted capture · ' : '') +
-      (video ? 'Video playback · audio remains a separate recording. ' : '') +
+      (video ? 'Video playback · linked audio is part of this memory. ' : '') +
       (row.timingEstimated ? 'Frame times estimated from the earlier 2 fps capture. ' : '') +
       (row.previewOnly
         ? 'Preview only. Original on SD: ' +
@@ -266,7 +266,7 @@
       root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
       $('visualSDList').replaceChildren();
     }
-    $('visualAccess').textContent = state.available ? 'Chakshu library' : 'Unavailable';
+    $('visualAccess').textContent = state.available ? 'Chakshu capture & SD imports' : 'Unavailable';
     $('visualGate').hidden = state.available;
     $('visualGate').textContent = state.owner
       ? 'Connect Chakshu to associate it with this account and unlock photos and video.'
@@ -400,6 +400,7 @@
     }));
   }
   function disposeCard(card) {
+    card.querySelectorAll?.('.library-media-card').forEach(disposeCard);
     card.synapThumbnailToken = null;
     if (card.synapThumbnailUrl) URL.revokeObjectURL(card.synapThumbnailUrl);
     card.synapThumbnailUrl = null;
@@ -502,6 +503,17 @@
     for (const key of ['audio', 'image', 'video']) $('visualMode-' + key).hidden = value !== key;
   }
   function init() {
+    const showAdd = visible => {
+      $('visualLibrary').hidden = !visible;
+      $('libraryAdd').setAttribute('aria-expanded', String(visible));
+      if (visible) {
+        $('libraryAddTitle').tabIndex = -1;
+        $('libraryAddTitle').focus({ preventScroll: true });
+        $('visualLibrary').scrollIntoView({ block: 'nearest' });
+      } else $('libraryAdd').focus({ preventScroll: true });
+    };
+    $('libraryAdd').addEventListener('click', () => showAdd($('visualLibrary').hidden));
+    $('libraryAddClose').addEventListener('click', () => showAdd(false));
     $('visualMode').addEventListener('change', mode);
     $('visualRetryAccess').addEventListener('click', () =>
       action(async () => {

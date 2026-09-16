@@ -25,8 +25,10 @@
     for(const conversation of conversations){
       const section=document.createElement('section');if(conversations.length>1)section.append(text('h3',conversation.title||'Conversation'));
       group(section,'Chapters',conversation.chapters||[],recording.id);
+      group(section,'Outcomes',conversation.outcomes||[],recording.id);
       group(section,'Decisions',conversation.decisions||[],recording.id);
       group(section,'Actions to review',conversation.action_items||[],recording.id);
+      group(section,'Follow-ups',conversation.follow_ups||[],recording.id);
       group(section,'Open questions',conversation.unresolved_questions||[],recording.id);
       if(section.querySelector('ul'))body.append(section);
     }

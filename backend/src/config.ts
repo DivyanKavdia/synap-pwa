@@ -88,12 +88,8 @@ export const config = {
     transcribeModel: optional('SYNAP_GEMINI_STT_MODEL', 'gemini-3.5-transcribe'),
     /** Reversible ASR-only optimization; originals and summary models are unchanged. */
     transcriptionSpeed: optional('SYNAP_TRANSCRIPTION_SPEED', '1.5') === '1' ? 1 as const : 1.5 as const,
-    /**
-     * Memory quality is the product, not a background optimization. Flash-Lite
-     * was too aggressive a cost trade-off for long, mixed-topic conversations:
-     * use full Flash for conversation segmentation, summaries and commitments.
-     */
-    memoryModel: optional('SYNAP_GEMINI_MEMORY_MODEL', 'gemini-3.5-flash'),
+    /** Stable structured reasoning for summaries, outcomes, people and commitments. */
+    memoryModel: optional('SYNAP_GEMINI_MEMORY_MODEL', 'gemini-3.8-flash'),
     /** Query interpretation also uses full Flash so names/dates/topics are not silently lost. */
     queryModel: optional('SYNAP_GEMINI_QUERY_MODEL', 'gemini-3.5-flash'),
     /** Final grounded Ask Synap answers use the strongest low-latency Flash model. */

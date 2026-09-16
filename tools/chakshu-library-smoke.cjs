@@ -292,7 +292,7 @@ async function until(page, predicate, arg) {
         await page.waitForFunction(
           () =>
             document.getElementById('capturePreviewStatus').textContent ===
-            'Video saved. Audio is saved separately.',
+            'Video saved with audio in your memory library.',
         );
         assert.equal(await page.evaluate(() => SynapAppControls.recordingState().active), false);
         const saved = await page.evaluate((id) => SynapChakshu.store.get(id), previewVideo);
@@ -406,7 +406,7 @@ async function until(page, predicate, arg) {
         path: 'artifacts/workflows/chakshu-library/header-' + width + '.png',
       });
       await page.locator('nav a[href="#library"]').click();
-      await page.locator('#visualLibrary > summary').click();
+      await page.locator('#libraryAdd').click();
       await page.locator('#visualMode').selectOption('image');
       await page.locator('#visualPhoto').click();
       await page.waitForFunction(() => document.getElementById('visualDialog').open);
@@ -687,18 +687,68 @@ async function until(page, predicate, arg) {
       await page.locator('#libraryTypeFilter').selectOption('video');
       assert(await page.locator('.library-media-card:not([hidden])').count() > 0);
       assert(await page.locator('#recordingsList > :not([hidden])').evaluateAll(cards =>
-        cards.every(card => card.synapRecording.mediaKind === 'video')));
+        cards.every(card => SynapMemoryLibrary.types(card.synapRecording).includes('video'))));
       await page.locator('#libraryTypeFilter').selectOption('audio');
       assert(await page.locator('#recordingsList > :not([hidden])').count() > 0);
       assert(await page.locator('#recordingsList > :not([hidden])').evaluateAll(cards =>
-        cards.every(card => !card.synapRecording.mediaKind)));
+        cards.every(card => SynapMemoryLibrary.types(card.synapRecording).includes('audio'))));
       await page.locator('#libraryTypeFilter').selectOption('image');
       assert(await page.locator('#recordingsList > :not([hidden])').evaluateAll(cards =>
-        cards.every(card => card.synapRecording.mediaKind === 'image')));
+        cards.every(card => SynapMemoryLibrary.types(card.synapRecording).includes('image'))));
       await page.locator('#libraryTypeFilter').selectOption('all');
       const times = await page.locator('#recordingsList > :not([hidden])').evaluateAll(cards =>
         cards.map(card => Date.parse(card.synapRecording.createdAt)));
       assert.deepEqual(times, times.slice().sort((a,b) => b-a));
+      // One explicitly linked capture has one selectable memory, searchable by its details.
+      const grouped = await page.evaluate(async () => {
+        const audioId = 'joined-memory-fixture';
+        const photo = await SynapChakshu.store.create({ kind: 'image', name: 'Prototype photo' });
+        const video = await SynapChakshu.store.create({ kind: 'video', name: 'Prototype video' });
+        for (const row of [photo, video]) await SynapChakshu.store.patch(row.id, {
+          state: 'complete', audioId, notes: 'Enclosure review', favourite: true,
+        });
+        await new DKAudioStore().atomic(['recordings'], stores => stores.recordings.put({
+          id: audioId, name: 'Recording fixture', createdAt: new Date().toISOString(),
+          localOnly: true, sealed: true, status: 'complete', ownerUid: 'owner-a',
+          blob: DKAudioCodec.wav([new Int16Array(16000).buffer]), durationMs: 1000,
+          meeting: { title: 'Prototype handover', executive_summary: 'The prototype passed its check.',
+            conversations: [{ participants: ['Priya'], outcomes: [{text:'Prototype passed', start_ms:0}],
+              action_items:[{task:'Send revised plan',owner:'Priya',due_date:null,start_ms:0}] }] },
+        }));
+        dispatchEvent(new CustomEvent('synap-chakshu-changed'));
+        dispatchEvent(new CustomEvent('synap-recording-saved'));
+        return { audioId, photoId: photo.id, videoId: video.id };
+      });
+      await page.locator('#librarySearch').fill('Priya revised plan');
+      await page.waitForFunction(() => document.querySelectorAll('#recordingsList > :not([hidden])').length === 1);
+      const joined = page.locator('#recordingsList > :not([hidden])');
+      assert.equal(await joined.locator('.recording-row-name').textContent(), 'Prototype handover');
+      assert.match(await joined.locator('.memory-card-facts').textContent(), /1 outcome.*1 to-do/);
+      for (const type of ['audio', 'video', 'image', 'all']) {
+        await page.locator('#libraryTypeFilter').selectOption(type);
+        assert.equal(await joined.count(), 1, type + ' includes the same memory');
+      }
+      await joined.locator('summary').click();
+      assert.equal(await joined.locator('.memory-attachments .library-media-card').count(), 2);
+      assert.equal(await joined.locator('.recording-select-input').count(), 1, 'attachments are not duplicated selections');
+      const player = await joined.locator('audio').elementHandle();
+      await joined.locator('.library-media-open').first().click();
+      await page.waitForFunction(() => document.getElementById('visualDialog').open);
+      await page.locator('#visualClose').click();
+      assert(await player.evaluate(node => node.isConnected), 'viewer does not replace the original audio');
+      await joined.locator('summary').first().click();
+      // Deleting the selected capture removes its linked device-only files without any cloud request.
+      await page.locator('#selectRecordingsButton').click();
+      await page.locator('#selectAllRecordings').check();
+      const groupedDeleteCalls = cloudDeletes.length;
+      await page.locator('#deleteSelectedRecordings').click();
+      await page.locator('#confirmDeleteRecordings').click();
+      await page.waitForFunction(() => !document.getElementById('deleteRecordingsDialog').open);
+      assert.equal(cloudDeletes.length, groupedDeleteCalls);
+      for (const id of [grouped.photoId, grouped.videoId])
+        assert.equal(await page.evaluate(id => SynapChakshu.store.get(id), id), undefined);
+      assert.equal(await page.evaluate(id => new DKAudioStore().get('recordings', id), grouped.audioId), undefined);
+      await page.locator('#selectRecordingsButton').click();
       // Identical IDs in the two stores must remain independently selectable.
       const deletePhoto = await page.evaluate(async () => {
         const row = await SynapChakshu.store.create({kind:'image',name:'Delete fixture photo'});
