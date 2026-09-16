@@ -6,6 +6,7 @@ const { spawnSync } = require('node:child_process');
 const suites = [
   ['startup'],
   ['device-connection'],
+  ['hardware-recording'],
   ['chakshu'],
   ['chakshu-library'],
   ['chakshu-sd'],

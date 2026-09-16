@@ -500,6 +500,29 @@ module.exports = function pendantFixture() {
     } else emit(sequence);
     sequence = (sequence + 1) & 65535;
   }
+  function pendantDoubleTap() {
+    if (!device.gatt.connected) return;
+    if (state === 2) {
+      clearInterval(audioTimer);
+      if (buffered && armed) {
+        finishing = true;
+        const recovery = chars.get(uuid('4f'));
+        recovery.value = recoveryStatus();
+        recovery.dispatchEvent(new Event('characteristicvaluechanged'));
+        startSender();
+        return;
+      }
+      state = 1;
+    } else {
+      state = 2; sequence = 0; buffer = []; retained = []; finishing = waiting = false;
+      clearInterval(audioTimer);
+      audioTimer = setInterval(frame, 50);
+    }
+    control.value = status();
+    control.dispatchEvent(new Event('characteristicvaluechanged'));
+    // The first audio may follow status in the same native delivery batch.
+    if (state === 2) frame();
+  }
   let pickerError = null,
     bluetoothAvailable = !location.search.includes('lateBluetooth');
   const bluetooth = new EventTarget();
@@ -522,6 +545,8 @@ module.exports = function pendantFixture() {
     get: () => (bluetoothAvailable ? bluetooth : undefined),
   });
   window.bleFixture = {
+    pendantDoubleTap,
+    notifyStatus() { control.value = status(); control.dispatchEvent(new Event('characteristicvaluechanged')); },
     get inventoryReads() { return inventoryReads; },
     get missingProbes() { return missingProbes; },
     delayNextDiscovery(id, ms) { discoveryDelays.set(uuid(id), ms); },

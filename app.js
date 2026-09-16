@@ -4,8 +4,8 @@
   // Shared BLE Protocol v2
 
   const APP_VERSION = "1.0.0";
-  const APP_REVISION = "1.0.0-audio2";
-  const APP_SHELL_REVISION = "1.0.0-shell123-chakshu";
+  const APP_REVISION = "1.0.0-audio3";
+  const APP_SHELL_REVISION = "1.0.0-shell124-chakshu";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -237,6 +237,7 @@
   let databasePromise = null;
   let currentRecordingId = null;
   let openingCapture = null;
+  let openingPackets = [];
   let persistenceRequested = false;
   const journal = globalThis.DKAudioStore ? new globalThis.DKAudioStore({...globalThis.SynapRecordingJournal.options({transport:true}), onError: handleStorageError}) : null;
   let processor = null;
@@ -1770,6 +1771,8 @@
     }
 
     if (deviceStatus.state === DEVICE_STATE.STREAMING) {
+      // Claim a physical START synchronously, before the first audio callback.
+      globalThis.SynapRecordingBridge?.handleStatus?.();
       confirmRecordingStarted("status");
       return true;
     }
@@ -1805,6 +1808,7 @@
   }
 
   async function startRecording(captureOptions = {}) {
+    const hardwareStarted = captureOptions.hardwareStarted === true;
     if (globalThis.SynapModules?.busy || globalThis.SynapChakshu?.state?.offline || globalThis.SynapChakshu?.state?.wifi?.active) { toast("Finish the SD recording or Wi-Fi downloads before starting audio.", "error"); return; }
     if (firmwareBusy) return;
     if (globalThis.SynapDesktopCapture?.state?.().active) {
@@ -1832,11 +1836,27 @@
           navigator.storage.persist().then(granted=>log("Persistent storage request",{granted}))
             .catch(error=>log("Persistent storage request failed",friendlyError(error,"Storage")));
         }
-        openingCapture = journal.begin(defaultRecordingName(new Date()), deviceAssociation, { localOnly: captureOptions.localOnly === true });
+        openingCapture = journal.begin(defaultRecordingName(new Date()), deviceAssociation, { localOnly: captureOptions.localOnly === true }).then(id => {
+          // Hardware sends while IndexedDB opens. Persist those fragments
+          // before a fast second double-tap can close this journal.
+          currentRecordingId = id;
+          for (const packet of openingPackets) journal.append(id, packet);
+          openingPackets = [];
+          return id;
+        });
+        if (hardwareStarted) confirmRecordingStarted("hardware-double-tap");
         currentRecordingId = await openingCapture;
         openingCapture = null;
-        if (!isCurrentSession(sessionId) || appState !== "starting") return;
+        if (!isCurrentSession(sessionId)) return;
       }
+      if (hardwareStarted) {
+        // A second physical gesture may already have stopped this take while
+        // storage waited. Never restart it with another START command.
+        if (appState === "starting") confirmRecordingStarted("hardware-double-tap");
+        if (settings.wakeLock && appState === "recording") void acquireWakeLock();
+        return;
+      }
+      if (appState !== "starting") return;
       if (settings.wakeLock) await acquireWakeLock();
       if (!isCurrentSession(sessionId) || appState !== "starting") return;
       // Subscriptions already belong to this connection. Do not reopen GATT
@@ -2110,6 +2130,7 @@
   }
 
   function resetCollector() {
+    openingPackets = [];
     clearRecordingStopWatch();
     foregroundRecoveryAttempted = false;
     slowAudioDiagnosticAttempted = false;
@@ -2275,6 +2296,13 @@
     if (journal && currentRecordingId) {
       try {journal.append(currentRecordingId, {sequence, chunk:chunkIndex, total:totalChunks, payload, transport});}
       catch(error){handleStorageError(error);return;}
+    } else if (journal && openingCapture) {
+      // A blocked database must stop capture rather than grow memory forever.
+      if (openingPackets.length >= 1600) {
+        handleStorageError(new Error("Recording storage is taking too long to open."));
+        return;
+      }
+      openingPackets.push({sequence, chunk:chunkIndex, total:totalChunks, payload, transport});
     }
 
     frame.chunks[chunkIndex] = payload;
@@ -4264,6 +4292,13 @@
     else if (appState === "error") toast(ui.recorderSubtitle.textContent, "error");
   }
 
+  function adoptHardwareStream() {
+    if (!startupReady || !appLockHeld || connectInProgress ||
+        globalThis.SynapSleepStateGuard?.locked || deviceStatus.state !== DEVICE_STATE.STREAMING ||
+        deviceStatus.error || appState !== "idle" || finalizing || !isGattConnected()) return;
+    return startRecording({ hardwareStarted: true });
+  }
+
   // External controls must address one confirmed take; never toggle capture.
   // The page nonce also prevents a notification surviving reload from matching
   // a later take whose local session counter happens to be the same.
@@ -4355,7 +4390,7 @@
       throw error;
     }
   }
-  globalThis.SynapAppControls = Object.freeze({toggleCapture,toggleConnection,recordingState,stopCapture,canReload,startMediaAudio,shellRevision:APP_SHELL_REVISION});
+  globalThis.SynapAppControls = Object.freeze({toggleCapture,toggleConnection,recordingState,stopCapture,canReload,startMediaAudio,adoptHardwareStream,shellRevision:APP_SHELL_REVISION});
 
   function setStartup(state, message) {
     document.body.dataset.startup = state;

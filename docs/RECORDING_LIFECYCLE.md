@@ -17,7 +17,7 @@ Connection and firmware maintenance can remain available when recording storage
 needs recovery. Failed historical recovery preserves raw audio and exposes a
 targeted Retry while unaffected recordings remain usable.
 
-`recording-bridge.js` alone adopts a pendant-started stream. Incoming audio is
+`recording-bridge.js` routes a validated physical START directly into the recorder, without a UI click or another START command. Early fragments are retained while IndexedDB opens, and a physical STOP seals that same journal. Incoming audio is
 decoded and journaled with sequence continuity; missing frames keep their time
 positions as silence. `audio-store.js` closes completed 30-second processing
 windows; explicit callbacks from `recording/journal.js` wake `SynapProcessingQueue`.

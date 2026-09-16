@@ -71,4 +71,4 @@ See the [startup audit](https://github.com/DivyanKavdia/synap-firmware/blob/main
 
 The existing `4fa12350` descriptor and `4fa12351`–`53` hardware-check protocol remain. Descriptor byte 14 advertises media, byte 15 is zero for local voice, and byte 16 advertises optional transfer/download features. `4fa12354`/`55` provide frame/file requests and responses. See the [firmware protocol](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/CHAKSHU.md) and [capability guide](DEVICE_CAPABILITIES.md).
 
-The current app revision is `1.0.0-shell123-chakshu` with capture UI revision `1.0.0-chakshu-core8`. A PWA reload updates the app; it does not flash the pendant.
+The current app revision is `1.0.0-shell124-chakshu` with capture UI revision `1.0.0-chakshu-core9`. A PWA reload updates the app; it does not flash the pendant.
