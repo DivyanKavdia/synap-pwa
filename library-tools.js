@@ -137,8 +137,36 @@
     }
   }
   function reset(){filter='all';selected.clear();if($('libraryStatusFilter'))$('libraryStatusFilter').value='all';}
+  function installActionsDisclosure(){
+    const toggle=$('libraryActionsToggle'),actions=$('libraryHeadingActions');
+    if(!toggle||!actions)return;
+    const show=visible=>{
+      actions.hidden=!visible;
+      toggle.setAttribute('aria-expanded',String(visible));
+      if(visible)root.SynapCompactLayout?.reveal('library');
+    };
+    toggle.addEventListener('click',()=>show(actions.hidden));
+    actions.addEventListener('click',event=>{
+      if(!event.target.closest('button'))return;
+      show(false);
+      if(actions.contains(root.document.activeElement)){
+        const target=selecting?$('selectAllRecordings'):toggle;
+        target.focus({preventScroll:true});
+      }
+    });
+    $('library').addEventListener('keydown',event=>{
+      if(event.key==='Escape'&&!actions.hidden){
+        event.preventDefault();event.stopPropagation();show(false);toggle.focus({preventScroll:true});
+      }
+    });
+    // Collapsing the Library also resets its optional actions for the next visit.
+    new MutationObserver(()=>{
+      if($('library').classList.contains('workspace-tile')&&!$('library').classList.contains('is-expanded'))show(false);
+    }).observe($('library'),{attributes:true,attributeFilter:['class']});
+  }
   function configure(value){
     config=value;if(installed)return;installed=true;
+    installActionsDisclosure();
     const control=$('libraryStatusFilter');
     for(const [key,label] of filters){const option=root.document.createElement('option');option.value=key;option.textContent=label;control.appendChild(option);}
     control.addEventListener('change',()=>{filter=control.value;selected.clear();config.render();});

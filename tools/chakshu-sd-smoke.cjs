@@ -1,5 +1,5 @@
 'use strict';
-const { createStaticServer, launchChromium } = require('./support/browser-fixture.cjs');
+const { createStaticServer, launchChromium, clickLibraryAction } = require('./support/browser-fixture.cjs');
 const fs = require('node:fs'),
   path = require('node:path'),
   assert = require('node:assert/strict');
@@ -63,7 +63,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
           document.body.dataset.state === 'idle',
       );
       await page.locator('nav a[href="#library"]').click();
-      await page.locator('#libraryAdd').click();
+      await clickLibraryAction(page, 'libraryAdd');
       assert(await page.locator('#visualWifi').isDisabled());
       assert.match(await page.locator('#visualStorageHint').textContent(), /No SD card is needed/);
       await page.locator('#visualCheckSD').click();

@@ -1,5 +1,5 @@
 'use strict';
-const { createStaticServer, launchChromium } = require('./support/browser-fixture.cjs');
+const { createStaticServer, launchChromium, clickLibraryAction } = require('./support/browser-fixture.cjs');
 const fs = require('node:fs'),
   path = require('node:path'),
   assert = require('node:assert/strict');
@@ -406,7 +406,7 @@ async function until(page, predicate, arg) {
         path: 'artifacts/workflows/chakshu-library/header-' + width + '.png',
       });
       await page.locator('nav a[href="#library"]').click();
-      await page.locator('#libraryAdd').click();
+      await clickLibraryAction(page, 'libraryAdd');
       await page.locator('#visualMode').selectOption('image');
       await page.locator('#visualPhoto').click();
       await page.waitForFunction(() => document.getElementById('visualDialog').open);
@@ -745,7 +745,7 @@ async function until(page, predicate, arg) {
       assert(await player.evaluate(node => node.isConnected), 'viewer does not replace the original audio');
       await joined.locator('summary').first().click();
       // Deleting the selected capture removes its linked device-only files without any cloud request.
-      await page.locator('#selectRecordingsButton').click();
+      await clickLibraryAction(page, 'selectRecordingsButton');
       await page.locator('#selectAllRecordings').check();
       const groupedDeleteCalls = cloudDeletes.length;
       await page.locator('#deleteSelectedRecordings').click();
@@ -755,7 +755,7 @@ async function until(page, predicate, arg) {
       for (const id of [grouped.photoId, grouped.videoId])
         assert.equal(await page.evaluate(id => SynapChakshu.store.get(id), id), undefined);
       assert.equal(await page.evaluate(id => new DKAudioStore().get('recordings', id), grouped.audioId), undefined);
-      await page.locator('#selectRecordingsButton').click();
+      await clickLibraryAction(page, 'selectRecordingsButton');
       // Identical IDs in the two stores must remain independently selectable.
       const deletePhoto = await page.evaluate(async () => {
         const row = await SynapChakshu.store.create({kind:'image',name:'Delete fixture photo'});
@@ -769,7 +769,7 @@ async function until(page, predicate, arg) {
       });
       await page.locator('#librarySearch').fill('Delete fixture');
       await page.waitForFunction(() => document.querySelectorAll('#recordingsList > :not([hidden])').length === 2);
-      await page.locator('#selectRecordingsButton').click();
+      await clickLibraryAction(page, 'selectRecordingsButton');
       await page.locator('#selectAllRecordings').check();
       assert(await page.locator('#processSelectedRecordings').isDisabled());
       await page.locator('#deleteSelectedRecordings').click();
@@ -780,7 +780,7 @@ async function until(page, predicate, arg) {
       assert.equal(cloudDeletes.length, deletesBefore,'local media and its audio never send cloud delete requests');
       assert.equal(await page.evaluate(id => SynapChakshu.store.get(id), deletePhoto), undefined);
       assert.equal(await page.evaluate(id => new DKAudioStore().get('recordings',id), deletePhoto), undefined);
-      await page.locator('#selectRecordingsButton').click();
+      await clickLibraryAction(page, 'selectRecordingsButton');
       await page.locator('#clearLibrarySearch').click();
       fs.mkdirSync('artifacts/workflows/chakshu-library', { recursive: true });
       await page.locator('#libraryTitle').scrollIntoViewIfNeeded();

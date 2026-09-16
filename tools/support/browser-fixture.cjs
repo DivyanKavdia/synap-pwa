@@ -56,4 +56,10 @@ function launchChromium() {
   });
 }
 
-module.exports = { createStaticServer, launchChromium };
+async function clickLibraryAction(page, id) {
+  const action = page.locator('#' + id);
+  if (!(await action.isVisible())) await page.locator('#libraryActionsToggle').click();
+  await action.click();
+}
+
+module.exports = { createStaticServer, launchChromium, clickLibraryAction };

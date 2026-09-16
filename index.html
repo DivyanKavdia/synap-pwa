@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="brain.css?v=1.0.0-actions1">
   <link rel="stylesheet" href="compact.css?v=1.0.0-devices1" data-synap-compact="refresh1">
   <link rel="stylesheet" href="settings.css?v=1.0.0-compact-workspace1">
-  <link rel="stylesheet" href="library-tools.css?v=1.0.0-library-filters1">
+  <link rel="stylesheet" href="library-tools.css?v=1.0.0-library-header1">
   <script src="theme.js?v=1.0.0-navigation1"></script>
 <link rel="stylesheet" href="meeting-tools.css?v=1.0.0-memory-library1"><link rel="stylesheet" href="devices/panel.css?v=1.0.0-devices1">
 <link rel="stylesheet" href="devices/chakshu/library.css?v=1.0.0-chakshu-core12">
@@ -122,7 +122,8 @@
   </div>
 </section>
 <section id="library" class="section-card recordings-section" aria-labelledby="libraryTitle">
-  <div class="section-heading"><div><h2 id="libraryTitle">Memory library <span id="recordingsCount" class="count-badge">0</span></h2><p class="library-intro">Conversations, audio, photos and videos together.</p></div><div class="library-heading-actions"><button id="libraryAdd" class="text-button" type="button" aria-expanded="false" aria-controls="visualLibrary">Add / import</button><button id="selectRecordingsButton" class="text-button" type="button" aria-pressed="false">Select</button></div></div>
+  <div class="section-heading"><div><h2 id="libraryTitle"><span class="library-title-text">Memory library</span> <span id="recordingsCount" class="count-badge">0</span></h2></div><button id="libraryActionsToggle" type="button" aria-label="Library actions" title="Library actions" aria-expanded="false" aria-controls="libraryHeadingActions"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button></div>
+  <div id="libraryHeadingActions" class="library-heading-actions" role="group" aria-label="Library actions" hidden><button id="libraryAdd" class="text-button" type="button" aria-expanded="false" aria-controls="visualLibrary">Add / import</button><button id="selectRecordingsButton" class="text-button" type="button" aria-pressed="false">Select</button></div>
   <section id="visualLibrary" class="visual-library library-add-panel" aria-labelledby="libraryAddTitle" hidden>
     <div class="library-add-heading"><div><h3 id="libraryAddTitle">Add to your memory library</h3><span id="visualAccess">Unavailable</span></div><button id="libraryAddClose" type="button">Done</button></div>
     <p id="visualGate">Sign in and associate a Chakshu device to unlock photos and video.</p>
@@ -324,7 +325,7 @@
 <script src="meeting-tools.js?v=1.0.0-memory-library1"></script>
 <script src="disconnect-protection.js?v=1.0.0-drain1"></script>
 <script src="experience-recovery.js?v=1.0.0-chakshu-core12"></script>
-<script src="library-tools.js?v=1.0.0-chakshu-core12"></script>
+<script src="library-tools.js?v=1.0.0-library-header1"></script>
 <script src="memory-library.js?v=1.0.0-memory-library1"></script>
 <script src="google-auth.js?v=1.0.0-readiness1"></script>
 <script src="processing-recovery.js?v=1.0.0-maintenance1"></script>
@@ -349,7 +350,7 @@
 <script src="memory-workspace.js?v=1.0.0-navigation1"></script>
 <script src="my-actions.js?v=1.0.0-workspace1"></script>
 <script src="dashboard-ui.js?v=1.0.0-compact-workspace1"></script>
-<script src="compact-layout.js?v=1.0.0-memory-library1"></script>
+<script src="compact-layout.js?v=1.0.0-library-header1"></script>
 <script src="runtime-ui.js?v=1.0.0-controls1"></script>
 <script src="capture-ui.js?v=1.0.0-chakshu-core12"></script>
 <script src="product-ui.js?v=1.0.0-actions1"></script>
@@ -361,6 +362,6 @@
 <script src="devices/chakshu/transfer.js?v=1.0.0-chakshu-core12"></script>
 <script src="devices/chakshu/media.js?v=1.0.0-chakshu-core12"></script>
 <script src="devices/chakshu/player.js?v=1.0.0-devices1"></script>
-<script src="devices/chakshu/library.js?v=1.0.0-chakshu-core12"></script>
+<script src="devices/chakshu/library.js?v=1.0.0-library-header1"></script>
 <script src="devices/chakshu/capture-preview.js?v=1.0.0-chakshu-core12"></script>
 </body></html>

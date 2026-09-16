@@ -1,6 +1,6 @@
 /* Exercise selected recording actions with real IndexedDB and isolated HTTP fixtures. */
 'use strict';
-const { createStaticServer, launchChromium } = require('./support/browser-fixture.cjs');
+const { createStaticServer, launchChromium, clickLibraryAction } = require('./support/browser-fixture.cjs');
 const fs = require('node:fs'),
   path = require('node:path'),
   assert = require('node:assert/strict');
@@ -81,7 +81,7 @@ async function selectSearch(page, query, status = 'all') {
   await page.locator('#libraryStatusFilter').selectOption(status);
   await page.locator('#librarySearch').fill(query);
   if ((await page.locator('#selectRecordingsButton').getAttribute('aria-pressed')) === 'false')
-    await page.locator('#selectRecordingsButton').click();
+    await clickLibraryAction(page, 'selectRecordingsButton');
   await page.locator('#selectAllRecordings').check();
 }
 async function run() {

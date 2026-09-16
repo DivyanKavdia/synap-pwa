@@ -44,7 +44,7 @@
       heading.querySelector('strong') ||
       heading.querySelector('span');
     if (label) {
-      const text = [...label.childNodes].find((node) => node.nodeType === 3);
+      const text = [...label.childNodes].find((node) => node.nodeType === 3 && node.textContent.trim());
       if (text) text.textContent = title + ' ';
     }
     const body = document.createElement('div');

@@ -511,7 +511,7 @@
         $('libraryAddTitle').tabIndex = -1;
         $('libraryAddTitle').focus({ preventScroll: true });
         $('visualLibrary').scrollIntoView({ block: 'nearest' });
-      } else $('libraryAdd').focus({ preventScroll: true });
+      } else ($('libraryActionsToggle') || $('libraryAdd')).focus({ preventScroll: true });
     };
     $('libraryAdd').addEventListener('click', () => showAdd($('visualLibrary').hidden));
     $('libraryAddClose').addEventListener('click', () => showAdd(false));
