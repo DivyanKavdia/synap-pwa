@@ -134,9 +134,10 @@
         const interrupted = paused && !permanent && e.name === 'AbortError';
         const rateLimited = !paused && !permanent &&
           (e.code === 'model_rate_limited' || e.code === 'model_daily_quota' || e.status === 429);
-        const attempts = (job.attempts || 0) + (paused || rateLimited ? 0 : 1);
+        const busy = !paused && !permanent && e.code === 'transcription_busy';
+        const attempts = (job.attempts || 0) + (paused || rateLimited || busy ? 0 : 1);
         const rateLimitAttempts = rateLimited ? Math.min(5, (job.rateLimitAttempts || 0) + 1) : (job.rateLimitAttempts || 0);
-        const failed = !paused && (permanent || (!rateLimited && attempts >= 5));
+        const failed = !paused && (permanent || (!rateLimited && !busy && attempts >= 5));
         const advisedDelay = Number.isFinite(e.retryAfterMs) && e.retryAfterMs > 0 ? Math.min(604800000, e.retryAfterMs) : 0;
         const retryDelay = Math.max(advisedDelay, rateLimited
           ? Math.min(900000, 60000 * 2 ** (rateLimitAttempts - 1))
@@ -222,18 +223,28 @@
             if (job.providerCooldownKey === this.cooldownKey(config) &&
                 Number.isFinite(job.providerCooldownUntil) && job.providerCooldownUntil > this.now())
               this.providerCooldowns.set(job.providerCooldownKey, Math.max(this.cooldownUntil(config), job.providerCooldownUntil));
+            // A previous release tied PUT to ASR. Its quota wait no longer
+            // needs to delay this storage-only job after the upgrade.
+            if (job.state === 'pending' && job.kind === 'transcribe' && job.rateLimitAttempts &&
+                adapter?.canRunDuringCooldown?.(job) && job.nextAt > this.now())
+              await this.store.patchJob(job.id, { nextAt: 0 });
           }
+          const selectRunnable = async (excluded) => {
+            const skipped = new Set(excluded);
+            while (true) {
+              const selected = await this.store.nextRunnable(this.now(), skipped, this.recordingScope);
+              if (!selected.job || this.cooldownUntil(config) <= this.now() ||
+                  adapter?.canRunDuringCooldown?.(selected.job)) return selected;
+              skipped.add(selected.job.recordingId);
+            }
+          };
           const active = new Map();
           try {
             while (!this.paused && this.canRun()) {
-              while (active.size < MAX_PROCESSING_CONCURRENCY && !this.paused && this.canRun() && this.cooldownUntil(config) <= this.now()) {
+              while (active.size < MAX_PROCESSING_CONCURRENCY && !this.paused && this.canRun()) {
                 const excluded = new Set([...active.values()].map((x) => x.recordingId));
-                const selected = await this.store.nextRunnable(
-                  this.now(),
-                  excluded,
-                  this.recordingScope,
-                );
-                if (!selected.job || this.paused || !this.canRun() || this.cooldownUntil(config) > this.now()) break;
+                const selected = await selectRunnable(excluded);
+                if (!selected.job || this.paused || !this.canRun()) break;
                 const job = selected.job,
                   url = job.kind === 'transcribe' ? config.endpoint : config.llmEndpoint;
                 if (!url) {
@@ -246,7 +257,7 @@
                 }
                 if (new URL(url).protocol !== 'https:')
                   throw new Error('Processing endpoints must use HTTPS');
-                this.onChange('Processing ' + job.kind + ' · segment ' + (job.segmentIndex + 1));
+                this.onChange((name === 'synap' && job.kind === 'transcribe' ? 'Uploading audio' : 'Processing ' + job.kind) + ' · segment ' + (job.segmentIndex + 1));
                 const promise = this.execute(job, config, url).then(
                   () => job.id,
                   () => job.id,

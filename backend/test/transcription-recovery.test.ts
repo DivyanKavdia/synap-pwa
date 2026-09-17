@@ -76,7 +76,7 @@ test('a rejected language hint retries with automatic detection without timestam
   } finally { globalThis.fetch = original; }
 });
 
-test('rejected mode recovers full text with provider defaults and a bounded annotation pass', async () => {
+test('rejected mode recovers full text with provider defaults and no annotation charge', async () => {
   const original = fetch;
   const requests: any[] = [];
   globalThis.fetch = async (_url, init) => {
@@ -86,7 +86,7 @@ test('rejected mode recovers full text with provider defaults and a bounded anno
   };
   try {
     const result = await transcribeSegment(audio, 'audio/wav', { baseOffsetMs: 30000 });
-    assert.equal(requests.length, 3);
+    assert.equal(requests.length, 2);
     assert.deepEqual(requests[1].generation_config.transcription_config, {});
     assert.deepEqual(requests[1].input, requests[0].input);
     assert.equal(requests[1].store, false);
@@ -94,7 +94,7 @@ test('rejected mode recovers full text with provider defaults and a bounded anno
     assert.deepEqual(result.words, []);
     assert.deepEqual(result.speakers, []);
     assert.equal(result.review.annotationsComplete, false);
-    assert.equal(result.review.attempted, true);
+    assert.equal(result.review.attempted, false);
   } finally { globalThis.fetch = original; }
 });
 

@@ -142,7 +142,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell134-recovery'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell135-pipeline'/);
 });
 
 test('the settings form offers the encrypted cloud provider and a sign-in control', () => {
@@ -803,4 +803,17 @@ test('provider cooldown timing survives the browser adapter and honors Retry-Aft
     await assert.rejects(context.SynapBackend.recordingMemory('take'), error =>
       error.code === 'model_rate_limited' && error.retryable === true && error.retryAfterMs === expected);
   }
+});
+
+test('background processing preserves provider cooldown details instead of burning normal retry attempts', async () => {
+  const recording={id:'take',createdAt:'2026-09-17T00:00:00Z',durationMs:1000};
+  const context=load(backendSource,{SynapAuth:{isSignedIn:()=>true,config:()=>({backendUrl:'https://api.example.test'}),authedFetch:async(url)=>{
+    const endpoint=new URL(url,'https://api.example.test').pathname.split('/').pop();
+    if(endpoint==='finalize')return new Response(JSON.stringify({state:'uploaded'}),{status:202});
+    assert.equal(endpoint,'processing');
+    return new Response(JSON.stringify({state:'failed',retryable:true,error_code:'Cooldown',error:{code:'model_rate_limited',message:'Saved audio is retained.',providerStatus:429,retryAfterMs:120000,retryable:true}}));
+  }}});
+  const processor=new context.DKFIFOProcessor({get:async()=>recording,all:async()=>[{frameCount:20}],atomic:async()=>{}},{provider:()=> 'synap'});
+  processor.paused=false;
+  await assert.rejects(processor.process({id:1,recordingId:'take',kind:'consolidate',dedupe:'take:final'}, {}, ''),{code:'model_rate_limited',providerStatus:429,retryAfterMs:120000,retryable:true,audioStage:'processing saved audio'});
 });

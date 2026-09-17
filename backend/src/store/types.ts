@@ -64,6 +64,9 @@ export interface RecordingDoc {
   progress: number;
   errorCode: string | null;
   retryable: boolean;
+  /** Safe provider diagnostics, retained for background retry scheduling. */
+  processingFailure?: { code: string; message: string; retryable: boolean; providerStatus?: number;
+    retryAfterMs?: number; quotaKind?: 'rate' | 'daily' | 'unknown'; retryAt?: number } | null;
   /** Sealed `StructuredMemory`. Present once understanding completes. */
   sealedMemory: Sealed | null;
   /** Ownership fence for a processing attempt; stale workers cannot publish. */
@@ -83,6 +86,9 @@ export interface RecordingDoc {
 }
 
 export interface SegmentDoc {
+  /** Cross-instance ownership for the paid transcription request. */
+  transcriptionLease?: string | null;
+  transcriptionLeaseUntil?: number | null;
   /** ASR uses the stored WAV verbatim; an exact-zero source may skip the model. */
   transcriptionAudioPolicy?: 'stored-upload-v1' | 'atempo-1.5-v1';
   transcriptionAudioUsage?: import('../gemini/transcribe.js').TranscriptionAudioUsage;

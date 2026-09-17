@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { GeminiError, modelFailure } from '../gemini/client.js';
 import { log } from '../util/log.js';
+import { SegmentWriteError, TranscriptionBusyError } from '../store/firestore.js';
 
 export class HttpError extends Error {
   constructor(
@@ -41,6 +42,15 @@ export function errorHandler() {
       res.status(error.retryable ? 503 : 502).json({
         error: failure,
       });
+      return;
+    }
+
+    if (error instanceof SegmentWriteError) {
+      const busy = error instanceof TranscriptionBusyError;
+      if (busy) res.setHeader('Retry-After', String(Math.ceil(error.retryAfterMs / 1000)));
+      res.status(error.status).json({ error: { code: busy ? error.code : 'segment_conflict',
+        message: error.message, retryable: error.retryable,
+        ...(busy ? { retryAfterMs: error.retryAfterMs } : {}) } });
       return;
     }
 

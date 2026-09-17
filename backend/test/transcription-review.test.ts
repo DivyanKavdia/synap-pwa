@@ -11,13 +11,13 @@ test('complete diarization does not add another model call',async()=>{
 test('one review repairs incomplete annotations while preserving recognized words and offsets',async()=>{
   const original=fetch;let calls=0;
   globalThis.fetch=async()=>++calls===1?reply('Hello there',['Hello']):reply('Hello there',['Hello','there']);
-  try{const result=await transcribeSegment(Buffer.from('fixture'),'audio/wav',{baseOffsetMs:30000});assert.equal(calls,2);assert.equal(result.review.annotationsComplete,true);assert.equal(result.words[0]?.start_ms,30000);assert.equal(result.text,'[00:30] S?: Hello there')}finally{globalThis.fetch=original}
+  try{const result=await transcribeSegment(Buffer.from('fixture'),'audio/wav',{baseOffsetMs:30000,enrichAnnotations:true});assert.equal(calls,2);assert.equal(result.review.annotationsComplete,true);assert.equal(result.words[0]?.start_ms,30000);assert.equal(result.text,'[00:30] S?: Hello there')}finally{globalThis.fetch=original}
 });
 test('a disagreeing or failed review cannot rewrite or discard the first transcript',async()=>{
   for(const fail of [false,true]){
     const original=fetch;let calls=0;
     globalThis.fetch=async()=>{if(++calls===1)return reply('Do not ship',['Do']);if(fail)throw new Error('offline');return reply('Ship now',['Ship','now'])};
-    try{const result=await transcribeSegment(Buffer.from('fixture'),'audio/wav');assert.equal(result.text,'[00:00] S?: Do not ship');assert.equal(result.review.annotationsComplete,false)}finally{globalThis.fetch=original}
+    try{const result=await transcribeSegment(Buffer.from('fixture'),'audio/wav',{enrichAnnotations:true});assert.equal(result.text,'[00:00] S?: Do not ship');assert.equal(result.review.annotationsComplete,false)}finally{globalThis.fetch=original}
   }
 });
 test('invalid timing never turns an untimed response into false 0 ms speaker turns',()=>{
@@ -36,7 +36,7 @@ test('annotation review never changes signs, currencies, percentages, or origina
     const original=fetch;let calls=0;
     globalThis.fetch=async()=>++calls===1?reply(source,[source.split(' ')[0]!]):reply(candidate,candidate.split(' '));
     try{
-      const result=await transcribeSegment(Buffer.from('fixture'),'audio/wav');
+      const result=await transcribeSegment(Buffer.from('fixture'),'audio/wav',{enrichAnnotations:true});
       assert.equal(result.text,'[00:00] S?: '+source);assert.equal(result.review.annotationsComplete,accept);
     }finally{globalThis.fetch=original}
   }

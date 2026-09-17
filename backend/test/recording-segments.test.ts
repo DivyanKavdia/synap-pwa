@@ -66,34 +66,21 @@ test('incomplete upload never starts transcription; completed windows are reused
   assert.deepEqual(progress, [2]);
 });
 
-test('a failed window waits for in-flight workers and prevents subsequent work or false completion', async () => {
-  let release!: () => void,
-    settled = false;
-  const pending = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const calls: number[] = [],
-    progress: number[] = [];
-  const run = transcribeRecordingSegments(
-    Array.from({ length: 6 }, (_, i) => segment(i)),
-    6,
-    async (s) => {
-      calls.push(s.index);
-      if (s.index === 0) throw Error('Audio object missing');
-      await pending;
+test('windows run one at a time and a quota failure stops before submitting the next audio', async () => {
+  let active = 0, peak = 0;
+  const calls: number[] = [], progress: number[] = [];
+  await assert.rejects(transcribeRecordingSegments(
+    Array.from({ length: 6 }, (_, i) => segment(i)), 6,
+    async s => {
+      active++; peak = Math.max(peak, active); calls.push(s.index);
+      await new Promise(resolve => setImmediate(resolve));
+      active--;
+      if (s.index === 1) throw Error('Quota cooldown');
       return segment(s.index, true);
-    },
-    async (done) => {
-      progress.push(done);
-    },
-  );
-  const failure = assert.rejects(run, /Audio object missing/).then(() => {
-    settled = true;
-  });
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(settled, false, 'outstanding workers must settle before failure is published');
-  assert.deepEqual(calls, [0, 1, 2, 3]);
-  release();
-  await failure;
-  assert.deepEqual(progress, []);
+    }, async done => { progress.push(done); },
+  ), /Quota cooldown/);
+  assert.equal(peak, 1);
+  assert.deepEqual(calls, [0, 1]);
+  assert.deepEqual(progress, [1]);
+  assert.equal(active, 0);
 });

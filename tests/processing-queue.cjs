@@ -373,3 +373,21 @@ for (const provider of ['custom', 'fixture']) test('local soundtrack cannot ente
   assert.equal(jobs[0].state, 'done');
   assert(!events.some(event => event.type === 'synap-memory-ready'));
 });
+
+test('managed uploads continue during AI cooldown while finalization waits without spending attempts', async () => {
+  const now=1000,h=fixture({provider:()=> 'synap',now:()=>now});
+  h.jobs[0].providerCooldownKey='synap:';h.jobs[0].providerCooldownUntil=61000;h.jobs[0].nextAt=61000;
+  h.jobs.push({id:2,recordingId:'r2',kind:'transcribe',state:'pending',segmentIndex:0,rateLimitAttempts:1,nextAt:61000});
+  h.jobs.push({id:3,recordingId:'r2',kind:'summarize',state:'pending',segmentIndex:0});
+  h.jobs.push({id:4,recordingId:'r2',kind:'consolidate',state:'pending',segmentIndex:0});
+  const called=[];
+  h.context.DKFIFOProcessor.registerProvider('synap',{
+    canRunDuringCooldown:job=>job.kind!=='consolidate',
+    process:async(_processor,job)=>{called.push(job.id);return {uploadedToBackend:true};},
+  });
+  await h.queue.resume();h.queue.pause();
+  assert.deepEqual(called,[2,3]);
+  assert.equal(h.jobs[0].state,'pending');assert.equal(h.jobs[3].state,'pending');
+  assert.equal(h.jobs[1].state,'done');assert.equal(h.jobs[1].attempts,undefined);
+  assert(h.messages.some(message=>message.startsWith('Uploading audio')));
+});

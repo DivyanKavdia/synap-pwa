@@ -31,9 +31,11 @@ export async function enqueueProcessing(
   uid: string,
   recordingId: string,
   taskSuffix?: string,
+  notBeforeMs?: number,
 ): Promise<void> {
   // Local development and tests run the pipeline inline.
   if (!config.tasks.serviceUrl) {
+    if (notBeforeMs) throw new Error('Delayed processing requires a Cloud Tasks target');
     log.info('No Cloud Tasks target configured; processing inline', { uid, recordingId });
     void processRecording(uid, recordingId).catch((cause) =>
       log.error('Inline processing failed', { uid, recordingId, error: (cause as Error).message }),
@@ -62,6 +64,7 @@ export async function enqueueProcessing(
           },
         },
         dispatchDeadline: { seconds: 1800 },
+        ...(notBeforeMs ? { scheduleTime: { seconds: Math.ceil(notBeforeMs / 1000) } } : {}),
       },
     });
   } catch (cause) {

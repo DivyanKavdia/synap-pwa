@@ -135,7 +135,8 @@ export async function claimProcessing(uid: string, recordingId: string, lease: s
     if (!['uploaded', 'failed', 'ready', 'transcribing', 'understanding', 'indexing'].includes(current.state)) {
       throw new Error(`Recording is not uploaded: ${current.state}`);
     }
-    tx.update(ref, { processingLease: lease, state: 'transcribing', progress: 0.05, updatedAt: new Date().toISOString() });
+    tx.update(ref, { processingLease: lease, state: 'transcribing', processingFailure: null,
+      errorCode: null, progress: 0.05, updatedAt: new Date().toISOString() });
     return current;
   });
 }
@@ -188,6 +189,44 @@ export class SegmentWriteError extends Error {
   constructor(readonly status: 404 | 409, message: string, readonly retryable = false) { super(message); }
 }
 
+export class TranscriptionBusyError extends SegmentWriteError {
+  readonly code = 'transcription_busy';
+  constructor(readonly retryAfterMs: number) {
+    super(409, 'This audio is already being transcribed. Saved audio is retained.', true);
+  }
+}
+
+// Longer than the entire 90-second ASR deadline, including preparation/fallback.
+export const TRANSCRIPTION_LEASE_MS = 120_000;
+
+/** Claim before any paid work. Transaction retries cannot create another owner. */
+export async function claimSegmentTranscription(uid: string, recordingId: string, source: SegmentDoc, lease: string, now = Date.now()): Promise<{ segment: SegmentDoc; claimed: boolean }> {
+  const parent = paths.recording(uid, recordingId), ref = paths.segments(uid, recordingId).doc(String(source.index));
+  return firestore().runTransaction(async tx => {
+    const recording = (await tx.get(parent)).data() as RecordingDoc | undefined;
+    const current = (await tx.get(ref)).data() as SegmentDoc | undefined;
+    if (!recording || recording.deleting || !current) throw new SegmentWriteError(404, 'Unknown recording or segment');
+    if (!sameSegmentSource(current, source) || current.storagePath !== source.storagePath) throw new SegmentWriteError(409, 'Segment source changed');
+    if (current.state === 'transcribed' && current.sealedTranscript && current.sealedWords &&
+        (current.transcriptionReview?.policy === 'text-first-v1' || JSON.stringify(current.sealedTranscript) !== JSON.stringify(source.sealedTranscript)))
+      return { segment: current, claimed: false };
+    if (current.transcriptionLease && (current.transcriptionLeaseUntil || 0) > now)
+      throw new TranscriptionBusyError(current.transcriptionLeaseUntil! - now);
+    const fields = { transcriptionLease: lease, transcriptionLeaseUntil: now + TRANSCRIPTION_LEASE_MS };
+    tx.update(ref, fields);
+    return { segment: { ...current, ...fields }, claimed: true };
+  });
+}
+
+/** A stale worker cannot release the next worker's lease. */
+export async function releaseSegmentTranscription(uid: string, recordingId: string, index: number, lease: string): Promise<void> {
+  const ref = paths.segments(uid, recordingId).doc(String(index));
+  await firestore().runTransaction(async tx => {
+    const current = (await tx.get(ref)).data() as SegmentDoc | undefined;
+    if (current?.transcriptionLease === lease) tx.update(ref, { transcriptionLease: null, transcriptionLeaseUntil: null });
+  });
+}
+
 /** Freeze complete upload metadata once; retries never reset processing. */
 export async function finalizeRecording(uid: string, recordingId: string, fields: Pick<RecordingDoc, 'endedAt' | 'durationMs' | 'segmentCount'>): Promise<RecordingDoc> {
   const ref = paths.recording(uid, recordingId);
@@ -237,7 +276,7 @@ export async function acceptSegment(uid: string, recordingId: string, doc: Segme
 }
 
 /** Commit only to the exact live source. The first complete result wins. */
-export async function completeSegmentTranscription(uid: string, recordingId: string, doc: SegmentDoc, supersededEmpty?: SegmentDoc['sealedTranscript']): Promise<SegmentDoc> {
+export async function completeSegmentTranscription(uid: string, recordingId: string, doc: SegmentDoc, supersededEmpty?: SegmentDoc['sealedTranscript'], lease?: string): Promise<SegmentDoc> {
   const parent = paths.recording(uid, recordingId), ref = paths.segments(uid, recordingId).doc(String(doc.index));
   return firestore().runTransaction(async tx => {
     const recording = (await tx.get(parent)).data() as RecordingDoc | undefined;
@@ -247,10 +286,15 @@ export async function completeSegmentTranscription(uid: string, recordingId: str
     if (current.state === 'transcribed' && current.sealedTranscript && current.sealedWords &&
         (!supersededEmpty || current.transcriptionReview?.policy === 'text-first-v1' ||
          JSON.stringify(current.sealedTranscript) !== JSON.stringify(supersededEmpty))) return current;
+    if (current.transcriptionLease && current.transcriptionLease !== lease)
+      throw new SegmentWriteError(409, 'Transcription attempt was superseded', true);
+    if (lease && current.transcriptionLease !== lease)
+      throw new SegmentWriteError(409, 'Transcription attempt was superseded', true);
     const fields = { state: doc.state, language: doc.language, transcribedAt: doc.transcribedAt,
       transcriptionReview: doc.transcriptionReview, transcriptionAudioPolicy: doc.transcriptionAudioPolicy || 'stored-upload-v1',
       ...(doc.transcriptionAudioUsage ? { transcriptionAudioUsage: doc.transcriptionAudioUsage } : {}),
-      sealedTranscript: doc.sealedTranscript, sealedWords: doc.sealedWords };
+      sealedTranscript: doc.sealedTranscript, sealedWords: doc.sealedWords,
+      ...(lease ? { transcriptionLease: null, transcriptionLeaseUntil: null } : {}) };
     tx.update(ref, fields);
     return { ...current, ...fields };
   });

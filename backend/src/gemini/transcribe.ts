@@ -48,6 +48,8 @@ export interface TranscribeOptions {
   language?: string;
   diarize?: boolean;
   wordTimestamps?: boolean;
+  /** Extra audio submission; opt in only when a caller explicitly needs labels. */
+  enrichAnnotations?: boolean;
   signal?: AbortSignal;
 }
 
@@ -223,7 +225,7 @@ export async function transcribeSegment(
       end_ms: sourceOffset(word.end_offset),
     }));
   let words = convert(response);
-  if ((diarize || wordTimestamps) && !annotationsComplete(rawText, words)) {
+  if (options.enrichAnnotations === true && (diarize || wordTimestamps) && !annotationsComplete(rawText, words)) {
     attempted = true;
     try {
       const budget = AbortSignal.timeout(15000);

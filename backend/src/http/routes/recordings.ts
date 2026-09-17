@@ -117,7 +117,7 @@ export function recordingRoutes(): Router {
   );
 
   // -------------------------------------------------------------------------
-  // Segment upload + immediate rolling transcription
+  // Durable upload; older clients retain immediate rolling transcription
   // -------------------------------------------------------------------------
   router.put(
     '/recordings/:recordingId/segments/:index',
@@ -157,6 +157,17 @@ export function recordingRoutes(): Router {
         throw new HttpError(400, 'bad_segment_timing', 'Audio window timing must be finite milliseconds with end after start');
       }
 
+      // Query opt-in is compatible with older servers and existing CORS rules.
+      // Acknowledging storage must not depend on the provider's availability.
+      const deferred = req.query.transcription === 'deferred';
+      const respond = (segment: SegmentDoc, status = 200) => res.status(status).json({
+        segment_index: index, state: segment.state, sha256: digest,
+        transcript_ready: hasUsableTranscription(req.uid, recordingId, req.dek, segment),
+        transcript: segment.sealedTranscript ? openText(req.dek, segment.sealedTranscript, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'transcript')) : '',
+        transcription_outcome: segment.transcriptionReview?.outcome || (segment.state === 'transcribed' ? 'speech' : 'pending'),
+        transcription_audio: segment.transcriptionAudioUsage,
+        words: segment.sealedWords ? openJson(req.dek, segment.sealedWords, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'words')) : [],
+      });
       const existing = await db.getSegment(req.uid, recordingId, index);
       if (existing && !db.sameSegmentSource(existing, { index, sha256: digest, bytes: audio.length, startMs, endMs })) {
         throw new db.SegmentWriteError(409, 'Segment source conflicts with the accepted audio');
@@ -165,7 +176,7 @@ export function recordingRoutes(): Router {
         // A retry after upload but before/while ASR completed must continue the
         // missing transcription rather than returning early and leaving a hole.
         let completed = existing;
-        if (!hasUsableTranscription(req.uid, recordingId, req.dek, existing)) {
+        if (!deferred && !hasUsableTranscription(req.uid, recordingId, req.dek, existing)) {
           try {
             completed = await transcribeUploadedWindow(req.uid, recordingId, index, req.dek);
           } catch (cause) {
@@ -178,16 +189,7 @@ export function recordingRoutes(): Router {
             );
           }
         }
-        res.status(200).json({
-          segment_index: index,
-          state: completed.state,
-          sha256: digest,
-          transcript_ready: completed.state === 'transcribed',
-          transcript: completed.sealedTranscript ? openText(req.dek, completed.sealedTranscript, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'transcript')) : '',
-          transcription_outcome: completed.transcriptionReview?.outcome || 'speech',
-          transcription_audio: completed.transcriptionAudioUsage,
-          words: completed.sealedWords ? openJson(req.dek, completed.sealedWords, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'words')) : [],
-        });
+        respond(completed);
         return;
       }
 
@@ -218,14 +220,20 @@ export function recordingRoutes(): Router {
         uploadedAt: new Date().toISOString(),
         transcribedAt: null,
       };
+      let accepted: SegmentDoc;
       try {
-        const accepted = await db.acceptSegment(req.uid, recordingId, doc, recording.createdAt);
+        accepted = await db.acceptSegment(req.uid, recordingId, doc, recording.createdAt);
         if (accepted.storagePath !== path) await discardUnusedUpload(path);
       } catch (cause) {
         // Only a definitive rejection permits cleanup. An ambiguous database
         // failure may have committed this path; retaining it protects the audio.
         if (cause instanceof db.SegmentWriteError) await discardUnusedUpload(path);
         throw cause;
+      }
+
+      if (deferred) {
+        respond(accepted, 202);
+        return;
       }
 
       // The audio is safely persisted before ASR starts. If ASR fails, the PWA's
@@ -244,16 +252,7 @@ export function recordingRoutes(): Router {
         );
       }
 
-      res.status(200).json({
-        segment_index: index,
-        state: completed.state,
-        sha256: digest,
-        transcript_ready: true,
-        transcript: completed.sealedTranscript ? openText(req.dek, completed.sealedTranscript, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'transcript')) : '',
-        transcription_outcome: completed.transcriptionReview?.outcome || 'speech',
-          transcription_audio: completed.transcriptionAudioUsage,
-        words: completed.sealedWords ? openJson(req.dek, completed.sealedWords, binding(req.uid, `recording/${recordingId}/segment/${index}`, 'words')) : [],
-      });
+      respond(completed);
     }),
   );
 
@@ -324,10 +323,8 @@ export function recordingRoutes(): Router {
       }
       const uploaded = recording.uploadedSegments;
 
-      // Most/all 30-second windows are already transcribed by this point.
-      // processRecording skips sealed transcripts, transcribes only any final
-      // missing/partial window, then joins the complete transcript and performs
-      // meeting-level understanding/indexing.
+      // Background processing skips completed transcripts and transcribes only
+      // missing windows before understanding/indexing the complete recording.
       await enqueueProcessing(req.uid, recordingId);
 
       const response = {
@@ -355,6 +352,10 @@ export function recordingRoutes(): Router {
         progress: recording.progress,
         retryable: recording.retryable,
         error_code: recording.errorCode,
+        ...(recording.state === 'failed' && recording.processingFailure ? { error: {
+          ...recording.processingFailure,
+          ...(recording.processingFailure.retryAt ? { retryAfterMs: Math.max(0, recording.processingFailure.retryAt - Date.now()) } : {}),
+        } } : {}),
         uploaded_segments: recording.uploadedSegments,
       });
     }),

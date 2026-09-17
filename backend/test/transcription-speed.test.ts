@@ -86,16 +86,21 @@ test('empty sped-up recognition retries the original once and accounts for both 
   assert(result.audioUsage!.submittedAudioMs > 9900);
 });
 
-test('usage counts transport retries and annotation passes, rather than claiming a fixed saving', async (t) => {
+test('ordinary accelerated transcription pays for one input instead of a second annotation pass', async (t) => {
   let calls = 0;
-  t.mock.method(Math, 'random', () => 0);
-  t.mock.method(globalThis, 'fetch', async () =>
-    ++calls === 1 ? new Response('', { status: 503 }) : response('Complete text'),
-  );
+  t.mock.method(globalThis, 'fetch', async () => { calls++; return response('Complete text'); });
   const result = await transcribeSegment(tone(), 'audio/wav', { speed: 1.5 });
-  assert.equal(calls, 3);
-  assert.equal(result.audioUsage?.requestAttempts, 3);
-  assert(result.audioUsage!.submittedAudioMs > 11900);
+  assert.equal(calls, 1);
+  assert.equal(result.audioUsage?.requestAttempts, 1);
+  assert.equal(result.review.attempted, false);
+  assert(Math.abs(result.audioUsage!.submittedAudioMs - 4000) < 100);
+});
+
+test('an ambiguous ASR transport failure is returned for a durable retry without more paid submissions', async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => { calls++; throw Error('Response lost'); });
+  await assert.rejects(transcribeSegment(tone(), 'audio/wav', { speed: 1.5 }), { status: 0, retryable: true });
+  assert.equal(calls, 1);
 });
 
 test('a 3.3-second final window reaches ASR unchanged while the 30-second window is accelerated', async (t) => {
@@ -180,7 +185,7 @@ for (const status of [401, 403, 429, 503]) {
       return new Response('{}', { status });
     });
     await assert.rejects(transcribeSegment(tone(), 'audio/wav', { speed: 1.5 }), { status });
-    assert.equal(calls, status === 503 ? 4 : 1);
+    assert.equal(calls, 1);
   });
 }
 

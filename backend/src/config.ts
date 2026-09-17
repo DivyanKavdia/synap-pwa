@@ -98,6 +98,8 @@ export const config = {
     /** 768 keeps Firestore vector indexes compact while retaining retrieval quality. */
     embedDimensions: Number(optional('SYNAP_GEMINI_EMBED_DIMENSIONS', '768')),
     requestTimeoutMs: Number(optional('SYNAP_GEMINI_TIMEOUT_MS', '120000')),
+    /** A 429 pauses every Cloud Run instance using the same model. */
+    sharedCooldown: optional('SYNAP_SHARED_MODEL_COOLDOWN', '1') !== '0',
   },
 
   /**

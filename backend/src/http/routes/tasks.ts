@@ -16,6 +16,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { processRecording, processingFailure } from '../../pipeline/process.js';
+import { enqueueProcessing } from '../../pipeline/queue.js';
 import * as db from '../../store/firestore.js';
 import type { RecordingDoc } from '../../store/types.js';
 import { log } from '../../util/log.js';
@@ -59,7 +60,17 @@ export function taskRoutes(): Router {
         await processRecording(uid, recordingId);
         res.status(200).json({ state: 'ready' });
       } catch (cause) {
-        const { message, retryable } = processingFailure(cause);
+        const failure = processingFailure(cause);
+        const { message, retryable } = failure;
+        if (retryable && failure.retryAfterMs) {
+          // Schedule durably before acknowledging this delivery. A quota wait
+          // must not consume the queue's short transport-retry budget.
+          const current = await db.getRecording(uid, recordingId);
+          const retryAt = current?.processingFailure?.retryAt || Date.now() + failure.retryAfterMs;
+          await enqueueProcessing(uid, recordingId, 'cooldown-' + Math.ceil(retryAt / 1000), retryAt);
+          res.status(200).json({ state: 'deferred', retry_at: retryAt });
+          return;
+        }
         // Cloud Tasks retries every non-2xx. A permanent failure is acknowledged
         // only after its durable state is visible (or the recording is gone).
         // If saving the failure itself failed, retain the task for recovery.

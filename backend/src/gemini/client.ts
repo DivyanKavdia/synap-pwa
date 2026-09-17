@@ -19,6 +19,7 @@ import { config, loadSecrets } from '../config.js';
 import { log } from '../util/log.js';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { ModelCooldowns, rateLimitAdvice, type RateLimitAdvice } from './rate-limit.js';
+import { sharedModelCooldown, deferSharedModel } from '../store/model-cooldown.js';
 
 export interface InteractionTextPart {
   type: 'text';
@@ -133,10 +134,18 @@ async function call<T>(
   const url = `${config.gemini.endpoint}${path}`;
 
   let lastError: GeminiError | null = null;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+  // Background jobs own ASR retries. Retrying an ambiguous HTTP failure here
+  // can charge for the same audio repeatedly before the caller's deadline.
+  const maxAttempts = context.stage === 'transcription' ? 1 : MAX_ATTEMPTS;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     signal?.throwIfAborted();
-    const cooldown = modelCooldowns.remaining(context.model);
-    if (cooldown) throw new GeminiError('Gemini request deferred after rate limit.', 429, true, 'request', cooldown);
+    const cooldown = modelCooldowns.remaining(context.model) ||
+      (config.gemini.sharedCooldown ? await sharedModelCooldown(context.model) : undefined);
+    if (cooldown) {
+      modelCooldowns.defer(context.model, cooldown);
+      throw new GeminiError('Gemini request deferred after rate limit.', 429, true, 'request', cooldown);
+    }
+    signal?.throwIfAborted();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.gemini.requestTimeoutMs);
     const onAbort = () => controller.abort();
@@ -158,7 +167,10 @@ async function call<T>(
 
       const detail = await response.text().catch(() => '');
       const rateLimit = response.status === 429 ? rateLimitAdvice(response.headers.get('retry-after'), detail) : undefined;
-      if (rateLimit) modelCooldowns.defer(context.model, rateLimit);
+      if (rateLimit) {
+        modelCooldowns.defer(context.model, rateLimit);
+        if (config.gemini.sharedCooldown) await deferSharedModel(context.model, rateLimit);
+      }
       const error = new GeminiError(
         `Gemini ${context.stage} (${context.model}) HTTP ${response.status}: ${detail.slice(0, 400)}`,
         response.status,
@@ -166,12 +178,12 @@ async function call<T>(
         'request',
         rateLimit,
       );
-      if (error.status === 429 || !error.retryable || attempt === MAX_ATTEMPTS) throw error;
+      if (error.status === 429 || !error.retryable || attempt === maxAttempts) throw error;
       lastError = error;
     } catch (cause) {
       signal?.throwIfAborted();
       if (cause instanceof GeminiError) {
-        if (cause.status === 429 || !cause.retryable || attempt === MAX_ATTEMPTS) {
+        if (cause.status === 429 || !cause.retryable || attempt === maxAttempts) {
           // Provider errors may echo content. Log only routing and status, never
           // request/response bodies, audio, language preferences or API keys.
           log.warn('Gemini request rejected', { ...context, http_status: cause.status, retryable: cause.retryable,
@@ -183,7 +195,7 @@ async function call<T>(
       } else {
         // A lost response may still have been billed; count every submission attempt.
         const error = new GeminiError(`Gemini ${context.stage} (${context.model}) request failed: ${(cause as Error).message}`, 0, true);
-        if (attempt === MAX_ATTEMPTS) throw error;
+        if (attempt === maxAttempts) throw error;
         lastError = error;
       }
     } finally {

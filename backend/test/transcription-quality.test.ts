@@ -15,7 +15,7 @@ const response = (text: string, status = 'completed', annotations: unknown[] = [
     }),
   );
 
-test('recognition starts without timestamps and a disagreeing speaker pass cannot replace the full mixed-language text', async (t) => {
+test('ordinary recognition submits audio once and preserves full mixed-language text without paid enrichment', async (t) => {
   const text = 'कल Friday को मिलेंगे। Budget -5% है, 5% नहीं।';
   const requests: any[] = [];
   t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
@@ -26,7 +26,7 @@ test('recognition starts without timestamps and a disagreeing speaker pass canno
   });
   const result = await transcribeSegment(audio, 'audio/wav');
   assert.deepEqual(requests[0].generation_config.transcription_config, { mode: 'verbatim' });
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 1);
   assert.equal(result.text, '[00:00] S?: ' + text);
   assert.deepEqual(result.words, []);
   assert.equal(result.review.outcome, 'speech');

@@ -6,6 +6,9 @@ import * as db from '../store/firestore.js';
 import { readSealedSegment } from '../store/gcs.js';
 import type { RecordingDoc, SegmentDoc } from '../store/types.js';
 import { hasTranscription } from './recording-segments.js';
+import { newId } from '../util/ids.js';
+import { GeminiError } from '../gemini/client.js';
+import { log } from '../util/log.js';
 
 function binding(uid: string, scope: string, field: string): Binding {
   return { uid, scope, field };
@@ -37,8 +40,24 @@ export async function transcribeUploadedWindow(
   if (!segment) throw new db.SegmentWriteError(404, 'Unknown segment');
   if (hasUsableTranscription(uid, recordingId, dek, segment)) return segment;
 
-  const completed = await transcribeOne(uid, recordingId, dek, recording, segment);
-  return completed;
+  const lease = newId();
+  const claim = await db.claimSegmentTranscription(uid, recordingId, segment, lease);
+  if (!claim.claimed) return claim.segment;
+  const signal = AbortSignal.timeout(90_000);
+  let release = true;
+  try {
+    const completed = await transcribeOne(uid, recordingId, dek, recording, claim.segment, lease, signal);
+    release = false; // The completion transaction already cleared the lease.
+    return completed;
+  } catch (cause) {
+    // An ambiguous timeout may still be executing at the provider. Hold the
+    // short lease until expiry instead of immediately paying for another call.
+    if (signal.aborted || (cause instanceof GeminiError && cause.status === 0 && cause.reason === 'request')) release = false;
+    throw cause;
+  } finally {
+    if (release) await db.releaseSegmentTranscription(uid, recordingId, segment.index, lease)
+      .catch(() => log.warn('Transcription lease will recover at expiry'));
+  }
 }
 
 async function transcribeOne(
@@ -47,6 +66,8 @@ async function transcribeOne(
   dek: Buffer,
   recording: RecordingDoc,
   segment: SegmentDoc,
+  lease: string,
+  signal: AbortSignal,
 ): Promise<SegmentDoc> {
   const sealed = segment.storagePath ? await readSealedSegment(segment.storagePath) : null;
   if (!sealed) throw new Error(`Segment audio missing for ${segment.index}`);
@@ -68,6 +89,7 @@ async function transcribeOne(
     language: recording.language,
     diarize: true,
     wordTimestamps: true,
+    signal,
   });
 
   const completed: SegmentDoc = {
@@ -90,5 +112,5 @@ async function transcribeOne(
     ),
   };
 
-  return db.completeSegmentTranscription(uid, recordingId, completed, segment.sealedTranscript);
+  return db.completeSegmentTranscription(uid, recordingId, completed, segment.sealedTranscript, lease);
 }

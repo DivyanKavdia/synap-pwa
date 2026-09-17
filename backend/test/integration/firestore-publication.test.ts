@@ -170,3 +170,18 @@ test('concurrent upload retries accept one immutable source and count it once', 
   await assert.rejects(db.completeSegmentTranscription(uid,id,late),{status:404});
   assert.equal((await paths.segments(uid,id).get()).size,0);
 });
+
+test('Firestore grants one transcription lease across competing instances and recovers expiry', {timeout:90000}, async()=>{
+  const db=await import('../../src/store/firestore.js');
+  const id='asr-lease';await seed(id);
+  const segment={index:0,startMs:0,endMs:1000,sha256:'fixed',bytes:32044,storagePath:'source',state:'accepted',sealedTranscript:null,sealedWords:null,language:null,uploadedAt:'now',transcribedAt:null} as import('../../src/store/types.js').SegmentDoc;
+  await paths.segments(uid,id).doc('0').set(segment);
+  const results=await Promise.allSettled(['one','two','three'].map(lease=>db.claimSegmentTranscription(uid,id,segment,lease,1000)));
+  assert.equal(results.filter(result=>result.status==='fulfilled').length,1);
+  for(const result of results)if(result.status==='rejected')assert.equal(result.reason.code,'transcription_busy');
+  const old=(await db.getSegment(uid,id,0))!;
+  await db.claimSegmentTranscription(uid,id,segment,'recovered',1000+db.TRANSCRIPTION_LEASE_MS);
+  await db.releaseSegmentTranscription(uid,id,0,old.transcriptionLease!);
+  assert.equal((await db.getSegment(uid,id,0))!.transcriptionLease,'recovered');
+  await db.releaseSegmentTranscription(uid,id,0,'recovered');
+});

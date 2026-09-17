@@ -300,7 +300,7 @@
         };
         if (digest) headers['X-Synap-Sha256'] = digest;
         audioStage = 'sending upload';
-        return request('/v1/recordings/' + encodeURIComponent(job.recordingId) + '/segments/' + encodeURIComponent(job.segmentIndex), {
+        return request('/v1/recordings/' + encodeURIComponent(job.recordingId) + '/segments/' + encodeURIComponent(job.segmentIndex) + '?transcription=deferred', {
           method: 'PUT', headers: headers, body: buffer, signal: signal
         });
       });
@@ -340,7 +340,7 @@
               const text = windows.map(segment => segment.transcript || '').filter(Boolean).join('\n');
               stores.recordings.put({ ...current, transcriptionAudioUsage, transcript: text || current.transcript || '',
                 transcriptComplete: false,
-                transcriptSegments: windows.filter(segment => segment.uploadedToBackend).length });
+                transcriptSegments: windows.filter(segment => segment.uploadedToBackend && segment.transcriptionOutcome !== 'pending').length });
             };
           };
         };
@@ -422,8 +422,12 @@
           if (onProgress) onProgress(status);
           if (state === 'ready') return status;
           if (state === 'failed') {
-            var failure = new Error(status.error_code || 'Backend processing failed.');
-            failure.retryable = Boolean(status.retryable);
+            var detail = status.error || {};
+            var failure = new Error(detail.message || status.error_code || 'Backend processing failed.');
+            failure.retryable = typeof detail.retryable === 'boolean' ? detail.retryable : Boolean(status.retryable);
+            for (var key of ['code', 'providerStatus', 'retryAfterMs', 'quotaKind'])
+              if (detail[key] !== undefined) failure[key] = detail[key];
+            failure.audioStage = 'processing saved audio';
             throw failure;
           }
           return abortableDelay(POLL_INTERVAL_MS, signal).then(poll);
@@ -504,6 +508,9 @@
 
   const recoveredProcessors = new WeakSet();
   const processingProvider = {
+    // These jobs only store audio or complete a local placeholder. The worker
+    // observes project-wide AI cooldowns independently after finalization.
+    canRunDuringCooldown(job) { return job.kind === 'transcribe' || job.kind === 'summarize'; },
     async prepare(processor, config) {
       if (!root.SynapAuth || !root.SynapAuth.isSignedIn()) {
         processor.onChange('Sign in with Google to process pending memories.');

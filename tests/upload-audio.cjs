@@ -55,3 +55,28 @@ test('cancellation and persistence failure cannot silently create a new upload b
   await assert.rejects(api({}).transcriptionAudio(store,job,original),/Disk full/);
   assert.equal(store.meta.transcriptionBlob,undefined);
 });
+
+test('managed upload acknowledges saved audio with transcription pending and retries skip the network',async()=>{
+  const original=wav(8),record={id:'r',ownerUid:'owner',createdAt:'2026-09-17T00:00:00Z',durationMs:50};
+  const meta={recordingId:'r',index:0,pcmBlob:original},requests=[];
+  const context={Blob,DOMException,console,setTimeout,clearTimeout,URL,AbortController,DKAudioCodec,crypto:require('node:crypto').webcrypto,
+    SynapAuth:{isSignedIn:()=>true,session:()=>({profile:{uid:'owner'}}),config:()=>({backendUrl:'https://api.example.test'}),authedFetch:async(url,init)=>{
+      requests.push({url,init});
+      if(init.method==='PUT'){
+        assert.equal(new URL(url,'https://api.example.test').searchParams.get('transcription'),'deferred');
+        assert.deepEqual(Buffer.from(init.body),Buffer.from(await original.arrayBuffer()));
+        return new Response(JSON.stringify({state:'accepted',transcript_ready:false,transcription_outcome:'pending'}),{status:202});
+      }
+      return new Response('{}',{status:201});
+    }}};
+  vm.createContext(context);
+  for(const file of ['processing-queue.js','synap-backend.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),context);
+  const store={get:async(table)=>table==='segments'?meta:record,segment:async()=>({blob:original,frames:[]})};
+  const processor=new context.DKFIFOProcessor(store,{provider:()=> 'synap'});processor.paused=false;
+  const job={id:1,recordingId:'r',segmentIndex:0,kind:'transcribe'};
+  const saved=await processor.process(job,{},'');
+  assert.equal(saved.uploadedToBackend,true);assert.equal(saved.transcriptionOutcome,'pending');assert.equal(saved.transcript,'');
+  assert.equal(meta.pcmBlob,original);assert.equal(requests.length,2);
+  Object.assign(meta,saved);
+  await processor.process(job,{},'');assert.equal(requests.length,2,'already-stored audio is not uploaded again');
+});

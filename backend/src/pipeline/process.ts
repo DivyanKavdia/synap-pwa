@@ -58,11 +58,13 @@ export function binding(uid: string, scope: string, field: string): Binding {
   return { uid, scope, field };
 }
 
-export function processingFailure(cause: unknown): { message: string; retryable: boolean } {
+export function processingFailure(cause: unknown): NonNullable<RecordingDoc['processingFailure']> {
   if (cause instanceof GeminiError) return modelFailure(cause);
   const message = (cause as Error)?.message || 'Processing failed';
   const explicit = (cause as { retryable?: boolean })?.retryable;
-  return { message, retryable: typeof explicit === 'boolean' ? explicit : !/unknown (user|recording)|not found|no segments|no audio/i.test(message) };
+  return { code: cause instanceof db.TranscriptionBusyError ? cause.code : 'processing_failed', message,
+    ...(cause instanceof db.TranscriptionBusyError ? { retryAfterMs: cause.retryAfterMs } : {}),
+    retryable: typeof explicit === 'boolean' ? explicit : !/unknown (user|recording)|not found|no segments|no audio/i.test(message) };
 }
 
 /**
@@ -125,14 +127,17 @@ export async function processRecording(
     }
     log.info('Recording processed', { uid, recordingId, conversations: memory.conversations.length, memoryOnly: Boolean(options.memoryOnly) });
   } catch (cause) {
-    const { message, retryable } = processingFailure(cause);
+    const failure = processingFailure(cause);
+    const { message, retryable } = failure;
     log.error('Processing failed', { uid, recordingId, error: message, retryable });
     try {
       // The fence also prevents a delayed failure from undoing another worker's
       // success or resurrecting a recording the user deleted.
       await patch(options.memoryOnly && recording.state === 'ready'
         ? { state: 'ready', progress: 1, errorCode: null, retryable: false, processingLease: null }
-        : { state: 'failed', errorCode: message.slice(0, 200), retryable, processingLease: null });
+        : { state: 'failed', errorCode: message.slice(0, 200), retryable, processingLease: null,
+          processingFailure: { ...failure, message: message.slice(0, 200),
+            ...(failure.retryAfterMs ? { retryAt: Date.now() + failure.retryAfterMs } : {}) } });
     } catch { /* A deleted recording or superseded attempt belongs to its current owner. */ }
     throw cause;
   }

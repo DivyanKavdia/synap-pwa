@@ -35,7 +35,9 @@ export async function transcribeRecordingSegments(
   const pending = ordered.filter(needsTranscription);
   let done = ordered.length - pending.length;
   let failure: unknown;
-  const workers = Array.from({ length: Math.min(4, pending.length) }, async () => {
+  // One audio request per recording; concurrent windows amplify project RPM
+  // and waste requests after the first quota rejection.
+  const workers = Array.from({ length: Math.min(1, pending.length) }, async () => {
     while (!failure) {
       const segment = pending.shift();
       if (!segment) return;

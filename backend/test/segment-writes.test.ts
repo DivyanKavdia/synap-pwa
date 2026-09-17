@@ -5,6 +5,8 @@ import type { AddressInfo } from 'node:net';
 import type { Firestore } from '@google-cloud/firestore';
 import { OAuth2Client } from 'google-auth-library';
 import { Storage, type Bucket } from '@google-cloud/storage';
+import { CloudTasksClient } from '@google-cloud/tasks';
+import { config } from '../src/config.js';
 import { openBytes, generateDek, sealBytes, sealJson, sealText } from '../src/crypto/envelope.js';
 import { keyring } from '../src/crypto/keyring.js';
 import { createApp } from '../src/http/app.js';
@@ -18,7 +20,7 @@ import type { RecordingDoc, SegmentDoc, UserDoc } from '../src/store/types.js';
 // concurrent transactions are separately exercised by the Firestore CI job.
 function fixture() {
   const rows = new Map<string, any>();
-  const ref = (path: string): any => ({path, collection: (id:string)=>ref(path+'/'+id), doc:(id:string)=>ref(path+'/'+id),
+  const ref = (path: string): any => ({path, orderBy:()=>ref(path), collection: (id:string)=>ref(path+'/'+id), doc:(id:string)=>ref(path+'/'+id),
     get:async()=>path.split('/').length%2===0 ? {exists:rows.has(path),data:()=>structuredClone(rows.get(path))} : {docs:[...rows].filter(([key])=>key.startsWith(path+'/')&&key.split('/').length===path.split('/').length+1).map(([,value])=>({data:()=>structuredClone(value)}))},
     update:async(fields:any)=>{if(!rows.has(path))throw Object.assign(Error('Missing'),{code:5});rows.set(path,{...rows.get(path),...fields});}});
   let failCommit=false;
@@ -129,8 +131,8 @@ test('authenticated PUT preserves permanent model failures, source bytes and del
   };
   t.after(async()=>{globalThis.fetch=original;db.setFirestoreForTest(null);await new Promise<void>(resolve=>server.close(()=>resolve()));});
   const audio=makePcm16Wav(Buffer.alloc(32000,16));
-  const put=async(bytes=audio,extra:Record<string,string>={})=>{
-    const res=await fetch(origin+'/v1/recordings/r/segments/0',{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'audio/wav','X-Synap-Start-Ms':'0','X-Synap-End-Ms':'1000',...extra},body:bytes});
+  const put=async(bytes=audio,extra:Record<string,string>={},deferred=false)=>{
+    const res=await fetch(origin+'/v1/recordings/r/segments/0'+(deferred?'?transcription=deferred':''),{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'audio/wav','X-Synap-Start-Ms':'0','X-Synap-End-Ms':'1000',...extra},body:bytes});
     return {status:res.status,data:await res.json() as any};
   };
   const malformed=Buffer.concat([audio.subarray(0,44),Buffer.alloc(1),audio.subarray(44)]);
@@ -140,6 +142,13 @@ test('authenticated PUT preserves permanent model failures, source bytes and del
     assert.equal(result.status,400);assert.equal(result.data.error.code,'invalid_audio');
     assert.equal(result.data.error.retryable,false);assert.equal(modelCalls,0);
     assert.equal(objects.size,0);assert.equal(f.rows.has(f.child),false,'invalid audio cannot become accepted evidence');
+  }
+  for (let attempt=0; attempt<2; attempt++) {
+    const result=await put(audio,{},true);
+    assert.equal(result.status,attempt?200:202);
+    assert.equal(result.data.state,'accepted');assert.equal(result.data.transcript_ready,false);
+    assert.equal(result.data.transcription_outcome,'pending');assert.equal(modelCalls,0);
+    assert.equal(objects.size,1);assert.equal(f.rows.get(f.parent).uploadedSegments,1);
   }
   for(let attempt=0;attempt<2;attempt++){
     const result=await put();assert.equal(result.status,502);assert.equal(result.data.error.retryable,false);assert(!JSON.stringify(result.data).includes('PRIVATE DETAIL'));
@@ -172,4 +181,79 @@ test('authenticated PUT preserves permanent model failures, source bytes and del
   f.rows.set(f.parent,{...f.recording,state:'created'});
   const pending=await task();assert.equal(pending.status,500);assert.equal(pending.data.error.retryable,true);
 
+});
+
+test('a running transcription owns the segment; retries reuse its result without a second audio submission', async t => {
+  const f=fixture(),dek=generateDek();t.after(()=>db.setFirestoreForTest(null));
+  await db.acceptSegment('u','r',f.source,'first');
+  const source=makePcm16Wav(Buffer.alloc(32000,8));
+  const sealed=Buffer.from(JSON.stringify(sealBytes(dek,source,{uid:'u',scope:'recording/r/segment/0',field:'audio'})));
+  t.mock.method(Storage.prototype,'bucket',()=>({file:()=>({exists:async()=>[true],download:async()=>[sealed]})}) as unknown as Bucket);
+  let started!:()=>void,finish!:()=>void,calls=0;
+  const entered=new Promise<void>(resolve=>{started=resolve}),held=new Promise<void>(resolve=>{finish=resolve});
+  t.mock.method(globalThis,'fetch',async()=>{
+    calls++;started();await held;
+    return new Response(JSON.stringify({status:'completed',steps:[{type:'model_output',content:[{type:'text',text:'Keep this text.'}]}]}));
+  });
+  const first=transcribeUploadedWindow('u','r',0,dek);
+  await entered;
+  await assert.rejects(transcribeUploadedWindow('u','r',0,dek),error=>error instanceof db.TranscriptionBusyError && error.retryAfterMs>0);
+  assert.equal(calls,1);finish();
+  const complete=await first;
+  assert.equal(complete.state,'transcribed');assert.equal(complete.transcriptionAudioUsage?.requestAttempts,1);
+  assert.deepEqual((await transcribeUploadedWindow('u','r',0,dek)).sealedTranscript,complete.sealedTranscript);
+  assert.equal(calls,1);assert.equal(f.rows.get(f.child).transcriptionLease,null);
+});
+
+test('expired transcription leases recover but stale workers cannot publish or unlock another attempt', async t => {
+  const f=fixture(),dek=generateDek();t.after(()=>db.setFirestoreForTest(null));
+  await db.acceptSegment('u','r',f.source,'first');
+  const a=await db.claimSegmentTranscription('u','r',f.source,'a',1000);
+  await assert.rejects(db.claimSegmentTranscription('u','r',f.source,'b',1001),{code:'transcription_busy',retryable:true});
+  await db.claimSegmentTranscription('u','r',f.source,'b',1000+db.TRANSCRIPTION_LEASE_MS);
+  await db.releaseSegmentTranscription('u','r',0,'a');
+  assert.equal(f.rows.get(f.child).transcriptionLease,'b');
+  const completed={...a.segment,state:'transcribed' as const,sealedTranscript:sealText(dek,'stale',{uid:'u',scope:'recording/r/segment/0',field:'transcript'}),sealedWords:sealJson(dek,[],{uid:'u',scope:'recording/r/segment/0',field:'words'})};
+  await assert.rejects(db.completeSegmentTranscription('u','r',completed,null,'a'),{status:409,retryable:true});
+  assert.equal(f.rows.get(f.child).sealedTranscript,null);
+  await db.releaseSegmentTranscription('u','r',0,'b');
+  assert.equal(f.rows.get(f.child).transcriptionLease,null);
+});
+
+test('background 429 retains diagnostics and schedules a durable cooldown before acknowledging the task', async t=>{
+  const f=fixture(),dek=generateDek(),objects=new Map<string,Buffer>();
+  t.after(()=>db.setFirestoreForTest(null));
+  t.mock.method(keyring,'unwrap',async()=>dek);
+  t.mock.method(OAuth2Client.prototype,'verifyIdToken',async()=>({getPayload:()=>({email:'fixture'})}) as any);
+  const previous=config.tasks.serviceUrl;Object.assign(config.tasks,{serviceUrl:'https://worker.example.test'});
+  t.after(()=>Object.assign(config.tasks,{serviceUrl:previous}));
+  let failSchedule=false;const tasks:any[]=[];
+  t.mock.method(CloudTasksClient.prototype,'createTask',async(input:any)=>{
+    tasks.push(input);if(failSchedule)throw Error('Queue unavailable');return [{}];
+  });
+  t.mock.method(Storage.prototype,'bucket',()=>({file:(path:string)=>({exists:async()=>[objects.has(path)],download:async()=>[objects.get(path)]})}) as unknown as Bucket);
+  const user={uid:'u',tokenGeneration:1} as UserDoc;f.rows.set('users/u',user);
+  const token=(await issueTokens(user)).access_token;
+  await db.acceptSegment('u','r',f.source,'first');
+  f.rows.set(f.parent,{...f.rows.get(f.parent),state:'uploaded',segmentCount:1,endedAt:'done'});
+  objects.set('attempt-one',Buffer.from(JSON.stringify(sealBytes(dek,makePcm16Wav(Buffer.alloc(32000,8)),{uid:'u',scope:'recording/r/segment/0',field:'audio'}))));
+  const server=http.createServer(createApp());await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const origin='http://127.0.0.1:'+(server.address() as AddressInfo).port,original=fetch;let calls=0;
+  t.mock.method(globalThis,'fetch',async(input: string | URL | Request,init?: RequestInit)=>{
+    if(String(input).startsWith(origin))return original(input,init);
+    calls++;return new Response('{}',{status:429,headers:{'Retry-After':'120'}});
+  });
+  t.after(async()=>{await new Promise<void>(resolve=>server.close(()=>resolve()));});
+  const invoke=()=>fetch(origin+'/v1/tasks/process',{method:'POST',headers:{Authorization:'Bearer task','Content-Type':'application/json'},body:JSON.stringify({uid:'u',recordingId:'r'})});
+  const before=Date.now(),result=await invoke();assert.equal(result.status,200);assert.equal((await result.json() as any).state,'deferred');
+  assert.equal(calls,1);assert.equal(tasks.length,1);
+  assert(tasks[0].task.scheduleTime.seconds*1000>=before+120000);
+  assert.deepEqual(JSON.parse(tasks[0].task.httpRequest.body.toString()),{uid:'u',recordingId:'r'});
+  const status=await fetch(origin+'/v1/recordings/r/processing',{headers:{Authorization:'Bearer '+token}});
+  const body=await status.json() as any;
+  assert.equal(body.state,'failed');assert.equal(body.error.code,'model_rate_limited');
+  assert.equal(body.error.providerStatus,429);assert.equal(body.error.retryable,true);
+  assert(body.error.retryAfterMs>110000);assert.equal(f.rows.get(f.child).state,'accepted');assert.equal(objects.size,1);
+  failSchedule=true;assert.equal((await invoke()).status,500,'failed scheduling retains the current delivery for retry');
+  assert.equal(calls,1,'a cooldown retry never submits the audio again');
 });
