@@ -29,8 +29,10 @@
       return { state: 'unavailable', message: 'Chakshu connected, but its device ID could not be read. Reconnect to identify it.' };
     return { state: 'connected', message: 'Chakshu connected.' };
   }
-  const protocol = (info, key) =>
-    Boolean(isChakshu(info) && profile(info).protocols[key] === 1 && info[key + 'Version'] === 1);
+  function protocol(info, key) {
+    const expected = isChakshu(info) ? profile(info).protocols[key] : 0;
+    return Boolean(Number.isInteger(expected) && expected > 0 && info[key + 'Version'] === expected);
+  }
   const hasMedia = (info) => protocol(info, 'media');
   const hasVoice = (info) => protocol(info, 'voice') && supports(info, 'audio');
   function canCapture(info, kind, offline = false) {
