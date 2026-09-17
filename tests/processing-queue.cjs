@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function fixture(options = {}) {
+function fixture(options = {}, runtime = {}) {
   const events = [],
     messages = [];
   const context = {
@@ -21,6 +21,7 @@ function fixture(options = {}) {
       }
     },
     dispatchEvent: (event) => events.push(event),
+    ...runtime,
   };
   vm.createContext(context);
   for (const file of ['audio-store.js', 'memory-ready-events.js', 'processing-queue.js']) {
@@ -55,6 +56,28 @@ function fixture(options = {}) {
   });
   return { context, queue, store, jobs, events, messages };
 }
+
+test('expired job budget is a retryable timeout rather than a user cancellation', async () => {
+  let expire;
+  const h = fixture({}, { setTimeout(fn) { expire = fn; return 1; }, clearTimeout() {} });
+  h.queue.paused = false;
+  const pending = h.queue.withJobSignal(h.jobs[0], 120000, signal => new Promise((_resolve, reject) => {
+    signal.addEventListener('abort', () => reject(Object.assign(new Error('Cancelled'), { name: 'AbortError', audioStage: 'sending upload' })));
+  }));
+  expire();
+  await assert.rejects(pending, { name: 'TimeoutError', code: 'processing_timeout', retryable: true, audioStage: 'sending upload' });
+  assert.equal(h.queue.controllers.size, 0);
+});
+
+test('pausing an older exhausted job never turns cancellation into another permanent failure', async () => {
+  const h = fixture();
+  h.jobs[0].attempts = 5;
+  h.queue.process = async () => { throw Object.assign(new Error('Paused'), { name: 'AbortError' }); };
+  await h.queue.execute(h.jobs[0], {}, 'https://fixture.test');
+  assert.equal(h.jobs[0].state, 'pending');
+  assert.equal(h.jobs[0].attempts, 5);
+  assert.match(h.messages.at(-1), /Processing paused/);
+});
 
 test('missing endpoints stop the queue without selecting the same pending job forever', async () => {
   const { queue, store, jobs, messages } = fixture({ settings: () => ({}) });

@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell132-chakshu";
+  const APP_SHELL_REVISION = "1.0.0-shell133-recovery";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -140,6 +140,8 @@
   let manualDisconnect = false;
   let connectInProgress = false;
   let needsDeviceSelection = false;
+  let reconnectSelectionRequired = false;
+  let rapidNativeLinkFailures = 0;
   // Session-local fallback for a pendant whose optional discovery broke setup.
   // Reloading retries full discovery; changing devices never inherits this mode.
   const audioOnlyConnections = new Set();
@@ -612,7 +614,7 @@
   }
 
   function monitorAllowed() {
-    return reconnectMonitoringReady && !reconnectPageHidden && reconnectRequested() && !manualDisconnect &&
+    return reconnectMonitoringReady && !reconnectSelectionRequired && !reconnectPageHidden && reconnectRequested() && !manualDisconnect &&
       document.visibilityState !== "hidden" && window.isSecureContext && Boolean(navigator.bluetooth) && !isGattConnected();
   }
 
@@ -800,7 +802,7 @@
   }
 
   async function recoverRememberedConnection(reason, force) {
-    if (firmwareBusy) return;
+    if (firmwareBusy || reconnectSelectionRequired) return;
     if (reason === "waiting-for-pendant" && reconnectTimer) return;
     const activeJournalBlocksRecovery = Boolean(currentRecordingId) && !recordingReconnectPending;
     if (!reconnectRequested() || manualDisconnect || connectInProgress || reloadRecoveryRunning ||
@@ -1037,6 +1039,7 @@
   function scheduleAutoReconnect() {
     if (
       manualDisconnect ||
+      reconnectSelectionRequired ||
       !autoReconnectEnabled() ||
       !bluetoothDevice ||
       reconnectTimer
@@ -1080,6 +1083,8 @@
     const resumingSessionId = resumingRecording ? recordingSessionId : null;
 
     if (connectInProgress || finalizing) return;
+    if (autoReconnect && reconnectSelectionRequired) return;
+    if (!autoReconnect) { reconnectSelectionRequired = false; rapidNativeLinkFailures = 0; }
     if (autoReconnect && !bluetoothDevice) {
       setAppState("disconnected", "Select a pendant once to grant Bluetooth permission.");
       return; // Never invoke a permission chooser from a lifecycle event or timer.
@@ -1154,8 +1159,10 @@
         gattServer = connectingDevice.gatt.connected ? connectingDevice.gatt :
           await withTimeout(connectingDevice.gatt.connect(), 12000, "Connection");
       } catch (error) {
-        // disconnect() also cancels an outstanding connect, even while connected is false.
-        disconnectGatt("Connection attempt failed: " + friendlyError(error), connectingDevice);
+        // A timed-out request may still be pending natively. A settled native
+        // rejection on a disconnected link needs no additional cancellation.
+        if (error?.name === "TimeoutError" || connectingDevice.gatt.connected)
+          disconnectGatt("Connection attempt failed: " + friendlyError(error), connectingDevice);
         throw error;
       }
       function assertServiceConnection() {
@@ -1366,6 +1373,7 @@
         throw new Error("No valid idle acknowledgement. Check that both firmware and PWA are updated.");
       }
       setupSucceeded = true;
+      rapidNativeLinkFailures = 0;
     } catch (error) {
       const message = friendlyError(error);
       if (probingExtras && setupDevice && !resumingRecording &&
@@ -1374,14 +1382,28 @@
         log("Optional setup interrupted; next connection will use audio only", { stage: setupStage });
       }
       log("Connection failure details", { stage: setupStage, elapsedMs: Math.round(performance.now() - setupStartedAt),
-        name: setupDevice?.name || null, error: message, nativeReason: error?.nativeReason, audioOnly });
+        name: setupDevice?.name || null, error: message,
+        nativeReason: error?.nativeReason ?? (typeof error === "number" ? error : undefined), audioOnly });
       log("Connection failed", message);
       needsDeviceSelection = Boolean(bluetoothDevice) || needsDeviceSelection;
+      // Bluefy can repeatedly reject a remembered handle with numeric code 2
+      // before GATT discovery. Do not infer its native cause or loop indefinitely.
+      // Active recording recovery keeps its existing grace period and backoff.
+      const immediateNativeRejection = autoReconnect && !resumingRecording && setupStage === "Bluetooth link" &&
+        (error === 2 || error?.code === 2) && performance.now() - setupStartedAt < 1000;
+      rapidNativeLinkFailures = immediateNativeRejection ? rapidNativeLinkFailures + 1 : 0;
+      if (rapidNativeLinkFailures >= 2) {
+        reconnectSelectionRequired = true;
+        clearReconnectTimer(false);
+        stopRememberedMonitoring();
+      }
       if (isGattConnected()) disconnectGatt("Connection setup failed: " + message);
       cleanupCharacteristics();
       setAppState("disconnected", recordingReconnectPending
         ? "Connection is still unavailable. The current recording remains preserved for reconnect."
         : "Could not connect at " + setupStage + ": " + message);
+      if (reconnectSelectionRequired) setReconnectCapability("Saved Bluetooth connection needs reselection",
+        "Bluetooth could not reopen the saved connection. Make sure your pendant is awake and Bluetooth is on, then tap Reselect pendant.");
 
       if (!silent) {
         setReconnectCapability("Manual connection failed", error?.name === "NotFoundError"

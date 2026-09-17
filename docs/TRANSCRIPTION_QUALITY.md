@@ -20,6 +20,11 @@ Final processing requires all expected windows. The memory prompt asks for cover
 
 ## Retry older recordings
 
+A processing deadline is reported as a retryable timeout, including when the
+browser delivers its expired timer after returning to the foreground. An
+explicit queue pause leaves work pending without consuming a retry. Neither
+condition changes the saved audio or an already accepted upload body.
+
 In **Library**, filter **Needs retry**, select the affected standalone recordings, and choose **Process selected**. Previously empty transcripts without the current review marker are re-transcribed from their preserved cloud source. A compare-and-set write prevents a late retry from replacing a newer completed result. Existing nonempty transcripts remain idempotent.
 
 If the original WAV sounds unclear, first compare received duration and transport diagnostics. A storage-read error retains the source for recovery after reopening the app; a malformed source requires explicit repair rather than more model attempts. These changes do not silently rewrite old transcripts or guess missing speech.

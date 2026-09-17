@@ -24,7 +24,7 @@ function harness({ initial = packet(), resuming = false, ackStop = true, delayed
     SERVICE_UUID: 'service', AUDIO_CHAR_UUID: 'audio', CONTROL_CHAR_UUID: 'control',
     document: { body: { dataset: {} }, visibilityState: 'visible' }, navigator: { bluetooth: {} },
     ui: { settingsDialog: { open: false } }, localStorage: { setItem() {} },
-    connectionEpoch: 0, audioOnlyConnections: new Set(), connectInProgress: false, needsDeviceSelection: false, manualDisconnect: false,
+    connectionEpoch: 0, audioOnlyConnections: new Set(), connectInProgress: false, needsDeviceSelection: false, manualDisconnect: false, reconnectSelectionRequired: false, rapidNativeLinkFailures: 0,
     deviceStatus: { state: 0, error: 0 }, appState: 'disconnected', finalizing: false,
     recordingSessionId: 1, recordingConfirmed: resuming, recordingReconnectPending: resuming,
     recordingStopRequested: false, currentRecordingId: resuming ? 'owned-take' : null,

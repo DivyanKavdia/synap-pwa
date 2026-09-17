@@ -22,7 +22,7 @@ function setup({ watch = true, locked = false, preference = true } = {}) {
     navigator: { bluetooth: { getDevices: async () => [device], addEventListener() {} } },
     localStorage: { getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) },
     SynapSleepStateGuard: { locked, reconnectOnWake: preference },
-    firmwareBusy: false, bluetoothDevice: device, manualDisconnect: false, connectInProgress: false, finalizing: false,
+    firmwareBusy: false, bluetoothDevice: device, manualDisconnect: false, reconnectSelectionRequired: false, rapidNativeLinkFailures: 0, connectInProgress: false, finalizing: false,
     currentRecordingId: null, recordingReconnectPending: false, reloadRecoveryRunning: false, lastReloadRecoveryAt: 0,
     reconnectTimer: null, reconnectAttempts: 8, MAX_AUTO_RECONNECT_ATTEMPTS: 8, connectionEpoch: 0,
     clearTimeout: id => timers.delete(id), isGattConnected: () => connected, withTimeout: promise => promise,
@@ -44,6 +44,18 @@ test('monitor retries after fast idle recovery is exhausted without resetting it
   assert.equal(t.calls, 2); assert.equal(t.c.reconnectAttempts, 8);
   assert.equal(t.timers.size, 1);
   assert.equal([...t.timers.values()][0].delay, 30000);
+});
+
+test('a saved handle requiring selection stays quiet through polling, advertising and foreground recovery', async () => {
+  const t = setup();
+  t.c.reconnectSelectionRequired = true;
+  t.c.syncRememberedMonitoring();
+  assert.equal(t.timers.size, 0);
+  for (const reason of ['foreground', 'waiting-for-pendant', 'pendant-advertising']) {
+    await t.c.recoverRememberedConnection(reason, true);
+  }
+  t.advertise();
+  assert.equal(t.calls, 0);
 });
 
 test('sleep preserves the user preference and permits a remembered wake probe', async () => {
