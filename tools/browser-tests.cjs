@@ -33,6 +33,7 @@ const suites = [
   ['actions-functional'],
   ['memory-workspace'],
   ['speaker-names', { SYNAP_SPEAKERS_OUTPUT: 'artifacts/workflows/speakers' }],
+  ['voice-profile', { SYNAP_VOICE_OUTPUT: 'artifacts/workflows/voice' }],
 ];
 const selected = process.argv.slice(2);
 if (selected.some((name) => !suites.some(([suite]) => suite === name))) {

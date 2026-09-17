@@ -1,23 +1,25 @@
 # Synap Voice Profile
 
-Voice Profile lets Synap distinguish the enrolled account owner from other diarized speakers and render that speaker as **You** in the final transcript.
+Voice Profile lets Synap distinguish the enrolled account owner from other diarized speakers and use their confirmed name in new transcripts and summaries. Uncertain matches retain anonymous labels. No voice system can guarantee identification on every recording.
 
 ## Product behaviour
 
 1. Open **Settings → Memory & AI → Voice profile**.
-2. Choose **Set up** and explicitly consent to creating a voice profile.
+2. Choose **Set up**, correct **Your name**, and explicitly consent to creating a voice profile.
 3. Speak naturally for about 10 seconds using the phone microphone.
 4. The browser converts the sample to mono 16 kHz PCM WAV and sends it to the authenticated Synap backend.
 5. The backend forwards that WAV to the private `synap-speaker` service only long enough to compute an ECAPA-TDNN speaker embedding.
 6. The raw enrollment sample is discarded. Only the embedding, model id and sample duration are stored, encrypted with the user's existing Synap DEK.
 7. During final meeting understanding, diarized speaker regions are compared with the enrolled profile. Only a conservative high-confidence match is changed from `S1`/`S2` to `YOU`.
-8. The PWA renders `YOU` as **You**.
+8. A confident `YOU` match uses the confirmed name in the transcript and summary. Actions assigned to that exact matched name are normalized to `self`, so they appear under your own to-dos. A similar spelling or a merely mentioned name is not enough.
 
-**Re-record** replaces the encrypted profile. **Delete** removes it. Deleting a profile stops future self-speaker identification; it does not rewrite historical memories.
+**Manage → Save name** changes the confirmed spelling without another microphone recording. **Re-record voice** replaces the encrypted profile. **Delete** removes it. These changes apply to new memories; use **Name speakers** on an existing recording to correct its labels. Cancelling, signing out or switching accounts releases the microphone and stops enrollment.
+
+Accounts with an enrolled self profile or a consented remembered voice opt in to the existing speaker/timestamp enrichment pass. The primary transcript remains authoritative: disagreeing or incomplete annotations are discarded. This adds processing time and one optional audio submission when labels are missing. Accounts without saved voices keep ordinary single-pass transcription.
 
 ## Reliability boundary
 
-Speaker verification is optional metadata enrichment, not part of the recording or STT success path. Rolling 30-second transcription remains unchanged. If the profile is absent, the speaker service is unavailable, raw audio has aged out, the sample is too short, or the confidence threshold/margin is not met, Synap keeps the original diarization labels and continues processing normally.
+Speaker verification is optional metadata enrichment. If the profile is absent, the speaker service is unavailable, raw audio has aged out, the sample is too short, or the confidence threshold/margin is not met, Synap keeps the original diarization labels and continues processing normally. Setup rejects very quiet phone samples. Real accuracy still needs testing with the wearer's pendant, microphone distance and normal background noise.
 
 ## Privacy boundary
 

@@ -10,15 +10,15 @@ test('voice enrollment is explicit and enrollment audio is never stored locally'
   assert.match(src,/I agree to create an encrypted voice profile/);
   assert.match(src,/enrollment audio is not saved/i);
   assert.match(src,/\/v1\/voice-profile/);
-  assert.match(src,/Content-Type':'audio\/wav/);
+  assert.match(src,/'Content-Type':\s*'audio\/wav'/);
   assert.doesNotMatch(src,/indexedDB\.open/);
   assert.doesNotMatch(src,/localStorage\.setItem\([^)]*voice/i);
 });
 
 test('voice profile supports setup, re-record and deletion',()=>{
   const src=fs.readFileSync(path.join(root,'voice-profile.js'),'utf8');
-  assert.match(src,/setup\.textContent='Re-record'/);
-  assert.match(src,/method:'DELETE'/);
+  assert.match(src,/'Re-record voice'/);
+  assert.match(src,/method:\s*'DELETE'/);
   assert.match(src,/Future memories will stop identifying your speech as You/);
 });
 

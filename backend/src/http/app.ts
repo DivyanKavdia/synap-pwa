@@ -32,7 +32,7 @@ function cors() {
       res.setHeader('Vary', 'Origin');
       res.setHeader(
         'Access-Control-Allow-Headers',
-        'Authorization, Content-Type, Idempotency-Key, X-Synap-Client, X-Synap-Schema, X-Synap-Sha256, X-Synap-Start-Ms, X-Synap-End-Ms',
+        'Authorization, Content-Type, Idempotency-Key, X-Synap-Client, X-Synap-Schema, X-Synap-Sha256, X-Synap-Start-Ms, X-Synap-End-Ms, X-Synap-Voice-Name',
       );
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
       res.setHeader('Access-Control-Max-Age', '3600');

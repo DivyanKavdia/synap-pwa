@@ -1,0 +1,33 @@
+name: Provision missing Synap indexes
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/provision-indexes.cjs'
+      - '.github/workflows/provision-indexes.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: synap-index-provisioning
+  cancel-in-progress: false
+jobs:
+  indexes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test tests/provision-indexes.cjs
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/435475937223/locations/global/workloadIdentityPools/github/providers/synap-github
+          service_account: synap-github-deployer@gen-lang-client-0697897308.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Create missing indexes and wait for readiness
+        env:
+          PROJECT_ID: gen-lang-client-0697897308
+        run: node infra/provision-indexes.cjs --apply

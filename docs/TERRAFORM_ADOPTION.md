@@ -84,6 +84,22 @@ Gemini quota belongs to the API project. A successful infrastructure plan cannot
 prove model availability, and new API keys do not create independent project
 quota. Inspect the specific provider failure if the live synthetic check fails.
 
+## Additive index repair when the original state is unavailable
+
+The **Provision missing Synap indexes** workflow uses the existing deploy
+identity to list indexes and create only missing definitions from
+`infra/terraform/main.tf`. It waits for all declared indexes to become READY.
+The script has no delete, replacement, IAM, secret or runtime operations, and
+does not initialize or modify Terraform state. A permission failure stops it;
+it never expands the deployer's role. An operator with existing index access can
+run `PROJECT_ID=gen-lang-client-0697897308 node infra/provision-indexes.cjs --apply`.
+Omit `--apply` to report readiness only.
+
+The workflow prints exact resource-to-address mappings. Reconcile these with
+the original workspace using the import procedure above before any subsequent
+Terraform apply. An existing state binding to a different scope still requires
+operator review; additive index creation does not resolve that state conflict.
+
 References: [non-destructive state removal](https://developer.hashicorp.com/terraform/language/block/removed),
 [Firestore indexes](https://firebase.google.com/docs/firestore/query-data/indexing),
 [Gemini quota](https://ai.google.dev/gemini-api/docs/rate-limits).

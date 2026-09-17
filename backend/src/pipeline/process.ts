@@ -24,6 +24,7 @@ import { extractMemory } from '../gemini/memory.js';
 import { GeminiError, modelFailure } from '../gemini/client.js';
 import { formatMs, toSpeakerLines } from '../gemini/transcribe.js';
 import { tagSelfSpeaker } from '../speaker/enrich.js';
+import { readVoiceProfile } from '../speaker/profile.js';
 import { RecordingSpeakers, labelWords } from '../speaker/diarization.js';
 import { extractSpeakerSample } from '../speaker/audio.js';
 import { embedSpeakerAudio, speakerServiceConfigured, type SpeakerEmbeddingResult } from '../speaker/client.js';
@@ -295,6 +296,13 @@ async function understand(
   const durationMs = recording.durationMs || segments.length * SEGMENT_MS;
 
   const confirmedSpeakers = recording.sealedSpeakerNames ? readSpeakerNames(uid, recording, dek) : {};
+  // A confirmed name is used only for audio that matched the enrolled wearer.
+  // Never turn an anonymous/mentioned person into the owner by spelling alone.
+  let selfName: string | undefined;
+  if (/^\[.*?\] YOU:/m.test(transcript)) {
+    try { selfName = (await readVoiceProfile(uid, dek))?.displayName; } catch { /* Keep YOU. */ }
+    if (selfName) identified.YOU = selfName;
+  }
   const speakerNames = recording.sealedSpeakerNames ? confirmedSpeakers : identified;
   const memory = await extractMemory({
     startedAt: recording.startedAt,
@@ -303,6 +311,7 @@ async function understand(
     transcript: applySpeakerNames(transcript, speakerNames),
     confirmedSpeakers,
     identifiedSpeakers:recording.sealedSpeakerNames ? {} : identified,
+    selfSpeakerName: speakerNames.YOU || (!recording.sealedSpeakerNames ? selfName : undefined),
     transcriptWarnings:segments.filter(segment=>segment.transcriptionReview?.annotationsComplete===false).map(segment=>`The window at ${formatMs(segment.startMs)} has incomplete speaker/timing annotations. Do not infer an owner from its neighbouring speaker.`),
     durationMs,
     highlightOffsetsMs: highlights.map((highlight) => highlight.offsetMs),

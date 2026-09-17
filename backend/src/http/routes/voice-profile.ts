@@ -1,12 +1,19 @@
 import express, { Router } from 'express';
 import { config } from '../../config.js';
 import { embedSpeakerAudio, speakerServiceConfigured } from '../../speaker/client.js';
-import { deleteVoiceProfile, saveVoiceProfile, voiceProfileStatus } from '../../speaker/profile.js';
+import { deleteVoiceProfile, saveVoiceProfile, voiceProfileStatus, renameVoiceProfile } from '../../speaker/profile.js';
 import { requireAuth, type AuthedRequest } from '../auth.js';
 import { HttpError, handler } from '../errors.js';
 
 const ENROLL_MIN_MS = 5_000;
 const ENROLL_MAX_MS = 30_000;
+
+function displayName(value: unknown): string {
+  const name = typeof value === 'string' ? value.normalize('NFKC').trim() : '';
+  if (!name || name.length > 80 || /[:\x00-\x1f\x7f]/.test(name))
+    throw new HttpError(400, 'invalid_name', 'Enter your name using up to 80 characters, without colons or line breaks.');
+  return name;
+}
 
 export function voiceProfileRoutes(): Router {
   const router = Router();
@@ -18,6 +25,7 @@ export function voiceProfileRoutes(): Router {
       const status = await voiceProfileStatus(req.uid, req.dek);
       res.status(200).json({
         available: speakerServiceConfigured(),
+        supports_display_name: true,
         ...status,
         match_threshold: config.speaker.matchThreshold,
         privacy: {
@@ -43,6 +51,14 @@ export function voiceProfileRoutes(): Router {
       }
       if (!Buffer.isBuffer(req.body) || req.body.length < 44) {
         throw new HttpError(400, 'bad_audio', 'Send a mono 16 kHz WAV voice sample.');
+      }
+      let name: string | undefined;
+      const header = req.header('x-synap-voice-name');
+      if (header !== undefined) {
+        let decoded;
+        try { decoded = decodeURIComponent(header); }
+        catch { throw new HttpError(400, 'invalid_name', 'Enter a valid name.'); }
+        name = displayName(decoded);
       }
 
       let embedded;
@@ -71,14 +87,23 @@ export function voiceProfileRoutes(): Router {
         model: embedded.model,
         sampleDurationMs: embedded.duration_ms,
         consentVersion: 1,
+        ...(name ? { displayName: name } : {}),
       });
       res.status(201).json({
         available: true,
+        supports_display_name: true,
         ...status,
         enrollment_audio_stored: false,
       });
     }),
   );
+
+  router.patch('/voice-profile', requireAuth(), handler<AuthedRequest>(async (req, res) => {
+    const name = displayName(req.body?.display_name);
+    if (!await renameVoiceProfile(req.uid, req.dek, name))
+      throw new HttpError(404, 'voice_profile_missing', 'Set up your voice profile first.');
+    res.json({ available: speakerServiceConfigured(), supports_display_name: true, ...await voiceProfileStatus(req.uid, req.dek) });
+  }));
 
   router.delete(
     '/voice-profile',

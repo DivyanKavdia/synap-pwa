@@ -6,6 +6,7 @@ export interface VoiceProfilePayload {
   model: string;
   sampleDurationMs: number;
   consentVersion: number;
+  displayName?: string;
 }
 
 interface VoiceProfileDoc {
@@ -21,6 +22,7 @@ export interface VoiceProfileView {
   sampleDurationMs: number | null;
   createdAt: string | null;
   updatedAt: string | null;
+  displayName: string | null;
 }
 
 const profileRef = (uid: string) =>
@@ -40,7 +42,7 @@ export async function readVoiceProfile(uid: string, dek: Buffer): Promise<VoiceP
 export async function voiceProfileStatus(uid: string, dek: Buffer): Promise<VoiceProfileView> {
   const snapshot = await profileRef(uid).get();
   if (!snapshot.exists) {
-    return { enrolled: false, model: null, sampleDurationMs: null, createdAt: null, updatedAt: null };
+    return { enrolled: false, model: null, sampleDurationMs: null, createdAt: null, updatedAt: null, displayName: null };
   }
   const doc = snapshot.data() as VoiceProfileDoc;
   const profile = openJson<VoiceProfilePayload>(dek, doc.sealedProfile, binding(uid));
@@ -50,6 +52,7 @@ export async function voiceProfileStatus(uid: string, dek: Buffer): Promise<Voic
     sampleDurationMs: profile.sampleDurationMs,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
+    displayName: profile.displayName || null,
   };
 }
 
@@ -60,6 +63,10 @@ export async function saveVoiceProfile(
 ): Promise<VoiceProfileView> {
   const ref = profileRef(uid);
   const existing = await ref.get();
+  if (existing.exists && profile.displayName === undefined) {
+    const previous = openJson<VoiceProfilePayload>(dek, (existing.data() as VoiceProfileDoc).sealedProfile, binding(uid));
+    if (previous.displayName) profile = { ...profile, displayName: previous.displayName };
+  }
   const now = new Date().toISOString();
   const createdAt = existing.exists ? String((existing.data() as VoiceProfileDoc).createdAt) : now;
   const doc: VoiceProfileDoc = {
@@ -75,7 +82,19 @@ export async function saveVoiceProfile(
     sampleDurationMs: profile.sampleDurationMs,
     createdAt,
     updatedAt: now,
+    displayName: profile.displayName || null,
   };
+}
+
+export async function renameVoiceProfile(uid: string, dek: Buffer, displayName: string): Promise<boolean> {
+  return db.firestore().runTransaction(async tx => {
+    const ref = profileRef(uid), snapshot = await tx.get(ref);
+    if (!snapshot.exists) return false;
+    const doc = snapshot.data() as VoiceProfileDoc;
+    const profile = openJson<VoiceProfilePayload>(dek, doc.sealedProfile, binding(uid));
+    tx.update(ref, { sealedProfile: sealJson(dek, { ...profile, displayName }, binding(uid)), updatedAt: new Date().toISOString() });
+    return true;
+  });
 }
 
 export async function deleteVoiceProfile(uid: string): Promise<boolean> {

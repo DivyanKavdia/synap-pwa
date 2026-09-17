@@ -11,6 +11,7 @@
     canonicalAt = 0,
     canonicalScope = '';
   let canonicalPending = { people: null, followups: null },
+    canonicalAgain = { people: false, followups: false },
     canonicalGeneration = 0,
     refreshGeneration = 0,
     actionRevision = 0;
@@ -483,6 +484,7 @@
     canonicalFollowups = null;
     canonicalAt = 0;
     canonicalPending = { people: null, followups: null };
+    canonicalAgain = { people: false, followups: false };
     ++canonicalGeneration;
     listStates.people = {};
     listStates.followups = {};
@@ -551,38 +553,47 @@
       canonicalFollowups
     )
       return true;
-    const generation = canonicalGeneration,
-      mutationAtStart = actionRevision;
+    const generation = canonicalGeneration;
     const valid = () => generation === canonicalGeneration && key === accountKey();
     const loadOne = (kind, load) => {
-      if (canonicalPending[kind]) return canonicalPending[kind];
+      if (canonicalPending[kind]) {
+        // A memory can finish after this request took its snapshot. Read again
+        // when it settles, instead of losing that completion's invalidation.
+        if (force) canonicalAgain[kind] = true;
+        return canonicalPending[kind];
+      }
       const task = (async () => {
-        listStates[kind] = { loading: true };
-        listStatus(kind);
-        try {
-          const result = await load();
-          if (!valid()) return;
-          const rows = kind === 'people' ? result?.people : result?.follow_ups;
-          if (!Array.isArray(rows)) throw Error('Invalid list response');
-          if (kind === 'people') {
-            canonicalPeople = rows;
-            root.SynapPeopleConfirmUI?.acceptPeople?.({ people: rows });
-          } else
-            canonicalFollowups = rows.map((item) => {
-              const saved = actionMutations.get(String(item.id));
-              return saved?.version > mutationAtStart ? { ...item, state: saved.state } : item;
-            });
-          listStates[kind] = {};
-        } catch (error) {
-          if (!valid()) return;
-          listStates[kind] = { error: error.message || 'Could not load this list.' };
-        }
-        if (!valid()) return;
-        if (kind === 'people') renderPeopleSource();
-        else {
-          renderFollowups(activeMode());
+        do {
+          canonicalAgain[kind] = false;
+          const mutationAtStart = actionRevision;
+          listStates[kind] = { loading: true };
           listStatus(kind);
-        }
+          try {
+            const result = await load();
+            if (!valid()) return;
+            if (canonicalAgain[kind]) continue;
+            const rows = kind === 'people' ? result?.people : result?.follow_ups;
+            if (!Array.isArray(rows)) throw Error('Invalid list response');
+            if (kind === 'people') {
+              canonicalPeople = rows;
+              root.SynapPeopleConfirmUI?.acceptPeople?.({ people: rows });
+            } else
+              canonicalFollowups = rows.map((item) => {
+                const saved = actionMutations.get(String(item.id));
+                return saved?.version > mutationAtStart ? { ...item, state: saved.state } : item;
+              });
+            listStates[kind] = {};
+          } catch (error) {
+            if (!valid()) return;
+            listStates[kind] = { error: error.message || 'Could not load this list.' };
+          }
+          if (!valid()) return;
+          if (kind === 'people') renderPeopleSource();
+          else {
+            renderFollowups(activeMode());
+            listStatus(kind);
+          }
+        } while (valid() && canonicalAgain[kind]);
       })().finally(() => {
         if (canonicalPending[kind] === task) canonicalPending[kind] = null;
       });
@@ -725,17 +736,22 @@
       renderFollowups();
     });
     $('#datePicker')?.addEventListener('change', () => setTimeout(() => refresh(false), 20));
+    let refreshTimer;
+    const scheduleRefresh = () => {
+      canonicalAt = 0;
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => refresh(true), 50);
+    };
     [
       'synap-memory-ready',
       'synap-cloud-history-updated',
       'synap-transcript-updated',
       'synap-processing-complete',
-    ].forEach((n) =>
-      root.addEventListener(n, () => {
-        canonicalAt = 0;
-        setTimeout(() => refresh(true), 50);
-      }),
-    );
+    ].forEach((n) => root.addEventListener(n, scheduleRefresh));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') scheduleRefresh();
+    });
+    root.addEventListener('online', scheduleRefresh);
     root.SynapAuth?.onChange?.(() => {
       const key = accountKey();
       if (key !== canonicalScope) {
