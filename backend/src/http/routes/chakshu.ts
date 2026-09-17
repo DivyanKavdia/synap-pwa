@@ -39,27 +39,29 @@ export function chakshuRoutes(): Router {
       const body = req.body;
       if (!Buffer.isBuffer(body) || body.length < 4)
         throw new HttpError(400, 'invalid_image', 'Send one JPEG image to describe.');
-      if (body.length > MAX_EXPLICIT_VISION_BYTES || body[0] !== 0xff || body[1] !== 0xd8 ||
-          body[body.length - 2] !== 0xff || body[body.length - 1] !== 0xd9)
+      if (
+        body.length > MAX_EXPLICIT_VISION_BYTES ||
+        body[0] !== 0xff ||
+        body[1] !== 0xd8 ||
+        body[body.length - 2] !== 0xff ||
+        body[body.length - 1] !== 0xd9
+      )
         throw new HttpError(400, 'invalid_image', 'Send one complete JPEG image up to 2 MiB.');
       try {
-        const response = await createInteraction(
-          {
-            model: config.gemini.memoryModel,
-            usage_label: 'chakshu-vision',
-            system_instruction:
-              'Describe only what is visibly supported by this image. Be concise and concrete. Do not identify people, infer sensitive traits, guess intent, or invent obscured details. Mention uncertainty when needed.',
-            input: [
-              {
-                type: 'text',
-                text: 'What do you see? Return a short factual description suitable for a personal memory entry.',
-              },
-              { type: 'image', data: body.toString('base64'), mime_type: 'image/jpeg' },
-            ],
-            generation_config: { temperature: 0.1, max_output_tokens: 220 },
-          },
-          req.signal,
-        );
+        const response = await createInteraction({
+          model: config.gemini.memoryModel,
+          usage_label: 'chakshu-vision',
+          system_instruction:
+            'Describe only what is visibly supported by this image. Be concise and concrete. Do not identify people, infer sensitive traits, guess intent, or invent obscured details. Mention uncertainty when needed.',
+          input: [
+            {
+              type: 'text',
+              text: 'What do you see? Return a short factual description suitable for a personal memory entry.',
+            },
+            { type: 'image', data: body.toString('base64'), mime_type: 'image/jpeg' },
+          ],
+          generation_config: { temperature: 0.1, max_output_tokens: 220 },
+        });
         const description = interactionText(response).replace(/\s+/g, ' ').trim().slice(0, 2000);
         if (!description)
           throw new HttpError(502, 'empty_description', 'The image service returned no description.');
