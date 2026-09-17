@@ -248,7 +248,9 @@ export async function transcribeSegment(
       )
         words = candidateWords;
     } catch (error) {
-      if (signal?.aborted) throw error;
+      // Optional labels must not discard a completed primary transcript when
+      // the window's time budget runs out. Explicit cancellation still wins.
+      if (signal?.aborted && signal.reason?.name !== 'TimeoutError') throw error;
     }
   }
   const complete = annotationsComplete(rawText, words);
