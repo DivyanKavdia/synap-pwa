@@ -49,7 +49,10 @@ async function run() {
           if (options.method === 'POST') {
             qa.saveSignal = options.signal;
             qa.expectedUid = options.expectedUid;
-            if (qa.holdSave) await new Promise(resolve => { qa.releaseSave = resolve; });
+            if (qa.holdSave)
+              await new Promise((resolve) => {
+                qa.releaseSave = resolve;
+              });
             if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
             qa.posts.push({
               uid: key,
@@ -61,7 +64,8 @@ async function run() {
           if (options.method === 'PATCH')
             qa.profiles[key].displayName = JSON.parse(options.body).display_name;
           if (options.method === 'DELETE') delete qa.profiles[key];
-          if (options.method === 'POST' && qa.holdBody) return { ok: true, json: () => new Promise(() => {}) };
+          if (options.method === 'POST' && qa.holdBody)
+            return { ok: true, json: () => new Promise(() => {}) };
           return Response.json({
             available: true,
             supports_display_name: true,
@@ -152,8 +156,25 @@ async function run() {
           return bounds.left >= 0 && bounds.right <= innerWidth;
         }),
       );
+      await page.evaluate(() => {
+        voiceQA.holdSave = true;
+      });
       await page.locator('#synapVoiceStart').click();
       await page.clock.runFor(10050);
+      await page.waitForFunction(() => !!voiceQA.releaseSave);
+      assert.equal(await page.locator('#synapVoiceCountdown').innerText(), 'Saving profile');
+      assert.equal(
+        await page.evaluate(() => voiceQA.stops),
+        await page.evaluate(() => voiceQA.requests),
+      );
+      const requestsBeforeSave = await page.evaluate(() => voiceQA.requests);
+      await page.clock.runFor(2000);
+      assert.equal(await page.locator('#synapVoiceCountdown').innerText(), 'Saving profile');
+      assert.equal(await page.evaluate(() => voiceQA.requests), requestsBeforeSave);
+      await page.evaluate(() => {
+        voiceQA.holdSave = false;
+        voiceQA.releaseSave();
+      });
       await page.waitForFunction(() => !document.querySelector('#synapVoiceProfileDialog').open);
       assert.equal(await page.evaluate(() => voiceQA.posts.length), 1);
       assert.equal(await page.evaluate(() => voiceQA.posts[0].name), 'Divyan Kavdia');
@@ -171,26 +192,71 @@ async function run() {
       assert.match(await page.locator('#synapVoiceProfileStatus').innerText(), /Divyan K\./);
       // Upload/auth can hang despite AbortSignal support in the browser bridge.
       // The UI must show saving rather than a stuck 1s countdown, and recover.
-      await page.evaluate(() => { voiceQA.holdSave = true; voiceQA.holdClose = true; });
+      await page.evaluate(() => {
+        voiceQA.holdSave = true;
+        voiceQA.holdClose = true;
+      });
       await page.locator('#synapVoiceProfileSetup').click();
       await page.locator('#synapVoiceConsent').check();
       await page.locator('#synapVoiceStart').click();
       await page.clock.runFor(10050);
       await page.waitForFunction(() => !!voiceQA.releaseSave);
-      assert.equal(await page.locator('#synapVoiceCountdown').innerText(), 'Saving');
+      const micRequestsAfterRecording = await page.evaluate(() => voiceQA.requests);
+      assert.equal(
+        await page.evaluate(() => voiceQA.stops),
+        micRequestsAfterRecording,
+        'all microphone tracks stop before saving starts',
+      );
+      assert.equal(await page.locator('#synapVoiceCountdown').innerText(), 'Saving profile');
+      assert.match(
+        await page.locator('#synapVoicePrompt').innerText(),
+        /Recording finished.*microphone is off/,
+      );
+      assert.equal(await page.locator('#synapVoiceProgress').evaluate((node) => node.value), 10);
       await page.clock.runFor(16000);
-      assert.match(await page.locator('#synapVoicePrompt').innerText(), /may be starting/);
+      assert.equal(
+        await page.locator('#synapVoiceCountdown').innerText(),
+        'Saving profile',
+        'saving never starts a second elapsed recording clock',
+      );
+      assert.match(
+        await page.locator('#synapVoicePrompt').innerText(),
+        /microphone is off.*longer than usual/,
+      );
+      assert.equal(
+        await page.evaluate(() => voiceQA.requests),
+        micRequestsAfterRecording,
+        'waiting for the profile never restarts microphone capture',
+      );
+      assert(await page.locator('#synapVoiceStart').isDisabled());
+      await page.screenshot({ path: path.join(out, 'voice-saving-' + width + '.png') });
       await page.clock.runFor(90000);
       await page.waitForFunction(() => !document.querySelector('#synapVoiceStart').disabled);
       assert.match(await page.locator('#synapVoiceError').innerText(), /did not respond in time/);
+      assert.equal(await page.locator('#synapVoiceCountdown').innerText(), 'Save not confirmed');
+      assert.equal(
+        await page.evaluate(() => voiceQA.requests),
+        micRequestsAfterRecording,
+        'a failed save requires an explicit recording retry',
+      );
       assert.equal(await page.evaluate(() => voiceQA.saveSignal.aborted), true);
       assert.equal(await page.evaluate(() => voiceQA.expectedUid), 'owner');
       await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-      await page.evaluate(() => { voiceQA.holdSave = false; voiceQA.holdClose = false; voiceQA.releaseSave(); });
-      assert.equal(await page.evaluate(() => voiceQA.posts.length), 1, 'expired upload cannot submit late');
+      await page.evaluate(() => {
+        voiceQA.holdSave = false;
+        voiceQA.holdClose = false;
+        voiceQA.releaseSave();
+      });
+      assert.equal(
+        await page.evaluate(() => voiceQA.posts.length),
+        1,
+        'expired upload cannot submit late',
+      );
       // Even response-body parsing is bounded. The server may already have saved
       // this request, so the UI must not promise the old profile is unchanged.
-      await page.evaluate(() => { voiceQA.holdBody = true; });
+      await page.evaluate(() => {
+        voiceQA.holdBody = true;
+      });
       await page.locator('#synapVoiceProfileSetup').click();
       await page.locator('#synapVoiceConsent').check();
       await page.locator('#synapVoiceStart').click();
@@ -200,7 +266,9 @@ async function run() {
       assert.match(await page.locator('#synapVoiceError').innerText(), /did not respond in time/);
       assert.doesNotMatch(await page.locator('#synapVoicePrompt').innerText(), /unchanged/);
       await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-      await page.evaluate(() => { voiceQA.holdBody = false; });
+      await page.evaluate(() => {
+        voiceQA.holdBody = false;
+      });
       // An account change cancels capture before any upload under the new identity.
       await page.locator('#synapVoiceProfileSetup').click();
       await page.locator('#synapVoiceConsent').check();

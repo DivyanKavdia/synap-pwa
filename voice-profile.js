@@ -42,7 +42,7 @@
     return new DOMException('Voice setup cancelled.', 'AbortError');
   }
   function cancellable(promise, signal) {
-    const reason = () => signal.reason?.name === 'TimeoutError' ? signal.reason : abortError();
+    const reason = () => (signal.reason?.name === 'TimeoutError' ? signal.reason : abortError());
     if (signal.aborted) return Promise.reject(reason());
     return new Promise((resolve, reject) => {
       const cancel = () => reject(reason());
@@ -52,23 +52,38 @@
   }
   async function request(path, options = {}) {
     if (!root.SynapAuth?.authedFetch) throw new Error('Synap account is unavailable.');
-    const controller = new AbortController(), parent = options.signal;
+    const controller = new AbortController(),
+      parent = options.signal;
     const cancel = () => controller.abort();
     if (parent?.aborted) throw abortError();
     parent?.addEventListener('abort', cancel, { once: true });
-    const timer = setTimeout(() => controller.abort(new DOMException(
-      'The voice service did not respond in time. Close this dialog and refresh Synap to check whether it saved before trying again.',
-      'TimeoutError',
-    )), options.method === 'POST' ? SAVE_TIMEOUT_MS : STATUS_TIMEOUT_MS);
+    const timer = setTimeout(
+      () =>
+        controller.abort(
+          new DOMException(
+            'The voice service did not respond in time. Close this dialog and refresh Synap to check whether it saved before trying again.',
+            'TimeoutError',
+          ),
+        ),
+      options.method === 'POST' ? SAVE_TIMEOUT_MS : STATUS_TIMEOUT_MS,
+    );
     try {
-      const response = await cancellable(root.SynapAuth.authedFetch(path, {
-        ...options, expectedUid: accountKey(), signal: controller.signal,
-      }), controller.signal);
+      const response = await cancellable(
+        root.SynapAuth.authedFetch(path, {
+          ...options,
+          expectedUid: accountKey(),
+          signal: controller.signal,
+        }),
+        controller.signal,
+      );
       let data;
-      try { data = await cancellable(response.json(), controller.signal); }
-      catch (error) {
+      try {
+        data = await cancellable(response.json(), controller.signal);
+      } catch (error) {
         if (controller.signal.aborted) throw error;
-        throw new Error('The voice service returned an unreadable response. Reopen Voice profile to check its status.');
+        throw new Error(
+          'The voice service returned an unreadable response. Reopen Voice profile to check its status.',
+        );
       }
       if (!response.ok) {
         const e = new Error(data?.error?.message || 'HTTP ' + response.status);
@@ -91,6 +106,8 @@
 `;
     s.textContent +=
       '.synap-voice-name{display:grid;gap:6px;font-size:13px}.synap-voice-name input{box-sizing:border-box;width:100%;min-height:44px;border:1px solid var(--border);border-radius:10px;padding:10px;font:inherit;font-size:16px;color:inherit;background:var(--surface)}.synap-voice-dialog{max-height:calc(100dvh - 24px);overflow:auto}.synap-voice-dialog-actions{flex-wrap:wrap}.synap-voice-dialog-actions button{min-height:44px}.synap-voice-dialog [hidden]{display:none!important}';
+    s.textContent +=
+      '.synap-voice-progress[data-stage="saving"] strong{font-size:21px;color:var(--accent)}.synap-voice-progress progress{display:block;width:100%;height:5px;margin-top:10px;accent-color:var(--accent)}.synap-voice-progress>div{width:100%;padding:12px;box-sizing:border-box}';
     document.head.appendChild(s);
   }
   function row() {
@@ -163,7 +180,10 @@
       return;
     }
     if (status.enrolled) {
-      detail.textContent = 'Ready · confident matches use ' + (status.displayName || 'You') + ((status.sampleCount || 1) > 1 ? ' · ' + status.sampleCount + ' samples.' : '.');
+      detail.textContent =
+        'Ready · confident matches use ' +
+        (status.displayName || 'You') +
+        ((status.sampleCount || 1) > 1 ? ' · ' + status.sampleCount + ' samples.' : '.');
       detail.classList.add('synap-voice-ready');
       setup.textContent = 'Manage';
       remove.hidden = false;
@@ -209,14 +229,22 @@
     consent.append(check, text);
     const progress = document.createElement('div');
     progress.className = 'synap-voice-progress';
+    progress.dataset.stage = 'ready';
     const progressText = document.createElement('div');
     const big = document.createElement('strong');
     big.id = 'synapVoiceCountdown';
     big.textContent = '10s';
     const small = document.createElement('p');
     small.id = 'synapVoicePrompt';
+    small.setAttribute('role', 'status');
     small.textContent = 'When ready, start and speak in your normal voice.';
-    progressText.append(big, small);
+    const meter = document.createElement('progress');
+    meter.id = 'synapVoiceProgress';
+    meter.max = RECORD_SECONDS;
+    meter.value = 0;
+    meter.hidden = true;
+    meter.setAttribute('aria-label', 'Voice sample recorded');
+    progressText.append(big, small, meter);
     progress.appendChild(progressText);
     const error = document.createElement('p');
     error.id = 'synapVoiceError';
@@ -288,7 +316,10 @@
     start.textContent = status.enrolled ? 'Re-record voice' : 'Start recording';
     updateControls();
     error.hidden = true;
+    count.closest('.synap-voice-progress').dataset.stage = 'ready';
     count.textContent = RECORD_SECONDS + 's';
+    $('#synapVoiceProgress').value = 0;
+    $('#synapVoiceProgress').hidden = true;
     prompt.textContent = 'When ready, start and speak in your normal voice.';
     if (typeof d.showModal === 'function') d.showModal();
     else d.setAttribute('open', '');
@@ -423,7 +454,8 @@
       void context.close().catch(() => {});
     }
   }
-  const diagnostic = (stage, detail = {}) => root.dispatchEvent(new CustomEvent('synap-voice-diagnostic', { detail: { stage, ...detail } }));
+  const diagnostic = (stage, detail = {}) =>
+    root.dispatchEvent(new CustomEvent('synap-voice-diagnostic', { detail: { stage, ...detail } }));
   const enroll = () => saveProfile(false);
   async function saveProfile(nameOnly) {
     if (busy || !validName() || !signedIn() || !providerIsSynap()) return;
@@ -440,38 +472,53 @@
     updateControls();
     const error = $('#synapVoiceError'),
       count = $('#synapVoiceCountdown'),
-      prompt = $('#synapVoicePrompt');
+      prompt = $('#synapVoicePrompt'),
+      meter = $('#synapVoiceProgress'),
+      progress = count.closest('.synap-voice-progress');
     error.hidden = true;
-    let uploadTimer;
+    let savingNoticeTimer;
     try {
       let options;
       if (nameOnly) {
-        count.textContent = 'Saving';
+        progress.dataset.stage = 'saving';
+        count.textContent = 'Saving name';
         prompt.textContent = 'Saving your name…';
+        meter.hidden = true;
         options = {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ display_name: name }),
         };
       } else {
-        prompt.textContent = 'Speak naturally. Describe your day or plans in your usual language.';
+        progress.dataset.stage = 'permission';
+        count.textContent = 'Microphone';
+        prompt.textContent = 'Allow microphone access to start your 10-second sample.';
+        meter.value = 0;
+        meter.hidden = true;
         const audio = await capture(
           RECORD_SECONDS,
           (remaining) => {
-            count.textContent = remaining + 's';
+            progress.dataset.stage = 'recording';
+            count.textContent = remaining + 's left';
+            meter.hidden = false;
+            meter.value = RECORD_SECONDS - remaining;
+            if (remaining === RECORD_SECONDS)
+              prompt.textContent =
+                'Speak naturally. Describe your day or plans in your usual language.';
           },
           controller.signal,
         );
         diagnostic('upload_started', { elapsedMs: Date.now() - startedAt });
-        count.textContent = 'Saving';
-        prompt.textContent = 'Creating encrypted voice profile…';
-        const uploadStarted = Date.now();
-        uploadTimer = setInterval(() => {
+        progress.dataset.stage = 'saving';
+        count.textContent = 'Saving profile';
+        meter.value = RECORD_SECONDS;
+        prompt.textContent =
+          'Recording finished. Your microphone is off. Creating your encrypted voice profile…';
+        savingNoticeTimer = setTimeout(() => {
           if (operation !== controller || controller.signal.aborted) return;
-          const elapsed = Math.floor((Date.now() - uploadStarted) / 1000);
-          count.textContent = elapsed + 's elapsed';
-          if (elapsed >= 15) prompt.textContent = 'The voice service may be starting. Keep this dialog open; you can cancel.';
-        }, 1000);
+          prompt.textContent =
+            'Your sample is recorded and the microphone is off. Saving is taking longer than usual. Keep this dialog open; you can cancel.';
+        }, 15000);
         options = {
           method: 'POST',
           headers: { 'Content-Type': 'audio/wav', 'X-Synap-Voice-Name': encodeURIComponent(name) },
@@ -483,6 +530,7 @@
       if (controller.signal.aborted || key !== accountKey()) throw abortError();
       status = saved;
       diagnostic('saved', { elapsedMs: Date.now() - startedAt, nameOnly });
+      progress.dataset.stage = 'saved';
       count.textContent = '✓';
       prompt.textContent = nameOnly
         ? 'Name saved for new memories.'
@@ -490,15 +538,23 @@
       root.dispatchEvent(new CustomEvent('synap-voice-profile-updated'));
       closeDialog();
     } catch (errorValue) {
-      diagnostic(errorValue.name === 'AbortError' ? 'cancelled' : 'failed', { elapsedMs: Date.now() - startedAt, code: errorValue.code || errorValue.name, httpStatus: errorValue.status || null });
+      diagnostic(errorValue.name === 'AbortError' ? 'cancelled' : 'failed', {
+        elapsedMs: Date.now() - startedAt,
+        code: errorValue.code || errorValue.name,
+        httpStatus: errorValue.status || null,
+      });
       if (errorValue.name !== 'AbortError' && key === accountKey()) {
         error.textContent = errorValue.message || 'Could not save voice profile.';
         error.hidden = false;
-        count.textContent = RECORD_SECONDS + 's';
-        prompt.textContent = 'Setup did not finish here. Refresh Synap to check the saved profile before trying again.';
+        const wasSaving = progress.dataset.stage === 'saving';
+        progress.dataset.stage = 'error';
+        count.textContent = wasSaving ? 'Save not confirmed' : 'Sample needs retry';
+        prompt.textContent = wasSaving
+          ? 'Your microphone is off. Refresh Synap to check whether the profile saved before recording again.'
+          : 'Your microphone is off. Tap the recording button when you are ready to try again.';
       }
     } finally {
-      clearInterval(uploadTimer);
+      clearTimeout(savingNoticeTimer);
       if (operation === controller) {
         operation = null;
         busy = false;
