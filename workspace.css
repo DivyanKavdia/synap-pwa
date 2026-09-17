@@ -1,0 +1,1122 @@
+/* Product workspace. One visible destination; capture controls keep their lifetime. */
+body.synap-refresh {
+  font:
+    14px/1.5 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  letter-spacing: -0.12px;
+}
+:root[data-theme='light'] {
+  --bg: #f3f4f3;
+  --surface: #fff;
+  --surface-2: #eceeec;
+  --chrome: #f3f4f3f5;
+  --ink: #202824;
+  --muted: #626d67;
+  --border: #dce2de;
+  --control-border: #a0aaa4;
+}
+:root[data-theme='dark'] {
+  --bg: #121815;
+  --surface: #1b231f;
+  --surface-2: #26312a;
+  --chrome: #121815f5;
+  --ink: #edf2ee;
+  --muted: #a7b6ad;
+  --border: #344238;
+  --control-border: #74877a;
+}
+html {
+  scroll-padding-top: 112px;
+}
+body.synap-refresh .app-shell {
+  max-width: 1240px;
+  padding-inline: 16px;
+  padding-bottom: calc(88px + env(safe-area-inset-bottom));
+}
+body.synap-refresh main {
+  display: block !important;
+  padding-top: 16px;
+}
+body.synap-refresh main > :is(#memoryWorkspace, #library, #myActions, #ask) {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+  min-width: 0;
+}
+body.synap-refresh main > [hidden],
+body.synap-refresh [hidden] {
+  display: none !important;
+}
+body.synap-refresh .topbar {
+  min-height: 66px;
+  padding-block: 10px;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--chrome);
+}
+body.synap-refresh .brand-logo.synap-brand-image {
+  width: 102px !important;
+  height: 28px !important;
+}
+.workspace-eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 1.3px;
+  line-height: 1.5;
+  color: var(--accent);
+}
+.workspace-description {
+  margin: 5px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+body.synap-refresh :is(h1, h2, h3) {
+  text-wrap: balance;
+}
+body.synap-refresh .brain-heading {
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+body.synap-refresh #dayLensTitle {
+  font-size: 28px !important;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -1px;
+}
+body.synap-refresh .day-navigation {
+  gap: 0;
+}
+body.synap-refresh .day-navigation button {
+  min-height: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 10px;
+}
+body.synap-refresh #toggleDayCalendar {
+  padding: 6px 8px;
+  font-size: 12px;
+  border: 0;
+  background: var(--surface);
+}
+body.synap-refresh #memoryWorkspace > [role='tabpanel'] {
+  padding: 0 !important;
+}
+body.synap-refresh .memory-workspace-tabs {
+  display: flex;
+  width: fit-content;
+  gap: 4px;
+  padding: 3px;
+  margin: 0 0 18px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 11px;
+}
+body.synap-refresh .memory-workspace-tabs button {
+  min-height: 38px;
+  padding: 7px 16px;
+  font-size: 12px;
+  border-radius: 8px;
+  font-weight: 650;
+  background: none;
+}
+body.synap-refresh .memory-workspace-tabs button[aria-selected='true'] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 3px #0000000b;
+}
+body.synap-refresh .day-brief {
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+  border-radius: 0;
+}
+body.synap-refresh #dayGlanceMetrics {
+  display: flex;
+  flex-wrap: nowrap;
+  margin: 0 0 14px;
+  padding: 0;
+  gap: 0;
+  background: transparent;
+  border-radius: 0;
+  border-block: 1px solid var(--border);
+}
+body.synap-refresh #dayGlanceMetrics > * {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 5px;
+  align-content: center;
+  justify-content: flex-start;
+  min-height: 60px;
+  padding: 8px 10px;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+}
+body.synap-refresh #dayGlanceMetrics > :first-child {
+  padding-left: 0;
+}
+body.synap-refresh #dayGlanceMetrics > :last-child {
+  border-right: 0;
+}
+body.synap-refresh #dayGlanceMetrics strong {
+  font-size: 21px !important;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+}
+body.synap-refresh #dayGlanceMetrics > * > span {
+  font-size: 11px;
+  color: var(--muted);
+  align-self: center;
+}
+body.synap-refresh #dayGlanceMetrics small {
+  display: block;
+  width: 100%;
+  font-size: 10px;
+  color: var(--muted);
+  margin: 0;
+}
+body.synap-refresh .brief-intro {
+  margin: 0;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.brief-heading {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+body.synap-refresh #dayBriefText {
+  font-size: 14px !important;
+  line-height: 1.65 !important;
+  margin: 0;
+  -webkit-line-clamp: 3;
+  color: var(--ink);
+}
+body.synap-refresh #dayBriefText.is-expanded {
+  display: block;
+  white-space: pre-line;
+}
+body.synap-refresh .brief-actions {
+  margin-top: 8px;
+  gap: 8px;
+}
+body.synap-refresh .brief-actions button {
+  font-size: 12px;
+  padding: 6px 0;
+  min-height: 36px;
+}
+.brief-signals {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.brief-signal {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 20px;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  text-align: left;
+  font: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.brief-signal > span:first-child {
+  color: var(--accent);
+  font-size: 16px;
+}
+.brief-signal small {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.brief-signal strong {
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.brief-focus {
+  margin: 20px 0 0;
+}
+.brief-focus > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.brief-focus h2 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.5px;
+}
+.brief-focus > header button {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  min-height: 44px;
+  cursor: pointer;
+}
+body.synap-refresh .actionable-memory {
+  margin-top: 20px;
+}
+body.synap-refresh #dayConversations {
+  padding: 0;
+  border: 0;
+  background: none;
+  margin: 0;
+}
+body.synap-refresh #dayConversations > header {
+  padding: 0 0 8px;
+  min-height: 44px;
+  font-size: 17px;
+  font-weight: 700;
+  border: 0;
+}
+body.synap-refresh #dayConversations .workspace-body {
+  padding: 0;
+}
+body.synap-refresh .conversation-list {
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+body.synap-refresh .conversation-digest {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+}
+body.synap-refresh .conversation-digest:last-child {
+  border-bottom: 0;
+}
+body.synap-refresh .conversation-card {
+  min-height: 74px;
+  padding: 12px;
+  grid-template-columns: 56px minmax(0, 1fr) 16px;
+  gap: 10px;
+}
+body.synap-refresh .conversation-time {
+  font-size: 10px;
+  color: var(--muted);
+}
+body.synap-refresh .conversation-copy strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+.conversation-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+body.synap-refresh .conversation-people {
+  font-size: 10px;
+}
+body.synap-refresh .conversation-detail {
+  padding: 0 14px 14px;
+}
+body.synap-refresh .digest-summary {
+  font-size: 13px;
+}
+body.synap-refresh .conversation-pagination {
+  margin: 0;
+  min-height: 36px;
+  font-size: 11px;
+}
+/* The full source reader is available as a compact disclosure on the brief. */
+body.synap-refresh #insights {
+  margin-top: 16px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
+}
+body.synap-refresh #insights .section-heading {
+  margin: 0 0 8px;
+}
+body.synap-refresh #insights .section-heading h2 {
+  font-size: 16px !important;
+  letter-spacing: -0.3px;
+}
+body.synap-refresh .insights-list {
+  gap: 6px;
+}
+body.synap-refresh .insight-card {
+  padding: 12px !important;
+  background: var(--surface) !important;
+  border-radius: 10px !important;
+}
+body.synap-refresh .insight-top h3 {
+  font-size: 13px !important;
+}
+body.synap-refresh #todayMemoryPipeline {
+  margin: 12px 0;
+  border-radius: 12px;
+  padding: 0 12px;
+  background: var(--surface);
+}
+/* Actions: deadlines and status are in the same reading path as the task. */
+body.synap-refresh #myActions > .section-heading,
+body.synap-refresh #library > .section-heading {
+  margin: 0 0 16px;
+  align-items: center;
+}
+body.synap-refresh :is(#myActionsTitle, #libraryTitle) {
+  font-size: 30px !important;
+  font-weight: 700 !important;
+  letter-spacing: -1px;
+}
+.action-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.action-overview button {
+  display: grid;
+  text-align: left;
+  gap: 3px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.action-overview strong {
+  font-size: 24px;
+  letter-spacing: -0.8px;
+  line-height: 1.2;
+}
+.action-overview span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.action-overview button[data-period='overdue'] strong {
+  color: var(--rose);
+}
+body.synap-refresh #myActions .actions-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-2);
+}
+body.synap-refresh #myActions .actions-tabs button {
+  flex: 1;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+body.synap-refresh #myActions .actions-tabs button[aria-selected='true'] {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 700;
+}
+body.synap-refresh #myActions .actions-content {
+  max-height: none;
+  height: auto;
+  overflow: visible;
+  padding: 0;
+}
+body.synap-refresh #myActions .action-filters {
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+body.synap-refresh #myActions .action-filters label {
+  font-size: 10px;
+  gap: 3px;
+}
+body.synap-refresh #myActions .action-filters select {
+  min-height: 42px;
+  padding: 7px 10px;
+  background: var(--surface);
+  border-radius: 9px;
+  font-size: 13px;
+}
+body.synap-refresh #actionsDay {
+  font-size: 10px;
+  margin: 0;
+}
+body.synap-refresh #myActions .focus-heading {
+  display: none;
+}
+body.synap-refresh #myActions .focus-tabs {
+  gap: 0;
+  padding: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+  background: none;
+}
+body.synap-refresh #myActions .focus-tabs button {
+  padding: 10px 8px;
+  min-height: 44px;
+  font-size: 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+}
+body.synap-refresh #myActions .focus-tabs button[aria-selected='true'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: none;
+}
+body.synap-refresh :is(#myActions, #actionFocus) .synap-follow-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  margin: 0 0 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+}
+body.synap-refresh :is(#myActions, #actionFocus) .brain-action-row {
+  padding: 0;
+  border: 0;
+  background: none;
+  gap: 8px;
+  text-align: left;
+  align-items: start;
+}
+body.synap-refresh :is(#myActions, #actionFocus) .brain-action-icon {
+  display: none;
+}
+body.synap-refresh :is(#myActions, #actionFocus) .brain-action-row strong {
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 600;
+}
+body.synap-refresh :is(#myActions, #actionFocus) .brain-action-row small {
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin-top: 5px;
+}
+body.synap-refresh :is(#myActions, #actionFocus) .synap-follow-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  align-items: stretch;
+  max-width: 94px;
+}
+body.synap-refresh :is(#myActions, #actionFocus) .synap-follow-done {
+  min-height: 44px;
+  font-size: 11px;
+  padding: 6px 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 0;
+  border-radius: 7px;
+}
+body.synap-refresh :is(#myActions, #actionFocus) .synap-follow-edit {
+  min-height: 36px;
+  padding: 4px;
+  font-size: 10px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+}
+.action-due {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 2px 6px;
+  margin-top: 6px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+.action-due[data-urgency='overdue'] {
+  background: var(--rose-soft);
+  color: var(--rose);
+}
+.action-due[data-urgency='today'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+body.synap-refresh #myActions :is(#dailyFocus, #followupInbox, #peopleMemory) {
+  padding: 0 !important;
+  margin: 0;
+  border: 0;
+  background: none;
+}
+body.synap-refresh #followupInbox .section-heading {
+  display: none;
+}
+/* Memories are readable before opening their source. */
+body.synap-refresh .library-toolbar {
+  margin-bottom: 8px;
+  gap: 6px;
+}
+body.synap-refresh .library-scope {
+  padding: 0;
+  background: none;
+}
+body.synap-refresh .memory-search {
+  margin-block: 0 12px;
+}
+body.synap-refresh .memory-search input {
+  min-height: 44px !important;
+  background: var(--surface) !important;
+  border-radius: 10px !important;
+  font-size: 16px !important;
+}
+body.synap-refresh .recordings-list {
+  gap: 8px;
+}
+body.synap-refresh .recording-card {
+  border-radius: 12px !important;
+  background: var(--surface);
+}
+body.synap-refresh .recording-row {
+  min-height: 84px !important;
+  padding: 14px !important;
+  gap: 10px;
+  align-items: start;
+}
+body.synap-refresh .recording-row-icon {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+body.synap-refresh .recording-row-name {
+  font-size: 14px !important;
+  font-weight: 650;
+  line-height: 1.4;
+}
+body.synap-refresh .recording-row-meta {
+  font-size: 10px !important;
+  line-height: 1.5;
+  margin: 3px 0;
+}
+body.synap-refresh .recording-row-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin-top: 5px;
+}
+body.synap-refresh .memory-card-facts {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 7px;
+}
+body.synap-refresh .memory-card-facts > span {
+  font-size: 9px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+body.synap-refresh .recording-content {
+  padding: 14px !important;
+  border-top: 1px solid var(--border);
+}
+.memory-explore {
+  min-height: 44px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+/* Ask is a destination with scope, useful starting points, and verifiable answers. */
+body.synap-refresh #ask .ask-head {
+  gap: 12px;
+  margin-bottom: 18px;
+  align-items: center;
+}
+body.synap-refresh #ask .ask-orb {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  font-size: 24px;
+}
+body.synap-refresh #ask .ask-head h2 {
+  font-size: 30px;
+  letter-spacing: -1px;
+  font-weight: 700;
+}
+body.synap-refresh #ask .section-copy {
+  margin-top: 6px;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+}
+.ask-scope-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.ask-scope-bar label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+.ask-scope-bar select {
+  min-height: 44px;
+  padding: 7px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+}
+.ask-scope-bar button {
+  font: inherit;
+  font-size: 11px;
+  min-height: 44px;
+  padding: 7px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+body.synap-refresh #ask .ask-form {
+  padding: 6px;
+  margin: 0;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--control-border);
+  align-items: end;
+}
+body.synap-refresh #ask .ask-form textarea {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  resize: vertical;
+  min-height: 72px;
+  max-height: 180px;
+  padding: 10px;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  font-size: 16px;
+  background: none;
+  color: var(--ink);
+  line-height: 1.5;
+}
+body.synap-refresh #ask .ask-form button {
+  padding: 9px 13px;
+  font-size: 12px !important;
+  border-radius: 8px;
+}
+.ask-form-hint {
+  margin: 6px 0 16px;
+  font-size: 10px;
+  color: var(--muted);
+}
+body.synap-refresh #ask .ask-suggestions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 18px;
+}
+body.synap-refresh #ask .ask-suggestions button {
+  text-align: left;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: start;
+  gap: 5px;
+  min-height: 82px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  white-space: normal;
+}
+.ask-suggestions strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+.ask-suggestions span {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+body.synap-refresh #ask .ask-answer:not(:empty) {
+  background: var(--surface);
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+body.synap-refresh #ask .answer-copy {
+  gap: 10px;
+}
+body.synap-refresh #ask .answer-copy p {
+  font-size: 14px !important;
+  line-height: 1.7 !important;
+  white-space: pre-wrap;
+}
+body.synap-refresh #ask .answer-mark {
+  width: 24px;
+  height: 24px;
+  flex-basis: 24px;
+  background: var(--accent-soft);
+  font-size: 14px;
+}
+.ask-question {
+  font-size: 12px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+  margin: 0 0 12px;
+}
+body.synap-refresh #ask .answer-sources {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-top: 14px;
+}
+body.synap-refresh #ask .ask-source {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: left;
+  background: var(--bg);
+}
+body.synap-refresh #ask .ask-source-quote {
+  grid-column: 1/-1;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.ask-answer-tools {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ask-answer-tools button {
+  min-height: 44px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--accent);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ask-recent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.ask-recent:empty {
+  display: none;
+}
+.ask-recent button {
+  min-height: 44px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+body.synap-refresh .brain-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  width: 100%;
+  max-width: none;
+  bottom: 0;
+  left: 0;
+  transform: none;
+  border-radius: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  padding: 5px 12px calc(5px + env(safe-area-inset-bottom));
+  gap: 4px;
+  background: var(--chrome);
+  box-shadow: none;
+}
+body.synap-refresh .brain-tabs a {
+  min-height: 54px;
+  border-radius: 10px;
+  gap: 3px !important;
+}
+body.synap-refresh .brain-tabs a.active {
+  background: var(--accent-soft) !important;
+  color: var(--accent) !important;
+}
+body.synap-refresh .brain-tabs a svg {
+  width: 20px;
+  height: 20px;
+}
+body.synap-refresh .brain-tabs a span {
+  font-size: 10px;
+}
+body.synap-refresh .empty-state {
+  padding: 24px 12px;
+}
+body.synap-refresh .brain-empty {
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 12px 0;
+  margin: 0;
+}
+@media (max-width: 640px) {
+  body.synap-refresh .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 8px 0;
+  }
+  body.synap-refresh .topbar .brand {
+    flex-basis: 100%;
+  }
+  body.synap-refresh .topbar > .top-actions {
+    gap: 4px;
+  }
+  body.synap-refresh .topbar .header-pendant-status {
+    max-width: 108px !important;
+    padding-inline: 8px;
+  }
+  body.synap-refresh .header-status-text {
+    font-size: 10px;
+  }
+  body.synap-refresh .brain-heading {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  body.synap-refresh .brain-heading > div:first-child {
+    flex: 1;
+  }
+  body.synap-refresh #dayLensTitle {
+    font-size: 24px !important;
+  }
+  body.synap-refresh .brain-heading .workspace-eyebrow {
+    font-size: 8px;
+    letter-spacing: 0.8px;
+  }
+  body.synap-refresh #toggleDayCalendar svg {
+    display: none;
+  }
+  body.synap-refresh .day-navigation {
+    gap: 0;
+  }
+  body.synap-refresh .memory-workspace-tabs {
+    margin-bottom: 14px;
+  }
+}
+@media (max-width: 360px) {
+  body.synap-refresh .app-shell {
+    padding-inline: 12px;
+  }
+  body.synap-refresh .brain-heading {
+    display: block;
+  }
+  body.synap-refresh .day-navigation {
+    margin-top: 8px;
+    justify-content: flex-start;
+  }
+  body.synap-refresh #dayGlanceMetrics > * > span {
+    font-size: 10px;
+  }
+}
+@media (min-width: 900px) {
+  body.synap-refresh .app-shell {
+    padding-left: 190px;
+    padding-right: 28px;
+  }
+  body.synap-refresh .brain-tabs {
+    position: fixed;
+    top: 94px;
+    bottom: auto;
+    left: max(20px, calc((100vw - 1240px) / 2 + 16px));
+    width: 150px;
+    display: flex;
+    flex-direction: column;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    gap: 5px;
+  }
+  body.synap-refresh .brain-tabs a {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 10px !important;
+    padding: 10px 14px;
+    min-height: 46px;
+  }
+  body.synap-refresh .brain-tabs a span {
+    font-size: 13px;
+  }
+  body.synap-refresh .topbar {
+    min-height: 70px;
+  }
+  body.synap-refresh #memoryDayPanel .day-brief {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+  }
+  body.synap-refresh #dayGlanceMetrics {
+    grid-column: 1/-1;
+    margin: 0;
+  }
+  body.synap-refresh .brief-intro {
+    grid-column: 1;
+  }
+  body.synap-refresh .brief-signals {
+    grid-column: 1;
+    margin: 0;
+  }
+  body.synap-refresh .brief-focus {
+    grid-column: 2;
+    grid-row: 2 / span 2;
+    margin: 0;
+  }
+  body.synap-refresh .actionable-memory,
+  body.synap-refresh #todayMemoryPipeline {
+    grid-column: 1/-1;
+    margin-top: 0;
+  }
+  body.synap-refresh #ask {
+    max-width: 800px;
+  }
+  body.synap-refresh #ask .ask-suggestions {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  body.synap-refresh #ask .ask-suggestions button {
+    min-height: 115px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.synap-refresh * {
+    scroll-behavior: auto !important;
+  }
+}
+/* Align the desktop grid explicitly; processing status must not create an empty row. */
+body.synap-refresh #dayGlanceMetrics > * {
+  flex-direction: row !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+}
+body.synap-refresh #dayGlanceMetrics strong {
+  width: auto !important;
+}
+body.synap-refresh #actionFocus {
+  border: 0;
+  padding-bottom: 0;
+}
+body.synap-refresh :is(#myActions, #actionFocus) .brain-action-row small {
+  font-size: 11px;
+}
+body.synap-refresh .memory-card-facts > span {
+  font-size: 10px;
+}
+@media (min-width: 900px) {
+  body.synap-refresh .app-shell {
+    width: 100%;
+    margin: 0 auto;
+  }
+  body.synap-refresh .brief-signals {
+    grid-row: 3;
+  }
+  body.synap-refresh #todayMemoryPipeline {
+    grid-row: 4;
+  }
+  body.synap-refresh .actionable-memory {
+    grid-row: 5;
+  }
+}
+body.synap-refresh #dayGlanceMetrics > * {
+  display: grid !important;
+  grid-template-columns: 1fr;
+  grid-template-rows: 26px 16px 13px;
+  align-content: start;
+  justify-items: start;
+  min-height: 72px;
+  gap: 0;
+}
+body.synap-refresh #dayGlanceMetrics > * > span {
+  align-self: start;
+}
+body.synap-refresh .memory-workspace-tabs button {
+  min-height: 44px;
+}
+body.synap-refresh :is(#myActions, #actionFocus) .synap-follow-edit {
+  min-height: 44px;
+}
+:root[data-theme='light'] {
+  --control-border: #859089;
+}

@@ -159,7 +159,7 @@ const server = createStaticServer(root);
       await prep.getByText('Budget planning · 0:00').waitFor();
       assert((await prep.innerText()).includes('Who signs?'));
       assert.equal(await page.locator('#peopleMemory .meeting-preparation').count(), 1);
-      assert.equal(await page.locator('.actions-tabs [role="tab"]').count(), 4);
+      assert.equal(await page.locator('.actions-tabs [role="tab"]').count(), 3);
       assert.equal(
         await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
         false,

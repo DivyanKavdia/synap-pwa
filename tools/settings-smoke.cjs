@@ -288,6 +288,7 @@ async function run() {
         await page.locator('#settingsButton').click();
         await page.locator('.brain-tabs a[href="#myActions"]').click();
         assert(!(await page.locator('#settingsDialog').evaluate((node) => node.open)));
+        await page.locator('.brain-tabs a[href="#ask"]').click();
         assert(await page.locator('#askInput').isVisible());
         assert(!(await page.locator('main').evaluate((node) => node.inert)));
         assert.equal(

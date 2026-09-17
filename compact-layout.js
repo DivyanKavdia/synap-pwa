@@ -3,11 +3,7 @@
   'use strict';
   const KEY = 'synap-expanded-tiles-v1',
     tiles = new Map();
-  const configs = [
-    ['myActions', '.section-heading', 'My actions', true],
-    ['library', '.section-heading', 'Memory library', false],
-    ['dayConversations', 'header', 'Conversation details', false],
-  ];
+  const configs = [['dayConversations', 'header', 'Conversations', true]];
   let preferences = {};
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
@@ -44,7 +40,9 @@
       heading.querySelector('strong') ||
       heading.querySelector('span');
     if (label) {
-      const text = [...label.childNodes].find((node) => node.nodeType === 3 && node.textContent.trim());
+      const text = [...label.childNodes].find(
+        (node) => node.nodeType === 3 && node.textContent.trim(),
+      );
       if (text) text.textContent = title + ' ';
     }
     const body = document.createElement('div');
@@ -86,6 +84,7 @@
   function reveal(target) {
     if (typeof target === 'string') target = document.getElementById(target.replace(/^#/, ''));
     if (!target) return;
+    root.SynapDashboardUI?.reveal(target);
     root.SynapMemoryWorkspace?.reveal(target);
     root.SynapMyActions?.reveal(target);
     for (const tile of tiles.values())

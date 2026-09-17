@@ -90,9 +90,13 @@
           .filter((name) => name && name !== 'self'),
       ),
     ];
-    const decisions = items.reduce((count, item) => count + list(item.decisions).length, 0);
+    const decisions = items.length
+      ? items.reduce((count, item) => count + list(item.decisions).length, 0)
+      : list(row.meeting?.decisions).length;
     const outcomes = items.reduce((count, item) => count + list(item.outcomes).length, 0);
-    const actions = items.reduce((count, item) => count + list(item.action_items).length, 0);
+    const actions = items.length
+      ? items.reduce((count, item) => count + list(item.action_items).length, 0)
+      : list(row.meeting?.action_items).length;
     return [
       types(row)
         .map((type) => labels[type])
@@ -130,6 +134,20 @@
     }
     const content = card.querySelector('.recording-content');
     if (!content) return;
+    if (preview(row) && !content.querySelector('.memory-explore')) {
+      const explore = document.createElement('button');
+      explore.type = 'button';
+      explore.className = 'memory-explore';
+      explore.textContent = 'Explore this topic in Ask ↗';
+      explore.addEventListener('click', () =>
+        root.SynapAsk?.open(
+          'What decisions, next steps and unresolved questions relate to ' +
+            title(card.synapRecording || row) +
+            '?',
+        ),
+      );
+      content.appendChild(explore);
+    }
     const attachments = list(row.libraryMedia);
     let host = content.querySelector('.memory-attachments');
     if (!attachments.length) {

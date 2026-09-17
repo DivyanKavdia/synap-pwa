@@ -276,7 +276,7 @@ async function assertDayReading(page, mode, width) {
   await page.waitForFunction(
     () => document.querySelector('#conversationCount').textContent === '10',
   );
-  assert.equal(await page.locator('#dayLensTitle').innerText(), 'My day at a glance');
+  assert.equal(await page.locator('#dayLensTitle').innerText(), 'Your day in review');
   assert.match(await page.locator('#brainDateLine').getAttribute('aria-label'), /^Yesterday · /);
   assert.equal(await page.locator('#glanceConversations').innerText(), '10');
   assert.equal(await page.locator('#dateStrip .date-chip').count(), 7);
@@ -461,7 +461,7 @@ async function run() {
             .locator('.brand-logo')
             .screenshot({ path: path.join(output, `brand-${mode}-${width}.png`) });
         }
-        for (const href of ['#memoryWeekPanel', '#myActions', '#library', '#today']) {
+        for (const href of ['#ask', '#myActions', '#library', '#today']) {
           await page.locator(`.brain-tabs a[href="${href}"]`).click();
           assert.equal(await page.locator('.brain-tabs a[aria-current="page"]').count(), 1);
           assert.equal(
@@ -603,6 +603,7 @@ async function run() {
           await page.waitForTimeout(200);
           assert.equal(await page.locator('#focusDecisions').getAttribute('aria-selected'), 'true');
           await page.locator('#focusCommitments').click();
+          await page.locator('.brain-tabs a[href="#today"]').click();
           await page.waitForSelector('#todayMemoryPipeline');
           assert(
             !(await page.locator('#todayMemoryPipeline').evaluate((node) => node.open)),
@@ -714,7 +715,7 @@ async function run() {
             'refresh preserves the same native audio player',
           );
           await page.locator('.brain-tabs a[href="#myActions"]').click();
-          await page.locator('#actionsTab-ask').click();
+          await page.locator('.brain-tabs a[href="#ask"]').click();
           await page.locator('#askInput').fill('What did I decide today?');
           await page.locator('#askForm button[type="submit"]').click();
           await page.waitForFunction(() =>
@@ -915,16 +916,9 @@ async function run() {
           await page.evaluate(() => SynapCompactLayout.reveal('peopleMemory'));
           await page.locator('#peopleBrowseToggle').click();
           assert.equal(await page.locator('#peopleList .person-card').count(), 14);
-          assert(
-            (await page.locator('#myActionsContent').boundingBox()).height <= 440,
-            'expanded People use the bounded viewport; short panels fit their content',
-          );
-          assert(
-            await page
-              .locator('#myActionsContent')
-              .evaluate((node) => node.scrollHeight > node.clientHeight),
-            'all people remain reachable by scrolling the shared area',
-          );
+          assert.equal(await page.locator('#myActionsContent').evaluate(node => getComputedStyle(node).overflowY), 'visible', 'People use normal page scrolling');
+          await page.locator('#peopleList .person-card').last().scrollIntoViewIfNeeded();
+          assert(await page.locator('#peopleList .person-card').last().isVisible(), 'all people remain reachable');
           await page.locator('#peopleSearch input').fill('Person 14');
           assert.equal(await page.locator('#peopleList .person-card').count(), 1);
           await page.locator('#peopleList .person-card').click();
@@ -934,6 +928,7 @@ async function run() {
             'person opens grounded recall',
           );
           assert(await page.locator('#askInput').isVisible(), 'person recall selects the Ask tab');
+          await page.locator('.brain-tabs a[href="#myActions"]').click();
           await page.locator('#actionsTab-peopleMemory').click();
           await page.locator('#peopleBrowseToggle').click();
           assert.equal(await page.locator('#peopleList .person-card').count(), 3);

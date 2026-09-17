@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell139-outcomes";
+  const APP_SHELL_REVISION = "1.0.0-shell142-workspace";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -3012,7 +3012,7 @@
     const top = document.createElement("summary");
     top.className = "insight-top";
     const heading = document.createElement("h3");
-    heading.textContent = recording.name;
+    heading.textContent = globalThis.SynapMemoryLibrary.title(recording);
     const time = document.createElement("time");
     time.dateTime = recording.createdAt;
     time.textContent = new Date(recording.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });

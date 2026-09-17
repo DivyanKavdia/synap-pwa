@@ -199,13 +199,15 @@
   function renderBrief(list) {
     const summaries = list.filter((r) => summaryOf(r)),
       pending = list.filter(r => !r.localOnly && !summaryOf(r)).length;
+    const heading = $('#dayLensTitle');
+    if (heading) heading.textContent = selected() === today() ? 'Daily brief' : 'Your day in review';
     const todayKey = today(),
       isToday = selected() === todayKey;
     $('.brief-intro')?.classList.toggle('is-empty', !list.length);
     const text = $('#dayBriefText');
     if (text) {
       text.textContent = summaries.length
-        ? summaries.map(summaryOf).join('\n\n')
+        ? (briefExpanded ? summaries : summaries.slice(0, 2)).map((r) => briefExpanded ? summaryOf(r) : summaryOf(r).split(/(?<=[.!?।])\s+/).slice(0, 2).join(' ')).join('\n\n')
         : list.length
           ? pending ? 'Summaries will appear after processing.' : 'Your media soundtracks are saved on this device.'
           : readError
@@ -264,12 +266,35 @@
     if (pulseLabel) pulseLabel.textContent = isToday ? 'TODAY AT A GLANCE' : 'THIS DAY AT A GLANCE';
   }
 
+  function renderSignals(list) {
+    const host = $('#briefSignals');
+    if (!host) return;
+    const signals = [], seen = new Set();
+    // Excerpts remain attached to their original source. No synthetic decisions or deadlines.
+    for (const r of list) for (const c of conversationsOf(r)) {
+      for (const [kind, icon, entries] of [['Decision', '✓', c.decisions], ['Watch out', '!', c.risks], ['Open question', '?', c.unresolved_questions]]) {
+        for (const item of entries || []) {
+          const value = textOf(item);
+          if (!value || seen.has(value.toLowerCase())) continue;
+          seen.add(value.toLowerCase());
+          signals.push({ r, c, value, kind, icon, ms: sourceOffset(item, c) });
+        }
+      }
+    }
+    if (!signals.length) for (const r of list) for (const entry of decisionEntries(r)) {
+      const value = textOf(entry.value);
+      if (value) signals.push({ r, value, kind: 'Decision', icon: '✓', ms: sourceOffset(entry.value, entry.conversation) });
+    }
+    host.hidden = !signals.length;
+    host.innerHTML = signals.slice(0, 3).map(x => `<button type="button" class="brief-signal source-jump" data-id="${esc(x.r.id)}" data-offset-ms="${x.ms}"><span aria-hidden="true">${x.icon}</span><span><small>${x.kind}</small><strong>${esc(x.value)}</strong></span><span aria-hidden="true">↗</span></button>`).join('');
+  }
+
   function digestMarkup(item) {
     const section = (label, items) =>
       items.length
         ? `<section class="digest-facts"><h4>${label}</h4><ul>${items.map((x) => `<li>${esc(typeof x === 'string' ? x : x.text)}${x.meta ? `<small>${esc(x.meta)}</small>` : ''}</li>`).join('')}</ul></section>`
         : '';
-    return `<summary class="conversation-card"><span class="conversation-time">${esc(item.time)}</span><span class="conversation-copy"><strong>${esc(item.title)}</strong>${item.participants.length ? `<span class="conversation-people">With ${esc(item.participants.join(' · '))}</span>` : ''}</span><svg class="conversation-arrow" aria-hidden="true"><use href="#i-chevron"/></svg></summary><div class="conversation-detail"><p class="digest-summary">${esc(item.summary || 'Summary is not available for this conversation yet.')}</p>${section('What changed', item.outcomes)}${section('Key points', item.points)}${section('Decisions', item.decisions)}${section('Next steps', item.actions)}${section('Follow-ups', item.followUps)}${section('Risks and blockers', item.risks)}${section('Still unresolved', item.questions)}${item.topics.length ? `<p class="digest-topics">${item.topics.map(esc).join(' · ')}</p>` : ''}<button type="button" class="conversation-source source-jump" data-id="${esc(item.id)}" data-offset-ms="${item.startMs}">Open recording & source ↗</button></div>`;
+    return `<summary class="conversation-card"><span class="conversation-time">${esc(item.time)}</span><span class="conversation-copy"><strong>${esc(item.title)}</strong>${item.summary ? `<span class="conversation-preview">${esc(item.summary)}</span>` : ''}${item.participants.length ? `<span class="conversation-people">With ${esc(item.participants.join(' · '))}</span>` : ''}</span><svg class="conversation-arrow" aria-hidden="true"><use href="#i-chevron"/></svg></summary><div class="conversation-detail"><p class="digest-summary">${esc(item.summary || 'Summary is not available for this conversation yet.')}</p>${section('What changed', item.outcomes)}${section('Key points', item.points)}${section('Decisions', item.decisions)}${section('Next steps', item.actions)}${section('Follow-ups', item.followUps)}${section('Risks and blockers', item.risks)}${section('Still unresolved', item.questions)}${item.topics.length ? `<p class="digest-topics">${item.topics.map(esc).join(' · ')}</p>` : ''}<button type="button" class="conversation-source source-jump" data-id="${esc(item.id)}" data-offset-ms="${item.startMs}">Open recording & source ↗</button></div>`;
   }
 
   function renderConversations(items) {
@@ -446,7 +471,7 @@
       ask.id = 'ask';
       ask.className = 'section-card ask-synap';
       ask.innerHTML =
-        '<div class="ask-head"><span class="ask-orb">✦</span><div><p class="section-eyebrow">RECALL</p><h2>Ask synap</h2><p class="section-copy">Ask about people, conversations, decisions or commitments. Every answer links to its source.</p></div></div><form id="askForm" class="ask-form"><input id="askInput" type="search" autocomplete="off" aria-label="Ask a question about your memories" placeholder="What would you like to remember?"><button type="submit">Ask</button></form><div class="ask-suggestions"><button type="button">What did I decide today?</button><button type="button">Who did I speak with today?</button><button type="button">What am I waiting on?</button></div><div id="askAnswer" class="ask-answer" aria-live="polite"><p class="brain-empty">Your answers will cite the conversations they came from.</p></div>';
+        '<div class="ask-head"><span class="ask-orb">✦</span><div><p class="section-eyebrow">RECALL</p><h2>Ask synap</h2><p class="section-copy">Ask about people, conversations, decisions or commitments. Every answer links to its source.</p></div></div><div class="ask-scope-bar"><label>Search <select id="askScope" aria-label="Memory search scope"><option value="all">All memories</option><option value="day">Selected day</option><option value="week">Selected week</option></select></label><button id="askClear" type="button">Clear session</button></div><form id="askForm" class="ask-form"><textarea id="askInput" rows="2" maxlength="1000" autocomplete="off" aria-label="Ask a question about your memories" placeholder="What did we decide, and what should I do next?"></textarea><button type="submit">Ask</button></form><p id="askScopeHint" class="ask-form-hint">Answers from your conversations, with sources you can check.</p><div class="ask-suggestions"><button type="button" data-query="What decisions did I make and why?"><strong>Recall a decision</strong><span>What we agreed, and the reasoning.</span></button><button type="button" data-query="What commitments and deadlines did I agree to?"><strong>Find my next steps</strong><span>Commitments, owners and deadlines.</span></button><button type="button" data-query="What follow-ups are unresolved, and who am I waiting on?"><strong>Close the loop</strong><span>Unanswered questions and follow-ups.</span></button><button type="button" data-query="What context should I revisit before my next meeting?"><strong>Prepare for a meeting</strong><span>Revisit decisions and open questions.</span></button></div><div id="askRecent" class="ask-recent" aria-label="Recent questions in this session"></div><div id="askAnswer" class="ask-answer" aria-live="polite"><p class="brain-empty">Your answers will cite the conversations they came from.</p></div>';
       library.before(ask);
     }
     const nav = $('.brain-tabs');
@@ -474,6 +499,7 @@
       conversations?.scrollIntoView({ block: 'start', behavior: 'instant' });
       conversations?.querySelector('button')?.focus({ preventScroll: true });
     });
+    $('#briefAllActions')?.addEventListener('click', () => root.SynapDashboardUI?.setView('dailyFocus'));
     $('#dayGlanceNextSteps')?.addEventListener('click', () => {
       root.SynapDashboardUI?.setView('dailyFocus');
     });
@@ -496,12 +522,15 @@
     });
     $('#askForm')?.addEventListener('submit', (e) => {
       e.preventDefault();
-      answer($('#askInput').value);
+      if (root.SynapAsk) root.SynapAsk.search($('#askInput').value);
+      else answer($('#askInput').value);
     });
     $$('.ask-suggestions button').forEach((b) =>
       b.addEventListener('click', () => {
-        $('#askInput').value = b.textContent;
-        answer(b.textContent);
+        const query = b.dataset.query || b.textContent;
+        $('#askInput').value = query;
+        if (root.SynapAsk) root.SynapAsk.search(query);
+        else answer(query);
       }),
     );
     $$('.followup-tabs button').forEach((b) =>
@@ -567,6 +596,7 @@
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
       d = derive(list);
     renderBrief(list);
+    renderSignals(list);
     const metrics = $('#dayGlanceMetrics');
     if (metrics) metrics.hidden = !list.length;
     if ($('#glanceConversations')) $('#glanceConversations').textContent = d.conversations.length;
@@ -678,7 +708,7 @@
       .join(' ')
       .toLowerCase();
   }
-  function answer(q) {
+  function answer(q, scope = {}) {
     q = String(q || '').trim();
     const out = $('#askAnswer');
     if (!out) return;
@@ -688,7 +718,7 @@
     }
     const lower = q.toLowerCase(),
       terms = lower
-        .replace(/[^a-z0-9\s-]/g, ' ')
+        .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
         .split(/\s+/)
         .filter(
           (x) =>
@@ -707,10 +737,10 @@
               'who',
             ].includes(x),
         ),
-      pool = /today/.test(lower) ? records.filter((r) => day(r.createdAt) === today()) : records,
+      pool = records.filter((r) => (!scope.from || day(r.createdAt) >= scope.from) && (!scope.to || day(r.createdAt) <= scope.to) && (!/today/.test(lower) || day(r.createdAt) === today())),
       ranked = pool
         .map((r) => ({ r, s: terms.reduce((n, t) => n + (hay(r).includes(t) ? 1 : 0), 0) }))
-        .filter((x) => x.s > 0 || /decid|commit|waiting|follow|who/.test(lower))
+        .filter((x) => x.s > 0 || /decid|decision|commit|waiting|follow|who/.test(lower))
         .sort((a, b) => b.s - a.s || new Date(b.r.createdAt) - new Date(a.r.createdAt))
         .slice(0, 6),
       facts = [];
@@ -723,7 +753,7 @@
               r,
               text: p.name + (p.role && p.role !== 'unknown' ? ' · ' + p.role : ''),
             });
-      } else if (/decid/.test(lower)) {
+      } else if (/decid|decision/.test(lower)) {
         decisionEntries(r).forEach((x) => {
           const text = textOf(x.value);
           if (text) facts.push({ r, text, startMs: sourceOffset(x.value, x.conversation) });

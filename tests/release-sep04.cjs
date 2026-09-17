@@ -9,7 +9,7 @@ const product=fs.readFileSync(path.join(root,'product-ui.js'),'utf8');
 const runtime=fs.readFileSync(path.join(root,'runtime-ui.js'),'utf8');
 
 test('compact shell presents the day without redundant identity copy',()=>{
-  assert.match(html,/<h1 id="dayLensTitle">My day at a glance<\/h1>/);
+  assert.match(html,/<h1 id="dayLensTitle">Daily brief<\/h1>/);
   assert.doesNotMatch(html,/<p class="brain-kicker">YOUR SECOND BRAIN<\/p>/);
 });
 
@@ -29,7 +29,7 @@ test('static shell never paints a capitalized synap brand before runtime normali
   const end=html.indexOf('<script src="devices/identity.js',start);
   const visibleShell=html.slice(start,end);
   assert.doesNotMatch(visibleShell,/\bSynap\b/);
-  assert.match(visibleShell,/Day summary/);
+  assert.match(visibleShell,/The thread of your day/);
   assert.match(visibleShell,/Use the microphone above to start recording/);
   assert.match(visibleShell,/Close settings/);
 });

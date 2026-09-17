@@ -32,6 +32,7 @@ const suites = [
   ['actions', { SYNAP_ACTIONS_OUTPUT: 'artifacts/workflows/actions' }],
   ['actions-functional'],
   ['memory-workspace'],
+  ['workspace-experience'],
   ['speaker-names', { SYNAP_SPEAKERS_OUTPUT: 'artifacts/workflows/speakers' }],
   ['voice-profile', { SYNAP_VOICE_OUTPUT: 'artifacts/workflows/voice' }],
 ];

@@ -9,14 +9,14 @@ const capture=read('capture-ui.js');
 const product=read('product-ui.js');
 const theme=read('theme.js');
 
-// Core screens stay mounted. Navigation scrolls to a screen instead of hiding
-// the rest of the application or moving live content into collapsible wrappers.
+// Core screens stay mounted. Navigation selects a destination without recreating
+// live content or moving capture controls.
 assert.doesNotMatch(dashboard,/data-synap-view[^\n]*display\s*:\s*none/i);
 assert.doesNotMatch(dashboard,/wrapActions\s*\(/);
 assert.doesNotMatch(dashboard,/wrapConversations\s*\(/);
 assert.doesNotMatch(dashboard,/createElement\(['"]details['"]\)/);
-assert.match(dashboard,/scrollIntoView/);
-assert.match(dashboard,/IntersectionObserver/);
+assert.match(dashboard,/window\.scrollTo/);
+assert.match(dashboard,/node.hidden = key !== activeView/);
 assert.doesNotMatch(dashboard,/capture:'#capture'/);
 assert.match(capture,/section.hidden\s*=\s*true/);
 assert.match(capture,/recordingSessionBar/);

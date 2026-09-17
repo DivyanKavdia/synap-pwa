@@ -8,6 +8,8 @@
   let requestGeneration = 0;
   let activeRequest = null;
   let displayedAccount = null;
+  let recent = [];
+  let currentQuery = '';
 
   function accountKey() {
     try { return cloudReady() ? String(root.SynapAuth.session?.()?.profile?.uid || 'signed-in') : ''; }
@@ -100,10 +102,12 @@
     try {
       await root.SynapBrainUI?.refresh();
       if (generation !== requestGeneration) return;
-      root.SynapBrainUI?.answerLocal(query);
+      root.SynapBrainUI?.answerLocal(query, scopeValue());
+      remember(query);
+      addAnswerTools(query);
       const scope = document.createElement('p');
       scope.className = 'ask-search-meta';
-      scope.textContent = 'Searched saved memories on this device.';
+      scope.textContent = 'Local recall · ' + scopeLabel() + '. Matches from saved memories on this device.';
       answerBox()?.prepend(scope);
     } catch (error) { if (generation === requestGeneration) showError(error, query); }
   }
@@ -131,11 +135,12 @@
     return button;
   }
 
-  function renderAnswer(result) {
+  function renderAnswer(result, query = currentQuery) {
     const out = answerBox();
     if (!out) return;
     out.replaceChildren();
 
+    const question = document.createElement('p'); question.className = 'ask-question'; question.textContent = query; out.appendChild(question);
     const copy = document.createElement('div');
     copy.className = 'answer-copy';
     const mark = document.createElement('span');
@@ -163,7 +168,7 @@
       const sourceWrap = document.createElement('div');
       sourceWrap.className = 'answer-sources';
       const sourceTitle = document.createElement('span');
-      sourceTitle.textContent = 'Sources';
+      sourceTitle.textContent = 'Check the sources';
       sourceWrap.appendChild(sourceTitle);
       sources.slice(0, MAX_SOURCES).forEach((source, index) => sourceWrap.appendChild(sourceButton(source, index)));
       out.appendChild(sourceWrap);
@@ -179,7 +184,8 @@
   }
 
   async function askCloud(query) {
-    const clean = String(query || '').trim();
+    const clean = String(query || '').trim().slice(0, 1000);
+    currentQuery = clean;
     if (!clean) return;
     activeRequest?.abort();
     const generation = ++requestGeneration;
@@ -200,7 +206,7 @@
           method: 'POST',
           signal: controller.signal,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: clean, max_sources: MAX_SOURCES })
+          body: JSON.stringify({ query: clean, max_sources: MAX_SOURCES, scope: scopeValue() })
         });
         const raw = await response.text();
         let data = null;
@@ -215,7 +221,9 @@
         return data;
       })()]);
       if (generation !== requestGeneration || account !== accountKey()) return;
-      renderAnswer(result);
+      renderAnswer(result, clean);
+      remember(clean);
+      addAnswerTools(clean);
     } catch (error) {
       if (generation !== requestGeneration || account !== accountKey()) return;
       showError(error, clean);
@@ -234,7 +242,7 @@
     const input = $('#askInput');
     if (input && query != null) input.value = String(query);
     if (cloudReady() && query) askCloud(query);
-    else if (query) $('#askForm')?.requestSubmit();
+    else if (query) searchLocal(query);
     else if (input) setTimeout(() => input.focus(), 0);
   }
 
@@ -267,8 +275,8 @@
       event.preventDefault();
       event.stopImmediatePropagation();
       const input = $('#askInput');
-      if (input) input.value = target.textContent || '';
-      askCloud(target.textContent || '');
+      if (input) input.value = target.dataset.query || target.textContent || '';
+      askCloud(target.dataset.query || target.textContent || '');
       return;
     }
 
@@ -286,7 +294,83 @@
     }
   }
 
-  function scan() { enhanceAskCopy(); }
+  function scopeValue() {
+    const period = $('#askScope')?.value || 'all';
+    const day = $('#datePicker')?.value || root.SynapActionState?.day(new Date());
+    if (period === 'day' && day) return { from: day, to: day };
+    if (period === 'week' && day && root.SynapProductivity?.weekRange) {
+      const range = root.SynapProductivity.weekRange(day);
+      return { from: range.start, to: range.end };
+    }
+    return {};
+  }
+  function scopeLabel() {
+    const scope = scopeValue();
+    return scope.from ? scope.from === scope.to ? scope.from : scope.from + ' – ' + scope.to : 'All memories';
+  }
+  function search(query) {
+    return cloudReady() ? askCloud(query) : searchLocal(String(query || '').trim().slice(0, 1000));
+  }
+  function remember(query) {
+    if (!query) return;
+    const scope = $('#askScope')?.value || 'all', selectedDay = $('#datePicker')?.value || '';
+    recent = [{ query, scope, selectedDay }, ...recent.filter(x => x.query !== query)].slice(0, 4);
+    const host = $('#askRecent');
+    if (!host) return;
+    host.replaceChildren(...recent.map(item => {
+      const button = document.createElement('button'); button.type = 'button';
+      button.textContent = item.query; button.title = 'Ask again: ' + item.query;
+      button.addEventListener('click', () => {
+        // Reusing a question keeps the current visible scope; no hidden date changes.
+        $('#askInput').value = item.query;
+        search(item.query);
+      });
+      return button;
+    }));
+  }
+  function addAnswerTools(query) {
+    const host = answerBox();
+    if (!host) return;
+    const tools = document.createElement('div'); tools.className = 'ask-answer-tools';
+    const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = 'Copy answer';
+    const body = host.querySelector('.ask-answer-text')?.textContent || host.textContent;
+    copy.addEventListener('click', async () => {
+      try {
+        const sources = [...host.querySelectorAll('.ask-source')].map(x => x.textContent).join('\n');
+        await navigator.clipboard.writeText(query + '\n\n' + body + (sources ? '\n\nSources\n' + sources : ''));
+        copy.textContent = 'Copied';
+      } catch (_) { copy.textContent = 'Select text to copy'; }
+    });
+    const actions = document.createElement('button'); actions.type = 'button'; actions.textContent = 'Open my actions →';
+    actions.addEventListener('click', () => root.SynapDashboardUI?.setView('dailyFocus'));
+    tools.append(copy, actions); host.appendChild(tools);
+  }
+  function clearSession() {
+    cancelSearch(); recent = []; currentQuery = '';
+    $('#askRecent')?.replaceChildren();
+    if ($('#askInput')) $('#askInput').value = '';
+  }
+  function bindWorkspace() {
+    const section = $('#ask');
+    if (!section || section.dataset.workspaceBound) return;
+    section.dataset.workspaceBound = 'true';
+    $('#askClear')?.addEventListener('click', clearSession);
+    $('#askScope')?.addEventListener('change', () => {
+      cancelSearch();
+      const hint = $('#askScopeHint');
+      if (hint) hint.textContent = scopeLabel() + ' · Answers link to the conversations behind them.';
+    });
+    $('#datePicker')?.addEventListener('change', () => {
+      if ($('#askScope')?.value !== 'all') { cancelSearch(); const hint = $('#askScopeHint'); if (hint) hint.textContent = scopeLabel() + ' · Answers link to the conversations behind them.'; }
+    });
+    $('#askInput')?.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+        event.preventDefault(); $('#askForm')?.requestSubmit();
+      }
+    });
+  }
+  function scan() { enhanceAskCopy(); bindWorkspace(); }
+
 
   function init() {
     document.addEventListener('submit', onSubmit, true);
@@ -294,7 +378,7 @@
     let account = accountKey();
     if (root.SynapAuth && root.SynapAuth.onChange) root.SynapAuth.onChange(() => {
       const next = accountKey();
-      if (account !== next || (displayedAccount !== null && displayedAccount !== next)) cancelSearch();
+      if (account !== next || (displayedAccount !== null && displayedAccount !== next)) clearSession();
       account = next;
       scan();
     });
@@ -310,7 +394,7 @@
     }).observe(main, { childList: true });
   }
 
-  root.SynapAsk = { ask: askCloud, open: openAsk, cloudReady: cloudReady };
+  root.SynapAsk = { ask: askCloud, search, open: openAsk, cloudReady, scopeValue };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();
 })(globalThis);

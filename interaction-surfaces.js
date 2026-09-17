@@ -283,7 +283,7 @@
             item.condition ? 'Conditional: ' + item.condition : '',
             item.checkIn ? 'Check in ' + dateLabel(item.checkIn) : '',
             item.snoozedUntil ? 'Deferred until ' + dateLabel(item.snoozedUntil) : '',
-            label,
+            item.context || '',
             item.state === 'dismissed' ? 'Dismissed' : '',
           ]
             .filter(Boolean)
@@ -292,6 +292,12 @@
         item.mine ? 'mine' : 'waiting',
       ),
     );
+    const badge = document.createElement('span');
+    badge.className = 'action-due';
+    const today = root.SynapActionState.day(new Date());
+    badge.dataset.urgency = item.state === 'open' && due ? due < today ? 'overdue' : due === today ? 'today' : 'upcoming' : 'none';
+    badge.textContent = (badge.dataset.urgency === 'overdue' ? 'Overdue · ' : badge.dataset.urgency === 'today' ? 'Today · ' : '') + label;
+    row.querySelector('.brain-action-row > span:last-child').appendChild(badge);
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'synap-follow-done';
@@ -334,14 +340,10 @@
       const tab = document.createElement('button'); tab.type = 'button'; tab.dataset.follow = 'clarify';
       tab.textContent = 'Needs clarification'; tabs.appendChild(tab);
     }
-    let focus = $('#actionFocus');
-    if (!focus && $('#commitmentList')) {
-      focus = document.createElement('section'); focus.id = 'actionFocus';
-      focus.innerHTML = '<header><strong>Focus next</strong></header><p>Up to three open actions, ordered by deadline, check-in date and your pins.</p><div id=actionFocusList></div>';
-      $('#commitmentList').before(focus);
-    }
-    const focusItems = root.SynapActionState.focus(entries);
+    const all = actions(), focusItems = root.SynapActionState.focus(all);
     renderActionList('actionFocusList', focusItems);
+    if ($('#actionFocus')) $('#actionFocus').hidden = !focusItems.length;
+    renderOverview(all);
     const count = $('#followupCount');
     if (count) count.textContent = String(entries.length);
     renderActionList(
@@ -363,6 +365,30 @@
       if ($('#' + id)) $('#' + id).textContent = String(items.length);
     }
     root.dispatchEvent?.(new CustomEvent('synap-actions-rendered'));
+  }
+  function renderOverview(items) {
+    const host = $('#actionOverview');
+    if (!host) return;
+    const api = root.SynapActionState, today = api.day(new Date()), open = items.filter(x => x.state === 'open');
+    const groups = [
+      ['overdue', 'Overdue', open.filter(x => api.dueDay(x.due) && x.due < today).length],
+      ['this-week', 'Due this week', open.filter(x => api.dueDay(x.due) && api.matches(x, 'this-week')).length],
+      ['undated', 'Need a deadline', open.filter(x => !api.dueDay(x.due)).length],
+    ];
+    host.replaceChildren(...groups.map(([period, label, count]) => {
+      const button = document.createElement('button'); button.type = 'button'; button.dataset.period = period;
+      const value = document.createElement('strong'); value.textContent = count;
+      const copy = document.createElement('span'); copy.textContent = label;
+      button.append(value, copy);
+      button.addEventListener('click', () => {
+        root.SynapMyActions?.select('followupInbox');
+        $('#actionsTimeline').value = period;
+        $('#actionsState').value = 'open';
+        $$('.followup-tabs button').forEach(x => x.classList.toggle('active', x.dataset.follow === 'all'));
+        root.dispatchEvent(new Event('synap-action-filters-changed'));
+      });
+      return button;
+    }));
   }
   const PEOPLE_PREVIEW_LIMIT = 3;
   let peopleExpanded = false,

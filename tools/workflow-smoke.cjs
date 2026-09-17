@@ -482,7 +482,7 @@ async function run() {
           overflow: node.scrollWidth > node.clientWidth,
         })),
       );
-      assert(sourceLayout.every((item) => item.radius === '12px' && !item.overflow));
+      assert(sourceLayout.every((item) => parseFloat(item.radius) <= 16 && !item.overflow));
       assert(
         sourceLayout[1].rect.y >= sourceLayout[0].rect.bottom,
         'quotes are stacked, never squeezed into circles',
@@ -493,7 +493,7 @@ async function run() {
       );
       await cards.last().scrollIntoViewIfNeeded();
       if (process.env.SYNAP_WORKFLOW_OUTPUT)
-        await page.locator('#myActions').screenshot({
+        await page.locator('#ask').screenshot({
           path: path.join(process.env.SYNAP_WORKFLOW_OUTPUT, `sources-${mode}-${width}.png`),
         });
       assert.deepEqual(errors, [], 'no uncaught page errors');

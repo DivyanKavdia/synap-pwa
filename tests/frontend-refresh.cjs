@@ -24,16 +24,16 @@ test('connection help stays available in Settings and controller nodes stay moun
 
 test('desktop navigation accounts for side rail and keyboard focus', () => {
   const dashboard=read('dashboard-ui.js');
-  assert.match(dashboard,/nav\.top\s*>\s*window\.innerHeight\s*\/\s*2\s*\?\s*nav\.top\s*-\s*12\s*:\s*window\.innerHeight/);
   assert.match(dashboard,/target\.focus\(\{\s*preventScroll:\s*true\s*\}\)/);
-  assert.match(dashboard,/if\s*\(window\.scrollY\s*<\s*4\)\s*return memoryView\(\)/);
+  assert.match(dashboard,/positions\.set\(activeView, window\.scrollY\)/);
+  assert.match(read('workspace.css'),/grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(read('brain-ui.js'),/aria-label="Ask a question about your memories"/);
 });
 
 test('fresh and cached shells share the refresh generation without changing BLE compatibility', () => {
   const sw=read('sw.js');
   const revision=sw.match(/const CACHE_REVISION='([^']+)'/)[1];
-  assert.equal(revision,'1.0.0-shell141-provider-auth');
+  assert.equal(revision,'1.0.0-shell142-workspace');
   assert(read('enhancements.js').includes(`SHELL_REVISION='${revision}'`));
   assert.match(sw,/CLIENT_REVISION='1\.0\.0-audio6'/);
   assert.match(sw,/'\.\/compact\.css'/);

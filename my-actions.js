@@ -2,12 +2,11 @@
 (function (root) {
   'use strict';
   const panels = [
-    ['ask', 'Ask Synap'],
     ['dailyFocus', 'Next steps'],
     ['followupInbox', 'Follow-ups'],
     ['peopleMemory', 'People'],
   ];
-  let selected = 'ask',
+  let selected = 'dailyFocus',
     section,
     tablist,
     content;
@@ -55,7 +54,7 @@
       section.className = 'section-card my-actions';
       section.setAttribute('aria-labelledby', 'myActionsTitle');
       section.innerHTML =
-        '<div class="section-heading"><h2 id="myActionsTitle">My actions</h2></div><div class="actions-tabs" role="tablist" aria-label="My actions"></div><div id="actionFilters" class="action-filters" hidden><label>Timeline<select id="actionsTimeline"><option value="all">All time</option><option value="last-week">Last week</option><option value="today">Today</option><option value="this-week">This week</option><option value="next-week">Next week</option><option value="next-month">Next 30 days</option><option value="overdue">Overdue</option><option value="undated">No due date</option></select></label><label>Status<select id="actionsState"><option value="open">Open</option><option value="done">Completed</option><option value="all">All statuses</option></select></label><p id="actionsDay">Tasks use due dates, or recording dates when undated. Decisions use recording dates.</p><p id="actionUpdateStatus" role="status" hidden></p></div><div id="myActionsContent" class="actions-content"></div>';
+        '<div class="section-heading"><div><p class="workspace-eyebrow">FOLLOW THROUGH</p><h2 id="myActionsTitle">Actions</h2><p class="workspace-description">The next step, with the context to take it.</p></div></div><div id="actionOverview" class="action-overview" aria-label="Action overview"></div><div class="actions-tabs" role="tablist" aria-label="My actions"></div><div id="actionFilters" class="action-filters" hidden><label>Timeline<select id="actionsTimeline"><option value="all">All time</option><option value="last-week">Last week</option><option value="today">Today</option><option value="this-week">This week</option><option value="next-week">Next week</option><option value="next-month">Next 30 days</option><option value="overdue">Overdue</option><option value="undated">No due date</option></select></label><label>Status<select id="actionsState"><option value="open">Open</option><option value="done">Completed</option><option value="all">All statuses</option></select></label><p id="actionsDay">Undated tasks use their recording date. Set a deadline when you know it.</p><p id="actionUpdateStatus" role="status" hidden></p></div><div id="myActionsContent" class="actions-content"></div>';
       tablist = section.querySelector('.actions-tabs');
       content = section.querySelector('.actions-content');
       for (const [id, label] of panels) {

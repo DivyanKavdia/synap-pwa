@@ -43,8 +43,8 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
           memory.height < (width >= 760 ? 420 : 570),
           `welcome leaves room for the workspace at ${width}px: ${memory.height}px`,
         );
-        const actions = await page.locator('#myActions').boundingBox();
-        assert(actions.y < 720, 'Actions is reachable in the first viewport');
+        const actions = await page.locator('.brain-tabs a[href="#myActions"]').boundingBox();
+        assert(actions.y >= 0 && actions.y + actions.height <= await page.evaluate(() => innerHeight), 'Actions is reachable in the first viewport');
         for (const id of ['firstMemoryRecord', 'firstMemorySample', 'firstMemoryAccount']) {
           const rect = await page.locator('#' + id).boundingBox();
           assert(rect.height >= 44, `${id} keeps a comfortable touch target`);

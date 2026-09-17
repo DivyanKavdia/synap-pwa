@@ -486,7 +486,8 @@ async function run() {
       );
       await page.locator('#actionsState').selectOption('open');
       await page.locator('#followupList [data-followup-id="follow-0"]').waitFor();
-      await page.locator('#actionsTab-ask').tap();
+      await page.locator('.brain-tabs a[href="#ask"]').tap();
+      await page.locator('#askScope').selectOption('day');
       await page.locator('#askInput').fill('What did we decide?');
       await page.evaluate(() => {
         qa.hold = 'ask';
@@ -504,13 +505,17 @@ async function run() {
       await page.getByRole('button', { name: 'Retry search', exact: true }).tap();
       await page.locator('.ask-source').waitFor();
       assert.match(await page.locator('.ask-answer-text').innerText(), /budget was reviewed/);
+      const scoped = await page.evaluate(() => ({ request: JSON.parse(qa.calls.filter(x => x.url === '/v1/ask').at(-1).body), day: document.getElementById('datePicker').value }));
+      assert.deepEqual(scoped.request.scope, { from: scoped.day, to: scoped.day });
+      assert.equal(await page.locator('#askRecent button').count(), 1);
+
       await page.locator('.ask-source').tap();
       await page.waitForFunction(
         () =>
           Math.abs(document.querySelector('#recording-action-source audio').currentTime - 7) < 1,
       );
       await page.locator('.brain-tabs a[href="#myActions"]').tap();
-      await page.locator('#actionsTab-ask').tap();
+      await page.locator('.brain-tabs a[href="#ask"]').tap();
       await page.evaluate(() => {
         qa.hold = 'ask';
       });
@@ -532,7 +537,7 @@ async function run() {
       });
       await page.locator('#askForm button[type="submit"]').tap();
       await page.getByRole('button', { name: 'Search this device', exact: true }).tap();
-      await page.getByText('Searched saved memories on this device.', { exact: true }).waitFor();
+      await page.getByText(/Local recall.*Matches from saved memories/).waitFor();
       assert.match(await page.locator('#askAnswer').innerText(), /Budget reviewed/);
       // A cloud-only source must either open or offer a visible retry.
       await page.evaluate(() => {
@@ -628,7 +633,7 @@ async function run() {
         'deleting a profile keeps source recordings',
       );
 
-      await page.locator('#actionsTab-ask').tap();
+      await page.locator('.brain-tabs a[href="#ask"]').tap();
       await page.locator('#askInput').fill('Budget');
       await page.evaluate(() => {
         qa.hold = 'ask';
@@ -645,6 +650,7 @@ async function run() {
         qa.held.filter((item) => item.kind === 'ask').forEach((item) => item.resolve());
       });
       assert(await page.locator('#askInput').isEnabled(), 'sign-out immediately releases the form');
+      assert.equal(await page.locator('#askRecent button').count(), 0, 'account change clears recent questions');
       assert.equal(
         await page.locator('#askAnswer .ask-source').count(),
         0,

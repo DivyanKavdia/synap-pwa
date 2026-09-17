@@ -15,13 +15,13 @@ async function assertPeriod(page, period) {
   assert.equal(await page.locator('.brain-tabs a[aria-current="page"]').count(), 1);
   assert.equal(
     await page.locator('.brain-tabs a[aria-current="page"]').getAttribute('href'),
-    week ? '#memoryWeekPanel' : '#today',
+    '#today',
   );
 }
 
 async function checkPeriodNavigation(page) {
   const selectedDate = await page.locator('#datePicker').inputValue();
-  await page.getByRole('link', { name: 'Weekly', exact: true }).click();
+  await page.locator('#memoryTab-week').click();
   await assertPeriod(page, 'week');
   // Let the navigation lock expire, then reproduce viewport and background updates.
   await page.waitForTimeout(950);
@@ -34,7 +34,7 @@ async function checkPeriodNavigation(page) {
     await new Promise(requestAnimationFrame);
   });
   await assertPeriod(page, 'week');
-  await page.getByRole('link', { name: 'Today', exact: true }).click();
+  await page.getByRole('link', { name: 'Brief', exact: true }).click();
   await assertPeriod(page, 'day');
   await page.locator('#memoryTab-week').click();
   await assertPeriod(page, 'week');
@@ -146,7 +146,7 @@ async function run() {
         await SynapInteractionSurfaces.refresh();
       });
       await page.locator('#memoryDayPanel #insights .insight-card').waitFor();
-      assert.equal(await page.locator('#dayLensTitle').innerText(), 'My day at a glance');
+      assert.equal(await page.locator('#dayLensTitle').innerText(), 'Daily brief');
       const selectedDay = await page.locator('#datePicker').inputValue();
       assert.equal(await page.locator('#brainDateLine').getAttribute('datetime'), selectedDay);
       assert.equal(await page.locator('#glanceRecordings').innerText(), '1');
@@ -196,7 +196,7 @@ async function run() {
         'recording-workspace-today',
       );
       assert.equal(await page.locator('#datePicker').inputValue(), selectedDay);
-      await page.getByRole('link', { name: 'Today', exact: true }).click();
+      await page.getByRole('link', { name: 'Brief', exact: true }).click();
       assert.equal(await page.locator('main > #insights, main > #synapWeeklyReview').count(), 0);
       await page.evaluate(() => {
         window.memoryCard = document.querySelector('#insights .insight-card');
@@ -265,7 +265,7 @@ async function run() {
         );
       }
       await page.locator('#actionsTimeline').selectOption('next-week');
-      await page.getByRole('link', { name: 'Today', exact: true }).click();
+      await page.getByRole('link', { name: 'Brief', exact: true }).click();
       await page.locator('#dayGlanceNextSteps').click();
       assert.equal(
         await page.locator('#actionsTab-dailyFocus').getAttribute('aria-selected'),

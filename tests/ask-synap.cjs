@@ -15,7 +15,7 @@ test('Ask Synap uses authenticated grounded backend retrieval when signed in', (
   assert.match(client, /SynapAuth\.isSignedIn/);
   assert.match(client, /SynapAuth\.authedFetch\(ASK_ENDPOINT/);
   assert.match(client, /method: 'POST'/);
-  assert.match(client, /JSON\.stringify\(\{ query: clean, max_sources: MAX_SOURCES \}\)/);
+  assert.match(client, /JSON\.stringify\(\{ query: clean, max_sources: MAX_SOURCES, scope: scopeValue\(\) \}\)/);
   assert.match(client, /event\.stopImmediatePropagation\(\)/,
     'cloud Ask must prevent the old local keyword handler from also answering');
   assert.match(client, /if \(!form \|\| form\.id !== 'askForm' \|\| !cloudReady\(\)\) return/,

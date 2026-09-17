@@ -36,6 +36,11 @@ The PWA owns connection policy, durable local recordings, processing jobs and pr
 
 Device code shares the existing recorder and GATT queue. Adding a camera or local command service must not create a second Bluetooth connection, replace recorder methods or capture audio through a parallel journal.
 
+The four-destination workspace and its research/behavior are described in
+[Product experience](PRODUCT_EXPERIENCE.md). `workspace.css` owns the final
+workspace presentation; navigation hides inactive destinations without unmounting
+source or recording controls.
+
 ## Startup and connection lifetime
 
 `index.html` declares scripts once in dependency order. Profiles precede capability consumers; storage and processing precede recording hooks; authentication/providers register before `app.js` resumes jobs. Modules communicate through explicit APIs and events. The service worker uses network-first code with an offline fallback. Cache generation and changed script URLs advance together. Normal updates preserve IndexedDB and defer reload while recording, saving or updating firmware.

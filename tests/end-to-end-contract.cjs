@@ -44,28 +44,28 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   assert.match(sleepGuard, /synap-gatt-service-ready/);
 
   assert.doesNotMatch(events, /script\.src=['"]audio-codec-v3/);
-  assert.match(sw, /1\.0\.0-shell141-provider-auth/);
-  assert.match(sw, /UI_RECOVERY_REVISION='1\.0\.0-shell141-provider-auth'/);
+  assert.match(sw, /1\.0\.0-shell142-workspace/);
+  assert.match(sw, /UI_RECOVERY_REVISION='1\.0\.0-shell142-workspace'/);
   assert.match(sw, /\.\/dashboard-ui\.js/);
   assert.match(sw, /\.\/ask-synap\.js/);
   assert.match(sw, /\.\/sleep-state-guard\.js/);
   assert.match(sw, /\.\/runtime-compat\.js/);
   assert.match(sw, /\.\/processing-recovery\.js/);
-  assert.match(html, /dashboard-ui\.js\?v=1\.0\.0-compact-workspace1/);
+  assert.match(html, /dashboard-ui\.js\?v=1\.0\.0-shell142-workspace/);
   assert.match(sw, /\.\/my-actions\.js/);
-  assert.match(html, /my-actions\.js\?v=1\.0\.0-workspace1/);
-  assert.match(html, /ask-synap\.js\?v=1\.0\.0-actions3/);
+  assert.match(html, /my-actions\.js\?v=1\.0\.0-shell142-workspace/);
+  assert.match(html, /ask-synap\.js\?v=1\.0\.0-shell142-workspace/);
   assert.match(html, /sleep-state-guard\.js\?v=/);
   assert.match(html, /recording-bridge\.js\?v=/);
   assert.match(ask, /SynapAuth\.authedFetch\(ASK_ENDPOINT/);
   assert.match(ask, /const ASK_ENDPOINT = '\/v1\/ask'/);
 
   // UI architecture: all product surfaces stay mounted. The dashboard only
-  // navigates to them; it never collapses/reparents or display:none's the app.
+  // navigates to them; it never recreates controls or changes the recording lifetime.
   assert.doesNotMatch(dashboard, /capture:'#capture'/);
-  assert.match(dashboard, /scrollIntoView/);
-  assert.match(dashboard, /IntersectionObserver/);
-  assert.match(dashboard, /overflow-x:clip/);
+  assert.match(dashboard, /window\.scrollTo/);
+  assert.match(dashboard, /node.hidden = key !== activeView/);
+  assert.match(html, /workspace\.css/);
   assert.doesNotMatch(dashboard, /function wrapActions|function wrapConversations/);
   assert.doesNotMatch(dashboard, /data-synap-view="today"[^\n]*display:none/);
 

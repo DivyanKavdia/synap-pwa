@@ -1,225 +1,92 @@
-/* Stable Synap shell: keep every core surface mounted and navigate by scroll. */
+/* Four persistent destinations. Navigation never recreates capture or source nodes. */
 (function (root) {
   'use strict';
-  if (root.SynapDashboardUI && root.SynapDashboardUI.__stableShell) return;
-
-  const STYLE_ID = 'synapDashboardStyle';
-  const VIEW_IDS = {
-    today: '#memoryWorkspace',
-    weekly: '#memoryWorkspace',
-    memories: '#insights',
-    actions: '#myActions',
-    library: '#library',
-  };
+  if (root.SynapDashboardUI?.__stableShell) return;
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => [...document.querySelectorAll(s)];
   const ACTION_VIEWS = {
-    ask: 'ask',
     dailyFocus: 'dailyFocus',
     followupInbox: 'followupInbox',
     peopleMemory: 'peopleMemory',
   };
-  const $ = (s) => document.querySelector(s);
-  const $$ = (s) => [...document.querySelectorAll(s)];
-  let observer = null;
-  let observed = new Set();
-  let navLockUntil = 0;
+  const VIEW_IDS = {
+    today: '#memoryWorkspace',
+    library: '#library',
+    actions: '#myActions',
+    ask: '#ask',
+  };
   let activeView = 'today';
-
+  const positions = new Map();
   function normalizeView(view) {
+    if (view === 'weekly' || view === 'memories') return 'today';
     return ACTION_VIEWS[view] ? 'actions' : VIEW_IDS[view] ? view : 'today';
   }
   function viewForHref(href) {
-    const panel = href?.slice(1);
-    if (panel === 'memoryWeekPanel' || panel === 'synapWeeklyReview') return 'weekly';
-    return ACTION_VIEWS[panel]
-      ? panel
-      : href === '#insights'
-        ? 'memories'
-        : href === '#myActions'
-          ? 'actions'
-          : href === '#library'
-            ? 'library'
-            : 'today';
+    const key = href?.slice(1);
+    if (key === 'memoryWeekPanel' || key === 'synapWeeklyReview') return 'weekly';
+    if (key === 'insights') return 'memories';
+    if (key === 'myActions') return 'actions';
+    return key;
   }
-  function sectionFor(view) {
-    if (view === 'memories' && $('#insights')?.dataset.empty === 'true') return $('#today');
-    return document.querySelector(VIEW_IDS[normalizeView(view)]);
-  }
-
-  function injectStyle() {
-    let style = document.getElementById(STYLE_ID);
-    if (!style) {
-      style = document.createElement('style');
-      style.id = STYLE_ID;
-      document.head.appendChild(style);
-    }
-    style.textContent = `
-html,body{max-width:100%;overflow-x:clip}
-main{display:block!important}
-@media(min-width:1100px){body.synap-refresh main{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:12px;align-items:start}body.synap-refresh main>*{grid-column:1/-1}body.synap-refresh main>:is(#myActions,#library).workspace-tile{grid-column:auto!important;margin:0!important}body.synap-refresh #memoryWorkspace{margin-bottom:0!important}}
-body[data-synap-view] #today,
-body[data-synap-view] #insights,
-body[data-synap-view] #myActions,
-body[data-synap-view] #library{display:block!important;visibility:visible!important;opacity:1!important}
-#today,#insights,#myActions,#library{scroll-margin-top:84px;content-visibility:visible!important}
-.app-shell,main,.brain-home,.day-brief,.actionable-memory,.action-grid,.conversation-lane,.section-card{min-width:0;max-width:100%}
-.section-card{transition:border-color .18s ease,box-shadow .18s ease}
-.brain-tabs{isolation:isolate}
-.brain-tabs{grid-template-columns:repeat(4,minmax(0,1fr))!important}
-.brain-tabs a{touch-action:manipulation}
-.brain-tabs a.active{font-weight:800}
-`;
-  }
-
   function syncNav(view) {
     activeView = normalizeView(view);
-    // Legacy memory links still open the memories inside Today.
-    if (activeView === 'memories') activeView = 'today';
     document.body.dataset.synapView = activeView;
-    $$('.brain-tabs a[href^="#"]').forEach((a) => {
-      const active = normalizeView(viewForHref(a.getAttribute('href'))) === activeView;
-      a.classList.toggle('active', active);
-      if (active) a.setAttribute('aria-current', 'page');
-      else a.removeAttribute('aria-current');
+    for (const [key, selector] of Object.entries(VIEW_IDS)) {
+      const node = $(selector);
+      if (node) node.hidden = key !== activeView;
+    }
+    $$('.brain-tabs a').forEach((link) => {
+      const active = normalizeView(viewForHref(link.getAttribute('href'))) === activeView;
+      link.classList.toggle('active', active);
+      if (active) link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
     });
   }
-
   function setView(view, scroll = true) {
-    const next = normalizeView(view);
-    if (ACTION_VIEWS[view]) root.SynapMyActions?.select(ACTION_VIEWS[view]);
-    if (next === 'today' || next === 'memories' || next === 'weekly')
-      root.SynapMemoryWorkspace?.select(next === 'weekly' ? 'week' : 'day');
+    const next = normalizeView(view),
+      changed = next !== activeView;
+    if (changed) positions.set(activeView, window.scrollY);
+    if (ACTION_VIEWS[view]) root.SynapMyActions?.select(view);
+    if (next === 'today') root.SynapMemoryWorkspace?.select(view === 'weekly' ? 'week' : 'day');
     syncNav(next);
-    root.SynapCompactLayout?.reveal(sectionFor(next));
-    if (!scroll) return true;
-    navLockUntil = Date.now() + 900;
-    const target = sectionFor(next);
-    if (target) {
-      if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+    const target = $(VIEW_IDS[next]);
+    if (scroll && target) {
+      target.setAttribute('tabindex', '-1');
       target.focus({ preventScroll: true });
-      const reduced =
-        typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-      target.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
-      return true;
+      window.scrollTo({ top: changed ? positions.get(next) || 0 : 0, behavior: 'instant' });
     }
-    setTimeout(() => {
-      const late = sectionFor(next);
-      if (late) late.scrollIntoView({ behavior: 'auto', block: 'start' });
-    }, 80);
-    return false;
+    root.dispatchEvent(new CustomEvent('synap-view-changed', { detail: { view: next } }));
+    return Boolean(target);
   }
-
-  function memoryView() {
-    return root.SynapMemoryWorkspace?.period === 'week' ? 'weekly' : 'today';
+  function reveal(target) {
+    if (typeof target === 'string') target = document.getElementById(target.replace(/^#/, ''));
+    if (!target) return;
+    if (target.closest('#ask')) setView('ask', false);
+    else if (target.closest('#myActions')) setView('actions', false);
+    else if (target.closest('#library')) setView('library', false);
+    else if (target.closest('#memoryWorkspace'))
+      setView(target.closest('#memoryWeekPanel') ? 'weekly' : 'today', false);
   }
-
-  function currentVisibleView() {
-    if (window.scrollY < 4) return memoryView();
-    const header = $('.topbar');
-    const top = (header?.getBoundingClientRect().bottom || 64) + 18;
-    // A desktop side rail does not obscure the bottom of the viewport.
-    const nav = $('.brain-tabs')?.getBoundingClientRect();
-    const bottom = nav && nav.top > window.innerHeight / 2 ? nav.top - 12 : window.innerHeight;
-    let best = { view: memoryView(), score: -1 };
-    for (const [view, selector] of Object.entries(VIEW_IDS)) {
-      // Score the shared memory card once, using its currently selected period.
-      if (view === 'weekly') continue;
-      const node = $(selector);
-      if (!node || !node.getClientRects().length) continue;
-      const rect = node.getBoundingClientRect();
-      const visible = Math.max(0, Math.min(rect.bottom, bottom) - Math.max(rect.top, top));
-      const centerPenalty =
-        Math.abs((rect.top + rect.bottom) / 2 - (top + bottom) / 2) /
-        Math.max(1, window.innerHeight);
-      const score = visible - centerPenalty * 20;
-      if (score > best.score) best = { view: view === 'today' ? memoryView() : view, score };
-    }
-    return best.view;
-  }
-
-  function updateFromViewport() {
-    if (Date.now() >= navLockUntil) syncNav(currentVisibleView());
-  }
-
-  function observeSections() {
-    if (typeof IntersectionObserver === 'undefined') return;
-    if (!observer)
-      observer = new IntersectionObserver(() => updateFromViewport(), {
-        root: null,
-        rootMargin: '-18% 0px -55% 0px',
-        threshold: [0, 0.1, 0.35, 0.7],
-      });
-    for (const selector of Object.values(VIEW_IDS)) {
-      const node = $(selector);
-      if (node && !observed.has(node)) {
-        observed.add(node);
-        observer.observe(node);
-      }
-    }
-  }
-
   function bindTabs() {
-    const nav = $('.brain-tabs');
-    if (!nav || nav.dataset.stableShell === '1') return;
-    nav.dataset.stableShell = '1';
-    nav.addEventListener('click', (event) => {
-      const link = event.target.closest?.('a[href^="#"]');
-      if (!link) return;
+    $('.brain-tabs')?.addEventListener('click', (event) => {
+      const link = event.target.closest('a[href^="#"]');
+      if (!link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       event.preventDefault();
-      setView(viewForHref(link.getAttribute('href')), true);
-      try {
-        history.replaceState(history.state, '', location.pathname + location.search);
-      } catch (_) {}
+      setView(viewForHref(link.getAttribute('href')));
+      history.replaceState(history.state, '', location.pathname + location.search);
     });
-    addEventListener('scroll', () => requestAnimationFrame(updateFromViewport), { passive: true });
-    addEventListener('resize', () => requestAnimationFrame(updateFromViewport), { passive: true });
-    addEventListener('synap-memory-period-changed', () => syncNav(memoryView()));
+    $('.brand')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      setView('today');
+    });
     addEventListener('hashchange', () => {
-      if (location.hash) {
-        setView(viewForHref(location.hash), true);
-        try {
-          history.replaceState(history.state, '', location.pathname + location.search);
-        } catch (_) {}
-      }
+      if (location.hash) setView(viewForHref(location.hash));
+    });
+    addEventListener('synap-memory-period-changed', () => {
+      if (activeView === 'today') syncNav('today');
     });
   }
-
-  function healLegacyWrappers() {
-    for (const id of ['todayActionsCollapse', 'todayConversationCollapse']) {
-      const details = document.getElementById(id);
-      if (!details) continue;
-      const parent = details.parentNode;
-      if (!parent) continue;
-      [...details.children]
-        .filter((node) => node.tagName !== 'SUMMARY')
-        .forEach((node) => parent.insertBefore(node, details));
-      details.remove();
-    }
-    const brief = document.getElementById('dayBriefText');
-    brief?.classList.remove('synap-clamped', 'synap-expanded');
-    document.getElementById('dayBriefMore')?.remove();
-  }
-
   function bindDailyWorkspace() {
-    const shortcuts = $('.day-shortcuts');
-    if (shortcuts && !shortcuts.dataset.bound) {
-      shortcuts.dataset.bound = '1';
-      shortcuts.addEventListener('click', (event) => {
-        const link = event.target.closest?.('[data-workspace-target]');
-        if (!link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-        const target = document.getElementById(link.dataset.workspaceTarget);
-        if (!target) return;
-        event.preventDefault();
-        root.SynapCompactLayout?.reveal(target);
-        syncNav(target.id === 'synapWeeklyReview' ? 'weekly' : 'memories');
-        navLockUntil = Date.now() + 900;
-        if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
-        target.focus({ preventScroll: true });
-        target.scrollIntoView({
-          behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-          block: 'start',
-        });
-      });
-    }
     const tabs = $('.focus-tabs');
     if (!tabs || tabs.dataset.bound) return;
     tabs.dataset.bound = '1';
@@ -252,39 +119,19 @@ body[data-synap-view] #library{display:block!important;visibility:visible!import
     });
   }
 
-  function scan() {
-    injectStyle();
-    healLegacyWrappers();
+  function init() {
     bindTabs();
     bindDailyWorkspace();
-    observeSections();
-    updateFromViewport();
+    syncNav('today');
+    if (location.hash) setView(viewForHref(location.hash));
   }
-  function init() {
-    scan();
-    // Dynamic second-brain sections are inserted as direct children of <main>.
-    // Observe only that boundary instead of the entire document: memory renders
-    // can replace many descendant nodes without causing navigation rescans.
-    const main = document.querySelector('main');
-    if (main) {
-      const mutation = new MutationObserver(() =>
-        requestAnimationFrame(() => {
-          observeSections();
-          healLegacyWrappers();
-        }),
-      );
-      mutation.observe(main, { childList: true });
-    }
-    [
-      'synap-cloud-history-updated',
-      'synap-memory-ready',
-      'synap-processing-state',
-      'synap-transcript-updated',
-    ].forEach((name) => addEventListener(name, () => requestAnimationFrame(updateFromViewport)));
-    if (location.hash) setTimeout(() => setView(viewForHref(location.hash), true), 0);
-  }
-
-  root.SynapDashboardUI = Object.freeze({ __stableShell: true, setView, syncNav, observeSections });
+  root.SynapDashboardUI = Object.freeze({
+    __stableShell: true,
+    setView,
+    syncNav,
+    reveal,
+    observeSections() {},
+  });
   if (document.readyState === 'loading')
     document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();

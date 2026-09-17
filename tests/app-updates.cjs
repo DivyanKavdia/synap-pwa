@@ -17,3 +17,12 @@ test('a newer shell offers an update even when the Bluetooth protocol revision i
   handlers.message({data:{type:'APP_VERSION',revision:'new-protocol',shellRevision:'loaded-shell'}});
   assert.equal(notice.hidden,false);
 });
+
+// A stale app constant makes a freshly loaded shell ask for another reload.
+{
+  const fs = require('node:fs');
+  const app = fs.readFileSync('app.js', 'utf8');
+  const worker = fs.readFileSync('sw.js', 'utf8');
+  const revision = worker.match(/const CACHE_REVISION='([^']+)'/)[1];
+  assert.equal(app.match(/const APP_SHELL_REVISION = "([^"]+)"/)[1], revision);
+}
