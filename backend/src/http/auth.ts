@@ -216,13 +216,15 @@ export function requireTaskAuth() {
       if (scheme?.toLowerCase() !== 'bearer' || !token) {
         throw new HttpError(401, 'missing_token', 'Task authorization required');
       }
+      if (!config.tasks.serviceUrl || !config.tasks.invokerServiceAccount)
+        throw new HttpError(503, 'invalid_task_token', 'Cloud Tasks identity is not configured');
       const ticket = await google().verifyIdToken({
         idToken: token,
-        audience: config.tasks.serviceUrl || undefined,
+        audience: config.tasks.serviceUrl,
       });
       const payload = ticket.getPayload();
       const expected = config.tasks.invokerServiceAccount;
-      if (expected && payload?.email !== expected) {
+      if (payload?.email !== expected || payload.email_verified !== true || !GOOGLE_ISSUERS.has(payload.iss)) {
         throw new HttpError(403, 'forbidden', 'Unexpected task invoker');
       }
       next();

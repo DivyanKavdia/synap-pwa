@@ -111,7 +111,9 @@ test('finalization checks complete segments atomically and preserves later proce
 test('authenticated PUT preserves permanent model failures, source bytes and deletion fencing',async t=>{
   const f=fixture(),dek=generateDek(),objects=new Map<string,Buffer>();
   t.mock.method(keyring,'unwrap',async()=>dek);
-  t.mock.method(OAuth2Client.prototype,'verifyIdToken',async()=>({getPayload:()=>({email:'fixture'})}) as any);
+  const previousTasks={...config.tasks};Object.assign(config.tasks,{serviceUrl:'https://worker.example.test',invokerServiceAccount:'fixture'});
+  t.after(()=>Object.assign(config.tasks,previousTasks));
+  t.mock.method(OAuth2Client.prototype,'verifyIdToken',async()=>({getPayload:()=>({sub:'fixture',email:'fixture',email_verified:true,iss:'https://accounts.google.com'})}) as any);
   t.mock.method(Storage.prototype,'bucket',()=>({file:(path:string)=>({
     save:async(bytes:Buffer)=>{assert(!objects.has(path),'upload attempts never overwrite a blob');objects.set(path,bytes);},
     exists:async()=>[objects.has(path)],download:async()=>[objects.get(path)],delete:async()=>objects.delete(path)
@@ -227,7 +229,9 @@ test('background 429 retains diagnostics and schedules a durable cooldown before
   const f=fixture(),dek=generateDek(),objects=new Map<string,Buffer>();
   t.after(()=>db.setFirestoreForTest(null));
   t.mock.method(keyring,'unwrap',async()=>dek);
-  t.mock.method(OAuth2Client.prototype,'verifyIdToken',async()=>({getPayload:()=>({email:'fixture'})}) as any);
+  const previousTasks={...config.tasks};Object.assign(config.tasks,{serviceUrl:'https://worker.example.test',invokerServiceAccount:'fixture'});
+  t.after(()=>Object.assign(config.tasks,previousTasks));
+  t.mock.method(OAuth2Client.prototype,'verifyIdToken',async()=>({getPayload:()=>({sub:'fixture',email:'fixture',email_verified:true,iss:'https://accounts.google.com'})}) as any);
   const previous=config.tasks.serviceUrl;Object.assign(config.tasks,{serviceUrl:'https://worker.example.test'});
   t.after(()=>Object.assign(config.tasks,{serviceUrl:previous}));
   let failSchedule=false;const tasks:any[]=[];

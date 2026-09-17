@@ -18,6 +18,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
+COPY fixtures ./fixtures
 
 # Cloud Run injects PORT; the server reads it and defaults to 8080.
 ENV PORT=8080

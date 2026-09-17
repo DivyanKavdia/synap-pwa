@@ -87,6 +87,14 @@ const out = value => console.log(typeof value === 'string' ? value : JSON.string
 const flag = name => args.find(a => a.startsWith(name+'='))?.slice(name.length+1);
 if (command === 'curl') {
   const url = args.at(-1);
+  if (url.endsWith('/ops/readiness')) {
+    const tagged = url.startsWith('https://candidate.');
+    const ok = !(tagged && scenario === 'candidate-readiness') && !(!tagged && scenario === 'live-readiness');
+    const sha = state.revisions[state.candidate].spec.containers[0].env.find(e=>e.name==='SYNAP_BUILD_SHA').value;
+    fs.writeFileSync(args[args.indexOf('--output')+1], JSON.stringify({ok,commit:sha,checks:[{name:'cloud_tasks_and_memory',ok}]}));
+    out(ok ? '200' : '503');
+    process.exit(0);
+  }
   const tagged = url.startsWith('https://candidate.');
   const active = state.service.status.traffic.find(t => t.percent === 100).revisionName;
   const revision = tagged ? state.candidate : active;
@@ -95,7 +103,9 @@ if (command === 'curl') {
   out({status:'ok', service:'synap-backend', commit:bad ? 'wrong-sha' : sha});
 } else if (command === 'gcloud') {
   const operation = args.slice(0,3).join(' ');
-  if (operation === 'run services describe') {
+  if (operation === 'auth print-identity-token --audiences=https://production.example.test') {
+    out('synthetic-test-identity');
+  } else if (operation === 'run services describe') {
     if (args[3] === 'synap-speaker') out('https://speaker.example.test');
     else out(state.service);
   } else if (operation === 'run revisions describe') {
@@ -153,12 +163,14 @@ if (command === 'curl') {
 for (const scenario of [
   'success',
   'candidate-health',
+  'candidate-readiness',
   'lost-secret',
   'changed-queue',
   'changed-memory',
   'wrong-cpu',
   'concurrent',
   'live-health',
+  'live-readiness',
   'promotion-error',
   'rollback-error',
   'test-failure',
@@ -205,7 +217,7 @@ for (const scenario of [
         moves.length,
         scenario === 'success'
           ? 1
-          : ['live-health', 'promotion-error', 'rollback-error'].includes(scenario)
+          : ['live-health', 'live-readiness', 'promotion-error', 'rollback-error'].includes(scenario)
             ? 2
             : 0,
       );

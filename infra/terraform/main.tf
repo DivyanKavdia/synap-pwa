@@ -10,15 +10,11 @@
  */
 
 terraform {
-  required_version = ">= 1.6"
+  required_version = ">= 1.9"
   required_providers {
     google = {
       source  = "hashicorp/google"
-      version = ">= 6.12"
-    }
-    random = {
-      source  = "hashicorp/random"
-      version = ">= 3.6"
+      version = "~> 8.1"
     }
   }
 }
@@ -160,16 +156,18 @@ resource "google_firestore_database" "synap" {
   delete_protection_state           = "DELETE_PROTECTION_ENABLED"
 
   depends_on = [google_project_service.enabled]
+
+  lifecycle { prevent_destroy = true }
 }
 
 # Vector index backing Ask Synap's nearest-neighbour retrieval. The dimension
 # must match SYNAP_GEMINI_EMBED_DIMENSIONS exactly or findNearest fails at query
 # time rather than at deploy time.
 resource "google_firestore_index" "conversation_vectors" {
-  project    = var.project_id
-  database   = google_firestore_database.synap.name
-  collection = "conversations"
-  query_scope = "COLLECTION_GROUP"
+  project     = var.project_id
+  database    = google_firestore_database.synap.name
+  collection  = "conversations"
+  query_scope = "COLLECTION"
 
   fields {
     field_path = "day"
@@ -185,7 +183,7 @@ resource "google_firestore_index" "conversation_vectors" {
   }
 
   lifecycle {
-    ignore_changes = [fields]
+    prevent_destroy = true
   }
 }
 
@@ -196,7 +194,7 @@ resource "google_firestore_index" "recordings_by_day" {
   project     = var.project_id
   database    = google_firestore_database.synap.name
   collection  = "recordings"
-  query_scope = "COLLECTION_GROUP"
+  query_scope = "COLLECTION"
 
   fields {
     field_path = "day"
@@ -209,7 +207,7 @@ resource "google_firestore_index" "recordings_by_day" {
   }
 
   lifecycle {
-    ignore_changes = [fields]
+    prevent_destroy = true
   }
 }
 
@@ -218,7 +216,7 @@ resource "google_firestore_index" "conversations_by_day" {
   project     = var.project_id
   database    = google_firestore_database.synap.name
   collection  = "conversations"
-  query_scope = "COLLECTION_GROUP"
+  query_scope = "COLLECTION"
 
   fields {
     field_path = "day"
@@ -231,7 +229,7 @@ resource "google_firestore_index" "conversations_by_day" {
   }
 
   lifecycle {
-    ignore_changes = [fields]
+    prevent_destroy = true
   }
 }
 
@@ -244,7 +242,7 @@ resource "google_firestore_index" "conversation_vectors_plain" {
   project     = var.project_id
   database    = google_firestore_database.synap.name
   collection  = "conversations"
-  query_scope = "COLLECTION_GROUP"
+  query_scope = "COLLECTION"
 
   fields {
     field_path = "embedding"
@@ -255,7 +253,7 @@ resource "google_firestore_index" "conversation_vectors_plain" {
   }
 
   lifecycle {
-    ignore_changes = [fields]
+    prevent_destroy = true
   }
 }
 
@@ -263,7 +261,7 @@ resource "google_firestore_index" "conversations_by_person" {
   project     = var.project_id
   database    = google_firestore_database.synap.name
   collection  = "conversations"
-  query_scope = "COLLECTION_GROUP"
+  query_scope = "COLLECTION"
 
   fields {
     field_path   = "personIds"
@@ -276,7 +274,7 @@ resource "google_firestore_index" "conversations_by_person" {
   }
 
   lifecycle {
-    ignore_changes = [fields]
+    prevent_destroy = true
   }
 }
 
@@ -284,7 +282,7 @@ resource "google_firestore_index" "follow_ups" {
   project     = var.project_id
   database    = google_firestore_database.synap.name
   collection  = "followUps"
-  query_scope = "COLLECTION_GROUP"
+  query_scope = "COLLECTION"
 
   fields {
     field_path = "state"
@@ -302,8 +300,58 @@ resource "google_firestore_index" "follow_ups" {
   }
 
   lifecycle {
-    ignore_changes = [fields]
+    prevent_destroy = true
   }
+}
+
+resource "google_firestore_index" "conversations_by_day_recent" {
+  project     = var.project_id
+  database    = google_firestore_database.synap.name
+  collection  = "conversations"
+  query_scope = "COLLECTION"
+  fields {
+    field_path = "day"
+    order      = "DESCENDING"
+  }
+  fields {
+    field_path = "startedAt"
+    order      = "DESCENDING"
+  }
+  lifecycle { prevent_destroy = true }
+}
+
+# Actions allows filtering by state, owner, both, or neither. Each ordered
+# partial filter needs its own index; the three-field index cannot serve all.
+resource "google_firestore_index" "follow_ups_by_state" {
+  project     = var.project_id
+  database    = google_firestore_database.synap.name
+  collection  = "followUps"
+  query_scope = "COLLECTION"
+  fields {
+    field_path = "state"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "createdAt"
+    order      = "DESCENDING"
+  }
+  lifecycle { prevent_destroy = true }
+}
+
+resource "google_firestore_index" "follow_ups_by_owner" {
+  project     = var.project_id
+  database    = google_firestore_database.synap.name
+  collection  = "followUps"
+  query_scope = "COLLECTION"
+  fields {
+    field_path = "ownerType"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "createdAt"
+    order      = "DESCENDING"
+  }
+  lifecycle { prevent_destroy = true }
 }
 
 # Reaps the idempotency ledger automatically instead of growing it forever.
@@ -423,6 +471,7 @@ resource "google_storage_bucket" "audio" {
   }
 
   depends_on = [google_kms_crypto_key_iam_member.gcs_uses_storage_key]
+  lifecycle { prevent_destroy = true }
 }
 
 # The API reads and writes objects. It deliberately does not hold storage.admin,
@@ -443,6 +492,7 @@ resource "google_secret_manager_secret" "gemini_api_key" {
     auto {}
   }
   depends_on = [google_project_service.enabled]
+  lifecycle { prevent_destroy = true }
 }
 
 resource "google_secret_manager_secret" "session_signing_key" {
@@ -451,30 +501,22 @@ resource "google_secret_manager_secret" "session_signing_key" {
     auto {}
   }
   depends_on = [google_project_service.enabled]
+  lifecycle { prevent_destroy = true }
 }
 
-# Generated here so a human never has to invent one, and never sees it.
-resource "random_bytes" "session_signing_key" {
-  length = 32
+# Secret versions are provisioned outside Terraform. Forget old state entries
+# without disabling/deleting versions or rotating live sessions during adoption.
+removed {
+  from = google_secret_manager_secret_version.gemini_api_key_placeholder
+  lifecycle { destroy = false }
 }
-
-resource "google_secret_manager_secret_version" "session_signing_key" {
-  secret      = google_secret_manager_secret.session_signing_key.id
-  secret_data = random_bytes.session_signing_key.base64
+removed {
+  from = google_secret_manager_secret_version.session_signing_key
+  lifecycle { destroy = false }
 }
-
-# Cloud Run fails its startup probe if this secret has no version: the service
-# resolves secrets at boot and exits rather than serving with a missing key.
-# A placeholder version lets a fresh project converge in one apply; the real key
-# is added afterwards as a new version, which supersedes this one. Terraform
-# ignores the data so adding the real key never shows up as drift.
-resource "google_secret_manager_secret_version" "gemini_api_key_placeholder" {
-  secret      = google_secret_manager_secret.gemini_api_key.id
-  secret_data = "REPLACE_WITH_YOUR_GEMINI_API_KEY"
-
-  lifecycle {
-    ignore_changes = [secret_data, enabled]
-  }
+removed {
+  from = random_bytes.session_signing_key
+  lifecycle { destroy = false }
 }
 
 resource "google_secret_manager_secret_iam_member" "api_reads_gemini_key" {
@@ -499,8 +541,8 @@ resource "google_cloud_tasks_queue" "processing" {
 
   rate_limits {
     # Gemini quota, not Cloud Run capacity, is the real ceiling here.
-    max_dispatches_per_second = 5
-    max_concurrent_dispatches = 10
+    max_dispatches_per_second = var.processing_dispatches_per_second
+    max_concurrent_dispatches = var.processing_concurrency
   }
 
   retry_config {
@@ -615,6 +657,14 @@ resource "google_cloud_run_v2_service" "backend" {
         value = google_cloud_tasks_queue.processing.name
       }
       env {
+        name  = "SYNAP_SERVICE_URL"
+        value = var.service_url
+      }
+      env {
+        name  = "SYNAP_OPERATIONS_INVOKER_SA"
+        value = var.operations_invoker_sa
+      }
+      env {
         name  = "SYNAP_TASKS_LOCATION"
         value = var.region
       }
@@ -650,6 +700,13 @@ resource "google_cloud_run_v2_service" "backend" {
     google_secret_manager_secret_iam_member.api_reads_gemini_key,
     google_secret_manager_secret_iam_member.api_reads_session_key,
   ]
+
+  lifecycle {
+    prevent_destroy = true
+    # CI owns revisions, environment, secret references, CPU and promotion.
+    # Terraform owns service/IAM identity; applying it must not undo a rollout.
+    ignore_changes = [template, traffic, client, client_version]
+  }
 }
 
 # The API is public because a browser calls it; every endpoint that touches data

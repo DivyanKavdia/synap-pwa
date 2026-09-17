@@ -10,6 +10,7 @@ import {
   patchFollowUp,
   patchProcessing,
   paths,
+  recentConversations,
   setFirestoreForTest,
 } from '../../src/store/firestore.js';
 import type { RecordingDoc, StructuredMemory } from '../../src/store/types.js';
@@ -74,6 +75,21 @@ test.after(async () => {
   await store.recursiveDelete(paths.user(uid));
   await store.terminate();
   setFirestoreForTest(null);
+});
+
+test('date-scoped fallback selects the newest conversations within the requested days', async () => {
+  const scopedUid = `qa-date-${randomUUID()}`;
+  try {
+    for (const [id, day, startedAt] of [
+      ['before', '2026-09-10', '2026-09-10T23:00:00Z'],
+      ['early', '2026-09-11', '2026-09-11T09:00:00Z'],
+      ['latest', '2026-09-12', '2026-09-12T18:00:00Z'],
+      ['morning', '2026-09-12', '2026-09-12T08:00:00Z'],
+      ['after', '2026-09-13', '2026-09-13T09:00:00Z'],
+    ]) await paths.conversations(scopedUid).doc(id!).set({ conversationId: id, day, startedAt, personIds: [], embedding: null });
+    const result = await recentConversations(scopedUid, 2, { from: '2026-09-11', to: '2026-09-12' });
+    assert.deepEqual(result.map(item => item.conversationId), ['latest', 'morning']);
+  } finally { await store.recursiveDelete(paths.user(scopedUid)); }
 });
 
 test(

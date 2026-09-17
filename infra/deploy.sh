@@ -132,6 +132,7 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
 fi
 
 env_vars="SYNAP_SERVICE_URL=${url}"
+env_vars="${env_vars},SYNAP_OPERATIONS_INVOKER_SA=synap-github-deployer@${PROJECT_ID}.iam.gserviceaccount.com"
 
 # Pin model routing on every deploy. Summary/memory quality is user-visible, so
 # full Flash is the baseline for extraction and query interpretation. Flash-Lite
@@ -174,6 +175,9 @@ describe_service "${work}/staged.json"
 candidate_url="$("${check[@]}" staged "${work}/staged.json" "${previous_revision}" "${candidate_revision}" "${rollout_tag}")"
 check_health "${candidate_url}" "${build_sha}"
 
+echo "==> Verifying a synthetic recording through production dependencies"
+bash "${here}/infra/check-readiness.sh" "${candidate_url}" "${url}" "${build_sha}"
+
 # Recheck after the probe so an observed concurrent rollout cannot be promoted.
 describe_service "${work}/staged.json"
 "${check[@]}" staged "${work}/staged.json" "${previous_revision}" "${candidate_revision}" "${rollout_tag}" >/dev/null
@@ -184,6 +188,7 @@ gcloud run services update-traffic "${SERVICE}" "${run_scope[@]}" \
 describe_service "${work}/live.json"
 "${check[@]}" serving "${work}/live.json" "${candidate_revision}"
 check_health "${url}" "${build_sha}"
+bash "${here}/infra/check-readiness.sh" "${url}" "${url}" "${build_sha}"
 promotion_attempted=false
 
 echo
