@@ -193,6 +193,13 @@ a placeholder Gemini key or incomplete Cloud Tasks configuration on Cloud Run. L
 the original cost commit's entirely-I/O-bound rationale needs production
 measurement. No performance guarantee follows from the CPU setting alone.
 
+CI mints a fresh Google identity token immediately before each readiness request
+from the action's refreshable federated credentials. This avoids carrying a
+short-lived token across a potentially slow build. It uses the existing
+`workloadIdentityUser` grant on the deployment service account; it requires no
+new IAM binding, private key, or self-impersonation permission. The credential
+file used by `gcloud` for deployment and rollback is left intact.
+
 ### Rollback
 
 Run the **exact command in the deployment job summary** to send 100% of traffic

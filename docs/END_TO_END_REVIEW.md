@@ -57,10 +57,19 @@ formatting passes; provider validation runs in CI because the local execution
 environment forbids the provider's Unix socket.
 
 The PWA unit suite passed 476 checks in CI, including the additional live-readiness
-rollback case. Terraform provider validation and WebKit audio upload also passed
-in the review workflow. All 29 browser journeys were exercised: the local combined run had one
+rollback case. All six jobs in [the review workflow](https://github.com/DivyanKavdia/synap-pwa/actions/runs/35188893882)
+passed, including the full browser suite, Terraform provider validation, WebKit
+audio upload and Firestore emulator. The local combined browser run had one
 12-second post-OTA C3 control timeout; the entire controls journey passed on its
-focused rerun. That intermittent timeout remains a hardware/demo check to watch.
+focused rerun and in CI. That intermittent timeout remains a hardware/demo check
+to watch.
+
+A final deployment-only adjustment mints a fresh identity token before each
+readiness request, avoiding expiration during a slow image build. It uses the
+existing federated identity grant without changing IAM or the deployment
+credential file. Its token-refresh tests and the pinned Google auth library's
+ID-token request path are checked locally. All 478 PWA unit checks pass with
+this adjustment; the live IAM call awaits deployment.
 
 Before promotion, the candidate handles the synthetic session/upload while
 Cloud Tasks still calls the existing canonical service. The same check runs

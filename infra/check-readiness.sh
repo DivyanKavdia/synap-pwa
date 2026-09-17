@@ -9,6 +9,9 @@ check_work="$(mktemp -d)"
 trap 'rm -rf "$check_work"' EXIT
 if [[ -n "${SYNAP_DEPLOY_ID_TOKEN:-}" ]]; then
   printf '%s' "$SYNAP_DEPLOY_ID_TOKEN" > "${check_work}/token"
+elif [[ -n "${GOOGLE_GHA_CREDS_PATH:-}" ]]; then
+  # Mint just before each check; a token made before a slow build can expire.
+  node "$(dirname "${BASH_SOURCE[0]}")/readiness-identity.cjs" "$audience" > "${check_work}/token"
 else
   gcloud auth print-identity-token --audiences="$audience" > "${check_work}/token"
 fi
