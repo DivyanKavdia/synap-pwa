@@ -4,7 +4,7 @@ import { prepareTranscriptionAudio } from '../src/gemini/transcription-audio.js'
 import { transcribeSegment } from '../src/gemini/transcribe.js';
 import { makePcm16Wav, parsePcm16Wav } from '../src/speaker/audio.js';
 
-function tone(seconds = 3) {
+function tone(seconds = 6) {
   const pcm = Buffer.alloc(seconds * 32000);
   for (let i = 0; i < pcm.length / 2; i++)
     pcm.writeInt16LE(
@@ -33,17 +33,19 @@ test('real atempo shortens PCM at 1.5x, keeps pitch and the tail, without changi
   const result = await prepareTranscriptionAudio(source, 1.5);
   assert.equal(result.speed, 1.5, 'ffmpeg must be installed in the test and runtime images');
   assert.deepEqual(source, before);
-  assert(Math.abs(result.durationMs - 2000) < 100);
+  assert(Math.abs(result.durationMs - 4000) < 100);
   const pcm = parsePcm16Wav(result.audio).data;
   assert(Math.abs(frequency(pcm, 1600, 16000) - 440) < 5);
   assert(Math.abs(frequency(pcm, pcm.length / 2 - 3200, pcm.length / 2 - 320) - 880) < 10);
 });
 
 test('short speech windows and cancellation do not disappear', async () => {
-  const source = tone(0.25);
-  const result = await prepareTranscriptionAudio(source, 1.5);
-  assert.deepEqual(result.audio, source);
-  assert.equal(result.fallback, 'short-window');
+  for (const seconds of [0.25, 3.3, 4.95]) {
+    const source = tone(seconds);
+    const result = await prepareTranscriptionAudio(source, 1.5);
+    assert.deepEqual(result.audio, source);
+    assert.equal(result.fallback, 'short-window');
+  }
   await assert.rejects(prepareTranscriptionAudio(tone(), 1.5, AbortSignal.abort()));
 });
 
@@ -51,7 +53,7 @@ test('ASR receives only the faster copy and word times return to the source time
   const source = tone();
   t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
-    assert(parsePcm16Wav(Buffer.from(body.input[0].data, 'base64')).data.length < 68000);
+    assert(parsePcm16Wav(Buffer.from(body.input[0].data, 'base64')).data.length < 132000);
     return response('Hello', [
       { type: 'word_info', text: 'Hello', speaker: 'S1', start_offset: '0.4s', end_offset: '1s' },
     ]);
@@ -81,7 +83,7 @@ test('empty sped-up recognition retries the original once and accounts for both 
   assert.match(result.text, /कल मिलेंगे/);
   assert.equal(result.audioUsage?.fallback, 'empty-recognition');
   assert.equal(result.audioUsage?.speed, 1);
-  assert(result.audioUsage!.submittedAudioMs > 4900);
+  assert(result.audioUsage!.submittedAudioMs > 9900);
 });
 
 test('usage counts transport retries and annotation passes, rather than claiming a fixed saving', async (t) => {
@@ -93,7 +95,106 @@ test('usage counts transport retries and annotation passes, rather than claiming
   const result = await transcribeSegment(tone(), 'audio/wav', { speed: 1.5 });
   assert.equal(calls, 3);
   assert.equal(result.audioUsage?.requestAttempts, 3);
-  assert(result.audioUsage!.submittedAudioMs > 5900);
+  assert(result.audioUsage!.submittedAudioMs > 11900);
+});
+
+test('a 3.3-second final window reaches ASR unchanged while the 30-second window is accelerated', async (t) => {
+  const requests: Buffer[] = [];
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+    requests.push(Buffer.from(JSON.parse(String(init?.body)).input[0].data, 'base64'));
+    return response('Final words.');
+  });
+  const options = { speed: 1.5 as const, diarize: false, wordTimestamps: false };
+  const full = await transcribeSegment(tone(30), 'audio/wav', options);
+  const tail = tone(3.3);
+  const result = await transcribeSegment(tail, 'audio/wav', { ...options, baseOffsetMs: 30000 });
+  assert.equal(full.audioUsage?.speed, 1.5);
+  assert(Math.abs(full.audioUsage!.preparedDurationMs - 20000) < 100);
+  assert.deepEqual(requests[1], tail);
+  assert.equal(result.audioUsage?.speed, 1);
+  assert.equal(result.audioUsage?.fallback, 'short-window');
+  assert.equal(result.text, '[00:30] S?: Final words.');
+});
+
+for (const failure of ['missing-text', 'incomplete', 'rejected'] as const) {
+  test(`${failure} accelerated ASR recovers once with original bytes and original timestamps`, async (t) => {
+    const source = tone(),
+      before = Buffer.from(source),
+      requests: any[] = [];
+    t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      requests.push(body);
+      const original = Buffer.from(body.input[0].data, 'base64').equals(source);
+      if (!original) {
+        if (failure === 'rejected')
+          return new Response('{"error":{"message":"Invalid argument"}}', { status: 400 });
+        return new Response(
+          JSON.stringify(
+            failure === 'missing-text'
+              ? { status: 'completed', steps: [] }
+              : { status: 'incomplete', steps: [] },
+          ),
+        );
+      }
+      assert.deepEqual(body.generation_config.transcription_config, {});
+      return response('Hello', [
+        { type: 'word_info', text: 'Hello', speaker: 'S1', start_offset: '0.4s', end_offset: '1s' },
+      ]);
+    });
+    const result = await transcribeSegment(source, 'audio/wav', {
+      speed: 1.5,
+      baseOffsetMs: 30000,
+    });
+    assert.equal(requests.length, failure === 'rejected' ? 3 : 2);
+    assert.equal(result.audioUsage?.fallback, 'provider-failure');
+    assert.equal(result.audioUsage?.requestAttempts, requests.length);
+    assert.equal(result.audioUsage?.speed, 1);
+    assert.deepEqual(result.words, [
+      { text: 'Hello', speaker: 'S1', start_ms: 30400, end_ms: 31000 },
+    ]);
+    assert.deepEqual(source, before);
+  });
+}
+
+test('repeated missing output fails after one original fallback and is never sealed as silence', async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls++;
+    return new Response(JSON.stringify({ status: 'completed', steps: [] }));
+  });
+  await assert.rejects(transcribeSegment(tone(), 'audio/wav', { speed: 1.5 }), {
+    reason: 'missing-text',
+    retryable: true,
+  });
+  assert.equal(calls, 2);
+});
+
+for (const status of [401, 403, 429, 503]) {
+  test(`HTTP ${status} does not resubmit extra original audio`, async (t) => {
+    let calls = 0;
+    t.mock.method(Math, 'random', () => 0);
+    t.mock.method(globalThis, 'fetch', async () => {
+      calls++;
+      return new Response('{}', { status });
+    });
+    await assert.rejects(transcribeSegment(tone(), 'audio/wav', { speed: 1.5 }), { status });
+    assert.equal(calls, status === 401 || status === 403 ? 1 : 4);
+  });
+}
+
+test('cancellation between failed ASR and fallback cannot submit another request', async (t) => {
+  const controller = new AbortController();
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls++;
+    controller.abort();
+    return new Response(JSON.stringify({ status: 'completed', steps: [] }));
+  });
+  await assert.rejects(
+    transcribeSegment(tone(), 'audio/wav', { speed: 1.5, signal: controller.signal }),
+    { name: 'AbortError' },
+  );
+  assert.equal(calls, 1);
 });
 
 test('exact digital silence makes no transcription request', async (t) => {

@@ -10,13 +10,18 @@ No microphone, Bluetooth, camera, SD or local voice firmware changes are needed.
 
 ## Quality and bounds
 
-- Keep windows shorter than one second at normal speed; never discard tails.
+- Keep windows shorter than five seconds at normal speed; never discard tails.
+  This protects short final utterances while retaining acceleration on full windows.
 - Validate the entire WAV before preparation and the derived duration afterward.
 - Bound the subprocess to 10 seconds, one filter thread and a 2 MB input limit.
   Abort cancels it; conversion failure uses the original recording.
 - If accelerated recognition returns explicitly empty text, the existing single
   empty-result retry uses original 1× audio with automatic language detection.
-  Other provider failures remain retryable errors, not evidence of silence.
+  Missing/incomplete output also gets one original-audio pass with provider-default
+  settings. A 400 rejection of accelerated input gets this fallback after optional
+  settings are removed. Rate limits, authorization failures and service outages
+  never trigger extra original-audio submissions. A failed fallback remains an
+  error, not evidence of silence.
 - Map each word to `window start + ASR offset × speed`, bounded to source duration.
   On a normal-speed fallback use factor 1. Speaker extraction, navigation and
   summaries therefore continue to refer to the original timeline.

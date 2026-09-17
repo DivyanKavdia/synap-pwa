@@ -120,7 +120,7 @@ test('authenticated PUT preserves permanent model failures, source bytes and del
     if(String(input).startsWith(origin))return original(input,init);
     assert(String(input).endsWith('/interactions'),'no real cloud calls');modelCalls++;
     const submitted = Buffer.from(JSON.parse(String(init?.body)).input[0].data,'base64');
-    assert(submitted.length < audio.length, 'only the ephemeral ASR copy is accelerated');
+    assert.deepEqual(submitted, audio, 'short windows retain original speed and bytes');
     if(removeDuringModel){
       await db.beginRecordingDeletion('u','r');f.rows.delete(f.parent);f.rows.delete(f.child);
       return new Response(JSON.stringify({status:'completed',steps:[{type:'model_output',content:[{type:'text',text:'Hello',annotations:[{type:'word_info',text:'Hello',speaker:'spk_1',start_offset:'0s',end_offset:'1s'}]}]}]}));
@@ -143,6 +143,7 @@ test('authenticated PUT preserves permanent model failures, source bytes and del
   }
   for(let attempt=0;attempt<2;attempt++){
     const result=await put();assert.equal(result.status,502);assert.equal(result.data.error.retryable,false);assert(!JSON.stringify(result.data).includes('PRIVATE DETAIL'));
+    assert.equal(result.data.error.code,'model_request_rejected');assert.equal(result.data.error.providerStatus,400);
     assert.equal(objects.size,1);assert.equal(f.rows.get(f.parent).uploadedSegments,1);assert.equal(f.rows.get(f.child).state,'accepted');
   }
   assert(modelCalls>0);const before=modelCalls,path=f.rows.get(f.child).storagePath,bytes=Buffer.from(objects.get(path)!);

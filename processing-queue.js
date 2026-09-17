@@ -140,12 +140,14 @@
           lastError: (e.name || 'Error') + ': ' + e.message,
           ...(e.audioStage ? { failureDetail: {
             stage: e.audioStage, code: e.code || e.name,
+            status: e.status ?? null, providerStatus: e.providerStatus ?? null,
             expectedBytes: e.expectedBytes ?? null, actualBytes: e.actualBytes ?? null,
             stack: String(e.stack || '').slice(0, 3000),
           }} : {}),
         });
         emitState(job, failed ? 'failed' : 'pending');
-        if (e.audioStage) this.onChange('Audio processing failed while ' + e.audioStage + ': ' + e.message);
+        if (e.audioStage) this.onChange('Audio processing failed while ' + e.audioStage + ': ' + e.message +
+          (e.code ? ' [' + e.code + (e.providerStatus ? '; provider HTTP ' + e.providerStatus : '') + ']' : ''));
         this.onChange(
           failed
             ? 'Recording processing needs retry: ' + e.message

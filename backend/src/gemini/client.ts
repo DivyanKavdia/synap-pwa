@@ -75,10 +75,37 @@ export class GeminiError extends Error {
     message: string,
     readonly status: number,
     readonly retryable: boolean,
+    readonly reason: 'request' | 'incomplete' | 'missing-text' = 'request',
   ) {
     super(message);
     this.name = 'GeminiError';
   }
+}
+
+/** Fixed public messages; a provider body can echo private input or credentials. */
+export function modelFailure(error: GeminiError) {
+  let code = 'model_unavailable';
+  let message = 'The AI service is temporarily unavailable. Saved recordings are retained.';
+  if (error.reason === 'missing-text') {
+    code = 'model_missing_text';
+    message = 'The transcription service returned no text output. Saved audio is retained for retry.';
+  } else if (error.reason === 'incomplete') {
+    code = 'model_incomplete';
+    message = 'The AI service returned an incomplete result. Saved recordings are retained for retry.';
+  } else if (error.status === 429) {
+    code = 'model_rate_limited';
+    message = 'The AI service is busy or has reached its usage limit. Retry later; saved recordings are retained.';
+  } else if ([401, 403].includes(error.status)) {
+    code = 'model_access_denied';
+    message = 'The AI service could not authorize this request. Its access configuration needs checking.';
+  } else if (error.status === 404) {
+    code = 'model_not_found';
+    message = 'The configured AI model is unavailable. Its configuration needs checking.';
+  } else if (error.status >= 400 && error.status < 500 && !error.retryable) {
+    code = 'model_request_rejected';
+    message = 'The AI service rejected this request. Saved recordings are retained; repeated retries may not help.';
+  }
+  return { code, message, retryable: error.retryable, providerStatus: error.status };
 }
 
 const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
@@ -184,7 +211,8 @@ export async function createInteraction(
   const fields = usageLogFields(request.model, usageLabel, response.usage);
   if (fields) log.info('Gemini usage', fields);
   if (response.status && response.status !== 'completed') {
-    throw new GeminiError(`Gemini ${usageLabel || 'generation'} did not complete (${response.status}).`, 0, true);
+    log.warn('Gemini interaction did not complete', { model: request.model, stage: usageLabel || 'generation', code: 'model_incomplete' });
+    throw new GeminiError(`Gemini ${usageLabel || 'generation'} did not complete (${response.status}).`, 0, true, 'incomplete');
   }
   return response;
 }

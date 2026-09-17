@@ -142,6 +142,25 @@ test('a failed local commit never announces a ready memory', async () => {
   );
 });
 
+test('model failure diagnostics keep the stage and status without repeating a permanent rejection', async () => {
+  const { queue, context, jobs, messages } = fixture({ provider: () => 'model-fixture' });
+  let calls = 0;
+  context.DKFIFOProcessor.registerProvider('model-fixture', {
+    process: async () => {
+      calls++;
+      throw Object.assign(new Error('Saved audio is retained.'), {
+        retryable: false, audioStage: 'transcribing saved audio', code: 'model_request_rejected', status: 502, providerStatus: 400,
+      });
+    },
+  });
+  await queue.resume();
+  assert.equal(calls, 1);
+  assert.equal(jobs[0].state, 'failed');
+  assert.equal(jobs[0].failureDetail.code, 'model_request_rejected');
+  assert.equal(jobs[0].failureDetail.providerStatus, 400);
+  assert(messages.some(message => message.includes('transcribing saved audio') && message.includes('provider HTTP 400')));
+});
+
 test('pause aborts provider work and leaves it pending without spending a retry', async () => {
   const { queue, context, jobs, events } = fixture({ provider: () => 'fixture' });
   let started;

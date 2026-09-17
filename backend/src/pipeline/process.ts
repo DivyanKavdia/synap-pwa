@@ -21,7 +21,7 @@ import {
   type Binding,
 } from '../crypto/envelope.js';
 import { extractMemory } from '../gemini/memory.js';
-import { GeminiError } from '../gemini/client.js';
+import { GeminiError, modelFailure } from '../gemini/client.js';
 import { formatMs, toSpeakerLines } from '../gemini/transcribe.js';
 import { tagSelfSpeaker } from '../speaker/enrich.js';
 import { RecordingSpeakers, labelWords } from '../speaker/diarization.js';
@@ -59,7 +59,7 @@ export function binding(uid: string, scope: string, field: string): Binding {
 }
 
 export function processingFailure(cause: unknown): { message: string; retryable: boolean } {
-  if (cause instanceof GeminiError) return { message: 'The language model could not complete this request.', retryable: cause.retryable };
+  if (cause instanceof GeminiError) return modelFailure(cause);
   const message = (cause as Error)?.message || 'Processing failed';
   const explicit = (cause as { retryable?: boolean })?.retryable;
   return { message, retryable: typeof explicit === 'boolean' ? explicit : !/unknown (user|recording)|not found|no segments|no audio/i.test(message) };

@@ -7,7 +7,7 @@ export interface TranscriptionAudio {
   speed: 1 | 1.5;
   sourceDurationMs: number;
   durationMs: number;
-  fallback?: 'short-window' | 'conversion-failed' | 'empty-recognition';
+  fallback?: 'short-window' | 'conversion-failed' | 'empty-recognition' | 'provider-failure';
 }
 
 export function originalAudio(audio: Buffer): TranscriptionAudio {
@@ -24,8 +24,8 @@ export async function prepareTranscriptionAudio(
   signal?.throwIfAborted();
   const original = originalAudio(audio);
   if (speed === 1) return original;
-  // Keep very short utterances and the last partial window; never discard them.
-  if (original.durationMs < 1000) return { ...original, fallback: 'short-window' };
+  // Short tails gain little from acceleration; preserve their recognition context.
+  if (original.durationMs < 5000) return { ...original, fallback: 'short-window' };
   // The upload contract bounds windows to 30 s. Refuse an unbounded subprocess.
   if (audio.length > 2_000_000) return { ...original, fallback: 'conversion-failed' };
   try {

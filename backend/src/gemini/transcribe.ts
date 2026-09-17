@@ -134,6 +134,7 @@ export async function transcribeSegment(
         'Transcription returned no completed text output. Saved audio is retained.',
         0,
         true,
+        'missing-text',
       );
     return response;
   };
@@ -147,31 +148,56 @@ export async function transcribeSegment(
   if (languageCodes) variants.push({ mode: 'verbatim' });
   variants.push({}); // Provider defaults, for a rejected optional mode setting.
   let response: InteractionResponse | undefined;
-  for (let index = 0; index < variants.length; index++) {
-    try {
-      response = await run(variants[index]!);
-      break;
-    } catch (error) {
-      signal?.throwIfAborted();
-      if (
-        !(error instanceof GeminiError) ||
-        error.status !== 400 ||
-        /api[_ -]?key|credential|permission|billing|quota/i.test(error.message) ||
-        index === variants.length - 1
-      )
-        throw error;
-      log.warn('Retrying rejected transcription with fewer optional settings', {
-        model: config.gemini.transcribeModel,
-        stage: 'transcription',
-        http_status: error.status,
-        audio_bytes: audio.length,
-        mime_type: mimeType,
-      });
+  let attempted = false;
+  try {
+    for (let index = 0; index < variants.length; index++) {
+      try {
+        response = await run(variants[index]!);
+        break;
+      } catch (error) {
+        signal?.throwIfAborted();
+        if (
+          !(error instanceof GeminiError) ||
+          error.status !== 400 ||
+          /api[_ -]?key|credential|permission|billing|quota/i.test(error.message) ||
+          index === variants.length - 1
+        )
+          throw error;
+        log.warn('Retrying rejected transcription with fewer optional settings', {
+          model: config.gemini.transcribeModel,
+          stage: 'transcription',
+          http_status: error.status,
+          audio_bytes: audio.length,
+          mime_type: mimeType,
+        });
+      }
     }
+  } catch (error) {
+    signal?.throwIfAborted();
+    const resultFailure =
+      error instanceof GeminiError &&
+      (error.reason === 'incomplete' || error.reason === 'missing-text');
+    const acceleratedRejection =
+      prepared?.speed === 1.5 &&
+      error instanceof GeminiError &&
+      error.status === 400 &&
+      !/api[_ -]?key|credential|permission|billing|quota/i.test(error.message);
+    if (mimeType !== 'audio/wav' || (!resultFailure && !acceleratedRejection)) throw error;
+    // Change the input/settings once, instead of repeatedly submitting the same
+    // failed accelerated window. Never use this for rate limits or access errors.
+    attempted = true;
+    prepared = { ...originalAudio(audio), fallback: 'provider-failure' };
+    log.warn('Retrying transcription with original audio and default settings', {
+      model: config.gemini.transcribeModel,
+      stage: 'transcription',
+      reason: error.reason,
+      http_status: error.status,
+      source_duration_ms: prepared.sourceDurationMs,
+    });
+    response = await run({});
   }
   if (!response) throw new GeminiError('Transcription returned no response', 0, true);
-  let rawText = interactionText(response).trim(),
-    attempted = false;
+  let rawText = interactionText(response).trim();
   if (!rawText) {
     // One fresh, automatic-language pass for an explicitly empty result. Never
     // seal transport failures as empty speech or repeatedly summarize emptiness.

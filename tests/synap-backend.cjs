@@ -142,7 +142,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell130-chakshu'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell131-chakshu'/);
 });
 
 test('the settings form offers the encrypted cloud provider and a sign-in control', () => {
@@ -786,4 +786,11 @@ test('cloud failures honor explicit retry decisions while older servers retain H
     const context=load(backendSource,{SynapAuth:{isSignedIn:()=>true,authedFetch:async()=>new Response(JSON.stringify({error:{message:'Model unavailable',retryable:flag}}),{status})}});
     await assert.rejects(context.SynapBackend.recordingMemory('take'),error=>error.status===status&&error.retryable===expected);
   }
+});
+
+test('provider error codes and numeric status survive the browser adapter', async () => {
+  const context=load(backendSource,{SynapAuth:{isSignedIn:()=>true,authedFetch:async()=>new Response(JSON.stringify({error:{
+    message:'The transcription service returned no text output.',code:'model_missing_text',providerStatus:0,retryable:true,
+  }}),{status:503})}});
+  await assert.rejects(context.SynapBackend.recordingMemory('take'), { code:'model_missing_text',status:503,providerStatus:0,retryable:true });
 });

@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { GeminiError } from '../gemini/client.js';
+import { GeminiError, modelFailure } from '../gemini/client.js';
 import { log } from '../util/log.js';
 
 export class HttpError extends Error {
@@ -35,13 +35,10 @@ export function errorHandler() {
     }
 
     if (error instanceof GeminiError) {
-      log.error('Gemini call failed', { path: req.path, status: error.status });
+      const failure = modelFailure(error);
+      log.error('Gemini call failed', { path: req.path, ...failure });
       res.status(error.retryable ? 503 : 502).json({
-        error: {
-          code: 'model_unavailable',
-          message: 'The language model could not complete this request.',
-          retryable: error.retryable,
-        },
+        error: failure,
       });
       return;
     }
