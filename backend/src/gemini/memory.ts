@@ -35,7 +35,7 @@ Evidence rules, in order of priority:
 8. Segment the timeline into distinct real-world conversations only where there is evidence of a true boundary: a sustained gap, a participant change, an explicit opening or closing, or a hard context switch. Adjacent blocks about the same subject stay in one conversation. A false merge is much better than inventing a meeting.
 9. Windows marked HIGHLIGHT were flagged by the wearer in the moment. Weight them as important, but they are still bound by the evidence rules above.
 10. Language may be English, Hindi or mixed Hinglish. Write summaries in the dominant language of the conversation, preserving names and technical terms as spoken.
-11. A supplied saved-voice match may identify a speaking label; it is an acoustic estimate, not a statement spoken aloud. Explicit user-confirmed labels take precedence. YOU denotes the enrolled wearer. Never turn an anonymous label into a real name using topic, role, or a name mentioned nearby.
+11. A supplied saved-voice match may identify a speaking label; it is an acoustic estimate, not a statement spoken aloud. Explicit user-confirmed labels take precedence. YOU denotes the enrolled wearer. When a matched wearer name is supplied, use that exact spelling in summaries and participants, role "self", and owner "self" for that wearer's actions and follow-ups. Never turn an anonymous label into a real name using topic, role, or a name mentioned nearby.
 12. Unclear, inaudible or conflicting words are uncertainty, not permission to fill gaps. Preserve negation, conditional statements, numbers, currencies and corrections. Never convert a suggested date into an agreed deadline. Keep important unresolved questions in the summary without inventing an owner.
 14. Topic chapters subdivide a conversation without inventing new meetings. Use chronological non-overlapping spans within the conversation. Return unanswered questions separately; exclude questions resolved later in the same conversation.
 15. An explicit spoken request such as "remind me tomorrow to send the invoice" creates an action with kind "reminder". These are suggestions for review, never scheduled notifications. Preserve an exact supporting quote as evidence. Do not extract quoted examples, hypothetical instructions, or background media as tasks. Use kind "commitment" for actual agreed actions.
@@ -73,6 +73,7 @@ export interface MemoryContext {
   knownPeople: string[];
   confirmedSpeakers?: Record<string, string>;
   identifiedSpeakers?: Record<string,string>;
+  selfSpeakerName?: string;
   transcriptWarnings?: string[];
   language: string;
   startedAt?: string;
@@ -103,6 +104,7 @@ export async function extractMemory(
     known,
     `User-confirmed speaker names for this recording only: ${JSON.stringify(context.confirmedSpeakers || {})}`,
     `Acoustic matches to consented saved voices (estimates): ${JSON.stringify(context.identifiedSpeakers || {})}`,
+    `Matched wearer name (only the verified YOU label): ${JSON.stringify(context.selfSpeakerName || null)}`,
     `Transcription limitations: ${JSON.stringify(context.transcriptWarnings || [])}`,
     highlights ? `Wearer highlights:\n${highlights}` : 'No wearer highlights.',
     '',
@@ -124,7 +126,24 @@ export async function extractMemory(
     signal,
   );
 
-  return validateMemory(interactionJson<StructuredMemory>(response), context.durationMs, context.transcript);
+  const memory = interactionJson<StructuredMemory>(response);
+  return validateMemory(applySelfOwnership(memory, context.selfSpeakerName), context.durationMs, context.transcript);
+}
+
+/** The exact name of an acoustically matched wearer is an ownership alias.
+ * Similar spellings or other mentioned people never establish self ownership. */
+export function applySelfOwnership(memory: StructuredMemory, selfName?: string): StructuredMemory {
+  if (!selfName?.trim()) return memory;
+  const key = (value: string) => value.normalize('NFKC').trim().toLocaleLowerCase('und');
+  const self = (value: string) => key(value || '') === key(selfName);
+  return { ...memory,
+    people: (memory.people || []).map(person => self(person.name) ? { ...person, role: 'self' } : person),
+    conversations: (memory.conversations || []).map(conversation => ({ ...conversation,
+      people: (conversation.people || []).map(person => self(person.name) ? { ...person, role: 'self' } : person),
+      action_items: (conversation.action_items || []).map(action => self(action.owner) ? { ...action, owner: 'self' } : action),
+      follow_ups: (conversation.follow_ups || []).map(follow => self(follow.owner) ? { ...follow, owner: 'self' } : follow),
+    })),
+  };
 }
 
 /**

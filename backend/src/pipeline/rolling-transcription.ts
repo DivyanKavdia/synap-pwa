@@ -9,6 +9,20 @@ import { hasTranscription } from './recording-segments.js';
 import { newId } from '../util/ids.js';
 import { GeminiError } from '../gemini/client.js';
 import { log } from '../util/log.js';
+import { readVoiceProfile } from '../speaker/profile.js';
+import { readKnownSpeakers } from '../speaker/known.js';
+import { speakerServiceConfigured } from '../speaker/client.js';
+
+/** Speaker timing has an extra ASR cost. Enable it only for opted-in accounts. */
+export async function needsSpeakerAnnotations(uid: string, dek: Buffer): Promise<boolean> {
+  if (!speakerServiceConfigured()) return false;
+  try {
+    return Boolean(await readVoiceProfile(uid, dek)) || (await readKnownSpeakers(uid, dek)).length > 0;
+  } catch {
+    log.warn('Voice settings unavailable; retaining ordinary transcription');
+    return false;
+  }
+}
 
 function binding(uid: string, scope: string, field: string): Binding {
   return { uid, scope, field };
@@ -89,6 +103,7 @@ async function transcribeOne(
     language: recording.language,
     diarize: true,
     wordTimestamps: true,
+    enrichAnnotations: await needsSpeakerAnnotations(uid, dek),
     signal,
   });
 

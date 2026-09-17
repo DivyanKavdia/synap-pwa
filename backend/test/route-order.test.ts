@@ -91,6 +91,7 @@ const protectedRoutes = [
   ['DELETE', '/v1/memory-merges/merge'],
   ['GET', '/v1/voice-profile'],
   ['POST', '/v1/voice-profile'],
+  ['PATCH', '/v1/voice-profile'],
   ['DELETE', '/v1/voice-profile'],
   ['POST', '/v1/recordings'],
   ['PUT', '/v1/recordings/recording/segments/0'],

@@ -383,6 +383,52 @@ async function run() {
       await prep.getByRole('heading', { name: 'Before meeting Asha Rao', exact: true }).waitFor();
       await prep.getByRole('button', { name: 'Close', exact: true }).tap();
       await page.locator('#actionsTab-followupInbox').tap();
+      // A completed memory arriving during an older cloud read must trigger
+      // one fresh read after that snapshot settles, without another user tap.
+      await page.evaluate(() => {
+        qa.held = [];
+        qa.hold = 'followups';
+        qa.refresh = SynapInteractionSurfaces.refresh(true, 'followups');
+      });
+      await page.waitForFunction(() => qa.held.some((item) => item.kind === 'followups'));
+      await page.evaluate(async () => {
+        const record = {
+          id: 'just-processed',
+          createdAt: new Date().toISOString(),
+          provider: 'synap',
+          processingState: 'done',
+          processedAt: new Date().toISOString(),
+          meeting: {
+            action_items: [{ task: 'Send the newly transcribed plan', owner: 'self', start_ms: 0 }],
+          },
+        };
+        await new DKAudioStore().atomic(['recordings'], (stores) => stores.recordings.put(record));
+        qa.followups.push({
+          id: 'just-processed-task',
+          task: 'Send the newly transcribed plan',
+          state: 'open',
+          owner: { type: 'self', display_name: 'Me' },
+          source: { recording_id: record.id, start_ms: 0 },
+        });
+        SynapMemoryReadyEvents.emit(record);
+      });
+      await page.clock.runFor(100);
+      await page.evaluate(async () => {
+        qa.hold = '';
+        qa.held.forEach((item) => item.resolve());
+        await qa.refresh;
+      });
+      await page.locator('#followupList [data-followup-id="just-processed-task"]').waitFor();
+      await page.locator('#actionsTab-dailyFocus').tap();
+      await page.locator('#commitmentList [data-followup-id="just-processed-task"]').waitFor();
+      await page.evaluate(async () => {
+        qa.followups = qa.followups.filter((item) => item.id !== 'just-processed-task');
+        await new DKAudioStore().atomic(['recordings'], (stores) =>
+          stores.recordings.delete('just-processed'),
+        );
+        await SynapInteractionSurfaces.refresh(true);
+      });
+      await page.locator('#actionsTab-followupInbox').tap();
       await page.evaluate(() => {
         qa.fail = 'done';
       });
