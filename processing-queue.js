@@ -133,7 +133,7 @@
           (e.code === 'model_rate_limited' || e.code === 'model_daily_quota' || e.status === 429);
         const attempts = (job.attempts || 0) + (paused || rateLimited ? 0 : 1);
         const rateLimitAttempts = rateLimited ? Math.min(5, (job.rateLimitAttempts || 0) + 1) : (job.rateLimitAttempts || 0);
-        const failed = permanent || (!rateLimited && attempts >= 5);
+        const failed = !paused && (permanent || (!rateLimited && attempts >= 5));
         const advisedDelay = Number.isFinite(e.retryAfterMs) && e.retryAfterMs > 0 ? Math.min(604800000, e.retryAfterMs) : 0;
         const retryDelay = Math.max(advisedDelay, rateLimited
           ? Math.min(900000, 60000 * 2 ** (rateLimitAttempts - 1))
@@ -164,6 +164,7 @@
           failed
             ? 'Recording processing needs retry: ' + e.message
             : rateLimited ? 'AI limit reached. Retrying in ' + Math.ceil(retryDelay / 1000) + ' seconds. Saved audio is retained.'
+            : paused ? 'Processing paused; saved recordings are retained.'
             : 'Processing retry scheduled: ' + e.message,
         );
         return;
@@ -314,9 +315,15 @@
       }
       const controller = new AbortController();
       this.controllers.set(job.id, controller);
-      const timeout = setTimeout(() => controller.abort(), budget);
+      let timedOut = false;
+      const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, budget);
       try {
         return await work(controller.signal);
+      } catch (error) {
+        if (timedOut && !this.paused) throw Object.assign(new Error('Processing timed out. Saved recordings are retained for retry.'), {
+          name: 'TimeoutError', code: 'processing_timeout', retryable: true, audioStage: error?.audioStage,
+        });
+        throw error;
       } finally {
         clearTimeout(timeout);
         this.controllers.delete(job.id);

@@ -104,7 +104,7 @@ test('firmware without EVENT falls back once without a subscription retry loop',
   const count=h.timers.size;await h.c.SynapEventChannel.attach();assert.equal(h.timers.size,count);
 });
 test('recording retries cover the recovery window while idle retries remain bounded',()=>{
-  const timers=[],c={manualDisconnect:false,autoReconnectEnabled:()=>true,bluetoothDevice:{},reconnectAttempts:8,reconnectNotBefore:0,MAX_AUTO_RECONNECT_ATTEMPTS:8,reconnectTimer:null,recordingReconnectPending:false,AUTO_RECONNECT_DELAYS_MS:[1200,2600,5200,10000,15000,20000,30000,30000],log(){},window:{setTimeout(fn,ms){timers.push({fn,ms});return 1}}};
+  const timers=[],c={manualDisconnect:false,reconnectSelectionRequired:false,rapidNativeLinkFailures:0,autoReconnectEnabled:()=>true,bluetoothDevice:{},reconnectAttempts:8,reconnectNotBefore:0,MAX_AUTO_RECONNECT_ATTEMPTS:8,reconnectTimer:null,recordingReconnectPending:false,AUTO_RECONNECT_DELAYS_MS:[1200,2600,5200,10000,15000,20000,30000,30000],log(){},window:{setTimeout(fn,ms){timers.push({fn,ms});return 1}}};
   vm.createContext(c);vm.runInContext(slice('  function scheduleAutoReconnect()', '  async function connectPendant('),c);
   c.scheduleAutoReconnect();assert.equal(timers.length,0);
   assert(c.reconnectNotBefore>Date.now(),'exhausted automatic retries also quiet advertising recovery');
@@ -113,7 +113,7 @@ test('recording retries cover the recovery window while idle retries remain boun
 });
 test('advertisements cannot cancel backoff or reset the failed-connection attempt counter',async()=>{
   let now=10000,connections=0;const timers=[];
-  const c={Date:{now:()=>now},manualDisconnect:false,firmwareBusy:false,autoReconnectEnabled:()=>true,
+  const c={Date:{now:()=>now},manualDisconnect:false,reconnectSelectionRequired:false,rapidNativeLinkFailures:0,firmwareBusy:false,autoReconnectEnabled:()=>true,
     bluetoothDevice:{},reconnectAttempts:0,reconnectNotBefore:0,MAX_AUTO_RECONNECT_ATTEMPTS:8,reconnectTimer:null,
     recordingReconnectPending:false,AUTO_RECONNECT_DELAYS_MS:[1200,2600,5200],log(){},
     connectInProgress:false,reloadRecoveryRunning:false,reconnectPageHidden:false,currentRecordingId:null,
@@ -135,7 +135,7 @@ test('early link drops retain reconnect backoff; thirty seconds ready resets it'
   const timers=[],logs=[];
   const c={Date:{now:()=>now},performance:{now:()=>now},Math,
     bluetoothDevice:{},connectionReadyAt:null,lastGattDisconnectRequest:null,
-    manualDisconnect:false,recordingSessionId:0,recordingConfirmed:false,
+    manualDisconnect:false,reconnectSelectionRequired:false,rapidNativeLinkFailures:0,recordingSessionId:0,recordingConfirmed:false,
     completedPcmFrames:[],currentRecordingId:null,openingCapture:null,connectInProgress:false,
     appState:'idle',lastAudioAt:0,isCurrentSession:()=>false,recordingReconnectPending:false,
     document:{visibilityState:'visible'},reconnectAttempts:0,reconnectNotBefore:0,reconnectTimer:null,

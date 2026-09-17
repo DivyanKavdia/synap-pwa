@@ -12,6 +12,11 @@ module.exports = function pendantFixture() {
   const recoveryCapacity = location.search.includes('c3') ? 25 : 600;
   const chakshu=location.search.includes('chakshu');
   const inventoryFixture=location.search.includes('inventory');
+  let rejectRememberedLink = location.search.includes('native-link-reject');
+  if (rejectRememberedLink) {
+    localStorage.setItem('dk-pendant-auto-reconnect', 'on');
+    sessionStorage.setItem('qa-permitted', '1');
+  }
   const chakshu1227=chakshu&&location.search.includes('chakshu1227');
   const legacyPathBuffer=new Uint8Array(64);
   const ota = location.search.includes('ota');
@@ -434,6 +439,7 @@ module.exports = function pendantFixture() {
     connected: sessionStorage.getItem('qa-retain-link') === '1',
     connect() {
       increment('qa-connects');
+      if (rejectRememberedLink) return Promise.reject(2);
       return operation(() => {
         if (!present) throw new DOMException('Pendant is asleep', 'NetworkError');
         this.connected = true;
@@ -552,6 +558,7 @@ module.exports = function pendantFixture() {
       throw error;
     }
     sessionStorage.setItem('qa-permitted', '1');
+    rejectRememberedLink = false;
     return device;
   };
   if (!location.search.includes('noRestore'))

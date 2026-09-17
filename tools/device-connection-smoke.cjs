@@ -9,6 +9,34 @@ const server = createStaticServer(process.env.SYNAP_UI_ROOT || path.resolve(__di
   const origin = 'http://127.0.0.1:' + server.address().port;
   const browser = await launchChromium();
   try {
+    {
+      const context = await browser.newContext();
+      await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+      await context.addInitScript(require('./support/pendant-fixture.cjs'));
+      const page = await context.newPage(), errors = [];
+      page.on('pageerror', error => errors.push(error.message));
+      await page.goto(origin + '/?native-link-reject&inventory&ota');
+      await page.waitForFunction(() => document.querySelector('#reconnectStatus')?.textContent.includes('tap Reselect pendant'));
+      assert.equal(await page.evaluate(() => Number(sessionStorage.getItem('qa-connects'))), 2);
+      assert.equal(await page.evaluate(() => bleFixture.appDisconnects), 0, 'settled native rejection does not need another disconnect');
+      await page.evaluate(() => { bleFixture.hide(); bleFixture.show(); });
+      await page.waitForTimeout(3200);
+      assert.equal(await page.evaluate(() => Number(sessionStorage.getItem('qa-connects'))), 2, 'foreground cannot restart the unusable-handle loop');
+      assert.equal(await page.evaluate(() => Number(sessionStorage.getItem('qa-pickers'))), 0, 'automatic recovery never opens a chooser');
+      await page.locator('#headerPendantStatus').click();
+      await page.waitForFunction(() => document.body.dataset.state === 'idle');
+      assert.equal(await page.evaluate(() => Number(sessionStorage.getItem('qa-pickers'))), 1, 'one real tap reselects with user activation');
+      await page.locator('#headerCaptureToggle').click();
+      await page.waitForFunction(() => document.body.dataset.state === 'recording' && bleFixture.captured >= 12);
+      await page.locator('#headerCaptureToggle').click();
+      await page.waitForFunction(() => document.body.dataset.state === 'idle');
+      const recordings = await page.evaluate(() => new DKAudioStore().all('recordings'));
+      assert.equal(recordings.length, 1);
+      assert(recordings[0].stats.completeFrames >= 12);
+      assert.deepEqual(errors, []);
+      console.log('PASS native link rejection: bounded restore, foreground guard, user reselection and recording');
+      await context.close();
+    }
     for (const [name, query, moduleId] of [
       ['older S3 audio-only firmware', 'minimal-pendant', null],
       ['S3 with OTA', 'ota', 1],

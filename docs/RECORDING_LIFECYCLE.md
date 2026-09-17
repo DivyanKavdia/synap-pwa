@@ -52,6 +52,15 @@ reconnect still publishes connection readiness so device controls can resume.
 
 ## Recovery limits
 
+An idle remembered connection that fails twice with immediate native code 2
+rejections pauses automatic attempts and shows **Reselect pendant**. Foreground
+events and periodic checks respect that pause; only an explicit connection tap
+reopens the chooser. A settled rejection on an already disconnected link does
+not issue another native disconnect. Connection timeouts still cancel pending
+native work, and interrupted recordings retain their normal recovery window.
+The numeric rejection alone does not identify its native cause; check that the
+pendant is awake and Bluetooth is on before selecting it again.
+
 | Layer                         | Limit and meaning                                                           |
 | ----------------------------- | --------------------------------------------------------------------------- |
 | PWA same-page recovery        | Up to five minutes of reconnect attempts for an interrupted take            |
