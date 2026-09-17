@@ -4,6 +4,7 @@ import { type TokenPayload } from 'google-auth-library';
 import { serviceIdentityMatches } from '../src/http/service-auth.js';
 import { safeProbeFailure } from '../src/ops/readiness.js';
 import { loadSecrets, setSecretsForTest, validateRuntimeConfiguration } from '../src/config.js';
+import { GeminiError } from '../src/gemini/client.js';
 
 test('operational checks require the exact verified Google service identity', () => {
   const email = 'deployer@example.iam.gserviceaccount.com';
@@ -19,6 +20,8 @@ test('operational failure reports never echo raw dependency bodies or secrets', 
   const cause = Object.assign(new Error('API key secret and private transcript'), { code: 7 });
   assert.deepEqual(safeProbeFailure(cause), { code: 'dependency_7' });
   assert.deepEqual(safeProbeFailure(new Error('private body')), { code: 'check_failed' });
+  assert.deepEqual(safeProbeFailure(new GeminiError('PRIVATE PROVIDER DETAILS', 429, true)),
+    { code: 'model_rate_limited', providerStatus: 429, quotaKind: 'unknown' });
 });
 
 test('production cannot start without Cloud Tasks configuration', () => {

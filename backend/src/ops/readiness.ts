@@ -6,7 +6,7 @@ import { config } from '../config.js';
 import { keyring } from '../crypto/keyring.js';
 import { sealJson } from '../crypto/envelope.js';
 import { issueTokens } from '../http/auth.js';
-import { createInteraction, embedContent, interactionText } from '../gemini/client.js';
+import { createInteraction, embedContent, interactionText, GeminiError, modelFailure } from '../gemini/client.js';
 import * as db from '../store/firestore.js';
 import { deleteUserAudio } from '../store/gcs.js';
 import type { UserDoc } from '../store/types.js';
@@ -19,6 +19,11 @@ class ProbeFailure extends Error {
 /** Do not copy provider messages, API responses, tokens or fixture contents into CI logs. */
 export function safeProbeFailure(cause: unknown): Omit<Check, 'name' | 'ok'> {
   if (cause instanceof ProbeFailure) return cause.detail;
+  if (cause instanceof GeminiError) {
+    const failure = modelFailure(cause);
+    return { code: failure.code, providerStatus: failure.providerStatus,
+      ...(failure.quotaKind ? { quotaKind: failure.quotaKind } : {}) };
+  }
   const code = (cause as { code?: unknown })?.code;
   return { code: typeof code === 'number' ? `dependency_${code}` : 'check_failed' };
 }

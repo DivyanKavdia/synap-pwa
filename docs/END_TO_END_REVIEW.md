@@ -56,8 +56,9 @@ Terraform plan gate has destructive-change/secret/runtime/queue tests. Terraform
 formatting passes; provider validation runs in CI because the local execution
 environment forbids the provider's Unix socket.
 
-The PWA unit suite passed 475 checks before the final additional live-readiness
-rollback case. All 29 browser journeys were exercised: the combined run had one
+The PWA unit suite passed 476 checks in CI, including the additional live-readiness
+rollback case. Terraform provider validation and WebKit audio upload also passed
+in the review workflow. All 29 browser journeys were exercised: the local combined run had one
 12-second post-OTA C3 control timeout; the entire controls journey passed on its
 focused rerun. That intermittent timeout remains a hardware/demo check to watch.
 
