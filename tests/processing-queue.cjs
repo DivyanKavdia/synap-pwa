@@ -391,3 +391,14 @@ test('managed uploads continue during AI cooldown while finalization waits witho
   assert.equal(h.jobs[1].state,'done');assert.equal(h.jobs[1].attempts,undefined);
   assert(h.messages.some(message=>message.startsWith('Uploading audio')));
 });
+
+test('a queued cloud cooldown does not inflate the old rate limit counter or block other recordings',async()=>{
+  const h=fixture({now:()=>1000});h.queue.paused=false;
+  h.jobs[0].attempts=2;h.jobs[0].rateLimitAttempts=4;
+  h.queue.process=async()=>{throw Object.assign(new Error('Already queued'),{code:'processing_deferred',retryable:true,retryAfterMs:30000});};
+  await h.queue.execute(h.jobs[0],{},'');
+  assert.equal(h.jobs[0].state,'pending');assert.equal(h.jobs[0].attempts,2);assert.equal(h.jobs[0].rateLimitAttempts,4);
+  assert.equal(h.jobs[0].nextAt,31000);assert.equal(h.queue.providerCooldowns.size,0);
+  assert(h.messages.some(m=>m.startsWith('Cloud processing queued.')));
+  assert(!h.messages.some(m=>/failed|AI limit reached/.test(m)));
+});

@@ -400,6 +400,7 @@
   function waitForProcessing(processor, job, onProgress, signal) {
     var deadline = Date.now() + PROCESSING_TIMEOUT_MS;
     var lastBackendStage = 'uploaded';
+    var recoveryRequested = false;
     function poll() {
       if ((signal && signal.aborted) || processor.paused || !processor.canRun()) {
         var aborted = new Error('Processing paused'); aborted.name = 'AbortError'; throw aborted;
@@ -422,6 +423,27 @@
           if (onProgress) onProgress(status);
           if (state === 'ready') return status;
           if (state === 'failed') {
+            // Finalize is idempotent: replaying it does not restart a failed
+            // worker. Recover once through the explicit retry endpoint, using
+            // the failure revision so a lost response cannot duplicate work.
+            if (status.retryable && !recoveryRequested) {
+              recoveryRequested = true;
+              var revision = status.failure_id || (status.error && status.error.retryAt) || Math.floor(Date.now() / 60000);
+              return request('/v1/recordings/' + encodeURIComponent(job.recordingId) + '/retry', {
+                method: 'POST', signal: signal,
+                headers: { 'Idempotency-Key': 'recover:' + job.recordingId + ':' + revision }
+              }).then(function (reply) {
+                if (reply.deferred && Number(reply.retry_at) > Date.now()) {
+                  var waiting = new Error('Cloud processing is queued after the AI cooldown. Saved audio is retained.');
+                  waiting.code = 'processing_deferred';
+                  waiting.retryable = true;
+                  waiting.retryAfterMs = Number(reply.retry_at) - Date.now();
+                  throw waiting;
+                }
+                processor.onChange('Cloud processing retry queued');
+                return abortableDelay(POLL_INTERVAL_MS, signal).then(poll);
+              });
+            }
             var detail = status.error || {};
             var failure = new Error(detail.message || status.error_code || 'Backend processing failed.');
             failure.retryable = typeof detail.retryable === 'boolean' ? detail.retryable : Boolean(status.retryable);
@@ -477,7 +499,9 @@
       .then(function () {
         return waitForProcessing(processor, job, function (status) {
           var percent = Math.round((Number(status.progress) || 0) * 100);
-          processor.onChange('Synap is understanding this conversation · ' + percent + '%');
+          var label = { uploaded: 'Audio uploaded; waiting for processing', transcribing: 'Transcribing saved audio',
+            understanding: 'Synap is understanding this conversation', indexing: 'Saving searchable memory', ready: 'Memory ready' }[status.state];
+          if (label) processor.onChange(label + ' · ' + percent + '%');
         }, signal);
       })
       .then(function () { return request('/v1/recordings/' + encodeURIComponent(job.recordingId) + '/memory', { signal: signal }); })

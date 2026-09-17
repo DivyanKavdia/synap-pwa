@@ -153,11 +153,21 @@ export function taskRoutes(): Router {
         log.warn('Using authenticated processing recovery', { uid: req.uid, recordingId, state: recording.state });
       }
 
-      await processRecording(
-        req.uid,
-        recordingId,
-        rebuild ? { skipTranscription: true, memoryOnly: true } : {},
-      );
+      try {
+        await processRecording(
+          req.uid,
+          recordingId,
+          rebuild ? { skipTranscription: true, memoryOnly: true } : {},
+        );
+      } catch (cause) {
+        const failure = processingFailure(cause);
+        if (!rebuild && failure.retryable && failure.retryAfterMs) {
+          const current = await db.getRecording(req.uid, recordingId);
+          const retryAt = current?.processingFailure?.retryAt || Date.now() + failure.retryAfterMs;
+          await enqueueProcessing(req.uid, recordingId, 'cooldown-' + Math.ceil(retryAt / 1000), retryAt);
+        }
+        throw cause;
+      }
 
       const updated = await db.getRecording(req.uid, recordingId);
       const state = updated?.state ?? 'ready';

@@ -123,6 +123,22 @@ export function isProcessingActive(recording: RecordingDoc, now = Date.now()): b
     && now - Date.parse(recording.updatedAt) < PROCESSING_STALE_MS;
 }
 
+/** A retry must not reset a worker that claimed the recording after the route
+ * read it. A changed failure also needs its own cooldown and retry decision. */
+export async function resetProcessingForRetry(uid: string, recordingId: string, expectedUpdatedAt: string): Promise<boolean> {
+  const ref = paths.recording(uid, recordingId);
+  return firestore().runTransaction(async tx => {
+    const current = (await tx.get(ref)).data() as RecordingDoc | undefined;
+    if (!current || current.deleting) throw new SegmentWriteError(404, 'Unknown recording');
+    if (current.updatedAt !== expectedUpdatedAt ||
+        !['uploaded', 'failed'].includes(current.state) ||
+        (current.state === 'failed' && (!current.retryable || (current.processingFailure?.retryAt ?? 0) > Date.now()))) return false;
+    tx.update(ref, { state: 'uploaded', progress: 0, errorCode: null,
+      retryable: false, processingFailure: null, processingLease: null, updatedAt: new Date().toISOString() });
+    return true;
+  });
+}
+
 /** Claim and fence one attempt. A timed-out worker can finish its network call,
  * but only the current lease can change the recording or publish its index. */
 export async function claimProcessing(uid: string, recordingId: string, lease: string, refreshReady = false): Promise<RecordingDoc> {

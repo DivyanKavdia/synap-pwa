@@ -21,12 +21,15 @@ import type { RecordingDoc, SegmentDoc, UserDoc } from '../src/store/types.js';
 function fixture() {
   const rows = new Map<string, any>();
   const ref = (path: string): any => ({path, orderBy:()=>ref(path), collection: (id:string)=>ref(path+'/'+id), doc:(id:string)=>ref(path+'/'+id),
+    count:()=>({get:async()=>({data:()=>({count:[...rows.keys()].filter(key=>key.startsWith(path+'/')&&key.split('/').length===path.split('/').length+1).length})})}),
+    set:async(data:any,options?:{merge?:boolean})=>rows.set(path,{...(options?.merge?rows.get(path):{}),...structuredClone(data)}),
     get:async()=>path.split('/').length%2===0 ? {exists:rows.has(path),data:()=>structuredClone(rows.get(path))} : {docs:[...rows].filter(([key])=>key.startsWith(path+'/')&&key.split('/').length===path.split('/').length+1).map(([,value])=>({data:()=>structuredClone(value)}))},
     update:async(fields:any)=>{if(!rows.has(path))throw Object.assign(Error('Missing'),{code:5});rows.set(path,{...rows.get(path),...fields});}});
   let failCommit=false;
   db.setFirestoreForTest({collection:(path:string)=>ref(path),runTransaction:async(fn:any)=>{
     const writes:(()=>void)[]=[];
     const result=await fn({get:(r:any)=>{assert.equal(writes.length,0);return r.get();},
+      set:(r:any,doc:any,options?:{merge?:boolean})=>writes.push(()=>{rows.set(r.path,{...(options?.merge?rows.get(r.path):{}),...structuredClone(doc)});}),
       create:(r:any,doc:any)=>writes.push(()=>{assert(!rows.has(r.path));rows.set(r.path,structuredClone(doc));}),
       update:(r:any,fields:any)=>writes.push(()=>{assert(rows.has(r.path));rows.set(r.path,{...rows.get(r.path),...structuredClone(fields)});})});
     if(failCommit)throw Error('Commit unavailable');
@@ -252,8 +255,48 @@ test('background 429 retains diagnostics and schedules a durable cooldown before
   const status=await fetch(origin+'/v1/recordings/r/processing',{headers:{Authorization:'Bearer '+token}});
   const body=await status.json() as any;
   assert.equal(body.state,'failed');assert.equal(body.error.code,'model_rate_limited');
+  assert.equal(body.failure_id,f.rows.get(f.parent).updatedAt);
   assert.equal(body.error.providerStatus,429);assert.equal(body.error.retryable,true);
   assert(body.error.retryAfterMs>110000);assert.equal(f.rows.get(f.child).state,'accepted');assert.equal(objects.size,1);
+  const retry=()=>fetch(origin+'/v1/recordings/r/retry',{method:'POST',headers:{Authorization:'Bearer '+token,'Idempotency-Key':'retry-fixture-key'}});
+  const savedFailure=structuredClone(f.rows.get(f.parent));
+  for(let i=0;i<2;i++){
+    const response=await retry();assert.equal(response.status,202);
+    const queued=await response.json() as any;assert.equal(queued.deferred,true);
+    assert.equal(queued.retry_at,savedFailure.processingFailure.retryAt);
+    assert.equal(tasks.at(-1).task.name,tasks[0].task.name,'taps reuse the scheduled task');
+  }
+  assert.deepEqual(f.rows.get(f.parent),savedFailure,'retry during cooldown cannot clear the provider deadline');
+  assert.equal(calls,1,'retry endpoint does not submit audio');
+  const recovery=await fetch(origin+'/v1/recordings/r/process-now',{method:'POST',headers:{Authorization:'Bearer '+token}});
+  assert.equal(recovery.status,503);assert(tasks.at(-1).task.scheduleTime,'authenticated recovery must leave a durable retry');
   failSchedule=true;assert.equal((await invoke()).status,500,'failed scheduling retains the current delivery for retry');
   assert.equal(calls,1,'a cooldown retry never submits the audio again');
+
+  // Once the old deadline expires, explicit recovery queues fresh work. A lost
+  // response replay is idempotent; completed transcripts and source stay intact.
+  failSchedule=false;
+  f.rows.set(f.parent,{...f.rows.get(f.parent),updatedAt:'expired-failure',processingFailure:{...savedFailure.processingFailure,retryAt:Date.now()-1}});
+  const beforeRetryTasks=tasks.length;
+  const resumed=await retry();assert.equal(resumed.status,202);assert.equal((await resumed.json() as any).retry_started,true);
+  assert.equal(f.rows.get(f.parent).state,'uploaded');assert.equal(tasks.length,beforeRetryTasks+1);
+  assert.equal(f.rows.get(f.parent).processingFailure,null);
+  await retry();assert.equal(tasks.length,beforeRetryTasks+1,'same request cannot enqueue twice');
+  assert.equal(calls,1);assert.equal(objects.size,1);
+});
+
+test('processing retry cannot overwrite a new worker, newer failure, cooldown, or deletion',async t=>{
+  const f=fixture();t.after(()=>db.setFirestoreForTest(null));
+  const failed={...f.recording,state:'failed',retryable:true,updatedAt:'failure-1',processingFailure:{code:'model_rate_limited',retryable:true,retryAt:Date.now()-1}};
+  for(const change of [
+    {state:'transcribing',processingLease:'live'}, {state:'ready'}, {updatedAt:'failure-2'},
+    {processingFailure:{...failed.processingFailure,retryAt:Date.now()+60000}}, {retryable:false},
+  ]){
+    const current={...failed,...change};f.rows.set(f.parent,current);
+    assert.equal(await db.resetProcessingForRetry('u','r','failure-1'),false);
+    assert.deepEqual(f.rows.get(f.parent),current);
+  }
+  f.rows.set(f.parent,failed);assert.equal(await db.resetProcessingForRetry('u','r','failure-1'),true);
+  assert.equal(f.rows.get(f.parent).state,'uploaded');
+  f.rows.set(f.parent,{...failed,deleting:true});await assert.rejects(db.resetProcessingForRetry('u','r','failure-1'),{status:404});
 });

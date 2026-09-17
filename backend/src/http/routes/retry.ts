@@ -42,7 +42,7 @@ export function retryRoutes(): Router {
     handler<AuthedRequest>(async (req, res) => {
       const recordingId = String(req.params.recordingId);
       const recording = await db.getRecording(req.uid, recordingId);
-      if (!recording) throw new HttpError(404, 'not_found', 'Unknown recording');
+      if (!recording || recording.deleting) throw new HttpError(404, 'not_found', 'Unknown recording');
 
       if (recording.state === 'ready') {
         res.status(200).json({
@@ -98,6 +98,17 @@ export function retryRoutes(): Router {
         throw new HttpError(409, 'no_segments', 'No uploaded audio is available to retry', false);
       }
 
+      // An old failure may predate durable cooldown scheduling. Ensure the task
+      // exists, but never turn a user's repeated tap into another paid request
+      // before the provider's deadline. Identical deadlines share a task name.
+      const retryAt = recording.processingFailure?.retryAt;
+      if (recording.state === 'failed' && retryAt && retryAt > Date.now()) {
+        await enqueueProcessing(req.uid, recordingId, 'cooldown-' + Math.ceil(retryAt / 1000), retryAt);
+        res.status(202).json({ recording_id: recordingId, state: 'failed',
+          retry_started: true, deferred: true, retry_at: retryAt });
+        return;
+      }
+
       const key = idempotencyKey(req);
       const claim = await db.claimIdempotencyKey(
         req.uid,
@@ -113,24 +124,18 @@ export function retryRoutes(): Router {
       // accepted but lost/expired before a worker started. An explicit user retry
       // gets a fresh task suffix, while the idempotency ledger still protects a
       // repeated tap from duplicating that task.
-      await db.patchRecording(req.uid, recordingId, {
-        state: 'uploaded',
-        progress: 0,
-        errorCode: null,
-        retryable: false,
-      });
+      if (!await db.resetProcessingForRetry(req.uid, recordingId, recording.updatedAt)) {
+        const current = await db.getRecording(req.uid, recordingId);
+        res.status(202).json({ recording_id: recordingId, state: current?.state,
+          retry_started: false, already_processing: Boolean(current && ACTIVE_STATES.has(current.state)) });
+        return;
+      }
 
       const taskSuffix = `retry-${fingerprint(key).slice(0, 20)}`;
-      try {
-        await enqueueProcessing(req.uid, recordingId, taskSuffix);
-      } catch (cause) {
-        await db.patchRecording(req.uid, recordingId, {
-          state: 'failed',
-          errorCode: `Could not queue retry: ${(cause as Error).message}`.slice(0, 200),
-          retryable: true,
-        });
-        throw cause;
-      }
+      // A dispatch error leaves the recording uploaded and this idempotency
+      // claim incomplete. Retrying can enqueue again; it must not overwrite a
+      // worker that may already have started after an ambiguous task response.
+      await enqueueProcessing(req.uid, recordingId, taskSuffix);
 
       const response = {
         recording_id: recordingId,

@@ -80,7 +80,8 @@ function uiAndBackendContract() {
     'a truly non-retryable failed recording must stay blocked');
   assert.match(retryRoute, /enqueueProcessing\(req\.uid, recordingId, taskSuffix\)/,
     'retry must enqueue a unique processing task when cloud work needs restarting');
-  assert.match(retryRoute, /state: 'failed'[\s\S]*retryable: true/, 'queue dispatch failure must remain retryable');
+  assert.match(retryRoute, /resetProcessingForRetry/, 'retry must atomically preserve a worker that started after the status read');
+  assert.doesNotMatch(retryRoute, /db\.patchRecording\(/, 'dispatch errors must not overwrite an active worker');
 
   const app = read('backend/src/http/app.ts');
   assert(app.indexOf("app.use('/v1', retryRoutes())") < app.indexOf("app.use('/v1', recordingRoutes())"),

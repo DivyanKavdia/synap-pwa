@@ -134,7 +134,8 @@
         const interrupted = paused && !permanent && e.name === 'AbortError';
         const rateLimited = !paused && !permanent &&
           (e.code === 'model_rate_limited' || e.code === 'model_daily_quota' || e.status === 429);
-        const busy = !paused && !permanent && e.code === 'transcription_busy';
+        const deferred = !paused && !permanent && e.code === 'processing_deferred';
+        const busy = deferred || (!paused && !permanent && e.code === 'transcription_busy');
         const attempts = (job.attempts || 0) + (paused || rateLimited || busy ? 0 : 1);
         const rateLimitAttempts = rateLimited ? Math.min(5, (job.rateLimitAttempts || 0) + 1) : (job.rateLimitAttempts || 0);
         const failed = !paused && (permanent || (!rateLimited && !busy && attempts >= 5));
@@ -171,6 +172,7 @@
         this.onChange(
           failed
             ? 'Recording processing needs retry: ' + e.message
+            : deferred ? 'Cloud processing queued. Checking again in ' + Math.ceil(retryDelay / 1000) + ' seconds. Saved audio is retained.'
             : rateLimited ? 'AI limit reached. Retrying in ' + Math.ceil(retryDelay / 1000) + ' seconds. Saved audio is retained.'
             : paused ? 'Processing paused; saved recordings are retained.'
             : 'Processing retry scheduled: ' + e.message,

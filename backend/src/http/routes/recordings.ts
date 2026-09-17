@@ -352,6 +352,7 @@ export function recordingRoutes(): Router {
         progress: recording.progress,
         retryable: recording.retryable,
         error_code: recording.errorCode,
+        ...(recording.state === 'failed' ? { failure_id: recording.updatedAt } : {}),
         ...(recording.state === 'failed' && recording.processingFailure ? { error: {
           ...recording.processingFailure,
           ...(recording.processingFailure.retryAt ? { retryAfterMs: Math.max(0, recording.processingFailure.retryAt - Date.now()) } : {}),

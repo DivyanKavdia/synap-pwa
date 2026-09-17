@@ -142,7 +142,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell135-pipeline'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell136-retry'/);
 });
 
 test('the settings form offers the encrypted cloud provider and a sign-in control', () => {
@@ -807,13 +807,49 @@ test('provider cooldown timing survives the browser adapter and honors Retry-Aft
 
 test('background processing preserves provider cooldown details instead of burning normal retry attempts', async () => {
   const recording={id:'take',createdAt:'2026-09-17T00:00:00Z',durationMs:1000};
-  const context=load(backendSource,{SynapAuth:{isSignedIn:()=>true,config:()=>({backendUrl:'https://api.example.test'}),authedFetch:async(url)=>{
+  const context=load(backendSource,{setTimeout:(fn,ms)=>setTimeout(fn,ms===5000?0:ms),SynapAuth:{isSignedIn:()=>true,config:()=>({backendUrl:'https://api.example.test'}),authedFetch:async(url)=>{
     const endpoint=new URL(url,'https://api.example.test').pathname.split('/').pop();
     if(endpoint==='finalize')return new Response(JSON.stringify({state:'uploaded'}),{status:202});
+    if(endpoint==='retry')return new Response(JSON.stringify({state:'uploaded',retry_started:true}),{status:202});
     assert.equal(endpoint,'processing');
     return new Response(JSON.stringify({state:'failed',retryable:true,error_code:'Cooldown',error:{code:'model_rate_limited',message:'Saved audio is retained.',providerStatus:429,retryAfterMs:120000,retryable:true}}));
   }}});
   const processor=new context.DKFIFOProcessor({get:async()=>recording,all:async()=>[{frameCount:20}],atomic:async()=>{}},{provider:()=> 'synap'});
   processor.paused=false;
   await assert.rejects(processor.process({id:1,recordingId:'take',kind:'consolidate',dedupe:'take:final'}, {}, ''),{code:'model_rate_limited',providerStatus:429,retryAfterMs:120000,retryable:true,audioStage:'processing saved audio'});
+});
+
+for(const cloudOnly of [false,true]) test('stored failure resumes through retry and reaches ready without uploading audio: cloudOnly='+cloudOnly,async()=>{
+  const recording={id:'take',createdAt:'2026-09-17T00:00:00Z',durationMs:1000};
+  const calls=[],messages=[];let statuses=0;
+  const context=load(backendSource,{setTimeout:(fn,ms)=>setTimeout(fn,ms===5000?0:ms),SynapAuth:{isSignedIn:()=>true,config:()=>({backendUrl:'https://api.example.test'}),authedFetch:async(url,init)=>{
+    const endpoint=String(url).split('/').pop();calls.push({endpoint,init});
+    if(endpoint==='finalize')return new Response(JSON.stringify({state:'uploaded'}),{status:202});
+    if(endpoint==='retry')return new Response(JSON.stringify({state:'uploaded',retry_started:true}),{status:202});
+    if(endpoint==='processing')return new Response(JSON.stringify(++statuses===1
+      ?{state:'failed',progress:.05,retryable:true,failure_id:'2026-09-17T04:00:00Z',error:{code:'model_rate_limited',providerStatus:429,retryAfterMs:0}}
+      :statuses===2?{state:'transcribing',progress:.3}:{state:'ready',progress:1}));
+    assert.equal(endpoint,'memory');return new Response(JSON.stringify({title:'Recovered',transcript:'Original transcript',conversations:[]}));
+  }}});
+  const processor=new context.DKFIFOProcessor({get:async()=>recording,all:async()=>[],atomic:async()=>{}},{provider:()=> 'synap',onChange:m=>messages.push(m)});
+  processor.paused=false;
+  const result=await processor.process({id:1,recordingId:'take',kind:'consolidate',dedupe:'take:final',cloudOnly},{},'');
+  assert.equal(result.transcript,'Original transcript');
+  const retries=calls.filter(c=>c.endpoint==='retry');assert.equal(retries.length,1);
+  assert.equal(retries[0].init.headers['Idempotency-Key'],'recover:take:2026-09-17T04:00:00Z');
+  assert.equal(calls.filter(c=>c.endpoint==='finalize').length,cloudOnly?0:1);
+  assert(messages.includes('Transcribing saved audio · 30%'));
+  assert(!messages.some(m=>m.includes('understanding')||m.includes('5%')),'a saved failure is not progress');
+});
+
+test('a scheduled cooldown is not surfaced as another provider rejection',async()=>{
+  const recording={id:'take'};let retries=0;
+  const deadline=Date.now()+120000;
+  const context=load(backendSource,{SynapAuth:{isSignedIn:()=>true,config:()=>({backendUrl:'https://api.example.test'}),authedFetch:async(url)=>{
+    if(String(url).endsWith('/retry')){retries++;return new Response(JSON.stringify({state:'failed',deferred:true,retry_at:deadline}),{status:202});}
+    assert(String(url).endsWith('/processing'));return new Response(JSON.stringify({state:'failed',retryable:true,failure_id:'failure-1',error:{code:'model_rate_limited',providerStatus:429}}));
+  }}});
+  const processor=new context.DKFIFOProcessor({get:async()=>recording,atomic:async()=>{}},{provider:()=> 'synap'});processor.paused=false;
+  await assert.rejects(processor.process({id:1,recordingId:'take',kind:'consolidate',cloudOnly:true},{},''),e=>e.code==='processing_deferred'&&e.retryAfterMs>110000&&e.providerStatus===undefined);
+  assert.equal(retries,1);
 });
