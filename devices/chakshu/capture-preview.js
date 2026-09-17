@@ -135,7 +135,7 @@
         ? 'Finishing the recording and saving received frames and audio…'
         : 'Closing this preview keeps recording. Use Stop & save video to finish.'
       : sd
-        ? 'Open Photos & video in Library to import this recording or download it over Wi-Fi.'
+        ? 'Open Photos & video in Library to move this recording to the app or download it over Wi-Fi.'
         : row
           ? 'You can review this capture in your library.'
           : '';
@@ -227,4 +227,397 @@
   if (document.readyState === 'loading')
     document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();
+})(globalThis);
+
+/* Chakshu v2 lifecycle: verified move-from-SD, FIFO controls and explicit vision. */
+(function (root) {
+  'use strict';
+  const api = () => root.SynapChakshu;
+  const RECEIPT_PREFIX = 'synap-chakshu-move-v2:';
+  let busy = false;
+  const status = (message) => {
+    const node = document.getElementById('visualConnectionStatus');
+    if (node) node.textContent = message || '';
+  };
+  function context() {
+    const state = api()?.state,
+      connection = root.SynapDevices?.connection;
+    if (!state?.available) throw Error('Associate Chakshu with this account first.');
+    if (!state.connected || !connection?.deviceId) throw Error(state?.connectionStatus?.message || 'Connect Chakshu first.');
+    if (!state.mediaSupported) throw Error('Update Chakshu firmware for media controls.');
+    return connection;
+  }
+  function client() {
+    return new root.SynapChakshuTransfer.Client(context());
+  }
+  function pathOk(path) {
+    return /^\/synap\/[a-f0-9]{8}-[a-f0-9]{8}\.(jpg|wav|mjpeg|json)$/.test(path);
+  }
+  async function digest(blob) {
+    const bytes = await blob.arrayBuffer();
+    const hash = await crypto.subtle.digest('SHA-256', bytes);
+    return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  const basename = (path) => path.split('/').pop();
+  const stem = (path) => path.replace(/\.[^.]+$/, '');
+  const receiptKey = (deviceId, path) => RECEIPT_PREFIX + deviceId + ':' + path;
+  function audioJournal() {
+    return new root.DKAudioStore({ ...root.SynapRecordingJournal.options() });
+  }
+  async function localSnapshot() {
+    const visuals = api().store ? await api().store.list() : [];
+    const recordings = await audioJournal().all('recordings');
+    return {
+      visuals: new Set(visuals.map((row) => row.id)),
+      recordings: new Set(recordings.map((row) => row.id)),
+    };
+  }
+  async function download(path, signal, progress) {
+    if (!pathOk(path)) throw Error('Invalid SD path.');
+    const c = client(),
+      files = [];
+    const add = async (name, required = true) => {
+      try {
+        const blob = await c.file(name, signal, progress);
+        const type = name.endsWith('.jpg') ? 'image/jpeg' : name.endsWith('.wav') ? 'audio/wav' : name.endsWith('.json') ? 'application/json' : 'video/x-motion-jpeg';
+        files.push(new File([blob], basename(name), { type }));
+        return blob;
+      } catch (error) {
+        if (!required && /SD file unavailable/.test(error.message)) return null;
+        throw error;
+      }
+    };
+    const main = await add(path);
+    let wav = null;
+    if (path.endsWith('.mjpeg')) {
+      await add(stem(path) + '.json', false);
+      wav = await add(stem(path) + '.wav', false);
+    }
+    return { files, main, wav };
+  }
+  async function verifyVisual(id, expectedMain, expectedWav) {
+    const store = api().store,
+      row = await store.get(id);
+    if (!row || row.state !== 'saved') throw Error('The imported visual was not durably saved.');
+    const frames = await store.frames(id),
+      rebuilt = new Blob(frames.map((frame) => frame.blob), {
+        type: row.kind === 'image' ? 'image/jpeg' : 'video/x-motion-jpeg',
+      });
+    if (rebuilt.size !== expectedMain.size || (await digest(rebuilt)) !== (await digest(expectedMain)))
+      throw Error('The saved visual did not match the SD source. The SD original was kept.');
+    if (expectedWav) {
+      if (!row.audioId) throw Error('The video soundtrack was not saved. The SD original was kept.');
+      const journal = audioJournal(),
+        record = await journal.get('recordings', row.audioId);
+      if (!record || !record.sealed) throw Error('The video soundtrack is still saving. The SD original was kept.');
+      const saved = await journal.blob(record);
+      if (saved.size !== expectedWav.size || (await digest(saved)) !== (await digest(expectedWav)))
+        throw Error('The saved soundtrack did not match the SD source. The SD original was kept.');
+    }
+    return row;
+  }
+  async function verifyAudio(id, expected) {
+    const journal = audioJournal(),
+      record = await journal.get('recordings', id);
+    if (!record || !record.sealed) throw Error('The imported audio is still saving. The SD original was kept.');
+    const saved = await journal.blob(record);
+    if (saved.size !== expected.size || (await digest(saved)) !== (await digest(expected)))
+      throw Error('The saved audio did not match the SD source. The SD original was kept.');
+    return record;
+  }
+  async function verifyReceipt(receipt) {
+    if (!receipt || receipt.owner !== api().state.owner || receipt.deviceId !== root.SynapDevices?.connection?.deviceId)
+      return false;
+    try {
+      if (receipt.visualId) {
+        const row = await api().store.get(receipt.visualId);
+        if (!row || row.state !== 'saved') return false;
+        const frames = await api().store.frames(receipt.visualId),
+          rebuilt = new Blob(frames.map((frame) => frame.blob));
+        if (rebuilt.size !== receipt.mainBytes || (await digest(rebuilt)) !== receipt.mainSha256) return false;
+      }
+      if (receipt.audioId) {
+        const journal = audioJournal(),
+          record = await journal.get('recordings', receipt.audioId);
+        if (!record || !record.sealed) return false;
+        const blob = await journal.blob(record);
+        if (blob.size !== receipt.audioBytes || (await digest(blob)) !== receipt.audioSha256) return false;
+      }
+      return Boolean(receipt.visualId || receipt.audioId);
+    } catch (_) {
+      return false;
+    }
+  }
+  async function deleteSD(path) {
+    const reply = await client().request(17, 0, path);
+    return reply.total;
+  }
+  async function moveSD(path, progress = () => {}) {
+    if (busy) throw Error('Another Chakshu transfer is already running.');
+    const connection = context(),
+      owner = api().state.owner,
+      key = receiptKey(connection.deviceId, path);
+    busy = true;
+    try {
+      const cached = JSON.parse(localStorage.getItem(key) || 'null');
+      if (await verifyReceipt(cached)) {
+        await deleteSD(path);
+        localStorage.removeItem(key);
+        root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
+        return cached;
+      }
+      localStorage.removeItem(key);
+      const before = await localSnapshot(),
+        source = await download(path, undefined, progress),
+        mainSha = await digest(source.main),
+        wavSha = source.wav ? await digest(source.wav) : null;
+      if (owner !== api().state.owner || connection !== root.SynapDevices?.connection)
+        throw Error('Account or pendant changed during transfer. The SD original was kept.');
+      await api().importFiles(source.files, connection.deviceId);
+      const rows = await api().store.list(),
+        journal = audioJournal(),
+        recordings = await journal.all('recordings');
+      let visualId = null,
+        audioId = null;
+      if (/\.(jpg|mjpeg)$/.test(path)) {
+        const row = rows
+          .filter((item) => !before.visuals.has(item.id) && item.sourceName === basename(path))
+          .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+        if (!row) throw Error('The imported visual could not be verified. The SD original was kept.');
+        await verifyVisual(row.id, source.main, source.wav);
+        visualId = row.id;
+        audioId = row.audioId || null;
+      } else if (path.endsWith('.wav')) {
+        const record = recordings
+          .filter((item) => !before.recordings.has(item.id) && item.ownerUid === owner)
+          .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+        if (!record) throw Error('The imported audio could not be verified. The SD original was kept.');
+        await verifyAudio(record.id, source.main);
+        audioId = record.id;
+      } else throw Error('Move the primary photo, video or audio file instead.');
+      const receipt = {
+        schema: 1,
+        owner,
+        deviceId: connection.deviceId,
+        path,
+        visualId,
+        audioId,
+        mainBytes: source.main.size,
+        mainSha256: mainSha,
+        ...(source.wav
+          ? { audioBytes: source.wav.size, audioSha256: wavSha }
+          : path.endsWith('.wav')
+            ? { audioBytes: source.main.size, audioSha256: mainSha }
+            : {}),
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(key, JSON.stringify(receipt));
+      await deleteSD(path);
+      localStorage.removeItem(key);
+      root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
+      return receipt;
+    } finally {
+      busy = false;
+    }
+  }
+  async function clearSD() {
+    if (busy) throw Error('Another Chakshu transfer is already running.');
+    const connection = context();
+    if (api().state.offline || api().state.session || root.SynapAppControls.recordingState().active)
+      throw Error('Stop recording before clearing the SD card.');
+    busy = true;
+    try {
+      const reply = await client().request(18);
+      for (let index = localStorage.length - 1; index >= 0; index--) {
+        const key = localStorage.key(index);
+        if (key?.startsWith(RECEIPT_PREFIX + connection.deviceId + ':')) localStorage.removeItem(key);
+      }
+      await api().refreshSD().catch(() => {});
+      return reply.total || 0;
+    } finally {
+      busy = false;
+    }
+  }
+  async function settleAudio() {
+    const current = root.SynapAppControls.recordingState();
+    if (!current.active) return;
+    await root.SynapAppControls.stopCapture(current.sessionId);
+    const deadline = Date.now() + 15000;
+    while (root.SynapAppControls.recordingState().active || root.SynapAppControls.recordingState().settling) {
+      if (Date.now() >= deadline) throw Error('Audio is still saving. Retry after it finishes.');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+  async function startOffline(profile = 0, seconds = 10) {
+    if (![0, 1].includes(profile) || !Number.isInteger(seconds) || seconds < 1 || seconds > 600)
+      throw Error('Choose a clip length from 1 to 600 seconds.');
+    if (busy || api().state.busy) throw Error('Finish the current capture or transfer first.');
+    const connection = context();
+    if (!api().state.storageReady || !api().state.offlineReady)
+      throw Error('Camera, microphone or SD card is not ready for offline video.');
+    busy = true;
+    try {
+      await settleAudio();
+      await new root.SynapChakshuTransfer.Client(connection).request(5, profile | (seconds << 8));
+      await api().pollOffline();
+    } finally {
+      busy = false;
+    }
+  }
+  async function startOfflineAudio(seconds = 600) {
+    if (!Number.isInteger(seconds) || seconds < 1 || seconds > 600)
+      throw Error('Choose an audio length from 1 to 600 seconds.');
+    if (busy || api().state.busy) throw Error('Finish the current capture or transfer first.');
+    const connection = context();
+    if (!api().state.storageReady) throw Error('Insert an SD card and check it before offline audio.');
+    busy = true;
+    try {
+      await settleAudio();
+      await new root.SynapChakshuTransfer.Client(connection).request(10, seconds);
+      await api().pollOffline();
+    } finally {
+      busy = false;
+    }
+  }
+  async function describeNow() {
+    if (busy || api().state.busy) throw Error('Finish the current capture or transfer first.');
+    const connection = context(),
+      owner = api().state.owner;
+    if (!api().state.storageReady) throw Error('Insert an SD card to keep the full-quality photo.');
+    busy = true;
+    try {
+      const transfer = new root.SynapChakshuTransfer.Client(connection),
+        saved = await transfer.savedPreview();
+      const receipt = await (async () => {
+        busy = false;
+        try {
+          return await moveSD(saved.path);
+        } finally {
+          busy = true;
+        }
+      })();
+      if (!receipt.visualId) throw Error('The photo was not saved in Memory.');
+      if (owner !== api().state.owner) throw Error('Account changed before visual inference.');
+      const response = await root.SynapAuth.authedFetch('/v1/chakshu/describe', {
+        method: 'POST',
+        expectedUid: owner,
+        headers: { 'Content-Type': 'image/jpeg' },
+        body: saved.blob,
+      });
+      const data = await response.json();
+      if (!response.ok) throw Error(data.error?.message || 'The photo could not be described.');
+      const text = String(data.description || '').trim();
+      if (!text) throw Error('The image service returned no description.');
+      await api().store.addDescription(receipt.visualId, {
+        text: text.slice(0, 2000),
+        atMs: 0,
+        createdAt: new Date().toISOString(),
+        source: 'gemini-explicit',
+      });
+      await api().store.patch(receipt.visualId, { name: 'What I saw' });
+      root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
+      root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
+      return { id: receipt.visualId, description: text };
+    } finally {
+      busy = false;
+    }
+  }
+  async function browseSD() {
+    const list = document.getElementById('visualSDList');
+    if (!list) return;
+    list.replaceChildren();
+    const files = await api().catalogue();
+    if (!files.length) {
+      list.textContent = 'No Synap photos, videos or audio recordings on the SD card.';
+      return;
+    }
+    for (const file of files) {
+      const row = document.createElement('div'),
+        label = document.createElement('span'),
+        action = document.createElement('button'),
+        name = basename(file.path),
+        type = file.path.endsWith('.wav') ? 'Audio on SD' : file.path.endsWith('.mjpeg') ? 'Video on SD' : 'Photo on SD';
+      row.className = 'visual-sd-row';
+      label.textContent = type + ' · ' + name + ' · ' + Math.max(1, Math.round((file.bytes || 0) / 1024)) + ' KB';
+      action.type = 'button';
+      action.textContent = 'Move to app';
+      action.addEventListener('click', async () => {
+        action.disabled = true;
+        try {
+          await moveSD(file.path, (fraction) => status('Moving from SD · ' + Math.round(fraction * 100) + '%'));
+          status(type.replace(' on SD', '') + ' moved to the app and removed from SD.');
+          await browseSD();
+        } catch (error) {
+          status(error.message);
+        } finally {
+          action.disabled = false;
+        }
+      });
+      row.append(label, action);
+      list.append(row);
+    }
+  }
+  function upgradeUi() {
+    const length = document.getElementById('visualSDLength');
+    if (length && length.tagName === 'SELECT') {
+      const input = document.createElement('input');
+      input.id = 'visualSDLength';
+      input.type = 'number';
+      input.min = '1';
+      input.max = '600';
+      input.step = '1';
+      input.value = '10';
+      input.setAttribute('aria-label', 'SD video length in seconds');
+      length.replaceWith(input);
+    }
+    const quality = document.getElementById('visualSDQuality');
+    if (quality?.options?.length >= 2) {
+      quality.options[0].textContent = 'Maximum detail';
+      quality.options[1].textContent = 'HD motion';
+    }
+    const record = document.getElementById('visualRecordSD');
+    record?.addEventListener(
+      'click',
+      (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        startOffline(Number(document.getElementById('visualSDQuality')?.value || 0), Number(document.getElementById('visualSDLength')?.value || 10)).catch((error) => status(error.message));
+      },
+      true,
+    );
+    const browse = document.getElementById('visualSD');
+    browse?.addEventListener(
+      'click',
+      (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        browseSD().catch((error) => status(error.message));
+      },
+      true,
+    );
+    if (browse?.parentNode && !document.getElementById('visualClearSD')) {
+      const clear = document.createElement('button');
+      clear.id = 'visualClearSD';
+      clear.type = 'button';
+      clear.textContent = 'Clear SD';
+      clear.addEventListener('click', async () => {
+        if (!confirm('Remove all Synap captures from the Chakshu SD card? Other files and voice-model files are kept.')) return;
+        clear.disabled = true;
+        try {
+          const count = await clearSD();
+          status('Cleared ' + count + ' Synap capture' + (count === 1 ? '' : 's') + ' from SD.');
+          await browseSD();
+        } catch (error) {
+          status(error.message);
+        } finally {
+          clear.disabled = false;
+        }
+      });
+      browse.parentNode.insertBefore(clear, browse.nextSibling);
+    }
+  }
+  const exposed = { moveSD, clearSD, startOffline, startOfflineAudio, describeNow, browseSD, get busy() { return busy; } };
+  root.SynapChakshuV2 = exposed;
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', upgradeUi, { once: true });
+  else upgradeUi();
 })(globalThis);
