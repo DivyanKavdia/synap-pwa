@@ -30,13 +30,7 @@
       "marker": "SYNAP-ESP32S3-OTA-ID-V3",
       "manifestPath": "latest.json",
       "releasePrefix": "",
-      "features": [
-        "audio",
-        "settings",
-        "touch",
-        "battery",
-        "standby"
-      ],
+      "features": ["audio","settings","touch","battery","standby"],
       "protocols": {}
     },
     {
@@ -53,13 +47,7 @@
       "marker": "SYNAP-ESP32C3-OTA-ID-V3",
       "manifestPath": "targets/esp32c3-supermini-4m/latest.json",
       "releasePrefix": "targets/esp32c3-supermini-4m/",
-      "features": [
-        "audio",
-        "settings",
-        "touch",
-        "battery",
-        "standby"
-      ],
+      "features": ["audio","settings","touch","battery","standby"],
       "protocols": {}
     },
     {
@@ -76,19 +64,8 @@
       "marker": "SYNAP-CHAKSHU-OTA-ID-V3",
       "manifestPath": "targets/xiao-esp32s3-sense-8m/latest.json",
       "releasePrefix": "targets/xiao-esp32s3-sense-8m/",
-      "features": [
-        "audio",
-        "camera",
-        "sd",
-        "settings",
-        "video",
-        "sdAudio",
-        "photo"
-      ],
-      "protocols": {
-        "media": 1,
-        "voice": 0
-      }
+      "features": ["audio","camera","sd","settings","video","sdAudio","photo"],
+      "protocols": {"media":1,"voice":2}
     }
   ]
 };
