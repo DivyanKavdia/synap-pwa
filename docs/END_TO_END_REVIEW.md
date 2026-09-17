@@ -4,6 +4,15 @@ Reviewed PWA/backend `11670bd` and firmware `9f3003a`. The deployed backend
 reported `11670bdd0d1209966fa3cfdbb98b69081485326c` at `/health`. Source and release
 checks establish deployment identity, not successful private transcription.
 
+**Final rollout result, 06:44 UTC:** [PR #115](https://github.com/DivyanKavdia/synap-pwa/pull/115)
+is merged as `8055029`, including the concurrent cooldown fixes through
+`fb940f7`. All six validation jobs passed on that merged revision. Two gated
+deployment attempts reached the synthetic upload but stopped at an existing
+shared transcription cooldown (`processing_deferred`, HTTP 503, quota category
+unknown). Neither candidate was promoted. The serving backend remains
+`fb940f7`; the public PWA is `shell137-cooldown`, and firmware is build1248 for
+S3, C3 and Chakshu. This is not a successful end-to-end processing result.
+
 ## Findings and prepared fixes
 
 | Priority | Finding | Change |
@@ -49,27 +58,26 @@ The GitHub deployer receives no new project permissions. See
 
 ## Validation and rollout boundaries
 
-Backend build/type checking and 231 unit/route tests pass, including synthetic
+Backend build/type checking and 236 unit/route tests pass, including synthetic
 readiness success/failure cleanup and exact-identity checks. Deployment failure
 tests verify that failed candidate readiness prevents traffic promotion. The
 Terraform plan gate has destructive-change/secret/runtime/queue tests. Terraform
 formatting passes; provider validation runs in CI because the local execution
 environment forbids the provider's Unix socket.
 
-The PWA unit suite passed 476 checks in CI, including the additional live-readiness
-rollback case. All six jobs in [the review workflow](https://github.com/DivyanKavdia/synap-pwa/actions/runs/35188893882)
+The merged PWA unit suite passed 480 checks in CI, including the live-readiness
+rollback case and concurrent cooldown improvements. All six jobs in
+[the merged revision's validation workflow](https://github.com/DivyanKavdia/synap-pwa/actions/runs/35190176891)
 passed, including the full browser suite, Terraform provider validation, WebKit
 audio upload and Firestore emulator. The local combined browser run had one
 12-second post-OTA C3 control timeout; the entire controls journey passed on its
 focused rerun and in CI. That intermittent timeout remains a hardware/demo check
 to watch.
 
-A final deployment-only adjustment mints a fresh identity token before each
-readiness request, avoiding expiration during a slow image build. It uses the
-existing federated identity grant without changing IAM or the deployment
-credential file. Its token-refresh tests and the pinned Google auth library's
-ID-token request path are checked locally. All 478 PWA unit checks pass with
-this adjustment; the live IAM call awaits deployment.
+The deployment mints a fresh identity token before each readiness request,
+avoiding expiration during a slow image build. It uses the existing federated
+identity grant without changing IAM or the deployment credential file. Both
+live attempts authenticated successfully, proving the IAM token path.
 
 Before promotion, the candidate handles the synthetic session/upload while
 Cloud Tasks still calls the existing canonical service. The same check runs
@@ -77,17 +85,27 @@ again after promotion, which verifies the new worker and triggers rollback on
 failure. Each run uses only 6.885 seconds of synthetic speech and small model
 requests. No business recording is read or retranscribed by the check.
 
-The historical Gemini 429 report is not evidence that quota is available now.
-The authenticated production readiness check has not yet run for this change.
-Production publication was blocked by automatic approval review pending explicit
-deployment approval; no production infrastructure apply was performed.
+The [live deployment run](https://github.com/DivyanKavdia/synap-pwa/actions/runs/35190176922)
+attempted readiness at 06:36 and 06:43 UTC. Each report passed `key_and_session`,
+stopped at `audio_storage_and_transcription` with `processing_deferred`, and
+passed `fixture_cleanup`. The shared cooldown stopped the request before a new
+Gemini submission. These attempts do not establish the original provider quota
+category, current provider availability, queue processing, memory generation,
+retrieval indexes or Ask. The report's HTTP 503 is the application's deferral
+response, not a new Gemini HTTP 503 or HTTP 429.
 
-After approval: reconcile any missing collection indexes using the original
-state and operator identity; merge/deploy through the gated workflow; require its
-synthetic report to pass before promotion. If it reports Gemini access/quota
-failure, resolve the API project's access/quota rather than adding Cloud Run
-capacity. Then perform one physical 30-second pendant recording on each target
-and confirm playback, transcript, summary, recovery and OTA on the phone.
+Initial automatic approval review held publication; after the user instructed
+continuation, the changes were merged and deployment was attempted. No full
+Terraform apply was performed. The available handover documents do not provide
+the original production state or an infrastructure operator session.
+
+To finish: inspect the API project's actual quota and access, respect its retry
+timing, and rerun the gated deployment once processing is available. Reconcile
+any missing collection indexes using the original Terraform workspace and
+operator identity; do not initialize a second production state. Require the
+synthetic report to pass before promotion. Then perform one physical 30-second
+pendant recording on each target and confirm playback, transcript, summary,
+recovery and OTA on the phone. Do not drain the recording backlog as a quota test.
 
 Google references: [Gemini project-level quotas](https://ai.google.dev/gemini-api/docs/rate-limits),
 [Firestore query/index ordering](https://firebase.google.com/docs/firestore/query-data/multiple-range-fields).
