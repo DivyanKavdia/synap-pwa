@@ -193,9 +193,16 @@ async function call<T>(
       const detail = await response.text().catch(() => '');
       let rateLimit = response.status === 429 ? rateLimitAdvice(response.headers.get('retry-after'), detail) : undefined;
       if (rateLimit) {
-        rateLimit = config.gemini.sharedCooldown
-          ? await deferSharedModel(context.model, rateLimit)
-          : modelCooldowns.reject(context.model, rateLimit);
+        // Suppress this runtime immediately. A failed Firestore write must not
+        // replace a real 429 with a transport error and resubmit the request.
+        const localLimit = modelCooldowns.reject(context.model, rateLimit);
+        if (config.gemini.sharedCooldown) {
+          try { rateLimit = await deferSharedModel(context.model, rateLimit); }
+          catch {
+            rateLimit = localLimit;
+            log.warn('Shared model cooldown could not be saved', context);
+          }
+        } else rateLimit = localLimit;
         modelCooldowns.defer(context.model, rateLimit);
       }
       const error = new GeminiError(

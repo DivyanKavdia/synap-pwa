@@ -49,3 +49,25 @@ test('durable backoff survives separate workers without counting readers or conc
   }
   assert.equal((await deferSharedModel('shared-stt', advice, now + 3600000)).retryAfterMs, 60000);
 });
+
+test('a cooldown write failure preserves the real rejection and does not resubmit model work', async t => {
+  const ref: any = { doc: () => ref, get: async () => ({ data: () => undefined }) };
+  setFirestoreForTest({ collection: () => ref, runTransaction: async () => { throw new Error('Store unavailable'); } } as unknown as Firestore);
+  const previous = config.gemini.sharedCooldown;
+  Object.assign(config.gemini, { sharedCooldown: true });
+  t.after(() => { setFirestoreForTest(null); Object.assign(config.gemini, { sharedCooldown: previous }); });
+  t.mock.method(Date, 'now', () => 1000);
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => { calls++; return new Response('{}', { status: 429 }); });
+  const request = { model: 'cooldown-write-fixture', usage_label: 'memory_extract', input: 'fixture' };
+  await assert.rejects(createInteraction(request), error => {
+    assert(error instanceof GeminiError);
+    assert.equal(modelFailure(error).source, 'provider');
+    return error.status === 429;
+  });
+  await assert.rejects(createInteraction(request), error => {
+    assert(error instanceof GeminiError);
+    return modelFailure(error).code === 'processing_deferred';
+  });
+  assert.equal(calls, 1);
+});
