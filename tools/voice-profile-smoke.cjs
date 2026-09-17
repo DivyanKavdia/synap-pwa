@@ -36,6 +36,9 @@ async function run() {
           requests: 0,
           holdMic: false,
           quiet: false,
+          holdSave: false,
+          holdBody: false,
+          holdClose: false,
         };
         SynapAuth.isSignedIn = () => true;
         SynapAuth.session = () => ({ profile: { uid: voiceQA.uid, name: 'Diyan Kavdia' } });
@@ -44,6 +47,10 @@ async function run() {
           const qa = voiceQA,
             key = qa.uid;
           if (options.method === 'POST') {
+            qa.saveSignal = options.signal;
+            qa.expectedUid = options.expectedUid;
+            if (qa.holdSave) await new Promise(resolve => { qa.releaseSave = resolve; });
+            if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
             qa.posts.push({
               uid: key,
               name: decodeURIComponent(options.headers['X-Synap-Voice-Name']),
@@ -54,6 +61,7 @@ async function run() {
           if (options.method === 'PATCH')
             qa.profiles[key].displayName = JSON.parse(options.body).display_name;
           if (options.method === 'DELETE') delete qa.profiles[key];
+          if (options.method === 'POST' && qa.holdBody) return { ok: true, json: () => new Promise(() => {}) };
           return Response.json({
             available: true,
             supports_display_name: true,
@@ -90,7 +98,7 @@ async function run() {
             return Promise.resolve();
           }
           close() {
-            return Promise.resolve();
+            return voiceQA.holdClose ? new Promise(() => {}) : Promise.resolve();
           }
           createMediaStreamSource() {
             return { connect() {}, disconnect() {} };
@@ -161,6 +169,38 @@ async function run() {
         'editing a name needs no new voice sample',
       );
       assert.match(await page.locator('#synapVoiceProfileStatus').innerText(), /Divyan K\./);
+      // Upload/auth can hang despite AbortSignal support in the browser bridge.
+      // The UI must show saving rather than a stuck 1s countdown, and recover.
+      await page.evaluate(() => { voiceQA.holdSave = true; voiceQA.holdClose = true; });
+      await page.locator('#synapVoiceProfileSetup').click();
+      await page.locator('#synapVoiceConsent').check();
+      await page.locator('#synapVoiceStart').click();
+      await page.clock.runFor(10050);
+      await page.waitForFunction(() => !!voiceQA.releaseSave);
+      assert.equal(await page.locator('#synapVoiceCountdown').innerText(), 'Saving');
+      await page.clock.runFor(16000);
+      assert.match(await page.locator('#synapVoicePrompt').innerText(), /may be starting/);
+      await page.clock.runFor(90000);
+      await page.waitForFunction(() => !document.querySelector('#synapVoiceStart').disabled);
+      assert.match(await page.locator('#synapVoiceError').innerText(), /did not respond in time/);
+      assert.equal(await page.evaluate(() => voiceQA.saveSignal.aborted), true);
+      assert.equal(await page.evaluate(() => voiceQA.expectedUid), 'owner');
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await page.evaluate(() => { voiceQA.holdSave = false; voiceQA.holdClose = false; voiceQA.releaseSave(); });
+      assert.equal(await page.evaluate(() => voiceQA.posts.length), 1, 'expired upload cannot submit late');
+      // Even response-body parsing is bounded. The server may already have saved
+      // this request, so the UI must not promise the old profile is unchanged.
+      await page.evaluate(() => { voiceQA.holdBody = true; });
+      await page.locator('#synapVoiceProfileSetup').click();
+      await page.locator('#synapVoiceConsent').check();
+      await page.locator('#synapVoiceStart').click();
+      await page.clock.runFor(10050);
+      await page.waitForFunction(() => voiceQA.posts.length === 2);
+      await page.clock.runFor(106000);
+      assert.match(await page.locator('#synapVoiceError').innerText(), /did not respond in time/);
+      assert.doesNotMatch(await page.locator('#synapVoicePrompt').innerText(), /unchanged/);
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await page.evaluate(() => { voiceQA.holdBody = false; });
       // An account change cancels capture before any upload under the new identity.
       await page.locator('#synapVoiceProfileSetup').click();
       await page.locator('#synapVoiceConsent').check();
@@ -170,7 +210,7 @@ async function run() {
         await SynapVoiceProfile.refresh();
       });
       await page.clock.runFor(10050);
-      assert.equal(await page.evaluate(() => voiceQA.posts.length), 1);
+      assert.equal(await page.evaluate(() => voiceQA.posts.length), 2);
       await page.waitForFunction(() => !document.querySelector('#synapVoiceProfileSetup').disabled);
       assert.doesNotMatch(await page.locator('#synapVoiceProfileStatus').innerText(), /Divyan K\./);
       assert.deepEqual(errors, []);

@@ -3,7 +3,9 @@
   'use strict';
   const STYLE_ID = 'synapVoiceProfileStyle',
     RECORD_SECONDS = 10,
-    TARGET_RATE = 16000;
+    TARGET_RATE = 16000,
+    SAVE_TIMEOUT_MS = 105000,
+    STATUS_TIMEOUT_MS = 20000;
   let status = null,
     busy = false,
     dialog = null,
@@ -40,26 +42,45 @@
     return new DOMException('Voice setup cancelled.', 'AbortError');
   }
   function cancellable(promise, signal) {
-    if (signal.aborted) return Promise.reject(abortError());
+    const reason = () => signal.reason?.name === 'TimeoutError' ? signal.reason : abortError();
+    if (signal.aborted) return Promise.reject(reason());
     return new Promise((resolve, reject) => {
-      const cancel = () => reject(abortError());
+      const cancel = () => reject(reason());
       signal.addEventListener('abort', cancel, { once: true });
       promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', cancel));
     });
   }
-  async function request(path, options) {
+  async function request(path, options = {}) {
     if (!root.SynapAuth?.authedFetch) throw new Error('Synap account is unavailable.');
-    const response = await root.SynapAuth.authedFetch(path, options || {});
-    let data = null;
+    const controller = new AbortController(), parent = options.signal;
+    const cancel = () => controller.abort();
+    if (parent?.aborted) throw abortError();
+    parent?.addEventListener('abort', cancel, { once: true });
+    const timer = setTimeout(() => controller.abort(new DOMException(
+      'The voice service did not respond in time. Close this dialog and refresh Synap to check whether it saved before trying again.',
+      'TimeoutError',
+    )), options.method === 'POST' ? SAVE_TIMEOUT_MS : STATUS_TIMEOUT_MS);
     try {
-      data = await response.json();
-    } catch (_) {}
-    if (!response.ok) {
-      const e = new Error(data?.error?.message || 'HTTP ' + response.status);
-      e.status = response.status;
-      throw e;
+      const response = await cancellable(root.SynapAuth.authedFetch(path, {
+        ...options, expectedUid: accountKey(), signal: controller.signal,
+      }), controller.signal);
+      let data;
+      try { data = await cancellable(response.json(), controller.signal); }
+      catch (error) {
+        if (controller.signal.aborted) throw error;
+        throw new Error('The voice service returned an unreadable response. Reopen Voice profile to check its status.');
+      }
+      if (!response.ok) {
+        const e = new Error(data?.error?.message || 'HTTP ' + response.status);
+        e.status = response.status;
+        e.code = data?.error?.code;
+        throw e;
+      }
+      return data;
+    } finally {
+      clearTimeout(timer);
+      parent?.removeEventListener('abort', cancel);
     }
-    return data;
   }
   function style() {
     if (document.getElementById(STYLE_ID)) return;
@@ -397,9 +418,12 @@
         source?.disconnect();
       } catch (_) {}
       stream?.getTracks().forEach((track) => track.stop());
-      await context.close().catch(() => {});
+      // A stalled browser close callback must not retain ownership of setup.
+      // Tracks are already stopped and the capture graph has been disconnected.
+      void context.close().catch(() => {});
     }
   }
+  const diagnostic = (stage, detail = {}) => root.dispatchEvent(new CustomEvent('synap-voice-diagnostic', { detail: { stage, ...detail } }));
   const enroll = () => saveProfile(false);
   async function saveProfile(nameOnly) {
     if (busy || !validName() || !signedIn() || !providerIsSynap()) return;
@@ -408,6 +432,8 @@
       key = accountKey();
     const controller = new AbortController();
     operation = controller;
+    const startedAt = Date.now();
+    diagnostic(nameOnly ? 'saving_name' : 'capture_started');
     ++refreshVersion;
     busy = true;
     render();
@@ -416,9 +442,11 @@
       count = $('#synapVoiceCountdown'),
       prompt = $('#synapVoicePrompt');
     error.hidden = true;
+    let uploadTimer;
     try {
       let options;
       if (nameOnly) {
+        count.textContent = 'Saving';
         prompt.textContent = 'Saving your name…';
         options = {
           method: 'PATCH',
@@ -434,7 +462,16 @@
           },
           controller.signal,
         );
+        diagnostic('upload_started', { elapsedMs: Date.now() - startedAt });
+        count.textContent = 'Saving';
         prompt.textContent = 'Creating encrypted voice profile…';
+        const uploadStarted = Date.now();
+        uploadTimer = setInterval(() => {
+          if (operation !== controller || controller.signal.aborted) return;
+          const elapsed = Math.floor((Date.now() - uploadStarted) / 1000);
+          count.textContent = elapsed + 's elapsed';
+          if (elapsed >= 15) prompt.textContent = 'The voice service may be starting. Keep this dialog open; you can cancel.';
+        }, 1000);
         options = {
           method: 'POST',
           headers: { 'Content-Type': 'audio/wav', 'X-Synap-Voice-Name': encodeURIComponent(name) },
@@ -445,6 +482,7 @@
       const saved = await request('/v1/voice-profile', { ...options, signal: controller.signal });
       if (controller.signal.aborted || key !== accountKey()) throw abortError();
       status = saved;
+      diagnostic('saved', { elapsedMs: Date.now() - startedAt, nameOnly });
       count.textContent = '✓';
       prompt.textContent = nameOnly
         ? 'Name saved for new memories.'
@@ -452,13 +490,15 @@
       root.dispatchEvent(new CustomEvent('synap-voice-profile-updated'));
       closeDialog();
     } catch (errorValue) {
+      diagnostic(errorValue.name === 'AbortError' ? 'cancelled' : 'failed', { elapsedMs: Date.now() - startedAt, code: errorValue.code || errorValue.name, httpStatus: errorValue.status || null });
       if (errorValue.name !== 'AbortError' && key === accountKey()) {
         error.textContent = errorValue.message || 'Could not save voice profile.';
         error.hidden = false;
         count.textContent = RECORD_SECONDS + 's';
-        prompt.textContent = 'You can try again. Your previous profile is unchanged.';
+        prompt.textContent = 'Setup did not finish here. Refresh Synap to check the saved profile before trying again.';
       }
     } finally {
+      clearInterval(uploadTimer);
       if (operation === controller) {
         operation = null;
         busy = false;

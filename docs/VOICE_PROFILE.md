@@ -72,3 +72,20 @@ After backend deployment:
 7. Delete the Voice Profile and confirm a new meeting falls back to S1/S2-style labels.
 
 Do not lower the default matching threshold or margin merely to increase the number of `You` labels. Calibrate those values against real pendant recordings first; false self-attribution is worse than leaving a speaker unidentified.
+
+## Saving and live verification
+
+The recording countdown ends when capture ends. Saving then displays elapsed
+time, with a startup message after 15 seconds. The browser bounds the complete
+request, including sign-in refresh and response parsing, to 105 seconds; Cancel
+releases the local operation. Microphone tracks stop before upload, even if the
+browser never resolves its audio-context close callback. A timeout asks the user
+to refresh and check the stored profile because the server may already have saved.
+Diagnostics record stage, duration and safe error codes, never the sample or name.
+
+Enrollment permits a 90-second speaker-service cold start. Ordinary meeting
+matching retains its shorter configured budget. That deadline includes OIDC
+credential acquisition and body parsing; a timed-out token request cannot submit
+audio later. Deployments with a configured speaker service now require a synthetic
+voice enrollment, encrypted profile readback and deletion, in addition to the
+transcription/retrieval/Ask checks.

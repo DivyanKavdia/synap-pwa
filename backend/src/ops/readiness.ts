@@ -8,6 +8,7 @@ import { sealJson } from '../crypto/envelope.js';
 import { issueTokens } from '../http/auth.js';
 import { createInteraction, embedContent, interactionText, GeminiError, modelFailure } from '../gemini/client.js';
 import * as db from '../store/firestore.js';
+import { speakerServiceConfigured } from '../speaker/client.js';
 import { deleteUserAudio } from '../store/gcs.js';
 import type { UserDoc } from '../store/types.js';
 
@@ -111,6 +112,19 @@ export async function runReadinessProbe() {
     const answer = await call('/ask', 'POST', { query: 'What was decided about the project report?', scope: { from: day, to: day } });
     if (!JSON.stringify(answer).toLowerCase().includes('report')) throw new ProbeFailure({ code: 'answer_missing' });
     check(stage);
+    if (speakerServiceConfigured()) {
+      stage = 'voice_profile';
+      // The configured URL alone is not proof of speaker readiness. Exercise
+      // the same private OIDC call and encrypted enrollment as the browser.
+      const enrolled = await call('/voice-profile', 'POST', audio,
+        { 'Content-Type': 'audio/wav', 'X-Synap-Voice-Name': 'Synthetic%20readiness%20check' });
+      const profile = await call('/voice-profile');
+      if (!enrolled.enrolled || !profile.enrolled || profile.displayName !== 'Synthetic readiness check')
+        throw new ProbeFailure({ code: 'voice_profile_missing' });
+      await call('/voice-profile', 'DELETE');
+      if ((await call('/voice-profile')).enrolled) throw new ProbeFailure({ code: 'voice_profile_cleanup_failed' });
+      check(stage);
+    }
   } catch (cause) {
     checks.push({ name: stage, ok: false, ...safeProbeFailure(cause) });
   } finally {

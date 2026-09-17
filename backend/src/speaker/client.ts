@@ -41,23 +41,28 @@ async function requestWithFetch(url: string, audio: Buffer, signal: AbortSignal)
   const data = await response.json().catch(() => null);
   if (!response.ok) {
     const message = (data as { detail?: string } | null)?.detail || `speaker service HTTP ${response.status}`;
-    throw new Error(message);
+    throw Object.assign(new Error(message), { status: response.status });
   }
   return validate(data);
 }
 
-async function requestWithOidc(url: string, audio: Buffer): Promise<SpeakerEmbeddingResult> {
+async function requestWithOidc(url: string, audio: Buffer, signal: AbortSignal, timeoutMs: number): Promise<SpeakerEmbeddingResult> {
   if (!idTokenClientPromise) {
     const auth = new GoogleAuth();
-    idTokenClientPromise = auth.getIdTokenClient(config.speaker.serviceUrl);
+    const pending = auth.getIdTokenClient(config.speaker.serviceUrl);
+    idTokenClientPromise = pending;
+    void pending.catch(() => { if (idTokenClientPromise === pending) idTokenClientPromise = null; });
   }
   const client = await idTokenClientPromise;
+  signal.throwIfAborted();
   const response = await client.request<SpeakerEmbeddingResult>({
     url,
     method: 'POST',
     headers: { 'Content-Type': 'audio/wav' },
     data: audio,
-    timeout: config.speaker.requestTimeoutMs,
+    timeout: timeoutMs,
+    signal,
+    retry: false,
   });
   return validate(response.data);
 }
@@ -66,17 +71,32 @@ async function requestWithOidc(url: string, audio: Buffer): Promise<SpeakerEmbed
  * The speaker service receives audio only long enough to compute an embedding.
  * No audio persistence belongs in this client or in the service contract.
  */
-export async function embedSpeakerAudio(audio: Buffer): Promise<SpeakerEmbeddingResult> {
+export async function embedSpeakerAudio(audio: Buffer, options: { timeoutMs?: number } = {}): Promise<SpeakerEmbeddingResult> {
   if (!speakerServiceConfigured()) throw new Error('Speaker verification is not configured');
   const url = `${config.speaker.serviceUrl}/embed`;
-  if (config.speaker.authMode === 'none') {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), config.speaker.requestTimeoutMs);
-    try {
-      return await requestWithFetch(url, audio, controller.signal);
-    } finally {
-      clearTimeout(timer);
-    }
+  const timeoutMs = options.timeoutMs ?? config.speaker.requestTimeoutMs;
+  const controller = new AbortController();
+  const timeoutError = Object.assign(new Error('The voice service took too long to respond. Please try again.'), { code: 'speaker_service_timeout' });
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort(timeoutError);
+      // Retry credential discovery after a stalled or failed token request.
+      idTokenClientPromise = null;
+      reject(timeoutError);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([
+      config.speaker.authMode === 'none'
+        ? requestWithFetch(url, audio, controller.signal)
+        : requestWithOidc(url, audio, controller.signal, timeoutMs),
+      deadline,
+    ]);
+  } catch (error) {
+    if (controller.signal.aborted) throw timeoutError;
+    throw error;
+  } finally {
+    clearTimeout(timer!);
   }
-  return requestWithOidc(url, audio);
 }

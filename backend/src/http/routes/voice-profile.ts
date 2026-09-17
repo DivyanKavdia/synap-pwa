@@ -64,12 +64,19 @@ export function voiceProfileRoutes(): Router {
 
       let embedded;
       try {
-        embedded = await embedSpeakerAudio(req.body);
+        embedded = await embedSpeakerAudio(req.body, { timeoutMs: Math.max(90000, config.speaker.requestTimeoutMs) });
       } catch (cause) {
+        const failure = cause as { code?: string; status?: number; response?: { status?: number } };
+        const timeout = failure.code === 'speaker_service_timeout';
+        const status = failure.response?.status ?? failure.status;
+        const denied = status === 401 || status === 403;
         throw new HttpError(
           503,
-          'speaker_service_failed',
-          (cause as Error).message || 'Voice profile service failed.',
+          timeout ? 'speaker_service_timeout' : denied ? 'speaker_service_access_denied' : 'speaker_service_failed',
+          timeout ? 'The voice service is taking too long. Please try again shortly.'
+            : denied ? 'Voice service access needs to be checked on the Synap backend.'
+              : 'The voice service could not process this sample. Please try again.',
+          !denied,
         );
       }
       if (embedded.duration_ms < ENROLL_MIN_MS) {
