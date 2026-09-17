@@ -142,7 +142,7 @@
       return;
     }
     if (status.enrolled) {
-      detail.textContent = 'Ready · confident matches use ' + (status.displayName || 'You') + '.';
+      detail.textContent = 'Ready · confident matches use ' + (status.displayName || 'You') + ((status.sampleCount || 1) > 1 ? ' · ' + status.sampleCount + ' samples.' : '.');
       detail.classList.add('synap-voice-ready');
       setup.textContent = 'Manage';
       remove.hidden = false;

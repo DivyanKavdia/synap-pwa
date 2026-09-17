@@ -9,7 +9,7 @@ export function prepareMeeting(uid:string,dek:Buffer,personId:string,conversatio
     const content=openJson<{title:string;summary:string;participants?:string[];mentionedPeople?:string[];unresolvedQuestions?:{text:string;start_ms:number}[]}>(dek,c.sealedContent,binding(uid,`conversation/${c.conversationId}`,'content'));
     return {title:content.title,summary:content.summary,started_at:c.startedAt,source:source(c),participants:content.participants||[],mentioned_people:content.mentionedPeople||[],questions:(content.unresolvedQuestions||[]).map(q=>({text:q.text,source:source(c,q.start_ms)}))};
   });
-  const open=followUps.filter(f=>f.state==='open' && (f.counterpartyPersonId===personId || recent.some(c=>c.recordingId===f.recordingId && f.startMs>=c.startMs && f.startMs<=c.endMs))).map(f=>{
+  const open=followUps.filter(f=>f.state==='open' && !f.sourceMissing && f.ownerType!=='unknown' && (f.counterpartyPersonId===personId || recent.some(c=>c.recordingId===f.recordingId && f.startMs>=c.startMs && f.startMs<=c.endMs))).map(f=>{
     const task=openJson<{task:string;owner:string;kind?:string}>(dek,f.sealedTask,binding(uid,`followUp/${f.followUpId}`,'task'));
     return {id:f.followUpId,text:task.task,owner:task.owner,kind:task.kind||'commitment',due_date:f.dueDate,source:{recording_id:f.recordingId,start_ms:f.startMs}};
   });

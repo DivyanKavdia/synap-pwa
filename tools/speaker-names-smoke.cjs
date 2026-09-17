@@ -82,6 +82,7 @@ async function run() {
                 return new Response(
                   JSON.stringify({
                     revision: saved.revision,
+                    self_label: saved.self_label || null, supports_self_label: true,
                     speaker_names: saved.names,
                     names_confirmed: saved.revision !== 'v1',
                     speakers: [
@@ -110,7 +111,7 @@ async function run() {
               const summary =
                   (names.S1 || 'S1') + ' will send the drawings to ' + (names.S2 || 'S2') + '.',
                 revision = saved.revision + 'x';
-              sessionStorage.setItem('qa-speakers', JSON.stringify({ names, revision }));
+              sessionStorage.setItem('qa-speakers', JSON.stringify({ names, revision, self_label: qa.lastBody.self_label || null }));
               return new Response(
                 JSON.stringify({
                   schema_version: 1,
@@ -137,6 +138,7 @@ async function run() {
                   transcript,
                   raw_transcript: qa.raw,
                   speaker_names: names,
+                  self_label: qa.lastBody.self_label || null,
                   names_confirmed: true,
                   revision,
                   day_updated: true,
@@ -322,6 +324,14 @@ async function run() {
         'editing must not launch a summary rebuild during capture',
       );
       await page.evaluate(() => (document.body.dataset.state = 'disconnected'));
+      await reloaded.locator('[name="self-speaker"][value="S1"]').check();
+      await reloaded.locator('.speaker-name-actions [type="submit"]').click();
+      await page.waitForFunction(()=>qaSpeakers.lastBody.self_label==='S1' && !document.querySelector('.speaker-name-fields').disabled);
+      page.once('dialog',dialog=>dialog.accept());
+      await reloaded.getByRole('button',{name:'Remember voice for S1',exact:true}).click();
+      await page.waitForFunction(()=>qaSpeakers.lastRemember.self===true && !document.querySelector('.speaker-name-fields').disabled);
+      assert.equal(await page.evaluate(()=>qaSpeakers.lastRemember.existing_id),undefined,'self enrollment is separate from the other-person directory');
+      await reloaded.locator('[name="self-speaker"][value=""]').check();
       await page.getByLabel('Name for S1', { exact: true }).fill('');
       await page.getByLabel('Name for S2', { exact: true }).fill('');
       await reloaded.locator('.speaker-name-actions [type="submit"]').click();

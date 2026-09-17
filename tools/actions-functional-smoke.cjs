@@ -119,7 +119,7 @@ async function seed(page) {
         kind === 'people'
           ? { people: structuredClone(qa.people) }
           : kind === 'followups'
-            ? { follow_ups: structuredClone(qa.followups) }
+            ? { capabilities: {actions_version:2}, follow_ups: structuredClone(qa.followups) }
             : null;
       if (qa.hold === kind)
         await new Promise((resolve) => qa.held.push({ kind, resolve, signal: options.signal }));
@@ -128,9 +128,10 @@ async function seed(page) {
       if (data) return reply(data);
       if (kind === 'done') {
         const id = url.split('/').pop(),
-          state = JSON.parse(options.body).state;
-        qa.followups = qa.followups.map((item) => (item.id === id ? { ...item, state } : item));
-        return reply({ id, state });
+          patch = JSON.parse(options.body);
+        const revision = 'v' + qa.calls.length;
+        qa.followups = qa.followups.map((item) => (item.id === id ? { ...item, ...patch, revision } : item));
+        return reply({ id, ...patch, revision });
       }
       if (kind === 'person-delete') {
         const id = url.split('/').pop();
@@ -313,6 +314,25 @@ async function run() {
       await page.locator('[data-follow="waiting"]').tap();
       assert.equal(await page.locator('#followupList .synap-follow-done').count(), 17);
       await page.locator('[data-follow="all"]').tap();
+      const editAction = page.locator('#followupList .synap-follow-row').filter({has: page.locator('[data-followup-id="follow-0"]')}).locator('.synap-follow-edit');
+      await editAction.tap();
+      const editor = page.locator('dialog.action-editor');
+      await editor.locator('[name=due_date]').fill('2026-10-09');
+      await editor.locator('[name=check_in_date]').fill('2026-10-07');
+      await editor.locator('[name=pinned]').check();
+      await page.evaluate(()=>{qa.fail='done'});
+      await editor.getByRole('button',{name:'Save',exact:true}).tap();
+      await editor.getByText('Temporary done outage',{exact:true}).waitFor();
+      assert.equal(await editor.locator('[name=due_date]').inputValue(),'2026-10-09');
+      await page.evaluate(()=>{qa.fail=''});
+      await editor.screenshot({path:'/tmp/synap-action-editor-'+width+'.png'});
+      assert(await editor.evaluate(node=>{const r=node.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth}));
+      await editor.getByRole('button',{name:'Save',exact:true}).tap();
+      await editor.waitFor({state:'detached'});
+      const patched = await page.evaluate(()=>qa.followups.find(item=>item.id==='follow-0'));
+      assert.equal(patched.due_date,'2026-10-09');assert.equal(patched.check_in_date,'2026-10-07');assert.equal(patched.pinned,true);
+      await editAction.tap();assert.equal(await editor.locator('[name=due_date]').inputValue(),'2026-10-09');
+      await editor.getByRole('button',{name:'Cancel',exact:true}).tap();
       await page.clock.runFor(16000);
       await page.locator('#actionsTab-peopleMemory').tap();
       await page.getByRole('button', { name: 'Retry People', exact: true }).waitFor();

@@ -11,14 +11,25 @@ import { readDay, rebuildDay } from '../../pipeline/brief.js';
 import { binding } from '../../pipeline/process.js';
 import * as db from '../../store/firestore.js';
 import { mergeAliasKeys, nameKey, normalizeName } from '../../util/ids.js';
+import { editAction, ActionEditConflict } from '../../store/action-edits.js';
+import type { FollowUpContent } from '../../store/types.js';
 import { requireAuth, type AuthedRequest } from '../auth.js';
 import { HttpError, handler } from '../errors.js';
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const actionDate = z.string().regex(DAY_PATTERN).refine(value => {
+  const date = new Date(value); return !Number.isNaN(date.getTime()) && date.toISOString().slice(0,10) === value;
+}, 'Choose a valid calendar date.').nullable();
 
 const patchFollowUpBody = z.object({
   state: z.enum(['open', 'done', 'dismissed']).optional(),
-  due_date: z.string().regex(DAY_PATTERN).nullable().optional(),
+  due_date: actionDate.optional(),
+  check_in_date: actionDate.optional(),
+  snoozed_until: actionDate.optional(),
+  pinned: z.boolean().optional(),
+  task: z.string().trim().min(1).max(600).optional(),
+  owner: z.string().trim().max(80).refine(value => !/[:\x00-\x1f\x7f]/.test(value), 'Use a name without colons or line breaks.').optional(),
+  revision: z.string().max(80).optional(),
 });
 
 const patchPersonBody = z.object({
@@ -205,8 +216,9 @@ export function brainRoutes(): Router {
       const items = await db.listFollowUps(req.uid, state, owner);
 
       res.status(200).json({
+        capabilities: { actions_version: 2 },
         follow_ups: items.map((item) => {
-          const task = openJson<{ task: string; owner: string; kind?: string }>(
+          const task = openJson<FollowUpContent>(
             req.dek,
             item.sealedTask,
             binding(req.uid, `followUp/${item.followUpId}`, 'task'),
@@ -216,16 +228,27 @@ export function brainRoutes(): Router {
             task: task.task,
             kind: task.kind || 'commitment',
             owner: {
-              type: item.ownerType,
+              type: task.owner ? item.ownerType : 'unknown',
               person_id: item.counterpartyPersonId,
               display_name: item.ownerType === 'self' ? 'Me' : task.owner,
             },
             due_date: item.dueDate,
+            due_date_source: item.dueDateSource || 'recording',
+            check_in_date: item.checkInDate || null,
+            snoozed_until: item.snoozedUntil || null,
+            pinned: item.pinned || false,
+            evidence: task.evidence || '',
+            context: task.context || '',
+            condition: task.condition || '',
+            due_evidence: task.dueEvidence || '',
+            needs_review: item.sourceMissing || false,
+            revision: item.updatedAt,
             state: item.state,
             source: {
               recording_id: item.recordingId,
               conversation_id: item.conversationId,
               start_ms: item.startMs,
+              end_ms: item.endMs ?? item.startMs,
               recorded_at: item.recordedAt || null,
             },
           };
@@ -241,12 +264,11 @@ export function brainRoutes(): Router {
       const body = patchFollowUpBody.safeParse(req.body);
       if (!body.success) throw new HttpError(400, 'bad_request', 'Invalid follow-up patch');
       const followUpId = String(req.params.followUpId);
-      const updated = await db.patchFollowUp(req.uid, followUpId, {
-        ...(body.data.state ? { state: body.data.state } : {}),
-        ...(body.data.due_date !== undefined ? { dueDate: body.data.due_date } : {}),
-      });
+      let updated;
+      try { updated = await editAction(req.uid, req.dek, followUpId, body.data); }
+      catch (error) { if (error instanceof ActionEditConflict) throw new HttpError(409, 'changed', error.message); throw error; }
       if (!updated) throw new HttpError(404, 'not_found', 'Unknown follow-up');
-      res.status(200).json({ id: followUpId, ...body.data });
+      res.status(200).json({ id: followUpId, ...body.data, revision: updated.updatedAt });
     }),
   );
 

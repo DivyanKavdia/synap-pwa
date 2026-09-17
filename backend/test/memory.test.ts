@@ -61,7 +61,7 @@ test('a decision timed beyond the recording is dropped', () => {
   assert.equal(result.conversations[0]?.decisions[0]?.text, 'Launch on Friday');
 });
 
-test('an action item owned by someone the model never identified is dropped', () => {
+test('an action with an unsupported owner is retained for clarification', () => {
   const input = memory();
   input.conversations[0]!.action_items.push({
     task: 'Approve the budget',
@@ -71,16 +71,18 @@ test('an action item owned by someone the model never identified is dropped', ()
     end_ms: 170_000,
   });
   const result = validateMemory(input, DURATION);
-  assert.equal(result.conversations[0]?.action_items.length, 1);
+  assert.equal(result.conversations[0]?.action_items.length, 2);
   assert.equal(result.conversations[0]?.action_items[0]?.owner, 'self');
+  assert.equal(result.conversations[0]?.action_items[1]?.owner, '');
 });
 
-test('an action item with an invented due date format is dropped', () => {
+test('an invalid due date is cleared without dropping a real task', () => {
   const input = memory();
   input.conversations[0]!.action_items = [
     { task: 'Send the deck', owner: 'self', due_date: 'next Friday', start_ms: 1, end_ms: 2 },
   ];
-  assert.equal(validateMemory(input, DURATION).conversations[0]?.action_items.length, 0);
+  assert.equal(validateMemory(input, DURATION).conversations[0]?.action_items.length, 1);
+  assert.equal(validateMemory(input, DURATION).conversations[0]?.action_items[0]?.due_date, null);
 });
 
 test('a null due date is preserved rather than invented', () => {

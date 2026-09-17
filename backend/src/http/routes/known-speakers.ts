@@ -7,6 +7,7 @@ import { extractSpeakerSample } from '../../speaker/audio.js';
 import { embedSpeakerAudio, speakerServiceConfigured } from '../../speaker/client.js';
 import { labelWords } from '../../speaker/diarization.js';
 import { forgetKnownSpeaker, readKnownSpeakers, saveKnownSpeaker, speakerViews, KnownSpeakerError } from '../../speaker/known.js';
+import { saveSelfSample, SelfSampleError } from '../../speaker/profile.js';
 import { readSpeakerNames } from '../../speaker/names.js';
 import * as db from '../../store/firestore.js';
 import { readSealedSegment } from '../../store/gcs.js';
@@ -27,6 +28,7 @@ export function knownSpeakerRoutes():Router {
     if(req.body?.consent!==true)throw new HttpError(400,'consent_required','Confirm you have permission to remember this voice.');
     if(!speakerServiceConfigured())throw new HttpError(503,'unavailable','Speaker recognition is temporarily unavailable.');
     const id=String(req.params.recordingId),label=String(req.body?.label||'');
+    const self = req.body?.self === true;
     const existingId=req.body?.existing_id;
     if(existingId!==undefined && (typeof existingId!=='string'||!/^[a-f0-9]{40}$/.test(existingId)))throw new HttpError(400,'invalid_id','Invalid saved voice.');
     const recording=await db.getRecording(req.uid,id);
@@ -35,6 +37,7 @@ export function knownSpeakerRoutes():Router {
     const names=readSpeakerNames(req.uid,recording,req.dek);
     const name=Object.hasOwn(names,label)?names[label]:undefined;
     if(!recording.sealedSpeakerNames || !name || label==='S?')throw new HttpError(400,'name_required','Save and confirm this speaker’s name first. Unknown speakers cannot be enrolled.');
+    if (self && (recording.selfSpeakerLabel !== label || existingId)) throw new HttpError(400,'confirm_self','Save That’s me for this speaker before using it as your voice.');
     let sample:null|ReturnType<typeof extractSpeakerSample>=null;
     for(const segment of await db.listSegments(req.uid,id)) {
       if(!segment.sealedWords || !segment.sealedTranscript || !segment.storagePath)continue;
@@ -51,6 +54,11 @@ export function knownSpeakerRoutes():Router {
     }
     if(!sample)throw new HttpError(409,'no_sample','This speaker needs at least 5 seconds of clear, non-overlapping retained audio. Try a recent recording.');
     const embedded=await embedSpeakerAudio(sample.wav);
+    if (self) {
+      try { await saveSelfSample(req.uid,req.dek,{...embedded,duration_ms:sample.speechMs},id,label,recording.updatedAt,name); }
+      catch(error) { if(error instanceof SelfSampleError) throw new HttpError(409,'not_saved',error.message); throw error; }
+      res.json({self:true,display_name:name,saved:true}); return;
+    }
     const profile={...embedded,duration_ms:sample.speechMs,id:createHash('sha256').update(id+'\0'+label).digest('hex').slice(0,40),name,consentVersion:1 as const,createdAt:new Date().toISOString()};
     let saved=profile;
     try {saved=await saveKnownSpeaker(req.uid,req.dek,profile,id,recording.updatedAt,existingId);}

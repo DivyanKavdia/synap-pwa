@@ -18,9 +18,9 @@ assert.match(process,/skipTranscription\?: boolean/,
 assert.match(process,/segments\.filter\(\(segment\) => !segment\.sealedTranscript\)/,
   'no-STT mode must reject incomplete transcript windows instead of retranscribing them');
 assert.match(process,/memoryOnly\?: boolean/,
-  'legacy refresh must be able to avoid duplicating derived people and follow-up indexes');
-assert.match(process,/if \(options\.memoryOnly\)/,
-  'memory-only mode must skip the normal indexing path');
+  'legacy refresh must remain an explicit processing option');
+assert.match(process,/await indexMemory\(uid, dek, source, memory, lease\)/,
+  'transcript-only rebuilds must republish corrected actions through the stable index projection');
 
 assert.match(tasks,/const rebuild = recording\.state === 'ready' && force/,
   'force should only mean a rebuild for an already-ready recording');

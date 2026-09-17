@@ -2,7 +2,7 @@
  * in the transaction: Firestore can run its callback more than once. */
 import { createHmac } from 'node:crypto';
 import { FieldValue } from '@google-cloud/firestore';
-import { openJson, sealJson } from '../crypto/envelope.js';
+import { sealJson } from '../crypto/envelope.js';
 import { embedContent } from '../gemini/client.js';
 import { firestore, patchProcessing, paths } from '../store/firestore.js';
 import type {
@@ -14,26 +14,9 @@ import type {
 } from '../store/types.js';
 import { mergeAliasKeys, nameKey, normalizeName, sha256, topicKey } from '../util/ids.js';
 import { log } from '../util/log.js';
+import { projectActions } from './action-projection.js';
 
 const binding = (uid: string, scope: string, field: string) => ({ uid, scope, field });
-const clean = (text: string | null | undefined) =>
-  String(text || '')
-    .normalize('NFKC')
-    .replace(/\s+/gu, ' ')
-    .trim()
-    .toLowerCase();
-const taskKey = (
-  task: { task: string; owner?: string | null; kind?: string },
-  startMs: number,
-  dueDate?: string | null,
-) =>
-  JSON.stringify([
-    clean(task.task),
-    clean(task.owner),
-    task.kind || 'commitment',
-    startMs,
-    dueDate || null,
-  ]);
 export const memoryRevision = (recording: RecordingDoc) =>
   sha256(JSON.stringify(recording.sealedMemory));
 
@@ -43,6 +26,7 @@ export async function indexMemory(
   recording: RecordingDoc,
   memory: StructuredMemory,
   lease: string,
+  correction?: { expectedRevision: string; fields: Partial<RecordingDoc> },
 ): Promise<void> {
   const recordingId = recording.recordingId;
   const revision = memoryRevision(recording);
@@ -58,7 +42,7 @@ export async function indexMemory(
     for (const [i, conversation] of memory.conversations.entries()) {
       // Keep long indexes alive between bounded provider calls, and stop a
       // superseded attempt before it pays for another optional embedding.
-      await patchProcessing(uid, recordingId, lease, {
+      if (!correction) await patchProcessing(uid, recordingId, lease, {
         progress: 0.8 + 0.15 * (i / memory.conversations.length),
       });
       let embedding: number[] | null = null;
@@ -129,9 +113,14 @@ export async function indexMemory(
     const ref = paths.recording(uid, recordingId);
     const current = (await tx.get(ref)).data() as RecordingDoc | undefined;
     if (!current || current.deleting) throw new Error('Unknown recording');
-    if (current.processingLease !== lease) throw new Error('Processing attempt was superseded');
-    if (memoryRevision(current) !== revision) throw new Error('Memory changed during indexing');
+    if (correction) {
+      if (current.state !== 'ready' || current.updatedAt !== correction.expectedRevision) throw new Error('Recording changed during correction');
+    } else {
+      if (current.processingLease !== lease) throw new Error('Processing attempt was superseded');
+      if (memoryRevision(current) !== revision) throw new Error('Memory changed during indexing');
+    }
     const ready = {
+      ...correction?.fields,
       state: 'ready' as const,
       progress: 1,
       errorCode: null,
@@ -218,25 +207,6 @@ export async function indexMemory(
         if (person) existingPeople.set(personId, person);
       }
 
-    const oldByKey = new Map<string, FollowUpDoc>();
-    for (const snapshot of oldTasks.docs) {
-      const task = snapshot.data() as FollowUpDoc;
-      const content = openJson<{ task: string; owner?: string | null; kind?: string }>(
-        dek,
-        task.sealedTask,
-        binding(uid, `followUp/${task.followUpId}`, 'task'),
-      );
-      const key = taskKey(content, task.startMs, task.dueDate);
-      const previous = oldByKey.get(key);
-      // Reconcile legacy duplicates without reopening completed/dismissed work.
-      if (
-        !previous ||
-        (previous.state === 'open' && task.state !== 'open') ||
-        (previous.state === task.state && task.updatedAt > previous.updatedAt)
-      )
-        oldByKey.set(key, task);
-    }
-    const tasks = new Map<string, FollowUpDoc>();
     const conversations = prepared.map((doc, i) => ({
       ...doc,
       personIds: [
@@ -247,49 +217,8 @@ export async function indexMemory(
         ),
       ],
     }));
-    for (const [i, conversation] of memory.conversations.entries()) {
-      const items = [
-        ...conversation.action_items.map((action) => ({
-          task: action.task,
-          owner: action.owner,
-          kind: action.kind || 'commitment',
-          dueDate: action.due_date,
-          startMs: action.start_ms,
-        })),
-        ...conversation.follow_ups.map((followUp) => ({
-          task: followUp.text,
-          owner: followUp.owner,
-          kind: 'follow-up',
-          dueDate: null,
-          startMs: followUp.start_ms,
-        })),
-      ];
-      for (const item of items) {
-        const key = taskKey(item, item.startMs, item.dueDate);
-        const existing = oldByKey.get(key);
-        const followUpId = existing?.followUpId || id('task', key);
-        if (tasks.has(followUpId)) continue;
-        const self = clean(item.owner) === 'self';
-        tasks.set(followUpId, {
-          followUpId,
-          recordingId,
-          conversationId: conversations[i]!.conversationId,
-          sealedTask: sealJson(
-            dek,
-            { task: item.task, owner: item.owner, kind: item.kind },
-            binding(uid, `followUp/${followUpId}`, 'task'),
-          ),
-          ownerType: self ? 'self' : 'other',
-          counterpartyPersonId: self ? null : ids.get(normalizeName(item.owner || '')) || null,
-          dueDate: item.dueDate,
-          state: existing?.state || 'open',
-          startMs: item.startMs,
-          recordedAt: recording.startedAt,
-          createdAt: existing?.createdAt || now,
-          updatedAt: existing?.updatedAt || now,
-        });
-      }
-    }
+    const projected = projectActions(uid, dek, recording, memory, oldTasks.docs.map(doc => doc.data() as FollowUpDoc), ids, conversations.map(doc => doc.conversationId), now);
+    const tasks = new Map(projected.map(task => [task.followUpId, task]));
     const conversationIds = new Set(conversations.map((doc) => doc.conversationId));
     for (const snapshot of oldConversations.docs)
       if (!conversationIds.has(snapshot.id)) tx.delete(snapshot.ref);
@@ -308,6 +237,7 @@ export async function indexMemory(
         embedding: conversation.embedding ? FieldValue.vector(conversation.embedding) : null,
       });
     for (const task of tasks.values()) tx.set(paths.followUps(uid).doc(task.followUpId), task);
+    tx.delete(paths.days(uid).doc(recording.day));
     tx.update(ref, { ...ready, indexedPersonIds: [...persons.keys()] });
   });
 }

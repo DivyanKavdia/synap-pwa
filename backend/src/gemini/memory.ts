@@ -49,6 +49,10 @@ Evidence rules, in order of priority:
 22. Explicitly separate people who spoke from people merely mentioned. Anonymous speakers can remain anonymous in the recap. Unassigned follow-ups use an empty owner; do not drop an important unresolved task merely because no person owns it. Never infer age, gender, identity or attendance from the topic.
 23. Preserve useful key_facts: explicitly established numbers, dates, requirements and constraints, with exact source quotes and timestamps. Retain the final corrected version, not superseded claims; avoid duplicating outcomes or decisions. Return at most 12, and fewer for short notes.
 24. Extract risks only when speakers explicitly describe an unresolved concern, blocker or dependency. Preserve conditional language and uncertainty. Exclude resolved concerns, hypothetical examples and your own predictions. Use an exact supporting quote and timestamps for each; at most 8. No evidence means an empty list.
+25. Make tasks executable: use a specific verb, deliverable and recipient only when established. Preserve an explicit prerequisite in condition as an exact quote. A conditional promise is not yet completed or necessarily ready to do. Never create a task from a proposed or cancelled promise.
+26. Deadlines matter: capture every agreed deadline for actions AND follow-ups. due_evidence must quote the language assigning that date to that specific task and owner. A supplier's Friday deadline does not make the wearer's dependent task due Friday. Preserve the final corrected date. If no date was agreed, return null so the user can set one; never invent a deadline.
+27. Check the full conversation for later cancellations, negation, answered questions and completed work before returning open actions. Quote meaning must support the claim: "not approved" cannot evidence approval. Unassigned work is useful, but an anonymous "I" is not necessarily the wearer. Return an empty owner when identity is uncertain.
+28. Lead the recap with what changed or was established, then important constraints and unresolved matters. Keep each fact in its most useful category and avoid repeating one promise as both an action and a follow-up. Keep short personal recordings short and allow an empty action list.
 
 Return only the requested schema.`;
 
@@ -104,7 +108,7 @@ export async function extractMemory(
     known,
     `User-confirmed speaker names for this recording only: ${JSON.stringify(context.confirmedSpeakers || {})}`,
     `Acoustic matches to consented saved voices (estimates): ${JSON.stringify(context.identifiedSpeakers || {})}`,
-    `Matched wearer name (only the verified YOU label): ${JSON.stringify(context.selfSpeakerName || null)}`,
+    `Confirmed wearer name (verified voice or explicit That’s me label): ${JSON.stringify(context.selfSpeakerName || null)}`,
     `Transcription limitations: ${JSON.stringify(context.transcriptWarnings || [])}`,
     highlights ? `Wearer highlights:\n${highlights}` : 'No wearer highlights.',
     '',
@@ -127,7 +131,7 @@ export async function extractMemory(
   );
 
   const memory = interactionJson<StructuredMemory>(response);
-  return validateMemory(applySelfOwnership(memory, context.selfSpeakerName), context.durationMs, context.transcript);
+  return validateMemory(applySelfOwnership(memory, context.selfSpeakerName), context.durationMs, context.transcript, context.selfSpeakerName);
 }
 
 /** The exact name of an acoustically matched wearer is an ownership alias.
@@ -152,12 +156,13 @@ export function applySelfOwnership(memory: StructuredMemory, selfName?: string):
  * or a person with empty evidence. Anything that fails here is dropped rather
  * than corrected, because a quietly repaired fact is worse than a missing one.
  */
-export function validateMemory(memory: StructuredMemory, durationMs: number, transcript?: string): StructuredMemory {
+export function validateMemory(memory: StructuredMemory, durationMs: number, transcript?: string, selfSpeakerName?: string): StructuredMemory {
   const inRange = (start: number, end: number) =>
     Number.isFinite(start) && Number.isFinite(end) && start >= 0 && start <= durationMs && end >= start && end <= durationMs;
 
   const normalize = (text: string) => text.normalize('NFKC').replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"').replace(/\s+/g, ' ').trim().toLowerCase();
   const source = typeof transcript === 'string' ? normalize(transcript) : null;
+  const selfKnown = source === null || Boolean(selfSpeakerName) || /^\[.*?\] YOU:/mi.test(transcript || '');
   const supported = (quote: string | undefined) => Boolean(quote?.trim()) && (source === null || source.includes(normalize(quote!)));
   const unique = <T>(items: T[], key: (item: T) => string) => {
     const seen = new Set<string>();
@@ -168,6 +173,10 @@ export function validateMemory(memory: StructuredMemory, durationMs: number, tra
     (person) => person.name?.trim() && supported(person.evidence) && Number.isFinite(person.confidence) && person.confidence >= 0.6 && person.confidence <= 1,
   );
   const knownNames = new Set(people.map((person) => person.name.trim().toLowerCase()));
+  const actionOwner = (value: string | undefined) => {
+    const owner = (value || '').trim();
+    return owner.toLowerCase() === 'self' ? (selfKnown ? 'self' : '') : knownNames.has(owner.toLowerCase()) ? owner : '';
+  };
   const cleanNames = (values: unknown, allowSelf = false) => {
     const out: string[] = [];
     const seen = new Set<string>();
@@ -200,7 +209,7 @@ export function validateMemory(memory: StructuredMemory, durationMs: number, tra
       return {
         ...conversation,
         chapters: nonOverlapping,
-        unresolved_questions: (conversation.unresolved_questions || []).filter(q=>q.text?.trim() && within(q)).slice(0,20),
+        unresolved_questions: (conversation.unresolved_questions || []).filter(q=>q.text?.trim() && within(q) && ((q as {evidence?: string}).evidence === undefined || supported((q as {evidence?: string}).evidence))).slice(0,20),
         start_ms: clamp(conversation.start_ms, 0, durationMs),
         end_ms: clamp(conversation.end_ms, 0, durationMs),
         people: (conversation.people ?? []).filter((person) => knownNames.has(person.name?.trim().toLowerCase()) && supported(person.evidence)),
@@ -217,14 +226,20 @@ export function validateMemory(memory: StructuredMemory, durationMs: number, tra
             action.task?.trim() &&
             within(action) &&
             (action.kind === undefined && action.evidence === undefined || supported(action.evidence)) &&
-            (action.kind !== 'reminder' || source !== null) &&
-            (action.owner?.toLowerCase() === 'self' ||
-              knownNames.has(action.owner?.trim().toLowerCase() ?? '')) &&
-            isValidDate(action.due_date),
-        ), action => [action.task, action.owner, action.due_date || ''].join('|')),
+            (action.kind !== 'reminder' || source !== null),
+        ).map(action => ({ ...action,
+          owner: actionOwner(action.owner),
+          due_date: isValidDate(action.due_date) && (action.due_evidence === undefined || supported(action.due_evidence || undefined)) ? action.due_date : null,
+          due_evidence: supported(action.due_evidence || undefined) ? action.due_evidence : null,
+          condition: supported(action.condition || undefined) ? action.condition : null,
+        })), action => [action.task, action.owner, action.due_date || ''].join('|')),
         follow_ups: unique((conversation.follow_ups ?? []).filter(
-          (followUp) => followUp.text?.trim() && within(followUp),
-        ).map(followUp => ({ ...followUp, owner: followUp.owner?.toLowerCase() === 'self' || knownNames.has(followUp.owner?.trim().toLowerCase()) ? followUp.owner : '' })), followUp => followUp.text),
+          (followUp) => followUp.text?.trim() && within(followUp) && (followUp.evidence === undefined || supported(followUp.evidence)),
+        ).map(followUp => ({ ...followUp, owner: actionOwner(followUp.owner),
+          due_date: isValidDate(followUp.due_date) && (followUp.due_evidence === undefined || supported(followUp.due_evidence || undefined)) ? followUp.due_date || null : null,
+          due_evidence: supported(followUp.due_evidence || undefined) ? followUp.due_evidence : null,
+          condition: supported(followUp.condition || undefined) ? followUp.condition : null,
+        })), followUp => [followUp.text, followUp.owner, followUp.due_date || '', followUp.start_ms].join('|')),
       };
     })
     .sort((a, b) => a.start_ms - b.start_ms);

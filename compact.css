@@ -1237,3 +1237,5 @@ body.synap-refresh #memoryWorkspace {
  body.synap-refresh .header-pendant-status .header-status-text{display:none}
  body.synap-refresh .header-pendant-status .header-status-dot{display:block}
 }
+.synap-refresh .speaker-name-fields .speaker-self-label{display:flex;align-items:center;gap:8px;font-size:13px;min-height:44px}
+.synap-refresh .speaker-name-fields input[type=radio]{width:18px;min-height:18px;padding:0;accent-color:var(--accent)}

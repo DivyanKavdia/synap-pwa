@@ -52,3 +52,21 @@ test('cancellation before a model call or during retry prevents later requests',
     }finally{globalThis.fetch=original}
   }
 });
+
+
+test('optional speaker-label timeout preserves completed primary text while explicit cancellation still aborts',async()=>{
+  for(const timeout of [true,false]){
+    const original=fetch,controller=new AbortController();let calls=0;
+    globalThis.fetch=async()=>{
+      if(++calls===1)return reply('Do not ship before Friday',['Do']);
+      controller.abort(new DOMException('Stop labels',timeout?'TimeoutError':'AbortError'));
+      throw controller.signal.reason;
+    };
+    try{
+      const pending=transcribeSegment(Buffer.from('fixture'),'audio/wav',{enrichAnnotations:true,signal:controller.signal});
+      if(timeout){const result=await pending;assert.equal(result.text,'[00:00] S?: Do not ship before Friday');assert.deepEqual(result.words,[]);assert.equal(result.review.annotationsComplete,false)}
+      else await assert.rejects(pending,{name:'AbortError'});
+      assert.equal(calls,2);
+    }finally{globalThis.fetch=original}
+  }
+});

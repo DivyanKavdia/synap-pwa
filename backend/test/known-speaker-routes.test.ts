@@ -16,8 +16,8 @@ import type { UserDoc, TranscriptWord } from '../src/store/types.js';
 test('authenticated enrollment enforces consent, source quality, revision and account isolation',async t=>{
   const dek=generateDek(),docs=new Map<string,Record<string,unknown>>(),recordPath='users/u/recordings/r',voicePath='users/u/voiceProfiles/known';
   const snapshot=(path:string)=>({exists:docs.has(path),data:()=>docs.get(path)});
-  const ref=(path:string):any=>({path,collection:(id:string)=>ref(path+'/'+id),doc:(id:string)=>ref(path+'/'+id),get:async()=>snapshot(path),orderBy:()=>({get:async()=>({docs:[...docs.keys()].filter(key=>key.startsWith(path+'/')).map(snapshot)})})});
-  setFirestoreForTest({collection:(name:string)=>ref(name),runTransaction:async(fn:any)=>fn({get:async(r:any)=>snapshot(r.path),set:(r:any,value:any)=>docs.set(r.path,value),update:(r:any,value:any)=>docs.set(r.path,{...docs.get(r.path),...value}),delete:(r:any)=>docs.delete(r.path)})} as unknown as Firestore);
+  const ref=(path:string):any=>({path,collection:(id:string)=>ref(path+'/'+id),doc:(id:string)=>ref(path+'/'+id),get:async()=>snapshot(path),where:()=>({get:async()=>({empty:true,docs:[]})}),orderBy:()=>({get:async()=>({docs:[...docs.keys()].filter(key=>key.startsWith(path+'/')).map(snapshot)})})});
+  setFirestoreForTest({collection:(name:string)=>ref(name),runTransaction:async(fn:any)=>fn({get:async(r:any)=>r.get(),set:(r:any,value:any)=>docs.set(r.path,value),update:(r:any,value:any)=>docs.set(r.path,{...docs.get(r.path),...value}),delete:(r:any)=>docs.delete(r.path)})} as unknown as Firestore);
   t.mock.method(keyring,'unwrap',async()=>dek);
   const segmentScope='recording/r/segment/0',bound=(field:string)=>({uid:'u',scope:segmentScope,field});
   const names=sealJson(dek,{'S1.1':'Asha'},{uid:'u',scope:'recording/r',field:'speaker-names'});
@@ -47,7 +47,7 @@ test('authenticated enrollment enforces consent, source quality, revision and ac
   const enroll=(body:object)=>request('/recordings/r/remember-speaker','POST',body);
   const good={label:'S1.1',revision:'v1',consent:true};
   try{
-    docs.set(recordPath,{...record,sealedSpeakerNames:null,sealedIdentifiedSpeakers:sealJson(dek,{'S1.1':'Asha'},{uid:'u',scope:'recording/r',field:'identified-speakers'}),sealedTranscript:sealText(dek,'[00:00] S1.1: Here are the six clear words',{uid:'u',scope:'recording/r',field:'transcript'}),sealedMemory:sealJson(dek,{title:'Fixture',executive_summary:'Six words',conversations:[]},{uid:'u',scope:'recording/r',field:'memory'})});
+    docs.set(recordPath,{...record,sealedSpeakerNames:null,sealedIdentifiedSpeakers:sealJson(dek,{'S1.1':'Asha'},{uid:'u',scope:'recording/r',field:'identified-speakers'}),sealedTranscript:sealText(dek,'[00:00] S1.1: Here are the six clear words',{uid:'u',scope:'recording/r',field:'transcript'}),sealedMemory:sealJson(dek,{schema_version:2,title:'Fixture',executive_summary:'Six words',key_points:[],topics:[],people:[],conversations:[]},{uid:'u',scope:'recording/r',field:'memory'})});
     assert.equal((await request('/recordings/r/speakers')).data.names_confirmed,false);
     const confirmation=await request('/recordings/r/speakers','POST',{speaker_names:{'S1.1':'Asha'},revision:'v1'});
     assert.equal(confirmation.status,200);assert.equal(confirmation.data.names_confirmed,true);assert(docs.get(recordPath)?.sealedSpeakerNames,'accepting an unchanged automatic suggestion establishes an explicit override');assert.equal(embeddings,0);
@@ -62,6 +62,13 @@ test('authenticated enrollment enforces consent, source quality, revision and ac
     const id=remembered.data.speaker.id;assert.equal((await request('/known-speakers')).data.speakers.length,1);
     assert.deepEqual((await request('/known-speakers','GET',undefined,'other')).data.speakers,[]);
     await request('/known-speakers/'+id,'DELETE',undefined,'other');assert(docs.has(voicePath),'another account cannot delete this voice');
+    assert.equal((await enroll({...good,self:true})).data.error.code,'confirm_self');
+    docs.set(recordPath,{...record,selfSpeakerLabel:'S1.1'});
+    const own=await enroll({...good,self:true});assert.equal(own.status,200);assert.equal(own.data.self,true);
+    const selfStatus=await request('/voice-profile');assert.equal(selfStatus.data.displayName,'Asha');assert.equal(selfStatus.data.sampleCount,1);
+    assert.equal((await request('/voice-profile','GET',undefined,'other')).data.enrolled,false);
+    assert(!JSON.stringify(docs.get('users/u/voiceProfiles/self')).includes('Asha'));
+    docs.set(recordPath,record);
     editDuringEmbed=true;assert.equal((await enroll(good)).status,409);assert.equal((await request('/known-speakers')).data.speakers.length,1,'a changed source cannot overwrite enrollment');
     assert.equal((await request('/known-speakers/not-an-id','DELETE')).status,400);
     assert.equal((await request('/known-speakers/'+id,'DELETE')).status,200);assert.equal(docs.has(voicePath),false);

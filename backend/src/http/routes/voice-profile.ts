@@ -26,6 +26,7 @@ export function voiceProfileRoutes(): Router {
       res.status(200).json({
         available: speakerServiceConfigured(),
         supports_display_name: true,
+        supports_recording_samples: true,
         ...status,
         match_threshold: config.speaker.matchThreshold,
         privacy: {
@@ -92,6 +93,7 @@ export function voiceProfileRoutes(): Router {
       res.status(201).json({
         available: true,
         supports_display_name: true,
+        supports_recording_samples: true,
         ...status,
         enrollment_audio_stored: false,
       });
@@ -102,7 +104,8 @@ export function voiceProfileRoutes(): Router {
     const name = displayName(req.body?.display_name);
     if (!await renameVoiceProfile(req.uid, req.dek, name))
       throw new HttpError(404, 'voice_profile_missing', 'Set up your voice profile first.');
-    res.json({ available: speakerServiceConfigured(), supports_display_name: true, ...await voiceProfileStatus(req.uid, req.dek) });
+    res.json({ available: speakerServiceConfigured(), supports_display_name: true,
+        supports_recording_samples: true, ...await voiceProfileStatus(req.uid, req.dek) });
   }));
 
   router.delete(
