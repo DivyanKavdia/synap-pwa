@@ -69,6 +69,11 @@ resource "google_cloud_run_v2_service" "speaker" {
   }
 
   depends_on = [google_project_service.enabled]
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [template, traffic, client, client_version]
+  }
 }
 
 resource "google_cloud_run_v2_service_iam_member" "api_invokes_speaker" {

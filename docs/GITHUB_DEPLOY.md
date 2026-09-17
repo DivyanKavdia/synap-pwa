@@ -129,9 +129,11 @@ then verify that the commit now serving traffic is the one it just built.
 
 `infra/deploy.sh` first captures the revision receiving 100% of traffic and its
 configuration. It creates one tagged revision with **no production traffic**,
-checks the configuration and tagged `/health` commit, then explicitly promotes
-that revision. It checks the traffic assignment and public `/health` commit
-again. A failed promotion or live verification attempts to restore the captured
+checks the configuration and tagged `/health` commit, then runs a synthetic
+recording through authenticated upload, KMS, encrypted storage, transcription,
+Cloud Tasks, memory, vector retrieval and Ask Synap before promoting that revision. It checks the traffic assignment and public `/health` commit
+again, including another synthetic check through the newly serving worker. A
+failed promotion or live verification attempts to restore the captured
 revision and verifies rollback. The workflow keeps deployments serialized; do
 not run a manual deploy or change traffic while one is running.
 
@@ -181,13 +183,22 @@ It does not silently normalize an unfamiliar production setup.
    retries, audio-preparation timeouts, memory failures or sustained processing
    latency regression. Inspect subsequent billed usage before claiming savings.
 
-`/health` proves startup and build identity, **not** successful transcription or
-queue dispatch. The startup code even logs a placeholder Gemini key without
-failing health. The request path awaits processing when Cloud Tasks is configured;
-its missing-URL fallback runs work in the background and is unsafe to rely on
-with idle throttling. Later September 16 commits also added FFmpeg CPU work, so
+`/health` proves startup and build identity. Promotion also requires the private
+`POST /ops/readiness` check, authenticated by the exact configured deployer Google
+identity and canonical service audience. That check only creates synthetic data
+in a random disposable account; it never returns a user session or accepts user
+IDs, audio, URLs or model names from the caller. Its report contains only stage
+results and sanitized errors. The fixture is removed afterward. Startup rejects
+a placeholder Gemini key or incomplete Cloud Tasks configuration on Cloud Run. Later September 16 commits also added FFmpeg CPU work, so
 the original cost commit's entirely-I/O-bound rationale needs production
 measurement. No performance guarantee follows from the CPU setting alone.
+
+CI mints a fresh Google identity token immediately before each readiness request
+from the action's refreshable federated credentials. This avoids carrying a
+short-lived token across a potentially slow build. It uses the existing
+`workloadIdentityUser` grant on the deployment service account; it requires no
+new IAM binding, private key, or self-impersonation permission. The credential
+file used by `gcloud` for deployment and rollback is left intact.
 
 ### Rollback
 
@@ -243,11 +254,14 @@ the values — the service is fine, but it cannot tell you what it is.
 
 Terraform stays manual and reviewed. It is deliberately absent from `paths:`.
 
-That is not caution for its own sake: `terraform apply` on this project is
-currently unsafe. It wants to add a placeholder version to the Gemini API key
-secret, which would become `latest` and break transcription; it wants to strip
-`SYNAP_SERVICE_URL` from Cloud Run, which would stop Cloud Tasks; and it fails on
-three Firestore indexes created by hand and never imported. These issues still
-require a separate Terraform/state reconciliation. Do not use a targeted apply
-as a shortcut for this CPU change: a targeted plan can include dependencies and
-other changes to the Cloud Run resource. Keep infrastructure apply out of CI.
+Terraform now preserves secret versions and treats Cloud Run revisions as owned
+by `infra/deploy.sh`. It declares the per-user collection indexes used by the
+backend and refuses accidental index/data deletion. Existing production state
+must still be reconciled; this source change does not import manually created
+indexes or apply infrastructure automatically. See
+[production Terraform adoption](TERRAFORM_ADOPTION.md).
+
+Google documents [project-level Gemini rate limits](https://ai.google.dev/gemini-api/docs/rate-limits).
+Adding Cloud Run CPU or creating another API key cannot increase those limits.
+If the live synthetic check reports a quota/access error, keep the old revision
+serving and resolve the API project's billing/quota configuration before retrying.

@@ -79,6 +79,11 @@ export const config = {
     invokerServiceAccount: optional('SYNAP_TASKS_INVOKER_SA', ''),
   },
 
+  /** Deployment checks may only operate on disposable synthetic fixtures. */
+  operations: {
+    invokerServiceAccount: optional('SYNAP_OPERATIONS_INVOKER_SA', ''),
+  },
+
   gemini: {
     endpoint: optional(
       'SYNAP_GEMINI_ENDPOINT',
@@ -170,16 +175,8 @@ export async function loadSecrets(): Promise<Secrets> {
     throw new Error('Session signing key must decode to at least 32 bytes');
   }
 
-  if (geminiApiKey === PLACEHOLDER_GEMINI_KEY) {
-    process.stderr.write(
-      JSON.stringify({
-        severity: 'ERROR',
-        message:
-          'Gemini API key is still the Terraform placeholder. Add the real key: ' +
-          'gcloud secrets versions add synap-gemini-api-key --data-file=-',
-      }) + '\n',
-    );
-  }
+  if (!geminiApiKey.trim() || geminiApiKey.trim() === PLACEHOLDER_GEMINI_KEY)
+    throw new Error('Gemini API key is empty or still a placeholder; configure Secret Manager before deployment');
 
   cachedSecrets = { geminiApiKey, sessionSigningKey: key };
   return cachedSecrets;
@@ -188,4 +185,11 @@ export async function loadSecrets(): Promise<Secrets> {
 /** Test seam: inject secrets without touching Secret Manager. */
 export function setSecretsForTest(secrets: Secrets | null): void {
   cachedSecrets = secrets;
+}
+
+export function validateRuntimeConfiguration(production = Boolean(process.env.K_SERVICE)): void {
+  if (!production) return;
+  if (!/^https:\/\/[^/?#]+$/.test(config.tasks.serviceUrl) ||
+      !config.tasks.invokerServiceAccount || !config.tasks.queue || !config.tasks.location)
+    throw new Error('Cloud Run requires a complete Cloud Tasks target, audience and invoker');
 }

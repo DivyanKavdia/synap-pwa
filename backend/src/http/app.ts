@@ -14,6 +14,7 @@ import { knownSpeakerRoutes } from './routes/known-speakers.js';
 import { taskRoutes } from './routes/tasks.js';
 import { voiceProfileRoutes } from './routes/voice-profile.js';
 import { chakshuRoutes, localMediaOnly } from './routes/chakshu.js';
+import { operationsRoutes } from './routes/operations.js';
 
 /**
  * CORS.
@@ -97,6 +98,7 @@ export function createApp(): Express {
   });
 
   app.use('/v1', authRoutes());
+  app.use('/ops', operationsRoutes());
 
   // Every router authenticates only its own routes. Tasks use service OIDC;
   // user routes use a session and unwrap the user's data key once per request.

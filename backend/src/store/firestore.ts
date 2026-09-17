@@ -459,6 +459,9 @@ export async function recentConversations(
   let query: Query = paths.conversations(uid);
   if (scope.from) query = query.where('day', '>=', scope.from);
   if (scope.to) query = query.where('day', '<=', scope.to);
+  // Match the selective date-range index before recency. Ordering only by
+  // startedAt required an undeclared index and could scan the entire history.
+  if (scope.from || scope.to) query = query.orderBy('day', 'desc');
   const snapshot = await query.orderBy('startedAt', 'desc').limit(limit).get();
   return snapshot.docs.map((doc) => normalizeConversation(doc.data()));
 }

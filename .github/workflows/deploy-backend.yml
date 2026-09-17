@@ -27,6 +27,8 @@ on:
       - 'backend/**'
       - 'infra/deploy.sh'
       - 'infra/check-cloud-run.cjs'
+      - 'infra/check-readiness.sh'
+      - 'infra/readiness-identity.cjs'
       - '.github/workflows/deploy-backend.yml'
   workflow_dispatch:
 
@@ -54,7 +56,7 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - run: bash -n ../infra/deploy.sh && node --test ../tests/deploy-backend.cjs
+      - run: bash -n ../infra/deploy.sh ../infra/check-readiness.sh && node --test ../tests/deploy-backend.cjs ../tests/readiness-identity.cjs
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
@@ -70,8 +72,7 @@ jobs:
       # deploy.sh repeats the real audio checks in this independent runner.
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - id: auth
-        uses: google-github-actions/auth@v2
+      - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/435475937223/locations/global/workloadIdentityPools/github/providers/synap-github
           service_account: synap-github-deployer@gen-lang-client-0697897308.iam.gserviceaccount.com

@@ -32,11 +32,9 @@ output "gemini_secret_id" {
 
 output "next_steps" {
   value = <<-EOT
-    1. Put your Gemini AI Studio key in Secret Manager:
-         printf '%s' "$GEMINI_API_KEY" | gcloud secrets versions add ${google_secret_manager_secret.gemini_api_key.secret_id} --data-file=- --project=${var.project_id}
-    2. Redeploy so the service picks up SYNAP_SERVICE_URL:
-         gcloud run services update ${google_cloud_run_v2_service.backend.name} --region=${var.region} --update-env-vars=SYNAP_SERVICE_URL=${google_cloud_run_v2_service.backend.uri}
-    3. If speaker_enabled=true, run infra/deploy.sh after Terraform; it pins the private speaker URL into SYNAP_SPEAKER_SERVICE_URL.
-    4. Point the PWA at the backend: set SYNAP_BACKEND_URL in synap-backend.js, or configure it in Settings.
+    Secret versions must already exist; never create a placeholder or rotate a live session key during apply.
+    Use infra/deploy.sh for image/configuration rollouts and its authenticated synthetic readiness check.
+    Existing production state and manually created indexes must be reconciled before applying infrastructure.
+    See docs/TERRAFORM_ADOPTION.md. Backend URL: ${google_cloud_run_v2_service.backend.uri}
   EOT
 }

@@ -83,6 +83,7 @@ function candidate(before, revision, envVars, expectedRevision) {
   const allowedUpdates = new Set([
     'SYNAP_SERVICE_URL',
     'SYNAP_GEMINI_STT_MODEL',
+    'SYNAP_OPERATIONS_INVOKER_SA',
     'SYNAP_TRANSCRIPTION_SPEED',
     'SYNAP_GEMINI_MEMORY_MODEL',
     'SYNAP_GEMINI_QUERY_MODEL',

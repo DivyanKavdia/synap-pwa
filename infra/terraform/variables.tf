@@ -43,6 +43,41 @@ variable "image" {
   type        = string
 }
 
+variable "service_url" {
+  description = "Canonical existing Cloud Run URL, also used as the Cloud Tasks OIDC audience. Required for bootstrap."
+  type        = string
+  validation {
+    condition     = can(regex("^https://[^/?#]+$", var.service_url))
+    error_message = "service_url must be an HTTPS origin with no trailing slash or path."
+  }
+}
+
+variable "operations_invoker_sa" {
+  description = "Existing deployer service account allowed to run synthetic readiness checks; never a user-data API."
+  type        = string
+  default     = ""
+}
+
+variable "processing_dispatches_per_second" {
+  description = "Queue dispatch rate; preserve the live value during state adoption."
+  type        = number
+  default     = 1
+  validation {
+    condition     = var.processing_dispatches_per_second > 0 && var.processing_dispatches_per_second <= 5
+    error_message = "Use a dispatch rate above zero and no more than five."
+  }
+}
+
+variable "processing_concurrency" {
+  description = "Concurrent recording workers; preserve the live value during adoption and tune against actual Gemini quota."
+  type        = number
+  default     = 1
+  validation {
+    condition     = var.processing_concurrency >= 1 && var.processing_concurrency <= 10 && floor(var.processing_concurrency) == var.processing_concurrency
+    error_message = "Use between one and ten concurrent workers."
+  }
+}
+
 variable "min_instances" {
   description = "Set to 1 to avoid cold starts on the upload path once there is real traffic."
   type        = number

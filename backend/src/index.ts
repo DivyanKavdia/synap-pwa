@@ -1,9 +1,10 @@
-import { config, loadSecrets } from './config.js';
+import { config, loadSecrets, validateRuntimeConfiguration } from './config.js';
 import { keyring } from './crypto/keyring.js';
 import { createApp } from './http/app.js';
 import { log } from './util/log.js';
 
 async function main(): Promise<void> {
+  validateRuntimeConfiguration();
   // Fail fast at boot rather than on the first user request: a revision that
   // cannot reach Secret Manager should never accept traffic.
   await loadSecrets();
