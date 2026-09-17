@@ -69,5 +69,14 @@
     hardwareCheck,
   });
   root.SynapCapabilities = api;
+  // Keep index.html stable: capability discovery owns the optional voice companion.
+  // Guard Node/native tests where document does not exist.
+  if (root.document && !root.document.querySelector('script[data-synap-chakshu-voice]')) {
+    const script = root.document.createElement('script');
+    script.src = 'devices/chakshu/voice.js?v=1.0.0-chakshu-voice2';
+    script.defer = true;
+    script.dataset.synapChakshuVoice = '2';
+    root.document.head.append(script);
+  }
   if (typeof module !== 'undefined') module.exports = api;
 })(globalThis);
