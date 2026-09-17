@@ -50,3 +50,21 @@ test('public model diagnostics classify failures without returning provider bodi
     assert.equal(headers['Retry-After'], status === 429 ? '60' : undefined);
   }
 });
+
+test('diagnostics distinguish a provider rejection from a suppressed request without exposing its body', () => {
+  const advice = { quotaKind: 'unknown' as const, retryAfterMs: 120000 };
+  const route = { model: 'gemini-3.5-transcribe', stage: 'transcription' };
+  const rejected = modelFailure(new GeminiError('PRIVATE KEY AUDIO', 429, true, 'request', advice, route));
+  const deferred = modelFailure(new GeminiError('PRIVATE KEY AUDIO', 429, true, 'cooldown', advice, route));
+  assert.equal(rejected.source, 'provider');
+  assert.equal(rejected.providerStatus, 429);
+  assert.equal(deferred.source, 'cooldown');
+  assert.equal(deferred.providerStatus, undefined);
+  assert.equal(deferred.code, 'processing_deferred');
+  for (const failure of [rejected, deferred]) {
+    assert.equal(failure.model, route.model);
+    assert.equal(failure.modelStage, route.stage);
+    assert.equal(failure.retryAfterMs, 120000);
+    assert.doesNotMatch(JSON.stringify(failure), /PRIVATE|KEY AUDIO/);
+  }
+});

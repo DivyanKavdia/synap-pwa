@@ -66,6 +66,7 @@ export interface RecordingDoc {
   retryable: boolean;
   /** Safe provider diagnostics, retained for background retry scheduling. */
   processingFailure?: { code: string; message: string; retryable: boolean; providerStatus?: number;
+    source?: 'provider' | 'cooldown'; model?: string; modelStage?: string;
     retryAfterMs?: number; quotaKind?: 'rate' | 'daily' | 'unknown'; retryAt?: number } | null;
   /** Sealed `StructuredMemory`. Present once understanding completes. */
   sealedMemory: Sealed | null;

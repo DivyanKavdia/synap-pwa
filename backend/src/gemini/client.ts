@@ -77,16 +77,40 @@ export class GeminiError extends Error {
     message: string,
     readonly status: number,
     readonly retryable: boolean,
-    readonly reason: 'request' | 'incomplete' | 'missing-text' = 'request',
+    readonly reason: 'request' | 'incomplete' | 'missing-text' | 'cooldown' = 'request',
     readonly rateLimit?: RateLimitAdvice,
+    readonly route?: { model: string; stage: string },
   ) {
     super(message);
     this.name = 'GeminiError';
   }
 }
 
+export interface ModelFailure {
+  code: string;
+  message: string;
+  retryable: boolean;
+  providerStatus?: number;
+  retryAfterMs?: number;
+  quotaKind?: RateLimitAdvice['quotaKind'];
+  source?: 'provider' | 'cooldown';
+  model?: string;
+  modelStage?: string;
+}
+
 /** Fixed public messages; a provider body can echo private input or credentials. */
-export function modelFailure(error: GeminiError) {
+export function modelFailure(error: GeminiError): ModelFailure {
+  // This metadata comes from our routing configuration, never a provider body.
+  const route = error.route ? { model: error.route.model, modelStage: error.route.stage } : {};
+  if (error.reason === 'cooldown') return {
+    code: 'processing_deferred',
+    message: 'AI processing is waiting for an existing cooldown. Saved audio is retained.',
+    retryable: true,
+    source: 'cooldown' as const,
+    retryAfterMs: error.rateLimit?.retryAfterMs ?? 60000,
+    quotaKind: error.rateLimit?.quotaKind ?? 'unknown',
+    ...route,
+  };
   let code = 'model_unavailable';
   let message = 'The AI service is temporarily unavailable. Saved recordings are retained.';
   if (error.reason === 'missing-text') {
@@ -111,6 +135,7 @@ export function modelFailure(error: GeminiError) {
     message = 'The AI service rejected this request. Saved recordings are retained; repeated retries may not help.';
   }
   return { code, message, retryable: error.retryable, providerStatus: error.status,
+    ...(error.status > 0 ? { source: 'provider' as const } : {}), ...route,
     ...(error.status === 429 ? {
       retryAfterMs: error.rateLimit?.retryAfterMs ?? 60000,
       quotaKind: error.rateLimit?.quotaKind ?? 'unknown',
@@ -143,7 +168,7 @@ async function call<T>(
       (config.gemini.sharedCooldown ? await sharedModelCooldown(context.model) : undefined);
     if (cooldown) {
       modelCooldowns.defer(context.model, cooldown);
-      throw new GeminiError('Gemini request deferred after rate limit.', 429, true, 'request', cooldown);
+      throw new GeminiError('Gemini request deferred after rate limit.', 429, true, 'cooldown', cooldown, context);
     }
     signal?.throwIfAborted();
     const controller = new AbortController();
@@ -166,10 +191,12 @@ async function call<T>(
       if (response.ok) return (await response.json()) as T;
 
       const detail = await response.text().catch(() => '');
-      const rateLimit = response.status === 429 ? rateLimitAdvice(response.headers.get('retry-after'), detail) : undefined;
+      let rateLimit = response.status === 429 ? rateLimitAdvice(response.headers.get('retry-after'), detail) : undefined;
       if (rateLimit) {
+        rateLimit = config.gemini.sharedCooldown
+          ? await deferSharedModel(context.model, rateLimit)
+          : modelCooldowns.reject(context.model, rateLimit);
         modelCooldowns.defer(context.model, rateLimit);
-        if (config.gemini.sharedCooldown) await deferSharedModel(context.model, rateLimit);
       }
       const error = new GeminiError(
         `Gemini ${context.stage} (${context.model}) HTTP ${response.status}: ${detail.slice(0, 400)}`,
@@ -177,6 +204,7 @@ async function call<T>(
         RETRYABLE_STATUS.has(response.status),
         'request',
         rateLimit,
+        context,
       );
       if (error.status === 429 || !error.retryable || attempt === maxAttempts) throw error;
       lastError = error;
@@ -194,7 +222,7 @@ async function call<T>(
         lastError = cause;
       } else {
         // A lost response may still have been billed; count every submission attempt.
-        const error = new GeminiError(`Gemini ${context.stage} (${context.model}) request failed: ${(cause as Error).message}`, 0, true);
+        const error = new GeminiError(`Gemini ${context.stage} (${context.model}) request failed: ${(cause as Error).message}`, 0, true, 'request', undefined, context);
         if (attempt === maxAttempts) throw error;
         lastError = error;
       }

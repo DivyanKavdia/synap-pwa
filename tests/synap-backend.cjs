@@ -142,7 +142,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell136-retry'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell137-cooldown'/);
 });
 
 test('the settings form offers the encrypted cloud provider and a sign-in control', () => {
@@ -852,4 +852,36 @@ test('a scheduled cooldown is not surfaced as another provider rejection',async(
   const processor=new context.DKFIFOProcessor({get:async()=>recording,atomic:async()=>{}},{provider:()=> 'synap'});processor.paused=false;
   await assert.rejects(processor.process({id:1,recordingId:'take',kind:'consolidate',cloudOnly:true},{},''),e=>e.code==='processing_deferred'&&e.retryAfterMs>110000&&e.providerStatus===undefined);
   assert.equal(retries,1);
+});
+
+test('a cooldown encountered after retry stays deferred and diagnostics identify the failed model and recording', async () => {
+  const diagnostics = [];
+  let polls = 0;
+  const context = load(backendSource, {
+    setTimeout: (fn, ms) => setTimeout(fn, ms === 5000 ? 0 : ms),
+    SynapAuth: { isSignedIn: () => true, config: () => ({ backendUrl: 'https://api.example.test' }), authedFetch: async url => {
+      if (String(url).endsWith('/retry')) return new Response(JSON.stringify({ state: 'uploaded', retry_started: true }), { status: 202 });
+      assert(String(url).endsWith('/processing'));
+      const first = ++polls === 1;
+      return new Response(JSON.stringify({ state: 'failed', retryable: true, failure_id: first ? 'old-failure' : 'new-cooldown', error: {
+        code: first ? 'model_rate_limited' : 'processing_deferred', source: first ? 'provider' : 'cooldown',
+        ...(first ? { providerStatus: 429 } : {}), retryAfterMs: first ? 0 : 45000,
+        model: 'gemini-3.5-transcribe', modelStage: 'transcription', quotaKind: 'rate', retryable: true
+      }}));
+    }}
+  });
+  const processor = new context.DKFIFOProcessor({ get: async () => ({ id: 'take' }), atomic: async () => {} }, {
+    provider: () => 'synap', onDiagnostic: (name, fields) => diagnostics.push({ name, ...fields })
+  });
+  processor.paused = false;
+  await assert.rejects(processor.process({ id: 7, recordingId: 'take', kind: 'consolidate', cloudOnly: true }, {}, ''), error =>
+    error.code === 'processing_deferred' && error.retryAfterMs === 45000 && error.providerStatus === undefined &&
+    error.audioStage === undefined && error.model === 'gemini-3.5-transcribe' && error.source === 'cooldown');
+  assert.equal(polls, 2);
+  assert.equal(diagnostics[0].failureId, 'old-failure');
+  assert.equal(diagnostics[0].providerStatus, 429);
+  assert.equal(diagnostics[1].providerStatus, null);
+  assert.equal(diagnostics[1].recordingId, 'take');
+  assert.equal(diagnostics[1].jobId, 7);
+  assert.equal(diagnostics[1].modelStage, 'transcription');
 });

@@ -45,6 +45,8 @@
     var error = new Error(message);
     error.status = response.status;
     error.code = data?.error?.code || 'http_error';
+    for (const key of ['model', 'modelStage', 'source', 'quotaKind'])
+      if (data?.error?.[key] !== undefined) error[key] = data.error[key];
     if (Number.isInteger(data?.error?.providerStatus)) error.providerStatus = data.error.providerStatus;
     const retryHeader = response.headers?.get?.('retry-after');
     const headerDelay = retryHeader && /^\d+(?:\.\d+)?$/.test(retryHeader.trim())
@@ -423,6 +425,14 @@
           if (onProgress) onProgress(status);
           if (state === 'ready') return status;
           if (state === 'failed') {
+            var detail = status.error || {};
+            processor.diagnostic?.('Cloud processing failure', {
+              recordingId: job.recordingId, jobId: job.id, failureId: status.failure_id || null,
+              code: detail.code || null, source: detail.source || 'unknown',
+              model: detail.model || null, modelStage: detail.modelStage || null,
+              providerStatus: detail.providerStatus ?? null, quotaKind: detail.quotaKind || null,
+              retryAfterMs: detail.retryAfterMs ?? null
+            });
             // Finalize is idempotent: replaying it does not restart a failed
             // worker. Recover once through the explicit retry endpoint, using
             // the failure revision so a lost response cannot duplicate work.
@@ -444,12 +454,11 @@
                 return abortableDelay(POLL_INTERVAL_MS, signal).then(poll);
               });
             }
-            var detail = status.error || {};
             var failure = new Error(detail.message || status.error_code || 'Backend processing failed.');
             failure.retryable = typeof detail.retryable === 'boolean' ? detail.retryable : Boolean(status.retryable);
-            for (var key of ['code', 'providerStatus', 'retryAfterMs', 'quotaKind'])
+            for (var key of ['code', 'providerStatus', 'retryAfterMs', 'quotaKind', 'model', 'modelStage', 'source'])
               if (detail[key] !== undefined) failure[key] = detail[key];
-            failure.audioStage = 'processing saved audio';
+            if (detail.code !== 'processing_deferred') failure.audioStage = 'processing saved audio';
             throw failure;
           }
           return abortableDelay(POLL_INTERVAL_MS, signal).then(poll);

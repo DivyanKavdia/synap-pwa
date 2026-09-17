@@ -1,7 +1,7 @@
 /** Service-wide quota timing only. No user IDs, audio, text, or credentials. */
 import { createHash } from 'node:crypto';
 import { firestore } from './firestore.js';
-import type { RateLimitAdvice } from '../gemini/rate-limit.js';
+import { rejectedModelCooldown, type ModelCooldownState, type RateLimitAdvice } from '../gemini/rate-limit.js';
 
 const ref = (model: string) => firestore().collection('serviceModelCooldowns')
   .doc(createHash('sha256').update(model).digest('hex'));
@@ -13,10 +13,12 @@ export async function sharedModelCooldown(model: string, now = Date.now()): Prom
     quotaKind: value.quotaKind === 'daily' ? 'daily' : value.quotaKind === 'rate' ? 'rate' : 'unknown' };
 }
 
-export async function deferSharedModel(model: string, advice: RateLimitAdvice, now = Date.now()): Promise<void> {
-  const target = ref(model), until = now + advice.retryAfterMs;
-  await firestore().runTransaction(async tx => {
-    const previous = (await tx.get(target)).data();
-    if ((previous?.until || 0) < until) tx.set(target, { until, quotaKind: advice.quotaKind });
+export async function deferSharedModel(model: string, advice: RateLimitAdvice, now = Date.now()): Promise<RateLimitAdvice> {
+  const target = ref(model);
+  return firestore().runTransaction(async tx => {
+    const previous = (await tx.get(target)).data() as ModelCooldownState | undefined;
+    const next = rejectedModelCooldown(previous, advice, now);
+    tx.set(target, next);
+    return { retryAfterMs: Math.ceil(next.until - now), quotaKind: next.quotaKind };
   });
 }

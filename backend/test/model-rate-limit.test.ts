@@ -83,7 +83,15 @@ test('one 429 stops transport retries and suppresses later submissions until its
   now += 1000;
   await assert.rejects(
     submit(),
-    (error) => error instanceof GeminiError && error.rateLimit?.retryAfterMs === 89000,
+    (error) => {
+      assert(error instanceof GeminiError);
+      const failure = modelFailure(error);
+      assert.equal(failure.code, 'processing_deferred');
+      assert.equal(failure.source, 'cooldown');
+      assert.equal(failure.providerStatus, undefined, 'no provider was contacted');
+      assert.equal(failure.model, request.model);
+      return error.rateLimit?.retryAfterMs === 89000;
+    },
   );
   assert.equal(calls, 1);
   assert.equal(attempts, 1, 'suppressed requests must not count as submitted audio');
@@ -97,4 +105,27 @@ test('one 429 stops transport retries and suppresses later submissions until its
   await submit();
   assert.equal(calls, 3);
   assert.equal(attempts, 2);
+});
+
+test('cloud backoff grows only on new rejection rounds and resets after an hour without rejections', () => {
+  const gate = new ModelCooldowns();
+  const advice = { quotaKind: 'rate' as const, retryAfterMs: 60000 };
+  let now = 1000;
+  for (const delay of [60000, 120000, 240000, 480000, 900000, 900000]) {
+    assert.equal(gate.reject('stt', advice, now).retryAfterMs, delay);
+    assert.equal(gate.reject('stt', advice, now).retryAfterMs, delay, 'concurrent rejections share one round');
+    assert.equal(gate.remaining('stt', now + 1000)?.retryAfterMs, delay - 1000);
+    assert.equal(gate.remaining('stt', now + 2000)?.retryAfterMs, delay - 2000);
+    now += delay;
+  }
+  assert.equal(gate.reject('stt', advice, now + 3600000).retryAfterMs, 60000);
+  assert.equal(gate.reject('other-model', advice, now).retryAfterMs, 60000);
+});
+
+test('a provider-specified long wait remains authoritative over exponential backoff', () => {
+  const gate = new ModelCooldowns();
+  const advice = { quotaKind: 'daily' as const, retryAfterMs: 7200000 };
+  assert.equal(gate.reject('stt', advice, 1000).retryAfterMs, 7200000);
+  assert.equal(gate.reject('stt', { quotaKind: 'rate', retryAfterMs: 60000 }, 2000).retryAfterMs, 7199000);
+  assert.equal(gate.remaining('stt', 2000)?.quotaKind, 'daily');
 });

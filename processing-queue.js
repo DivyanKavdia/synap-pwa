@@ -30,6 +30,7 @@
         fetch: fetcher = root.fetch?.bind(root),
         locks = root.navigator?.locks,
         onChange = () => {},
+        onDiagnostic = () => {},
         now = () => Date.now(),
         canRun = () => true,
         provider = () => root.SynapAIProviders?.readPrefs().provider || 'custom',
@@ -40,6 +41,7 @@
       this.fetch = fetcher;
       this.locks = locks;
       this.onChange = onChange;
+      this.onDiagnostic = onDiagnostic;
       this.now = now;
       this.running = false;
       this.paused = true;
@@ -64,6 +66,9 @@
       for (const controller of this.controllers.values()) controller.abort();
       this.onChange(message);
       return this.settled;
+    }
+    diagnostic(message, fields) {
+      try { this.onDiagnostic(message, fields); } catch { /* Diagnostics cannot interrupt durable work. */ }
     }
     async resume(recordingIds = null) {
       if (!this.canRun()) return;
@@ -158,6 +163,7 @@
             stage: e.audioStage, code: e.code || e.name,
             status: e.status ?? null, providerStatus: e.providerStatus ?? null,
             retryAfterMs: rateLimited ? retryDelay : advisedDelay || null,
+            model: e.model || null, modelStage: e.modelStage || null, source: e.source || null,
             expectedBytes: e.expectedBytes ?? null, actualBytes: e.actualBytes ?? null,
             stack: String(e.stack || '').slice(0, 3000),
           }} : {}),
@@ -260,6 +266,7 @@
                 if (new URL(url).protocol !== 'https:')
                   throw new Error('Processing endpoints must use HTTPS');
                 this.onChange((name === 'synap' && job.kind === 'transcribe' ? 'Uploading audio' : 'Processing ' + job.kind) + ' · segment ' + (job.segmentIndex + 1));
+                this.diagnostic('Processing job', { jobId: job.id, recordingId: job.recordingId, kind: job.kind, segmentIndex: job.segmentIndex });
                 const promise = this.execute(job, config, url).then(
                   () => job.id,
                   () => job.id,

@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell136-retry";
+  const APP_SHELL_REVISION = "1.0.0-shell137-cooldown";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -4540,7 +4540,7 @@
     globalThis.SynapMoments?.configure({store:journal,context:()=>({active:recordingConfirmed&&appState==='recording'&&!recordingReconnectPending,recordingId:currentRecordingId,offsetMs:journal.timelineOffsetMs(currentRecordingId)})});
     const recovered = await journal.recover();
     ui.appVersion.textContent = APP_VERSION;
-    processor = new globalThis.DKFIFOProcessor(journal, {settings:()=>settings,canRun:()=>!firmwareBusy&&!libraryMutationActive,onChange:function (message) {
+    processor = new globalThis.DKFIFOProcessor(journal, {settings:()=>settings,canRun:()=>!firmwareBusy&&!libraryMutationActive,onDiagnostic:log,onChange:function (message) {
       ui.queueStatus.textContent=message;log("FIFO",message);
       if (message === "Queue complete") renderRecordings();
     }});

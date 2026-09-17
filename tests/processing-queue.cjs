@@ -57,6 +57,19 @@ function fixture(options = {}, runtime = {}) {
   return { context, queue, store, jobs, events, messages };
 }
 
+test('parallel recordings have distinct diagnostic identities and logging cannot fail a job', async () => {
+  const diagnostics = [];
+  const h = fixture({ provider: () => 'fixture', onDiagnostic: (name, fields) => {
+    diagnostics.push({ name, ...fields });
+    throw new Error('Logger failed');
+  }});
+  h.jobs.push({ id: 2, recordingId: 'r2', kind: 'consolidate', state: 'pending', segmentIndex: 0 });
+  h.context.DKFIFOProcessor.registerProvider('fixture', { process: async () => ({ summary: 'Done' }) });
+  await h.queue.resume();
+  assert.deepEqual(diagnostics.map(row => row.recordingId).sort(), ['r1', 'r2']);
+  assert(h.jobs.every(job => job.state === 'done'));
+});
+
 test('expired job budget is a retryable timeout rather than a user cancellation', async () => {
   let expire;
   const h = fixture({}, { setTimeout(fn) { expire = fn; return 1; }, clearTimeout() {} });
