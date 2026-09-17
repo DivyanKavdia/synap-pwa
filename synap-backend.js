@@ -46,6 +46,12 @@
     error.status = response.status;
     error.code = data?.error?.code || 'http_error';
     if (Number.isInteger(data?.error?.providerStatus)) error.providerStatus = data.error.providerStatus;
+    const retryHeader = response.headers?.get?.('retry-after');
+    const headerDelay = retryHeader && /^\d+(?:\.\d+)?$/.test(retryHeader.trim())
+      ? Number(retryHeader) * 1000 : retryHeader ? Date.parse(retryHeader) - Date.now() : 0;
+    const bodyDelay = Number(data?.error?.retryAfterMs);
+    const delay = Math.max(Number.isFinite(bodyDelay) ? bodyDelay : 0, Number.isFinite(headerDelay) ? headerDelay : 0);
+    if (Number.isFinite(delay) && delay > 0) error.retryAfterMs = Math.min(604800000, Math.ceil(delay));
     error.retryable = typeof data?.error?.retryable === 'boolean'
       ? data.error.retryable
       : response.status >= 500 || [408, 409, 425, 429].indexOf(response.status) !== -1;

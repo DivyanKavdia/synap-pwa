@@ -18,6 +18,7 @@
 import { config, loadSecrets } from '../config.js';
 import { log } from '../util/log.js';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { ModelCooldowns, rateLimitAdvice, type RateLimitAdvice } from './rate-limit.js';
 
 export interface InteractionTextPart {
   type: 'text';
@@ -76,6 +77,7 @@ export class GeminiError extends Error {
     readonly status: number,
     readonly retryable: boolean,
     readonly reason: 'request' | 'incomplete' | 'missing-text' = 'request',
+    readonly rateLimit?: RateLimitAdvice,
   ) {
     super(message);
     this.name = 'GeminiError';
@@ -93,8 +95,10 @@ export function modelFailure(error: GeminiError) {
     code = 'model_incomplete';
     message = 'The AI service returned an incomplete result. Saved recordings are retained for retry.';
   } else if (error.status === 429) {
-    code = 'model_rate_limited';
-    message = 'The AI service is busy or has reached its usage limit. Retry later; saved recordings are retained.';
+    code = error.rateLimit?.quotaKind === 'daily' ? 'model_daily_quota' : 'model_rate_limited';
+    message = code === 'model_daily_quota'
+      ? 'Gemini reports a daily quota limit. Saved audio is retained; processing will retry later. Check the API project quota if this continues.'
+      : 'Gemini is rate-limiting requests. Saved audio is retained; processing will resume after a cooldown.';
   } else if ([401, 403].includes(error.status)) {
     code = 'model_access_denied';
     message = 'The AI service could not authorize this request. Its access configuration needs checking.';
@@ -105,11 +109,17 @@ export function modelFailure(error: GeminiError) {
     code = 'model_request_rejected';
     message = 'The AI service rejected this request. Saved recordings are retained; repeated retries may not help.';
   }
-  return { code, message, retryable: error.retryable, providerStatus: error.status };
+  return { code, message, retryable: error.retryable, providerStatus: error.status,
+    ...(error.status === 429 ? {
+      retryAfterMs: error.rateLimit?.retryAfterMs ?? 60000,
+      quotaKind: error.rateLimit?.quotaKind ?? 'unknown',
+    } : {}),
+  };
 }
 
 const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS = 4;
+const modelCooldowns = new ModelCooldowns();
 
 async function call<T>(
   path: string,
@@ -125,6 +135,8 @@ async function call<T>(
   let lastError: GeminiError | null = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     signal?.throwIfAborted();
+    const cooldown = modelCooldowns.remaining(context.model);
+    if (cooldown) throw new GeminiError('Gemini request deferred after rate limit.', 429, true, 'request', cooldown);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.gemini.requestTimeoutMs);
     const onAbort = () => controller.abort();
@@ -145,20 +157,26 @@ async function call<T>(
       if (response.ok) return (await response.json()) as T;
 
       const detail = await response.text().catch(() => '');
+      const rateLimit = response.status === 429 ? rateLimitAdvice(response.headers.get('retry-after'), detail) : undefined;
+      if (rateLimit) modelCooldowns.defer(context.model, rateLimit);
       const error = new GeminiError(
         `Gemini ${context.stage} (${context.model}) HTTP ${response.status}: ${detail.slice(0, 400)}`,
         response.status,
         RETRYABLE_STATUS.has(response.status),
+        'request',
+        rateLimit,
       );
-      if (!error.retryable || attempt === MAX_ATTEMPTS) throw error;
+      if (error.status === 429 || !error.retryable || attempt === MAX_ATTEMPTS) throw error;
       lastError = error;
     } catch (cause) {
       signal?.throwIfAborted();
       if (cause instanceof GeminiError) {
-        if (!cause.retryable || attempt === MAX_ATTEMPTS) {
+        if (cause.status === 429 || !cause.retryable || attempt === MAX_ATTEMPTS) {
           // Provider errors may echo content. Log only routing and status, never
           // request/response bodies, audio, language preferences or API keys.
-          log.warn('Gemini request rejected', { ...context, http_status: cause.status, retryable: cause.retryable });
+          log.warn('Gemini request rejected', { ...context, http_status: cause.status, retryable: cause.retryable,
+            ...(cause.rateLimit || {}),
+          });
           throw cause;
         }
         lastError = cause;

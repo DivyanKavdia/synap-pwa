@@ -49,6 +49,7 @@
       this.provider = provider;
       this.recordingScope = null;
       this.settled = Promise.resolve();
+      this.providerCooldowns = new Map();
       root.SynapProcessingQueue = {
         retryRecording: (recordingId) => this.retryRecording(recordingId),
         queueRecordings: (recordingIds) => this.queueRecordings(recordingIds),
@@ -127,20 +128,31 @@
         saved = await this.store.finishJob(job, output);
       } catch (e) {
         const paused = this.paused || (e.name === 'AbortError' && !this.canRun());
-        const attempts = (job.attempts || 0) + (paused ? 0 : 1),
-          permanent = e.retryable === false;
-        const failed = permanent || attempts >= 5;
+        const permanent = e.retryable === false;
+        const rateLimited = !paused && !permanent &&
+          (e.code === 'model_rate_limited' || e.code === 'model_daily_quota' || e.status === 429);
+        const attempts = (job.attempts || 0) + (paused || rateLimited ? 0 : 1);
+        const rateLimitAttempts = rateLimited ? Math.min(5, (job.rateLimitAttempts || 0) + 1) : (job.rateLimitAttempts || 0);
+        const failed = permanent || (!rateLimited && attempts >= 5);
+        const advisedDelay = Number.isFinite(e.retryAfterMs) && e.retryAfterMs > 0 ? Math.min(604800000, e.retryAfterMs) : 0;
+        const retryDelay = Math.max(advisedDelay, rateLimited
+          ? Math.min(900000, 60000 * 2 ** (rateLimitAttempts - 1))
+          : Math.min(60000, 2000 * 2 ** Math.max(0, attempts - 1)));
         const nextAt = paused
           ? 0
-          : this.now() + Math.min(60000, 2000 * 2 ** Math.max(0, attempts - 1));
+          : this.now() + retryDelay;
+        const cooldownKey = this.cooldownKey(config);
+        if (rateLimited) this.providerCooldowns.set(cooldownKey, Math.max(this.providerCooldowns.get(cooldownKey) || 0, nextAt));
         await this.store.patchJob(job.id, {
           state: failed ? 'failed' : 'pending',
           attempts,
           nextAt: failed ? 0 : nextAt,
+          ...(rateLimited ? { rateLimitAttempts, providerCooldownKey: cooldownKey, providerCooldownUntil: nextAt } : {}),
           lastError: (e.name || 'Error') + ': ' + e.message,
           ...(e.audioStage ? { failureDetail: {
             stage: e.audioStage, code: e.code || e.name,
             status: e.status ?? null, providerStatus: e.providerStatus ?? null,
+            retryAfterMs: rateLimited ? retryDelay : advisedDelay || null,
             expectedBytes: e.expectedBytes ?? null, actualBytes: e.actualBytes ?? null,
             stack: String(e.stack || '').slice(0, 3000),
           }} : {}),
@@ -151,6 +163,7 @@
         this.onChange(
           failed
             ? 'Recording processing needs retry: ' + e.message
+            : rateLimited ? 'AI limit reached. Retrying in ' + Math.ceil(retryDelay / 1000) + ' seconds. Saved audio is retained.'
             : 'Processing retry scheduled: ' + e.message,
         );
         return;
@@ -161,6 +174,12 @@
         if (job.kind === 'consolidate') root.SynapMemoryReadyEvents?.emit(saved);
       }
       this.onChange('Saved job ' + job.id);
+    }
+    cooldownKey(config) {
+      return (config.provider || this.provider()) + ':' + (config.accountUid || '');
+    }
+    cooldownUntil(config) {
+      return this.providerCooldowns.get(this.cooldownKey(config)) || 0;
     }
     async run() {
       if (this.paused || this.running || !this.canRun()) return;
@@ -189,17 +208,24 @@
           let config = { ...this.settings(), provider: name };
           if (adapter?.prepare) config = await adapter.prepare(this, config);
           if (!config) return;
+          // Load across all recordings, including a selected-only retry. Manual
+          // retry resets job.nextAt, but cannot discard the provider's cooldown.
+          for (const job of await this.store.all('jobs')) {
+            if (job.providerCooldownKey === this.cooldownKey(config) &&
+                Number.isFinite(job.providerCooldownUntil) && job.providerCooldownUntil > this.now())
+              this.providerCooldowns.set(job.providerCooldownKey, Math.max(this.cooldownUntil(config), job.providerCooldownUntil));
+          }
           const active = new Map();
           try {
             while (!this.paused && this.canRun()) {
-              while (active.size < MAX_PROCESSING_CONCURRENCY && !this.paused && this.canRun()) {
+              while (active.size < MAX_PROCESSING_CONCURRENCY && !this.paused && this.canRun() && this.cooldownUntil(config) <= this.now()) {
                 const excluded = new Set([...active.values()].map((x) => x.recordingId));
                 const selected = await this.store.nextRunnable(
                   this.now(),
                   excluded,
                   this.recordingScope,
                 );
-                if (!selected.job || this.paused || !this.canRun()) break;
+                if (!selected.job || this.paused || !this.canRun() || this.cooldownUntil(config) > this.now()) break;
                 const job = selected.job,
                   url = job.kind === 'transcribe' ? config.endpoint : config.llmEndpoint;
                 if (!url) {
@@ -223,6 +249,12 @@
                 const done = await Promise.race([...active.values()].map((x) => x.promise));
                 active.delete(done);
                 continue;
+              }
+              const cooldown = this.cooldownUntil(config) - this.now();
+              if (cooldown > 0) {
+                this.onChange('AI cooldown: processing resumes in ' + Math.ceil(cooldown / 1000) + ' seconds.');
+                this.timer = setTimeout(() => this.run(), cooldown + 20);
+                return;
               }
               const selected = await this.store.nextRunnable(
                 this.now(),

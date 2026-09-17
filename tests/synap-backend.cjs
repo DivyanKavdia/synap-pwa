@@ -142,7 +142,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell131-chakshu'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell132-chakshu'/);
 });
 
 test('the settings form offers the encrypted cloud provider and a sign-in control', () => {
@@ -793,4 +793,14 @@ test('provider error codes and numeric status survive the browser adapter', asyn
     message:'The transcription service returned no text output.',code:'model_missing_text',providerStatus:0,retryable:true,
   }}),{status:503})}});
   await assert.rejects(context.SynapBackend.recordingMemory('take'), { code:'model_missing_text',status:503,providerStatus:0,retryable:true });
+});
+
+test('provider cooldown timing survives the browser adapter and honors Retry-After', async () => {
+  for (const [bodyDelay, header, expected] of [[90000,'120',120000],[180000,'120',180000],['invalid','120',120000],['Infinity','120',120000],[undefined,'invalid',undefined],[-10,null,undefined],[999999999999,null,604800000]]) {
+    const context = load(backendSource, { SynapAuth: { authedFetch: async () => new Response(JSON.stringify({ error: {
+      message: 'Saved audio is retained.', code: 'model_rate_limited', providerStatus: 429, retryable: true, retryAfterMs: bodyDelay,
+    }}), { status: 503, headers: header ? { 'Retry-After': header } : {} }) }});
+    await assert.rejects(context.SynapBackend.recordingMemory('take'), error =>
+      error.code === 'model_rate_limited' && error.retryable === true && error.retryAfterMs === expected);
+  }
 });

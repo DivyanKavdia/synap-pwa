@@ -37,6 +37,7 @@ export function errorHandler() {
     if (error instanceof GeminiError) {
       const failure = modelFailure(error);
       log.error('Gemini call failed', { path: req.path, ...failure });
+      if (failure.retryAfterMs) res.setHeader('Retry-After', String(Math.ceil(failure.retryAfterMs / 1000)));
       res.status(error.retryable ? 503 : 502).json({
         error: failure,
       });

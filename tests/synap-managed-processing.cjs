@@ -31,6 +31,7 @@ for (const signedIn of [true, false]) {
     let selections = 0;
     const queue = new context.DKFIFOProcessor(
       {
+        all: async () => [],
         nextRunnable: async () => {
           selections++;
           return { job: null };

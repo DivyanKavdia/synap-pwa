@@ -172,13 +172,15 @@ test('repeated missing output fails after one original fallback and is never sea
 for (const status of [401, 403, 429, 503]) {
   test(`HTTP ${status} does not resubmit extra original audio`, async (t) => {
     let calls = 0;
+    // Keep this fixture's shared-model cooldown in the past for later cases.
+    if (status === 429) t.mock.method(Date, 'now', () => 1000);
     t.mock.method(Math, 'random', () => 0);
     t.mock.method(globalThis, 'fetch', async () => {
       calls++;
       return new Response('{}', { status });
     });
     await assert.rejects(transcribeSegment(tone(), 'audio/wav', { speed: 1.5 }), { status });
-    assert.equal(calls, status === 401 || status === 403 ? 1 : 4);
+    assert.equal(calls, status === 503 ? 4 : 1);
   });
 }
 

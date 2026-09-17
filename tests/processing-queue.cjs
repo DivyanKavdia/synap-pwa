@@ -32,7 +32,7 @@ function fixture(options = {}) {
   const store = {
     get: async (_table, id) => ({ id }),
     recoveryFailures: new Map(),
-    all: async () => jobs,
+    all: async (_table, index, id) => index === 'recording' ? jobs.filter(job => job.recordingId === id) : jobs,
     nextRunnable: context.DKAudioStore.prototype.nextRunnable,
     patchJob: async (id, fields) =>
       Object.assign(
@@ -159,6 +159,105 @@ test('model failure diagnostics keep the stage and status without repeating a pe
   assert.equal(jobs[0].failureDetail.code, 'model_request_rejected');
   assert.equal(jobs[0].failureDetail.providerStatus, 400);
   assert(messages.some(message => message.includes('transcribing saved audio') && message.includes('provider HTTP 400')));
+});
+
+test('rate limits back off without consuming the recording failure budget', async (t) => {
+  let now = 1000, calls = 0, advice = 0;
+  const { queue, context, jobs, messages } = fixture({ provider: () => 'rate-fixture', now: () => now });
+  t.after(() => queue.pause());
+  jobs[0].attempts = 4;
+  context.DKFIFOProcessor.registerProvider('rate-fixture', {
+    process: async () => {
+      calls++;
+      throw Object.assign(new Error('Saved audio is retained.'), {
+        code: 'model_rate_limited', status: 503, providerStatus: 429, retryable: true, retryAfterMs: advice,
+      });
+    },
+  });
+  for (const delay of [60000,120000,240000,480000,900000,900000]) {
+    await queue.resume();
+    await queue.pause();
+    assert.equal(jobs[0].state, 'pending');
+    assert.equal(jobs[0].attempts, 4);
+    assert.equal(jobs[0].nextAt, now + delay);
+    now = jobs[0].nextAt;
+  }
+  advice = 3600000;
+  await queue.resume();
+  assert.equal(jobs[0].nextAt, now + advice);
+  assert.equal(calls, 7);
+  assert(messages.some(message => message.includes('Retrying in 60 seconds')));
+});
+
+test('a persisted cooldown survives reload and selected Retry while completed segments stay done', async (t) => {
+  let now = 1000;
+  const original = fixture({ provider: () => 'rate-fixture', now: () => now });
+  original.context.DKFIFOProcessor.registerProvider('rate-fixture', {
+    prepare: async (_queue, config) => ({ ...config, accountUid: 'alice' }),
+    process: async () => { throw Object.assign(new Error('Wait'), { code: 'model_rate_limited', retryAfterMs: 90000 }); },
+  });
+  t.after(() => original.queue.pause());
+  await original.queue.resume();
+  await original.queue.pause();
+  const reloaded = fixture({ provider: () => 'rate-fixture', now: () => now });
+  t.after(() => reloaded.queue.pause());
+  reloaded.jobs.splice(0, 1, JSON.parse(JSON.stringify(original.jobs[0])),
+    { id: 2, recordingId: 'r2', kind: 'consolidate', segmentIndex: 0, state: 'pending' },
+    { id: 3, recordingId: 'r1', kind: 'transcribe', segmentIndex: 0, state: 'done' });
+  const calls = [];
+  reloaded.context.DKFIFOProcessor.registerProvider('rate-fixture', {
+    prepare: async (_queue, config) => ({ ...config, accountUid: 'alice' }),
+    process: async (_queue, job) => { calls.push(job.id); return {}; },
+  });
+  await reloaded.queue.retryRecording('r1');
+  await reloaded.queue.settled;
+  assert.equal(reloaded.jobs[0].nextAt, 0, 'Retry resets the job delay');
+  assert.deepEqual(calls, [], 'the durable provider cooldown still applies');
+  await reloaded.queue.retryRecording('r2');
+  await reloaded.queue.settled;
+  assert.deepEqual(calls, [], 'selecting a different recording cannot bypass the limit');
+  now = 91000;
+  await reloaded.queue.resume();
+  assert.deepEqual(calls.sort(), [1, 2]);
+  assert(reloaded.jobs.every(job => job.state === 'done'));
+});
+
+test('a saved cooldown is scoped to its provider and account', async (t) => {
+  for (const [provider, accountUid] of [['rate-fixture','bob'], ['another-provider','alice']]) {
+    const { queue, context, jobs } = fixture({ provider: () => provider, now: () => 1000 });
+    t.after(() => queue.pause());
+    Object.assign(jobs[0], { providerCooldownKey: 'rate-fixture:alice', providerCooldownUntil: 91000 });
+    context.DKFIFOProcessor.registerProvider(provider, {
+      prepare: async (_queue, config) => ({ ...config, accountUid }),
+      process: async () => ({}),
+    });
+    await queue.resume();
+    assert.equal(jobs[0].state, 'done');
+  }
+});
+
+test('a 429 drains existing requests but prevents launching another recording', async (t) => {
+  const { queue, context, jobs } = fixture({ provider: () => 'rate-fixture', now: () => 1000 });
+  t.after(() => queue.pause());
+  jobs.push(...[2,3].map(id => ({ id, recordingId: 'r' + id, kind: 'consolidate', state: 'pending', segmentIndex: 0 })));
+  const calls = [], pending = new Map();
+  context.DKFIFOProcessor.registerProvider('rate-fixture', {
+    process: (_queue, job) => new Promise((resolve, reject) => {
+      calls.push(job.id); pending.set(job.id, { resolve, reject });
+    }),
+  });
+  const running = queue.resume();
+  await new Promise(setImmediate);
+  assert.deepEqual(calls, [1, 2]);
+  pending.get(1).reject(Object.assign(new Error('Wait'), { status: 429 }));
+  await new Promise(setImmediate);
+  assert.deepEqual(calls, [1, 2]);
+  pending.get(2).resolve({});
+  await running;
+  assert.deepEqual(calls, [1, 2]);
+  assert.equal(jobs[0].state, 'pending');
+  assert.equal(jobs[1].state, 'done');
+  assert.equal(jobs[2].state, 'pending');
 });
 
 test('pause aborts provider work and leaves it pending without spending a retry', async () => {

@@ -23,10 +23,14 @@ test('public model diagnostics classify failures without returning provider bodi
     assert.equal(safe.retryable, retryable);
     assert.doesNotMatch(JSON.stringify(safe), /PRIVATE|API KEY/);
     assert.equal(processingFailure(error).message, safe.message);
+    const headers: Record<string, string> = {};
     let responseStatus = 0,
       body: any;
     const res = {
       headersSent: false,
+      setHeader(name: string, value: string) {
+        headers[name] = value;
+      },
       status(value: number) {
         responseStatus = value;
         return this;
@@ -43,5 +47,6 @@ test('public model diagnostics classify failures without returning provider bodi
     );
     assert.equal(responseStatus, retryable ? 503 : 502);
     assert.deepEqual(body.error, safe);
+    assert.equal(headers['Retry-After'], status === 429 ? '60' : undefined);
   }
 });

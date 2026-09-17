@@ -34,11 +34,11 @@ const block=(from,to)=>source.slice(source.indexOf(from),source.indexOf(to));
   await c.releaseWakeLock();scope=null;await c.acquireWakeLock();assert.equal(released,1);
   // Scheduler cannot launch a job after OTA takes ownership during an awaited selection.
   require('../audio-store.js');require('../processing-queue.js');let allowed=false,processed=0,selections=0;
-  const store={nextRunnable:async()=>{selections++;return{job:null,wakeAt:0,blockedCount:0};}};
+  const store={all:async()=>[],nextRunnable:async()=>{selections++;return{job:null,wakeAt:0,blockedCount:0};}};
   let fifo=new globalThis.DKFIFOProcessor(store,{canRun:()=>allowed,settings:()=>({}),locks:{request:async(n,o,f)=>f({})}});
   await fifo.resume();assert.equal(selections,0);assert.equal(fifo.paused,true);
   let resolveSelection;store.nextRunnable=()=>new Promise(resolve=>resolveSelection=resolve);allowed=true;
-  const running=fifo.resume();await Promise.resolve();allowed=false;fifo.pause();
+  const running=fifo.resume();await new Promise(setImmediate);allowed=false;fifo.pause();
   resolveSelection({job:{id:1,recordingId:'r',kind:'transcribe',segmentIndex:0},wakeAt:0,blockedCount:0});
   fifo.execute=async()=>processed++;await running;assert.equal(processed,0);
   // A direct processor job also re-checks ownership after awaited browser storage reads.

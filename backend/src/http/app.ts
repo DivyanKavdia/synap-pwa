@@ -35,6 +35,7 @@ function cors() {
       );
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
       res.setHeader('Access-Control-Max-Age', '3600');
+      res.setHeader('Access-Control-Expose-Headers', 'Retry-After');
     }
     if (req.method === 'OPTIONS') {
       res.status(204).end();
