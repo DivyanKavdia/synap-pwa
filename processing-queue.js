@@ -225,6 +225,11 @@
           let config = { ...this.settings(), provider: name };
           if (adapter?.prepare) config = await adapter.prepare(this, config);
           if (!config) return;
+          if (name === 'custom' && [config.endpoint, config.llmEndpoint].some(url => root.SynapBackend?.isManagedEndpoint?.(url))) {
+            this.diagnostic('Processing configuration needs attention', { provider: name, code: 'synap_endpoint_requires_managed_provider' });
+            this.onChange('Choose Synap Cloud under Settings → Memory & AI → Processing options. Synap Cloud addresses need your signed-in account; saved audio is retained.');
+            return;
+          }
           // Load across all recordings, including a selected-only retry. Manual
           // retry resets job.nextAt, but cannot discard the provider's cooldown.
           for (const job of await this.store.all('jobs')) {
@@ -266,7 +271,7 @@
                 if (new URL(url).protocol !== 'https:')
                   throw new Error('Processing endpoints must use HTTPS');
                 this.onChange((name === 'synap' && job.kind === 'transcribe' ? 'Uploading audio' : 'Processing ' + job.kind) + ' · segment ' + (job.segmentIndex + 1));
-                this.diagnostic('Processing job', { jobId: job.id, recordingId: job.recordingId, kind: job.kind, segmentIndex: job.segmentIndex });
+                this.diagnostic('Processing job', { jobId: job.id, recordingId: job.recordingId, provider: name, kind: job.kind, segmentIndex: job.segmentIndex });
                 const promise = this.execute(job, config, url).then(
                   () => job.id,
                   () => job.id,
@@ -403,8 +408,16 @@
       }
       const response = await this.fetch(url, { method: 'POST', headers, body, signal });
       if (!response.ok) {
-        const e = new Error('HTTP ' + response.status);
+        const denied = response.status === 401 || response.status === 403;
+        const e = new Error(denied
+          ? 'Custom endpoint rejected access (HTTP ' + response.status + '). In Settings → Memory & AI → Processing options, choose Synap Cloud for your Synap account, or enter a valid custom access token and save. Custom tokens must be entered again after reloading.'
+          : 'HTTP ' + response.status);
+        e.status = response.status;
+        e.code = denied ? 'custom_auth_required' : 'custom_http_error';
+        if (denied) e.audioStage = 'authenticating custom endpoint';
         e.retryable = [408, 409, 425, 429].includes(response.status) || response.status >= 500;
+        this.diagnostic('Custom processing request failed', { jobId: job.id, recordingId: job.recordingId,
+          provider: 'custom', status: e.status, code: e.code, tokenConfigured: Boolean(config.token) });
         throw e;
       }
       const json = (response.headers.get('content-type') || '').includes('application/json'),

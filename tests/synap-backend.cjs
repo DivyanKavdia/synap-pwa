@@ -142,7 +142,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell140-voice-recovery'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell141-provider-auth'/);
 });
 
 test('the settings form offers the encrypted cloud provider and a sign-in control', () => {
@@ -408,6 +408,18 @@ test('managed configuration is prepared without changing stored custom endpoints
   assert.equal(settings.autoProcess, true);
   assert.deepEqual(JSON.parse(store.getItem('dk-pendant-settings')), original);
   assert.equal(processor.settings(), original);
+});
+
+test('managed address recognition respects origins, paths and configured Cloud Run aliases', () => {
+  const context = load(backendSource, { SynapAuth: { config: () => ({ backendUrl: 'https://api.example.test/synap' }) } });
+  const owns = context.SynapBackend.isManagedEndpoint;
+  for (const url of ['https://api.example.test/synap', 'https://api.example.test/synap/', 'https://api.example.test/synap/v1', 'https://api.example.test/synap/v1/recordings'])
+    assert.equal(owns(url), true, url);
+  for (const url of ['', 'invalid', 'http://api.example.test/synap/v1/recordings', 'https://api.example.test.evil.test/synap/v1/recordings', 'https://api.example.test/custom', 'https://api.example.test/synap-other/v1/recordings', 'https://user:secret@api.example.test/synap/v1/recordings'])
+    assert.equal(owns(url), false, url);
+  const production = load(backendSource, { SynapAuth: { config: () => ({ backendUrl: 'https://synap-backend-435475937223.asia-south1.run.app' }) } });
+  assert.equal(production.SynapBackend.isManagedEndpoint('https://synap-backend-idnycfpyqq-el.a.run.app/v1/recordings'), true);
+  assert.equal(owns('https://synap-backend-idnycfpyqq-el.a.run.app/v1/recordings'), false, 'a self-hosted account does not imply the production backend');
 });
 
 test('an unconfigured managed provider leaves work pending', async () => {

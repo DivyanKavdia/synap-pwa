@@ -126,6 +126,61 @@ test('provider selection stays stable until the current run settles', async () =
   assert.deepEqual(calls, [1, 2]);
 });
 
+test('Synap API addresses in custom mode leave jobs pending and never send audio or a manual token', async () => {
+  let provider = 'custom', managedCalls = 0;
+  const h = fixture({
+    provider: () => provider,
+    settings: () => ({ endpoint: 'https://api.example.test/v1/recordings', llmEndpoint: 'https://api.example.test/v1/recordings', token: 'manual-secret' }),
+    fetch: () => assert.fail('custom upload must not run against the Synap API'),
+  });
+  h.context.SynapAuth = { config: () => ({ backendUrl: 'https://api.example.test' }) };
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'synap-backend.js'), 'utf8'), h.context);
+  await h.queue.resume();
+  assert.equal(h.jobs[0].state, 'pending');
+  assert.equal(h.jobs[0].attempts, undefined);
+  assert.match(h.messages.at(-1), /Choose Synap Cloud/);
+  assert.equal(h.queue.running, false);
+  h.context.DKFIFOProcessor.registerProvider('synap', { process: async () => { managedCalls++; return { summary: 'Recovered' }; } });
+  provider = 'synap';
+  await h.queue.resume();
+  assert.equal(managedCalls, 1);
+  assert.equal(h.jobs[0].state, 'done');
+});
+
+for (const status of [401, 403]) test(`custom HTTP ${status} identifies the credential setting, retains audio, and succeeds after correction`, async () => {
+  let token = '', requests = 0;
+  const diagnostics = [], source = new Blob(['saved-audio'], { type: 'audio/wav' });
+  const h = fixture({
+    provider: () => 'custom',
+    settings: () => ({ endpoint: 'https://custom.example.test/transcribe', llmEndpoint: 'https://custom.example.test/summary', token }),
+    onDiagnostic: (name, detail) => diagnostics.push({ name, ...detail }),
+    fetch: async (_url, init) => {
+      requests++;
+      assert.equal(init.headers.Authorization, token ? 'Bearer ' + token : undefined);
+      return token ? Response.json({ transcript: 'Recovered speech' }) : new Response('', { status });
+    },
+  }, { FormData, Blob });
+  h.context.SynapAuth = { accessToken: () => assert.fail('a custom endpoint must never receive a Synap session') };
+  h.jobs[0].kind = 'transcribe';
+  h.store.segment = async () => ({ blob: source, frames: [] });
+  await h.queue.resume();
+  assert.equal(requests, 1, 'invalid credentials are not retried in a loop');
+  assert.equal(h.jobs[0].state, 'failed');
+  assert.equal(h.jobs[0].failureDetail.status, status);
+  assert.equal(h.jobs[0].failureDetail.code, 'custom_auth_required');
+  assert.match(h.jobs[0].lastError, /choose Synap Cloud/);
+  assert.match(h.jobs[0].lastError, /entered again after reloading/);
+  assert.equal((await h.store.segment()).blob, source);
+  token = 'new-custom-secret';
+  await h.queue.retryRecording('r1');
+  await h.queue.settled;
+  assert.equal(h.jobs[0].state, 'done');
+  assert.equal(requests, 2);
+  assert(diagnostics.some(row => row.provider === 'custom' && row.status === status && row.tokenConfigured === false));
+  assert(!JSON.stringify(diagnostics).includes(token));
+  assert(!JSON.stringify(diagnostics).includes('custom.example.test'));
+});
+
 test('completion events wait for the durable commit and deduplicate the saved memory', async () => {
   const { queue, context, store, events } = fixture({ provider: () => 'fixture' });
   context.DKFIFOProcessor.registerProvider('fixture', {

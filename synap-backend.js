@@ -34,6 +34,22 @@
     return String(backendUrl).replace(/\/+$/, '') + '/v1/recordings';
   }
 
+  function isManagedEndpoint(value) {
+    try {
+      const target = new URL(value), base = new URL(root.SynapAuth?.config().backendUrl);
+      const productionOrigins = [
+        'https://synap-backend-435475937223.asia-south1.run.app',
+        'https://synap-backend-idnycfpyqq-el.a.run.app',
+      ];
+      const sameService = target.origin === base.origin ||
+        (productionOrigins.includes(base.origin) && productionOrigins.includes(target.origin));
+      const prefix = base.pathname.replace(/\/+$/, '');
+      return target.protocol === 'https:' && !target.username && !target.password && sameService &&
+        (target.pathname.replace(/\/+$/, '') === prefix || target.pathname === prefix + '/v1' ||
+          target.pathname.startsWith(prefix + '/v1/'));
+    } catch (_) { return false; }
+  }
+
   function permanent(message) {
     var error = new Error(message);
     error.retryable = false;
@@ -604,6 +620,7 @@
   root.DKFIFOProcessor?.registerProvider('synap', processingProvider);
 
   root.SynapBackend = {
+    isManagedEndpoint:isManagedEndpoint,
     toRecordingFields:toRecordingFields,
     recordingMemory:function(id){return request('/v1/recordings/'+encodeURIComponent(id)+'/source');},
     segmentBounds:segmentBounds,
