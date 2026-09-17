@@ -359,8 +359,10 @@ const server = createStaticServer(root);
     await page.locator('[data-day-step="-1"]').click();
     await page.locator('.brain-tabs a[href="#library"]').click();
     await page.locator('.brain-tabs a[href="#myActions"]').click();
-    for (const id of ['dailyFocus', 'followupInbox', 'peopleMemory', 'ask'])
+    for (const id of ['dailyFocus', 'followupInbox', 'peopleMemory'])
       await page.locator('#actionsTab-' + id).click();
+    await page.locator('.brain-tabs a[href="#ask"]').click();
+    assert(await page.locator('#askInput').isVisible(), 'Ask stays reachable during capture');
     assert.equal(
       await page.locator('#headerCaptureToggle').getAttribute('aria-label'),
       'Stop listening',
