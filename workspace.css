@@ -53,11 +53,16 @@ body.synap-refresh [hidden] {
   display: none !important;
 }
 body.synap-refresh .topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-height: 66px;
   padding-block: 10px;
   gap: 10px;
   border-bottom: 1px solid var(--border);
   background: var(--chrome);
+}
+body.synap-refresh .topbar > :is(#recordingSessionBar, .header-media-notice) {
+  grid-column: 1 / -1;
 }
 body.synap-refresh .brand-logo.synap-brand-image {
   width: 102px !important;
@@ -934,23 +939,60 @@ body.synap-refresh .brain-empty {
 }
 @media (max-width: 640px) {
   body.synap-refresh .topbar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
+    min-height: 60px;
+    gap: 6px;
     padding: 8px 0;
   }
   body.synap-refresh .topbar .brand {
-    flex-basis: 100%;
+    flex: 0 1 auto;
+  }
+  body.synap-refresh .topbar .brand-logo.synap-brand-image {
+    width: clamp(60px, calc(100vw - 310px), 102px) !important;
+    max-width: 100%;
+    height: auto !important;
   }
   body.synap-refresh .topbar > .top-actions {
-    gap: 4px;
+    width: auto;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    gap: 3px;
+    margin-left: auto;
+    --header-control-radius: 10px;
+  }
+  body.synap-refresh
+    .topbar
+    :is(#headerBatteryStatus, #headerCaptureToggle, #headerPhoto, #headerVideo, #settingsButton) {
+    width: 36px;
+    min-width: 36px;
+    height: 44px;
+    flex: 0 0 36px;
+    padding-inline: 0;
   }
   body.synap-refresh .topbar .header-pendant-status {
-    max-width: 108px !important;
-    padding-inline: 8px;
+    width: 70px;
+    min-width: 70px;
+    max-width: 70px !important;
+    flex-basis: 70px;
+    justify-content: center;
+    gap: 3px;
+    padding-inline: 3px;
   }
-  body.synap-refresh .header-status-text {
-    font-size: 10px;
+  body.synap-refresh .topbar .header-status-dot {
+    display: none;
+    width: 4px;
+    height: 4px;
+    flex-basis: 4px;
+  }
+  body.synap-refresh .topbar .synap-battery-icon {
+    width: 28px;
+  }
+  body.synap-refresh .topbar .header-status-text {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 10px !important;
   }
   body.synap-refresh .brain-heading {
     flex-wrap: wrap;
@@ -974,6 +1016,20 @@ body.synap-refresh .brain-empty {
   }
   body.synap-refresh .memory-workspace-tabs {
     margin-bottom: 14px;
+  }
+}
+@media (max-width: 359px) {
+  body.synap-refresh .topbar .header-pendant-status {
+    width: 34px;
+    min-width: 34px;
+    flex-basis: 34px;
+    padding: 0;
+  }
+  body.synap-refresh .topbar .header-status-text {
+    display: none;
+  }
+  body.synap-refresh .topbar .header-status-dot {
+    display: block;
   }
 }
 @media (max-width: 360px) {
