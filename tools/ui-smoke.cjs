@@ -816,7 +816,13 @@ async function run() {
             /No matching items/,
           );
           await page.evaluate(() => SynapProvenance.openSource('ui-older-8', 0));
-          await page.waitForFunction(() => document.getElementById('recording-ui-older-8')?.open);
+          // Opening the card queues a separate step that focuses its transcript.
+          // Let that finish before typing a new query so focus cannot move
+          // between Playwright focusing the search input and inserting text.
+          await page.waitForFunction(() => {
+            const card = document.getElementById('recording-ui-older-8');
+            return card?.open && card.querySelector('.recording-transcript') === document.activeElement;
+          });
           assert.equal(
             await librarySearch.inputValue(),
             '',
