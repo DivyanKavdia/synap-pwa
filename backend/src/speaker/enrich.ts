@@ -1,9 +1,9 @@
 import { config } from '../config.js';
 import type { TranscriptWord } from '../store/types.js';
 import { log } from '../util/log.js';
-import { cosineSimilarity, extractSpeakerSample } from './audio.js';
+import { extractSpeakerSample } from './audio.js';
 import { embedSpeakerAudio, speakerServiceConfigured } from './client.js';
-import { readVoiceProfile } from './profile.js';
+import { readVoiceProfile, selfSimilarity } from './profile.js';
 
 interface Candidate {
   speaker: string;
@@ -40,7 +40,7 @@ export async function tagSelfSpeaker(
     if (!profile) return { words, matchedSpeaker: null, score: null };
 
     const speakers = [...new Set(
-      words.map((word) => word.speaker).filter((speaker): speaker is string => Boolean(speaker) && speaker !== 'YOU'),
+      words.map((word) => word.speaker).filter((speaker): speaker is string => Boolean(speaker) && speaker !== 'YOU' && speaker !== 'S?'),
     )];
     if (speakers.length === 0) return { words, matchedSpeaker: null, score: null };
 
@@ -58,7 +58,7 @@ export async function tagSelfSpeaker(
       if (embedded.model !== profile.model || embedded.embedding.length !== profile.embedding.length) return null;
       return {
         speaker,
-        score: cosineSimilarity(profile.embedding, embedded.embedding),
+        score: selfSimilarity(profile, embedded.embedding, embedded.model),
         model: embedded.model,
         speechMs: sample.speechMs,
       };

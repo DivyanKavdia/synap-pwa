@@ -192,11 +192,26 @@
       topics: [...topics].sort((a, b) => b[1] - a[1]),
     };
   }
+  function currentTasks(list) {
+    const snapshot = root.SynapInteractionSurfaces?.actionSnapshot?.();
+    if (snapshot) {
+      const sources = new Map(list.map(r => [String(r.id), r]));
+      return snapshot.filter(item => sources.has(String(item.recordingId))).map(item => ({...item, r:sources.get(String(item.recordingId))}));
+    }
+    const scope = root.SynapAuth?.isSignedIn?.() ? root.SynapAuth.session?.()?.profile?.uid : '';
+    return extract(list).actions.map(item => {
+      const value = {...item,owner:item.value?.owner || '',state:item.value?.state || 'open'};
+      return root.SynapActionState?.apply ? root.SynapActionState.apply(value,scope) : value;
+    });
+  }
   function buildWeekSummary(list, range) {
     const e = extract(list),
-      activeDays = new Set(list.map((r) => day(r.createdAt))).size;
+      activeDays = new Set(list.map((r) => day(r.createdAt))).size,
+      tasks = currentTasks(list);
     return {
       range,
+      completed: tasks.filter(x=>x.state === 'done').length,
+      open: tasks.filter(x=>x.state === 'open').length,
       recordings: list.length,
       activeDays,
       conversations: e.convs.length,
@@ -210,8 +225,9 @@
     };
   }
   function collectDueItems(list) {
-    return extract(list)
-      .actions.filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x.due) && !Number.isNaN(Date.parse(x.due)))
+    return currentTasks(list)
+      .filter(x => x.state === 'open' && !x.unknown && !x.needsReview)
+      .filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x.due) && !Number.isNaN(Date.parse(x.due)))
       .sort(
         (a, b) => a.due.localeCompare(b.due) || new Date(a.r.createdAt) - new Date(b.r.createdAt),
       );
@@ -472,6 +488,7 @@
         small = document.createElement('small');
       strong.textContent = x.text || x.c?.title || 'Conversation';
       small.textContent =
+        (x.state ? [x.state === 'done' ? 'Completed' : x.state === 'dismissed' ? 'Dismissed' : 'Open',x.due ? 'Due ' + x.due : 'No due date'].join(' · ') : '') ||
         x.c?.summary ||
         (x.c?.title && x.c.title !== strong.textContent ? x.c.title : '') ||
         x.r.name ||
@@ -502,7 +519,8 @@
         ? s.activeDays +
           ' active day' +
           (s.activeDays === 1 ? '' : 's') +
-          (s.topics.length ? ' · ' + s.topics.slice(0, 3).join(' · ') : '')
+          (s.topics.length ? ' · ' + s.topics.slice(0, 3).join(' · ') : '') +
+          ' · ' + s.completed + ' actions completed · ' + s.open + ' open'
         : s.narrative;
     const metrics = $('#synapWeekMetrics');
     if (metrics) {
@@ -526,7 +544,7 @@
         metrics.appendChild(b);
       });
     }
-    renderDetail(activeWeekView, e);
+    renderDetail(activeWeekView, {...e, actions:currentTasks(list).filter(x=>x.kind!=='follow-up')});
     const all = $('#synapCalendarAll');
     if (all) {
       all.hidden = !due.length;
@@ -680,6 +698,8 @@
       'synap-processing-complete',
       'synap-recording-saved',
     ].forEach((n) => root.addEventListener(n, scheduleRefresh));
+    root.addEventListener('synap-actions-rendered', render);
+    root.addEventListener('synap-follow-up-updated', scheduleRefresh);
     root.SynapAuth?.onChange?.(() => {
       hydratedWeekKey = '';
       setTimeout(() => refresh(true), 40);

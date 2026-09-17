@@ -188,6 +188,9 @@
       followUps: (c.follow_ups || [])
         .map((x) => ({ text: textOf(x), meta: mine(x?.owner) ? 'You' : x?.owner || '' }))
         .filter((x) => x.text),
+      outcomes: (c.outcomes || []).map(textOf).filter(Boolean),
+      risks: (c.risks || []).map(textOf).filter(Boolean),
+      questions: (c.unresolved_questions || []).map(textOf).filter(Boolean),
       points: (c.key_points || []).map(textOf).filter(Boolean),
       topics: (c.topics || []).map(String).filter(Boolean),
     };
@@ -266,7 +269,7 @@
       items.length
         ? `<section class="digest-facts"><h4>${label}</h4><ul>${items.map((x) => `<li>${esc(typeof x === 'string' ? x : x.text)}${x.meta ? `<small>${esc(x.meta)}</small>` : ''}</li>`).join('')}</ul></section>`
         : '';
-    return `<summary class="conversation-card"><span class="conversation-time">${esc(item.time)}</span><span class="conversation-copy"><strong>${esc(item.title)}</strong>${item.participants.length ? `<span class="conversation-people">With ${esc(item.participants.join(' · '))}</span>` : ''}</span><svg class="conversation-arrow" aria-hidden="true"><use href="#i-chevron"/></svg></summary><div class="conversation-detail"><p class="digest-summary">${esc(item.summary || 'Summary is not available for this conversation yet.')}</p>${section('Key points', item.points)}${section('Decisions', item.decisions)}${section('Next steps', item.actions)}${section('Follow-ups', item.followUps)}${item.topics.length ? `<p class="digest-topics">${item.topics.map(esc).join(' · ')}</p>` : ''}<button type="button" class="conversation-source source-jump" data-id="${esc(item.id)}" data-offset-ms="${item.startMs}">Open recording & source ↗</button></div>`;
+    return `<summary class="conversation-card"><span class="conversation-time">${esc(item.time)}</span><span class="conversation-copy"><strong>${esc(item.title)}</strong>${item.participants.length ? `<span class="conversation-people">With ${esc(item.participants.join(' · '))}</span>` : ''}</span><svg class="conversation-arrow" aria-hidden="true"><use href="#i-chevron"/></svg></summary><div class="conversation-detail"><p class="digest-summary">${esc(item.summary || 'Summary is not available for this conversation yet.')}</p>${section('What changed', item.outcomes)}${section('Key points', item.points)}${section('Decisions', item.decisions)}${section('Next steps', item.actions)}${section('Follow-ups', item.followUps)}${section('Risks and blockers', item.risks)}${section('Still unresolved', item.questions)}${item.topics.length ? `<p class="digest-topics">${item.topics.map(esc).join(' · ')}</p>` : ''}<button type="button" class="conversation-source source-jump" data-id="${esc(item.id)}" data-offset-ms="${item.startMs}">Open recording & source ↗</button></div>`;
   }
 
   function renderConversations(items) {
@@ -325,6 +328,7 @@
     const decisions = [],
       my = [],
       waiting = [],
+      unclear = [],
       topics = new Map(),
       people = new Map(),
       conversations = [];
@@ -354,7 +358,7 @@
             startMs: sourceOffset(a, entry.conversation),
             meta: [owner, due].filter(Boolean).join(' · '),
           };
-        (mine(owner) || !owner ? my : waiting).push(item);
+        (!owner ? unclear : mine(owner) ? my : waiting).push(item);
       }
       for (const entry of followUpEntries(r)) {
         const text = textOf(entry.value);
@@ -368,7 +372,7 @@
             startMs: sourceOffset(entry.value, entry.conversation),
             meta: [owner, 'Follow-up'].filter(Boolean).join(' · '),
           };
-        (mine(owner) ? my : waiting).push(item);
+        (!owner ? unclear : mine(owner) ? my : waiting).push(item);
       }
       for (const t of topicsOf(r)) topics.set(t, (topics.get(t) || 0) + 1);
       for (const p of m.people || r.people || []) {
@@ -397,6 +401,7 @@
       decisions,
       my,
       waiting,
+      unclear,
       topics: [...topics].sort((a, b) => b[1] - a[1]),
       people: [...people.values()].sort((a, b) => b.last - a.last),
       conversations: conversations.sort(

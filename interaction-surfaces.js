@@ -9,7 +9,9 @@
     canonicalPeople = null,
     canonicalFollowups = null,
     canonicalAt = 0,
-    canonicalScope = '';
+    canonicalScope = '',
+    actionCapabilities = 1,
+    actionSnapshotReady = false;
   let canonicalPending = { people: null, followups: null },
     canonicalAgain = { people: false, followups: false },
     canonicalGeneration = 0,
@@ -135,7 +137,9 @@
         due: a.due_date || '',
         state: a.state || a.status || 'open',
         kind: a.kind || 'commitment',
-        mine: mine(owner) || !owner,
+        mine: mine(owner),
+        unknown: !owner,
+        evidence: a.evidence || '', context: entry.conversation?.title || '', condition: a.condition || '',
         startMs: sourceOffset(a, entry.conversation),
       });
     }
@@ -150,7 +154,8 @@
         owner,
         due: v.due_date || '',
         state: v.state || v.status || 'open',
-        mine: mine(owner),
+        mine: mine(owner), unknown: !owner,
+        evidence: v.evidence || '', context: entry.conversation?.title || '', condition: v.condition || '',
         startMs: sourceOffset(v, entry.conversation),
         kind: 'follow-up',
       });
@@ -173,6 +178,11 @@
       owner: String(item?.owner?.display_name || ''),
       due: item?.due_date || '',
       state: item?.state || 'open',
+      unknown: ownerType === 'unknown' || !item?.owner?.display_name,
+      evidence: item?.evidence || '', context: item?.context || '', condition: item?.condition || '',
+      checkIn: item?.check_in_date || '', snoozedUntil: item?.snoozed_until || '',
+      pinned: Boolean(item?.pinned), needsReview: Boolean(item?.needs_review),
+      dueSource: item?.due_date_source || 'recording', revision: item?.revision,
       recordedAt:
         localRecord(item?.source?.recording_id)?.createdAt || item?.source?.recorded_at || '',
       mine: ownerType === 'self',
@@ -221,8 +231,7 @@
   }
   function actions() {
     return followData().map((item) => ({
-      ...item,
-      state: item.id ? item.state : root.SynapActionState.state(item, accountKey()),
+      ...(item.id ? item : root.SynapActionState.apply(item, accountKey())),
       actionKey: item.id ? 'cloud:' + item.id : 'local:' + root.SynapActionState.key(item),
     }));
   }
@@ -258,7 +267,7 @@
         ...(value.slice(0, 4) !== String(new Date().getFullYear()) ? { year: 'numeric' } : {}),
       });
     const label = due
-      ? 'Due ' + dateLabel(due)
+      ? 'Due ' + dateLabel(due) + (item.dueSource === 'user' ? ' · Set by you' : '')
       : recorded
         ? 'Recorded ' + dateLabel(recorded) + ' · No due date'
         : 'No due date';
@@ -268,7 +277,12 @@
           ...item,
           meta: [
             item.kind === 'reminder' ? 'Suggested reminder' : '',
-            item.mine ? 'You' : item.owner,
+            item.mine ? 'You' : item.owner || 'Owner needs clarification',
+            item.focusReason || '',
+            item.needsReview ? 'Source changed · review' : '',
+            item.condition ? 'Conditional: ' + item.condition : '',
+            item.checkIn ? 'Check in ' + dateLabel(item.checkIn) : '',
+            item.snoozedUntil ? 'Deferred until ' + dateLabel(item.snoozedUntil) : '',
             label,
             item.state === 'dismissed' ? 'Dismissed' : '',
           ]
@@ -287,7 +301,11 @@
     const completed = item.state !== 'open';
     button.textContent = button.disabled ? 'Saving…' : completed ? 'Reopen' : 'Complete';
     button.setAttribute('aria-label', (completed ? 'Reopen: ' : 'Mark complete: ') + item.text);
-    row.appendChild(button);
+    const controls = document.createElement('div'); controls.className = 'synap-follow-controls';
+    const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'synap-follow-edit';
+    edit.textContent = due ? 'Details / edit' : 'Set deadline'; edit.dataset.actionKey = item.actionKey;
+    edit.setAttribute('aria-label', 'Edit action: ' + item.text);
+    controls.append(button, edit); row.appendChild(controls);
     return row;
   }
   function renderActionList(id, items, decisions = false) {
@@ -308,13 +326,27 @@
   }
   function renderFollowups(mode = activeMode()) {
     const entries = filteredActions();
-    const mineItems = entries.filter((x) => x.mine);
-    const waiting = entries.filter((x) => !x.mine);
+    const mineItems = entries.filter((x) => x.mine && !x.needsReview);
+    const waiting = entries.filter((x) => !x.mine && !x.unknown && !x.needsReview);
+    const unclear = entries.filter((x) => x.unknown || x.needsReview);
+    const tabs = $('.followup-tabs');
+    if (tabs && !tabs.querySelector('[data-follow=clarify]')) {
+      const tab = document.createElement('button'); tab.type = 'button'; tab.dataset.follow = 'clarify';
+      tab.textContent = 'Needs clarification'; tabs.appendChild(tab);
+    }
+    let focus = $('#actionFocus');
+    if (!focus && $('#commitmentList')) {
+      focus = document.createElement('section'); focus.id = 'actionFocus';
+      focus.innerHTML = '<header><strong>Focus next</strong></header><p>Up to three open actions, ordered by deadline, check-in date and your pins.</p><div id=actionFocusList></div>';
+      $('#commitmentList').before(focus);
+    }
+    const focusItems = root.SynapActionState.focus(entries);
+    renderActionList('actionFocusList', focusItems);
     const count = $('#followupCount');
     if (count) count.textContent = String(entries.length);
     renderActionList(
       'followupList',
-      mode === 'mine' ? mineItems : mode === 'waiting' ? waiting : entries,
+      mode === 'mine' ? mineItems : mode === 'waiting' ? waiting : mode === 'clarify' ? unclear : entries,
     );
     renderActionList('commitmentList', mineItems);
     renderActionList('waitingList', waiting);
@@ -330,6 +362,7 @@
     ]) {
       if ($('#' + id)) $('#' + id).textContent = String(items.length);
     }
+    root.dispatchEvent?.(new CustomEvent('synap-actions-rendered'));
   }
   const PEOPLE_PREVIEW_LIMIT = 3;
   let peopleExpanded = false,
@@ -480,6 +513,9 @@
   }
   function resetCanonical(key) {
     canonicalScope = key;
+    actionCapabilities = 1;
+    actionSnapshotReady = false;
+    root.SynapActionEditor?.close?.();
     canonicalPeople = null;
     canonicalFollowups = null;
     canonicalAt = 0;
@@ -577,11 +613,13 @@
             if (kind === 'people') {
               canonicalPeople = rows;
               root.SynapPeopleConfirmUI?.acceptPeople?.({ people: rows });
-            } else
+            } else {
+              actionCapabilities = result?.capabilities?.actions_version || 1;
               canonicalFollowups = rows.map((item) => {
                 const saved = actionMutations.get(String(item.id));
-                return saved?.version > mutationAtStart ? { ...item, state: saved.state } : item;
+                return saved?.version > mutationAtStart ? { ...item, ...saved.patch } : item;
               });
+            }
             listStates[kind] = {};
           } catch (error) {
             if (!valid()) return;
@@ -620,6 +658,7 @@
     const loaded = await load().catch(() => currentRecords);
     if (version !== refreshGeneration || key !== accountKey()) return;
     currentRecords = loaded;
+    actionSnapshotReady = true;
     renderPeopleSource();
     renderFollowups(activeMode());
     listStatus('followups');
@@ -645,11 +684,11 @@
     try {
       if (item.id) {
         if (!root.SynapBackend?.resolveFollowUp) throw Error('Reconnect to save this action.');
-        await root.SynapBackend.resolveFollowUp(item.id, state);
+        const response = await root.SynapBackend.resolveFollowUp(item.id, state);
         if (key !== accountKey() || generation !== canonicalGeneration) return;
-        actionMutations.set(item.id, { version: ++actionRevision, state });
+        actionMutations.set(item.id, { version: ++actionRevision, patch: { state, revision: response.revision } });
         canonicalFollowups = canonicalFollowups.map((x) =>
-          String(x.id) === item.id ? { ...x, state } : x,
+          String(x.id) === item.id ? { ...x, state, revision: response.revision } : x,
         );
       } else {
         const saved = await root.SynapActionState.save(item, state, key);
@@ -676,6 +715,28 @@
       }
     }
   }
+  async function saveEdits(item, patch) {
+    const key = accountKey(), generation = canonicalGeneration;
+    if (item.id) {
+      const response = await root.SynapBackend.updateFollowUp(item.id, { ...patch, ...(item.revision ? {revision: item.revision} : {}) });
+      if (key !== accountKey() || generation !== canonicalGeneration) throw Error('Account changed. Reopen this action.');
+      // Force a fresh read so the next edit gets the new revision. Protect an
+      // already-running read with the same mutation fence used by completion.
+      const wire = { ...patch, revision: response.revision, ...(patch.due_date !== undefined ? {due_date_source: "user"} : {}), ...(patch.owner !== undefined ? {owner:{type:patch.owner === 'self' ? 'self' : patch.owner ? 'other' : 'unknown',display_name:patch.owner === 'self' ? 'You' : patch.owner}} : {}) };
+      actionMutations.set(item.id, { version: ++actionRevision, patch: wire });
+      canonicalFollowups = canonicalFollowups.map(x => String(x.id) === item.id ? {...x,...wire} : x);
+    } else {
+      const local = { ...(patch.state ? {state:patch.state} : {}), text: patch.task ?? item.text, owner: patch.owner ?? item.owner,
+        due: patch.due_date === undefined ? item.due : patch.due_date || '', dueSource: patch.due_date === undefined ? item.dueSource : 'user',
+        checkIn: patch.check_in_date || '', snoozedUntil: patch.snoozed_until || '', pinned: Boolean(patch.pinned) };
+      const saved = await root.SynapActionState.edit(item, local, key);
+      if (key !== accountKey() || generation !== canonicalGeneration) throw Error('Account changed. Reopen this action.');
+      ++refreshGeneration; currentRecords = currentRecords.map(r => r.id === saved.id ? saved : r);
+    }
+    renderFollowups();
+    root.dispatchEvent(new CustomEvent('synap-follow-up-updated',{detail:{id:item.id||item.actionKey}}));
+    if (item.id) await loadCanonical(true, 'followups');
+  }
   function recordingForInsight(card) {
     const id = card?.dataset?.recordingId;
     if (id) return id;
@@ -688,6 +749,13 @@
     document.addEventListener(
       'click',
       (event) => {
+        const edit = event.target.closest?.('.synap-follow-edit');
+        if (edit) {
+          event.preventDefault(); event.stopImmediatePropagation();
+          const item = actionItems.get(edit.dataset.actionKey);
+          if (item) root.SynapActionEditor?.open(item, { advanced: !item.id || actionCapabilities >= 2, save: saveEdits });
+          return;
+        }
         const done = event.target.closest?.('.synap-follow-done');
         if (done) {
           event.preventDefault();
@@ -792,6 +860,8 @@
     openAsk,
     openSource,
     loadCanonical,
+    actions,
+    actionSnapshot: () => actionSnapshotReady ? actions() : null,
   });
   if (document.readyState === 'loading')
     document.addEventListener('DOMContentLoaded', init, { once: true });

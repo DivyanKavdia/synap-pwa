@@ -1,4 +1,6 @@
 import { openJson, sealJson, type Binding, type Sealed } from '../crypto/envelope.js';
+import { cosineSimilarity } from './audio.js';
+import type { SpeakerEmbeddingResult } from './client.js';
 import * as db from '../store/firestore.js';
 
 export interface VoiceProfilePayload {
@@ -7,6 +9,7 @@ export interface VoiceProfilePayload {
   sampleDurationMs: number;
   consentVersion: number;
   displayName?: string;
+  references?: { embedding: number[]; sourceId: string }[];
 }
 
 interface VoiceProfileDoc {
@@ -23,6 +26,7 @@ export interface VoiceProfileView {
   createdAt: string | null;
   updatedAt: string | null;
   displayName: string | null;
+  sampleCount?: number;
 }
 
 const profileRef = (uid: string) =>
@@ -53,6 +57,7 @@ export async function voiceProfileStatus(uid: string, dek: Buffer): Promise<Voic
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
     displayName: profile.displayName || null,
+    sampleCount: profile.references?.length || 1,
   };
 }
 
@@ -83,6 +88,7 @@ export async function saveVoiceProfile(
     createdAt,
     updatedAt: now,
     displayName: profile.displayName || null,
+    sampleCount: profile.references?.length || 1,
   };
 }
 
@@ -103,4 +109,38 @@ export async function deleteVoiceProfile(uid: string): Promise<boolean> {
   if (!snapshot.exists) return false;
   await ref.delete();
   return true;
+}
+
+export class SelfSampleError extends Error {}
+export function addSelfSample(existing: VoiceProfilePayload, sample: SpeakerEmbeddingResult, sourceId: string): VoiceProfilePayload {
+  if (existing.model !== sample.model) throw new SelfSampleError('The voice model changed. Re-enroll your voice first.');
+  const references = existing.references?.length ? existing.references : [{ embedding: existing.embedding, sourceId: 'enrollment' }];
+  if (references.some(reference => reference.sourceId === sourceId)) return existing;
+  if (references.every(reference => cosineSimilarity(reference.embedding, sample.embedding) < .78))
+    throw new SelfSampleError('This sample differs from your saved voice. Check the speaker or re-enroll with clearer speech.');
+  return { ...existing, references: [...references, { embedding: sample.embedding, sourceId }].slice(-3) };
+}
+export function selfSimilarity(profile: VoiceProfilePayload, embedding: number[], model: string): number {
+  if (profile.model !== model) return -1;
+  const references = profile.references?.length ? profile.references.map(item => item.embedding) : [profile.embedding];
+  const scores = references.map(reference => cosineSimilarity(reference, embedding)).sort((a,b) => b-a).slice(0,2);
+  return scores.reduce((a,b) => a+b,0) / scores.length;
+}
+/** Only an explicitly confirmed self label can contribute an enrollment sample. */
+export async function saveSelfSample(uid: string, dek: Buffer, sample: SpeakerEmbeddingResult, recordingId: string, label: string, revision: string, name: string): Promise<void> {
+  await db.firestore().runTransaction(async tx => {
+    const record = await tx.get(db.paths.recording(uid, recordingId));
+    if (!record.exists || record.data()?.state !== 'ready' || record.data()?.updatedAt !== revision || record.data()?.selfSpeakerLabel !== label)
+      throw new SelfSampleError('This recording changed. Save your speaker identity again before enrolling.');
+    const ref = profileRef(uid), snapshot = await tx.get(ref), now = new Date().toISOString();
+    const previous = snapshot.exists ? openJson<VoiceProfilePayload>(dek, (snapshot.data() as VoiceProfileDoc).sealedProfile, binding(uid)) : null;
+    const sourceId = recordingId + ':' + label;
+    const payload: VoiceProfilePayload = previous ? addSelfSample(previous, sample, sourceId) : {
+      embedding: sample.embedding, model: sample.model, sampleDurationMs: sample.duration_ms, consentVersion: 1,
+      references: [{ embedding: sample.embedding, sourceId }],
+    };
+    payload.displayName = name;
+    tx.set(ref, { profileId: 'self', sealedProfile: sealJson(dek, payload, binding(uid)),
+      createdAt: snapshot.exists ? (snapshot.data() as VoiceProfileDoc).createdAt : now, updatedAt: now });
+  });
 }

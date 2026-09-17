@@ -6,6 +6,33 @@ Reviewed against commit `65c30b66d48536f03e6d47ec0fb2046151ab4971`.
 This document proposes behavior and an implementation sequence. It does not
 describe a new production release or measured model accuracy.
 
+## First implementation: shell139-outcomes
+
+The first implementation adds editable deadlines with recorded/user provenance,
+separate check-in dates, pins, deferral, task/owner/status editing, exact evidence
+and conditions, a three-item Focus list, and an explicit clarification queue.
+Conversation recaps expose outcomes, risks and unanswered questions. Weekly
+progress and calendar exports use current task state when available.
+
+Speaker corrections and transcript-only rebuilds now reconcile the action index.
+Stable source/text matches preserve completion and manual edits; vanished or
+ambiguous source matches require review. Explicit “That’s me” labels determine
+wearer ownership. A consented sample from retained pendant audio can augment the
+encrypted wearer profile, with at most three references, unchanged match/margin
+thresholds, model compatibility checks and no automatic enrollment. Unknown
+speaker spans are never enrollment candidates. Incomplete or text-disagreeing
+annotations continue to preserve the primary transcript and remain unassigned.
+
+This is the initial implementation, not the whole roadmap below. Cross-recording
+semantic reconciliation, draft assistance, notification delivery and evaluation
+against a real consented voice corpus remain future work. The prompt improves
+semantic handling, but quote validation alone does not prove a claim’s meaning.
+Historical recaps remain historical; the action surfaces show current state.
+
+Deployment is gated by the existing live dependency checks. Advanced cloud edit
+and speaker controls require advertised backend capabilities. The known missing
+Firestore index/CI-permission problem is not bypassed by this release.
+
 ## The job to do
 
 After opening Synap, a person should quickly understand:

@@ -39,11 +39,13 @@ const ACTION = {
     task: { type: 'string' },
     kind: { type: 'string', enum: ['commitment', 'reminder'], description: 'reminder only for an explicit spoken request to remember or be reminded to do something' },
     evidence: { type: 'string', description: 'Exact short supporting quote from the transcript' },
-    owner: { type: 'string', description: 'A name from the people list, or "self"' },
+    owner: { type: 'string', description: 'A name from the people list, "self", or empty when ownership is unestablished. Never infer self from an anonymous I.' },
     due_date: { type: ['string', 'null'], description: 'YYYY-MM-DD, or null if never stated' },
+    due_evidence: { type: ['string', 'null'], description: 'Exact quote establishing the deadline for THIS task and owner; null if none. A dependency deadline is not this task deadline.' },
+    condition: { type: ['string', 'null'], description: 'Exact short quote stating a prerequisite such as after costs are confirmed; null if unconditional.' },
     ...SOURCE_FIELDS,
   },
-  required: ['task', 'kind', 'evidence', 'owner', 'due_date', 'start_ms', 'end_ms'],
+  required: ['task', 'kind', 'evidence', 'owner', 'due_date', 'due_evidence', 'condition', 'start_ms', 'end_ms'],
 } as const;
 
 const STATEMENT = {
@@ -63,8 +65,9 @@ const GROUNDED_STATEMENT = {
 
 const FOLLOW_UP = {
   type: 'object',
-  properties: { text: { type: 'string' }, owner: { type: 'string', description: 'Known name or self; empty string if no owner is established.' }, ...SOURCE_FIELDS },
-  required: ['text', 'owner', 'start_ms', 'end_ms'],
+  properties: { text: { type: 'string' }, owner: { type: 'string', description: 'Known name or self; empty string if no owner is established.' }, evidence: GROUNDED_STATEMENT.properties.evidence,
+    due_date: ACTION.properties.due_date, due_evidence: ACTION.properties.due_evidence, condition: ACTION.properties.condition, ...SOURCE_FIELDS },
+  required: ['text', 'owner', 'evidence', 'due_date', 'due_evidence', 'condition', 'start_ms', 'end_ms'],
 } as const;
 
 const CONVERSATION = {
@@ -86,7 +89,7 @@ const CONVERSATION = {
     },
     topics: { type: 'array', items: { type: 'string' } },
     chapters: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, summary: { type: 'string' }, ...SOURCE_FIELDS }, required: ['title', 'summary', 'start_ms', 'end_ms'] }, description: 'Non-overlapping topic chapters inside this conversation. Use real topic changes, not upload boundaries; at most 12.' },
-    unresolved_questions: { type: 'array', items: STATEMENT },
+    unresolved_questions: { type: 'array', items: GROUNDED_STATEMENT },
     outcomes: { type: 'array', items: GROUNDED_STATEMENT, description: 'Concrete results or completed events established in this conversation. Exclude proposals, future tasks, and duplicate decisions.' },
     key_facts: { type: 'array', items: GROUNDED_STATEMENT, description: 'Up to 12 useful facts, numbers, dates or constraints explicitly established. Keep final corrections; do not repeat outcomes or decisions.' },
     risks: { type: 'array', items: GROUNDED_STATEMENT, description: 'Up to 8 explicitly stated unresolved risks, blockers or dependencies. Preserve uncertainty. Exclude hypothetical examples, resolved concerns and inferred risks.' },

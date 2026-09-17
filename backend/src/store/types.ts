@@ -80,6 +80,8 @@ export interface RecordingDoc {
   sealedTranscript: Sealed | null;
   /** User-confirmed names for this recording's original speaker labels. */
   sealedSpeakerNames?: Sealed | null;
+  /** Explicit user choice of the wearer among this recording's source labels. */
+  selfSpeakerLabel?: string | null;
   /** Automatic matches are separate from source labels and explicit user overrides. */
   sealedIdentifiedSpeakers?: Sealed | null;
   createdAt: string;
@@ -170,7 +172,7 @@ export interface PersonDoc {
 export interface FollowUpDoc {
   followUpId: string;
   sealedTask: Sealed;
-  ownerType: 'self' | 'other';
+  ownerType: 'self' | 'other' | 'unknown';
   counterpartyPersonId: string | null;
   dueDate: string | null;
   state: 'open' | 'done' | 'dismissed';
@@ -181,6 +183,27 @@ export interface FollowUpDoc {
   updatedAt: string;
   /** Original recording time; absent on older tasks. */
   recordedAt?: string;
+  endMs?: number;
+  /** Stable source association survives owner and deadline corrections. */
+  sourceKey?: string;
+  sourceMissing?: boolean;
+  dueDateSource?: 'recording' | 'user';
+  sourceDueDate?: string | null;
+  checkInDate?: string | null;
+  snoozedUntil?: string | null;
+  pinned?: boolean;
+  userEdited?: { task?: boolean; owner?: boolean; dueDate?: boolean };
+}
+
+export interface FollowUpContent {
+  task: string;
+  sourceTask?: string;
+  owner: string;
+  kind?: string;
+  evidence?: string;
+  context?: string;
+  condition?: string;
+  dueEvidence?: string;
 }
 
 export interface DayDoc {
@@ -218,6 +241,8 @@ export interface MemoryAction {
   evidence?: string;
   owner: string;
   due_date: string | null;
+  due_evidence?: string | null;
+  condition?: string | null;
   start_ms: number;
   end_ms: number;
 }
@@ -229,7 +254,7 @@ export interface MemoryConversation {
   participants?: string[];
   mentioned_people?: string[];
   chapters?: MemoryChapter[];
-  unresolved_questions?: { text: string; start_ms: number; end_ms: number }[];
+  unresolved_questions?: MemoryStatement[];
   title: string;
   summary: string;
   start_ms: number;
@@ -241,7 +266,7 @@ export interface MemoryConversation {
   risks?: MemoryStatement[];
   decisions: MemoryStatement[];
   action_items: MemoryAction[];
-  follow_ups: { text: string; owner: string; start_ms: number; end_ms: number }[];
+  follow_ups: { text: string; owner: string; start_ms: number; end_ms: number; evidence?: string; due_date?: string | null; due_evidence?: string | null; condition?: string | null }[];
 }
 
 export interface StructuredMemory {
@@ -263,6 +288,9 @@ export interface DailyBrief {
   highlights: { text: string; recording_id: string; start_ms: number }[];
   people: string[];
   topics: string[];
+  outcomes?: { text: string; recording_id: string; start_ms: number }[];
+  risks?: { text: string; recording_id: string; start_ms: number }[];
+  questions?: { text: string; recording_id: string; start_ms: number; action_id?: string }[];
 }
 
 export interface TranscriptWord {

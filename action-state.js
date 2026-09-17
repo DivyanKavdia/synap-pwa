@@ -52,6 +52,7 @@
     return Boolean(value && value >= bounds[0] && value <= bounds[1]);
   }
   function key(item) {
+    if (item.localKey) return item.localKey;
     return JSON.stringify([
       item.recordingId || item.r?.id,
       item.startMs || 0,
@@ -87,5 +88,47 @@
     });
     return saved;
   }
-  root.SynapActionState = Object.freeze({ day, dueDay, range, matches, key, state, save });
+  function apply(item, scope) {
+    const localKey = key(item), edits = item.r?.actionEdits?.[scope || 'local']?.[localKey] || {};
+    const owner = edits.owner === undefined ? item.owner : edits.owner;
+    return { ...item, localKey, ...edits, owner,
+      mine: /^(me|i|myself|self|you|user)$/i.test(owner || ''), unknown: !owner,
+      state: state(item, scope) };
+  }
+  async function edit(item, patch, scope) {
+    journal ||= new root.DKAudioStore();
+    return journal.atomic(['recordings'], (stores, result, tx) => {
+      const request = stores.recordings.get(item.recordingId || item.r?.id);
+      request.onsuccess = () => {
+        const recording = request.result;
+        if (!recording) { tx.abort(); return; }
+        const account = scope || 'local', localKey = key(item);
+        const updated = { ...recording, actionEdits: { ...recording.actionEdits,
+          [account]: { ...recording.actionEdits?.[account], [localKey]: {
+            ...recording.actionEdits?.[account]?.[localKey], ...patch,
+          } } } };
+        if (patch.state) updated.actionStates = { ...recording.actionStates, [account]: { ...recording.actionStates?.[account], [localKey]: patch.state } };
+        stores.recordings.put(updated); result(updated);
+      };
+    });
+  }
+  function priority(item, now = new Date()) {
+    const today = day(now), due = dueDay(item.due), checkIn = dueDay(item.checkIn);
+    if (due && due < today) return [0, 'Overdue'];
+    if (due === today) return [1, 'Due today'];
+    if (checkIn && checkIn <= today) return [2, 'Check-in due'];
+    if (item.pinned) return [3, 'Pinned by you'];
+    if (due) return [4, 'Upcoming deadline'];
+    return [5, 'Set a deadline'];
+  }
+  function focus(items, now = new Date()) {
+    const today = day(now);
+    return items.filter(x => x.state === 'open' && !x.unknown && !x.needsReview && x.kind !== 'reminder' &&
+      (!x.snoozedUntil || x.snoozedUntil <= today) && (!x.condition || x.pinned || (x.checkIn && x.checkIn <= today)) && (x.mine || (x.checkIn && x.checkIn <= today)))
+      .map(x => ({ ...x, focusReason: x.condition ? 'Check prerequisite' : priority(x, now)[1] }))
+      .sort((a,b) => priority(a,now)[0] - priority(b,now)[0] ||
+        (dueDay(a.due) || '9999').localeCompare(dueDay(b.due) || '9999') ||
+        String(a.recordingId).localeCompare(String(b.recordingId)) || a.startMs-b.startMs).slice(0,3);
+  }
+  root.SynapActionState = Object.freeze({ day, dueDay, range, matches, key, state, save, apply, edit, priority, focus });
 })(globalThis);

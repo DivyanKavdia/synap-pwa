@@ -67,6 +67,6 @@ const legacy = {
 const legacyDerived = api.derive([legacy]);
 assert.equal(legacyDerived.decisions[0].text, 'Keep legacy support');
 assert(legacyDerived.my.some(item => item.text === 'Legacy task'));
-assert(legacyDerived.waiting.some(item => item.text === 'Legacy follow-up'));
+assert(legacyDerived.unclear.some(item => item.text === 'Legacy follow-up'));
 
 console.log('PASS: Actions reads current conversation memory schema and remains legacy-compatible.');

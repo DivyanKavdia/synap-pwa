@@ -51,7 +51,7 @@ const SEGMENT_MS = 30_000;
 export interface ProcessRecordingOptions {
   /** Reuse sealed segment transcripts only. Missing transcript windows are an error; never call STT. */
   skipTranscription?: boolean;
-  /** Refresh the sealed recording memory/day brief without rewriting retrieval/people/follow-up indexes. */
+  /** Refresh memory from retained transcripts and republish derived indexes while preserving human action state. */
   memoryOnly?: boolean;
 }
 
@@ -117,9 +117,7 @@ export async function processRecording(
       await patch({ state: 'understanding', progress: 0.55 });
       memory = await understand(uid, recordingId, dek, recording, segments, patch, lease);
     }
-    if (options.memoryOnly) {
-      await patch({ state: 'ready', progress: 1, errorCode: null, retryable: false, processingLease: null });
-    } else {
+    {
       await patch({ state: 'indexing', progress: 0.8 });
       const source = await db.getRecording(uid, recordingId);
       if (!source) throw new Error('Unknown recording');
@@ -135,7 +133,9 @@ export async function processRecording(
       // The fence also prevents a delayed failure from undoing another worker's
       // success or resurrecting a recording the user deleted.
       await patch(options.memoryOnly && recording.state === 'ready'
-        ? { state: 'ready', progress: 1, errorCode: null, retryable: false, processingLease: null }
+        ? { state: 'ready', progress: 1, errorCode: null, retryable: false, processingLease: null,
+            sealedMemory: recording.sealedMemory, sealedTranscript: recording.sealedTranscript,
+            sealedIdentifiedSpeakers: recording.sealedIdentifiedSpeakers || null }
         : { state: 'failed', errorCode: message.slice(0, 200), retryable, processingLease: null,
           processingFailure: { ...failure, message: message.slice(0, 200),
             ...(failure.retryAfterMs ? { retryAt: Date.now() + failure.retryAfterMs } : {}) } });
@@ -311,7 +311,7 @@ async function understand(
     transcript: applySpeakerNames(transcript, speakerNames),
     confirmedSpeakers,
     identifiedSpeakers:recording.sealedSpeakerNames ? {} : identified,
-    selfSpeakerName: speakerNames.YOU || (!recording.sealedSpeakerNames ? selfName : undefined),
+    selfSpeakerName: (recording.selfSpeakerLabel ? speakerNames[recording.selfSpeakerLabel] : undefined) || speakerNames.YOU || (!recording.sealedSpeakerNames ? selfName : undefined),
     transcriptWarnings:segments.filter(segment=>segment.transcriptionReview?.annotationsComplete===false).map(segment=>`The window at ${formatMs(segment.startMs)} has incomplete speaker/timing annotations. Do not infer an owner from its neighbouring speaker.`),
     durationMs,
     highlightOffsetsMs: highlights.map((highlight) => highlight.offsetMs),

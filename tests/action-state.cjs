@@ -56,3 +56,30 @@ test('local completion distinguishes task sources and account scopes', () => {
     'open',
   );
 });
+
+test('Focus shows three actionable items, explains deadlines, and withholds unassigned or deferred work', () => {
+  const task = { state: 'open', mine: true, recordingId: 'r', startMs: 0 };
+  const items = [
+    { ...task, text:'Undated' }, { ...task, text:'Pinned', pinned:true },
+    { ...task, text:'Today', due:'2026-09-13' }, { ...task, text:'Overdue', due:'2026-09-12' },
+    { ...task, text:'Done', state:'done', due:'2026-09-01' },
+    { ...task, text:'Unknown', unknown:true, due:'2026-09-01' },
+    { ...task, text:'Deferred', snoozedUntil:'2026-09-14', due:'2026-09-01' },
+    { ...task, text:'Source changed', needsReview:true, due:'2026-09-01' },
+    { ...task, text:'Check supplier', mine:false, checkIn:'2026-09-13' },
+  ];
+  assert.deepEqual(Array.from(api.focus(items,now),x=>[x.text,x.focusReason]),[
+    ['Overdue','Overdue'],['Today','Due today'],['Check supplier','Check-in due'],
+  ]);
+  assert.equal(api.focus([{...task,condition:'When funding arrives'}],now).length,0);
+  assert.equal(api.focus([{...task,condition:'When funding arrives',pinned:true}],now)[0].focusReason,'Check prerequisite');
+});
+
+test('editing local task text or owner retains its completion key and keeps edits account scoped',()=>{
+  const task={r:{id:'r'},text:'Send plan',owner:'Riya',startMs:1000};
+  const key=api.key(task);task.r.actionStates={alice:{[key]:'done'}};
+  task.r.actionEdits={alice:{[key]:{text:'Email the plan',owner:'self',due:'2026-09-20'}}};
+  const edited=api.apply(task,'alice');assert.equal(edited.text,'Email the plan');assert.equal(edited.state,'done');
+  assert.equal(edited.mine,true);assert.equal(api.key(edited),key);
+  assert.equal(api.apply(task,'bob').text,'Send plan');assert.equal(api.apply({...task,owner:''},'bob').unknown,true);
+});

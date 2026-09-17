@@ -4,6 +4,7 @@ import test from 'node:test';
 import { Firestore } from '@google-cloud/firestore';
 import { generateDek, sealJson, sealText } from '../../src/crypto/envelope.js';
 import { indexMemory } from '../../src/pipeline/index-memory.js';
+import { editAction } from '../../src/store/action-edits.js';
 import {
   claimProcessing,
   getRecording,
@@ -200,4 +201,22 @@ test('Firestore grants one transcription lease across competing instances and re
   await db.releaseSegmentTranscription(uid,id,0,old.transcriptionLease!);
   assert.equal((await db.getSegment(uid,id,0))!.transcriptionLease,'recovered');
   await db.releaseSegmentTranscription(uid,id,0,'recovered');
+});
+
+test('speaker correction atomically updates ownership while preserving user deadlines and completion', {timeout:90000}, async()=>{
+  const id='speaker-correction';await seed(id);await claimProcessing(uid,id,'initial');
+  await indexMemory(uid,dek,(await getRecording(uid,id))!,memory,'initial');
+  const first=(await paths.followUps(uid).where('recordingId','==',id).get()).docs[0]!;
+  await editAction(uid,dek,first.id,{state:'done',due_date:'2026-09-21',check_in_date:'2026-09-19',pinned:true});
+  const original=(await getRecording(uid,id))!, corrected=structuredClone(memory);
+  corrected.conversations[0]!.action_items[0]!.owner='Maya';
+  const fields={sealedSpeakerNames:sealJson(dek,{S1:'Maya'},{uid,scope:`recording/${id}`,field:'speaker-names'}),
+    sealedMemory:sealJson(dek,corrected,{uid,scope:`recording/${id}`,field:'memory'}),selfSpeakerLabel:null};
+  await indexMemory(uid,dek,{...original,...fields},corrected,'',{expectedRevision:original.updatedAt,fields});
+  const tasks=(await paths.followUps(uid).where('recordingId','==',id).get()).docs;
+  assert.equal(tasks.length,1);assert.equal(tasks[0]!.id,first.id);
+  assert.equal(tasks[0]!.data().state,'done');assert.equal(tasks[0]!.data().ownerType,'other');
+  assert.equal(tasks[0]!.data().dueDate,'2026-09-21');assert.equal(tasks[0]!.data().checkInDate,'2026-09-19');assert.equal(tasks[0]!.data().pinned,true);
+  assert.deepEqual((await getRecording(uid,id))!.sealedTranscript,original.sealedTranscript);
+  await assert.rejects(indexMemory(uid,dek,{...original,...fields},corrected,'',{expectedRevision:original.updatedAt,fields}),/changed during correction/);
 });

@@ -228,7 +228,7 @@ export async function transcribeSegment(
   if (options.enrichAnnotations === true && (diarize || wordTimestamps) && !annotationsComplete(rawText, words)) {
     attempted = true;
     try {
-      const budget = AbortSignal.timeout(15000);
+      const budget = AbortSignal.timeout(45000);
       const retry = await run(
         {
           mode: {
