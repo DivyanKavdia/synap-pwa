@@ -284,7 +284,7 @@ test('a 429 drains existing requests but prevents launching another recording', 
 });
 
 test('pause aborts provider work and leaves it pending without spending a retry', async () => {
-  const { queue, context, jobs, events } = fixture({ provider: () => 'fixture' });
+  const { queue, context, jobs, events, messages } = fixture({ provider: () => 'fixture' });
   let started;
   const working = new Promise((resolve) => {
     started = resolve;
@@ -294,7 +294,7 @@ test('pause aborts provider work and leaves it pending without spending a retry'
       new Promise((_resolve, reject) => {
         signal.addEventListener(
           'abort',
-          () => reject(Object.assign(new Error('Paused'), { name: 'AbortError' })),
+          () => reject(Object.assign(new Error('Synap request cancelled.'), { name: 'AbortError', audioStage: 'sending upload' })),
           { once: true },
         );
         started();
@@ -307,10 +307,44 @@ test('pause aborts provider work and leaves it pending without spending a retry'
   assert.equal(jobs[0].state, 'pending');
   assert.equal(jobs[0].attempts, 0);
   assert.equal(queue.controllers.size, 0);
+  assert.equal(jobs[0].lastError, '');
+  assert.equal(jobs[0].failureDetail, null);
+  assert(messages.includes('Processing paused; saved audio is retained.'));
+  assert(!messages.some(message => /failed|retry scheduled/.test(message)), 'an intentional cancellation is not an upload failure');
   assert.deepEqual(
     events.map((event) => event.detail.state),
     ['running', 'pending'],
   );
+});
+
+test('an upload interrupted for OTA resumes the same selected job after the lock is released', async () => {
+  let firmwareBusy=false;
+  const { queue, context, jobs, store } = fixture({ provider: () => 'fixture', canRun: () => !firmwareBusy });
+  jobs[0].kind='transcribe';jobs[0].attempts=2;jobs[0].dedupe='r1:transcribe:0';
+  jobs.push({id:2,recordingId:'r2',kind:'transcribe',state:'pending',segmentIndex:0});
+  const submissions=[];let working;
+  const started=new Promise(resolve=>{working=resolve;});
+  context.DKFIFOProcessor.registerProvider('fixture', {
+    process: (_queue, job, _config, signal) => {
+      submissions.push([job.id,job.recordingId,job.dedupe]);
+      if(submissions.length>1)return Promise.resolve({transcript:'Recovered transcript'});
+      working();
+      return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(
+        Object.assign(new Error('Cancelled for update'),{name:'AbortError',audioStage:'sending upload'})
+      ),{once:true}));
+    },
+  });
+  const running=queue.resume(['r1']);await started;
+  firmwareBusy=true;
+  await queue.pause('Queue paused for firmware update');await running;
+  assert.equal(jobs[0].state,'pending');assert.equal(jobs[0].attempts,2);assert.equal(jobs[0].nextAt,0);
+  await queue.resume(['r1']);assert.equal(submissions.length,1,'the firmware lock still prevents submissions');
+  const finish=store.finishJob;let transcript;
+  store.finishJob=async(job,output)=>{transcript=output.transcript;return finish(job,output);};
+  firmwareBusy=false;await queue.resume(['r1']);
+  assert.deepEqual(submissions,[[1,'r1','r1:transcribe:0'],[1,'r1','r1:transcribe:0']]);
+  assert.equal(transcript,'Recovered transcript');assert.equal(jobs[0].state,'done');
+  assert.equal(jobs[1].state,'pending','resumption keeps the selected recording scope');
 });
 
 test('a failed UI callback cannot requeue a committed memory', async () => {

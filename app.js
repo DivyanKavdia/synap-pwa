@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell133-recovery";
+  const APP_SHELL_REVISION = "1.0.0-shell134-recovery";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -3830,9 +3830,15 @@
     async function installOfferedUpdate(m,id) {
       downloadController=new AbortController();preparing=true;
       lock(true);showProgress('Preparing update…',null,false);
-      processor?.pause();ui.queueStatus.textContent="Paused · Tap Process recordings to resume";
+      const queue=processor, resumeQueue=queue?.paused===false;
+      const previousScope=queue?.recordingScope?Array.from(queue.recordingScope):null;
+      const pausedQueue=queue?.pause('Queue paused for firmware update');
+      const pauseVersion=queue?.pauseVersion;
       let commitSent=false,resumeInterrupted=false;
       try {
+        // Finish persisting an interrupted upload before firmware takes over.
+        await pausedQueue;
+        checkPreparationCancelled();
         const info=await firmwareUpdater.check();
         checkPreparationCancelled();
         if(requireTarget(info)!==id)throw Error('The connected pendant is not the selected update target.');
@@ -3875,6 +3881,11 @@
         preparing=false;downloadController=null;firmwareUpdater.reset();
         void releaseWakeLock();lock(false);
         if((commitSent||resumeInterrupted)&&!isGattConnected())recoverRememberedConnection('firmware-update',true);
+        // Restore the prior selection and leave an explicit later Pause intact.
+        if(resumeQueue && queue===processor && queue.pauseVersion===pauseVersion) {
+          log('FIFO','Resuming processing after firmware update');
+          void queue.resume(previousScope);
+        }
       }
     }
     latestButton.addEventListener('click',updateLatest);bannerButton.addEventListener('click',updateLatest);

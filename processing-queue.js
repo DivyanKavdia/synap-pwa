@@ -43,6 +43,7 @@
       this.now = now;
       this.running = false;
       this.paused = true;
+      this.pauseVersion = 0;
       this.controllers = new Map();
       this.timer = null;
       this.canRun = canRun;
@@ -56,11 +57,12 @@
         resume: () => this.resume(),
       };
     }
-    pause() {
+    pause(message = 'Queue paused') {
+      this.pauseVersion++;
       this.paused = true;
       clearTimeout(this.timer);
       for (const controller of this.controllers.values()) controller.abort();
-      this.onChange('Queue paused');
+      this.onChange(message);
       return this.settled;
     }
     async resume(recordingIds = null) {
@@ -129,6 +131,7 @@
       } catch (e) {
         const paused = this.paused || (e.name === 'AbortError' && !this.canRun());
         const permanent = e.retryable === false;
+        const interrupted = paused && !permanent && e.name === 'AbortError';
         const rateLimited = !paused && !permanent &&
           (e.code === 'model_rate_limited' || e.code === 'model_daily_quota' || e.status === 429);
         const attempts = (job.attempts || 0) + (paused || rateLimited ? 0 : 1);
@@ -148,8 +151,8 @@
           attempts,
           nextAt: failed ? 0 : nextAt,
           ...(rateLimited ? { rateLimitAttempts, providerCooldownKey: cooldownKey, providerCooldownUntil: nextAt } : {}),
-          lastError: (e.name || 'Error') + ': ' + e.message,
-          ...(e.audioStage ? { failureDetail: {
+          lastError: interrupted ? '' : (e.name || 'Error') + ': ' + e.message,
+          ...(interrupted ? { failureDetail: null } : e.audioStage ? { failureDetail: {
             stage: e.audioStage, code: e.code || e.name,
             status: e.status ?? null, providerStatus: e.providerStatus ?? null,
             retryAfterMs: rateLimited ? retryDelay : advisedDelay || null,
@@ -158,6 +161,10 @@
           }} : {}),
         });
         emitState(job, failed ? 'failed' : 'pending');
+        if (interrupted) {
+          this.onChange('Processing paused; saved audio is retained.');
+          return;
+        }
         if (e.audioStage) this.onChange('Audio processing failed while ' + e.audioStage + ': ' + e.message +
           (e.code ? ' [' + e.code + (e.providerStatus ? '; provider HTTP ' + e.providerStatus : '') + ']' : ''));
         this.onChange(

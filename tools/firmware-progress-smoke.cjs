@@ -155,7 +155,16 @@ async function run() {
           clearReconnectTimer() {},
           friendlyError: (error) => error.message,
           log() {},
-          processor: { pause() {} },
+          processor: {
+            paused: false, pauseVersion: 0, recordingScope: new Set(['selected-memory']),
+            pause() { this.paused=true; this.pauseVersion++; },
+            async resume(scope) {
+              if(document.body.dataset.state==='updating')throw Error('Queue resumed during firmware update');
+              this.paused=false;
+              qa.queueResumes=(qa.queueResumes||0)+1;
+              qa.resumedScope=scope;
+            },
+          },
           setInterval() {},
           acquireWakeLock: () => screenWakeLock.acquire(),
           releaseWakeLock: () => screenWakeLock.release(),
@@ -212,6 +221,8 @@ async function run() {
       await page.waitForFunction(() => document.body.dataset.state === 'idle');
       assert.match(await page.locator('#otaStatus').textContent(), /cancelled.*Nothing was flashed/);
       assert.equal(await page.evaluate(() => otaUiFixture.flashes), 0);
+      assert.equal(await page.evaluate(() => otaUiFixture.queueResumes), 1);
+      assert.deepEqual(await page.evaluate(() => otaUiFixture.resumedScope), ['selected-memory']);
       await page.locator('#otaLatest').click();
       await page.waitForFunction(() => !!otaUiFixture.download);
       assert.equal(await page.locator('#otaStatus').textContent(), 'Downloading update…');
@@ -266,6 +277,7 @@ async function run() {
       assert(!(await page.locator('#firmwareNoticeProgress').isVisible()));
       assert(!(await page.locator('#firmwareUpdateSpinner').isVisible()));
       assert(!(await page.locator('#firmwareUpdateButton').isVisible()));
+      assert.equal(await page.evaluate(() => otaUiFixture.queueResumes), 2);
       for (const cancel of [false, true]) {
         await page.evaluate(() => {
           otaUiFixture.resetBuild();
@@ -295,6 +307,7 @@ async function run() {
         assert(!(await page.locator('#firmwareNoticeProgress').isVisible()));
         assert(await page.locator('#firmwareUpdateButton').isEnabled());
       }
+      assert.equal(await page.evaluate(() => otaUiFixture.queueResumes), 4);
       assert.equal(
         await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
         false,

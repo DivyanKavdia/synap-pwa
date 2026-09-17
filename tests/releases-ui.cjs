@@ -57,7 +57,11 @@ function setup(options={}){
       if(build===503)throw Object.assign(Error('missing'),{name:'NotFoundError'});
       return{readValue:async()=>new TextEncoder().encode(m.identity)};
     }})},
-    clearReconnectTimer(){},setAppState(){},friendlyError:e=>e.message,processor:{pause:()=>calls.push('pause')},
+    clearReconnectTimer(){},setAppState(){},friendlyError:e=>e.message,processor:{
+      paused:options.queuePaused!==false,pauseVersion:0,recordingScope:options.queueScope?new Set(options.queueScope):null,
+      pause(){this.paused=true;this.pauseVersion++;calls.push('pause');},
+      async resume(scope){assert(!c.firmwareBusy,'processing resumes only after the firmware lock is released');this.paused=false;c.resumedScope=scope;calls.push('resume');}
+    },
     log(){},openSettings:()=>{calls.push('settings');node('settingsDialog').open=!node('settingsDialog').open;},acquireWakeLock:async()=>{},releaseWakeLock:async()=>calls.push('release'),
     delay:async ms=>clock+=ms,setInterval:f=>events.timer=f,
     connectPendant:async()=>{calls.push('reconnect');progressMatches('Reconnecting to verify update…',1);if(!options.reconnectFail){connected=true;build=options.oldBuild?503:1001;
@@ -71,6 +75,42 @@ function setup(options={}){
   return {c,node,calls,storage,click:async id=>{for(const fn of node(id).events.click||[])await fn();},tick:()=>events.timer()};
 }
 (async()=>{
+  // An OTA interruption must restore pending processing on every exit path.
+  for (const options of [{}, {badDownload:true}, {cancelDownload:true}, {flashFail:true}, {reconnectFail:true}]) {
+    const t=setup({...options,queuePaused:false,queueScope:['selected-recording']});
+    await t.click('otaReleaseCheck');await t.click('otaLatest');
+    assert.equal(t.calls.filter(call=>call==='resume').length,1,JSON.stringify(options));
+    assert.deepEqual(Array.from(t.c.resumedScope),['selected-recording']);
+    assert.equal(t.c.processor.paused,false);
+  }
+  for (const options of [{}, {cancelDownload:true}]) {
+    const t=setup({...options,queuePaused:true});
+    await t.click('otaReleaseCheck');await t.click('otaLatest');
+    assert(!t.calls.includes('resume'),'a queue already paused by the user stays paused');
+  }
+  {
+    const t=setup({queuePaused:false});await t.click('otaReleaseCheck');
+    const download=t.c.globalThis.SynapReleases.download;
+    t.c.globalThis.SynapReleases.download=async(...args)=>{
+      t.c.processor.pause(); // A new explicit Pause while OTA is working.
+      return download(...args);
+    };
+    await t.click('otaLatest');
+    assert(!t.calls.includes('resume'),'a later manual Pause cancels automatic restoration');
+  }
+  for (const cancel of [false,true]) {
+    const t=setup({queuePaused:false});await t.click('otaReleaseCheck');
+    const checks=t.calls.filter(call=>call==='check').length;
+    const pause=t.c.processor.pause.bind(t.c.processor);let finishPause;
+    t.c.processor.pause=()=>{pause();return new Promise(resolve=>{finishPause=resolve;});};
+    const updating=t.click('otaLatest');await new Promise(setImmediate);
+    assert.equal(t.calls.filter(call=>call==='check').length,checks,'OTA waits for the cancelled upload to be saved');
+    assert(!t.calls.includes('download'));
+    if(cancel)await t.click('otaCancel');
+    finishPause();await updating;
+    assert.equal(t.calls.includes('flash'),!cancel);
+    assert.equal(t.calls.filter(call=>call==='resume').length,1);
+  }
   // The screenshot's stall: optional browser screen control never settles.
   // Neither acquisition nor release may keep the firmware controls locked.
   {

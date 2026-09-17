@@ -18,6 +18,10 @@ Each successful upload response includes the window transcript, which is saved i
 
 Final processing requires all expected windows. The memory prompt asks for coverage across the conversation, including final corrections, while keeping unsupported speaker identities, action owners and deadlines unknown. Transcript content is evidence, not instructions to the model. Decisions and follow-ups must pass the same conversation-level evidence and timestamp checks as other extracted facts. A no-speech result publishes no invented people, actions or decisions.
 
+## Processing during firmware updates
+
+A firmware installation pauses the processing queue and waits for an interrupted upload to return to its saved pending job. When the update finishes, fails or is cancelled, a previously running queue resumes with the same selected recordings and existing provider cooldown. A queue that was already paused, or explicitly paused again during the update, stays paused. Intentional cancellation is reported as paused processing, retains the original audio and does not consume a retry.
+
 ## Retry older recordings
 
 A processing deadline is reported as a retryable timeout, including when the
