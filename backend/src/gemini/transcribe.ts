@@ -14,6 +14,8 @@ import {
   createInteraction,
   interactionText,
   interactionWords,
+  uploadGeminiFile,
+  deleteGeminiFile,
   GeminiError,
   type InteractionPart,
   type InteractionResponse,
@@ -48,6 +50,11 @@ export interface TranscribeOptions {
   language?: string;
   diarize?: boolean;
   wordTimestamps?: boolean;
+  /** Require word timestamps in the primary pass so a long ASR batch can be
+   * deterministically split back into durable 30-second source windows. */
+  primaryWordTimestamps?: boolean;
+  /** Use a Gemini Files API reference instead of embedding audio inline. */
+  useFileApi?: boolean;
   /** Extra audio submission; opt in only when a caller explicitly needs labels. */
   enrichAnnotations?: boolean;
   signal?: AbortSignal;
@@ -100,30 +107,38 @@ export async function transcribeSegment(
     prepared = await prepareTranscriptionAudio(audio, options.speed, signal);
   const languageCodes = transcriptionLanguageCodes(language);
   const run = async (settings: Record<string, unknown>, requestSignal = signal) => {
-    const input: InteractionPart[] = [
-      { type: 'audio', data: (prepared?.audio || audio).toString('base64'), mime_type: mimeType },
-    ];
-    const response = await createInteraction(
-      {
-        model: config.gemini.transcribeModel,
-        input,
-        generation_config: { transcription_config: settings },
-        usage_label: 'transcription',
-      },
-      requestSignal,
-      () => {
-        requestAttempts++;
-        submittedAudioMs += prepared?.durationMs || 0;
-        // Includes HTTP retries and the annotation pass. This is submitted input,
-        // not a bill: a timeout may have been charged without a response.
-        log.info('Transcription audio submission', {
+    const submitted = prepared?.audio || audio;
+    let uploaded: Awaited<ReturnType<typeof uploadGeminiFile>> | undefined;
+    let input: InteractionPart[];
+    try {
+      if (options.useFileApi) {
+        uploaded = await uploadGeminiFile(submitted, mimeType, requestSignal);
+        input = [{ type: 'audio', uri: uploaded.uri, mime_type: uploaded.mimeType || mimeType }];
+      } else {
+        input = [{ type: 'audio', data: submitted.toString('base64'), mime_type: mimeType }];
+      }
+      const response = await createInteraction(
+        {
           model: config.gemini.transcribeModel,
-          speed: prepared?.speed || 1,
-          audio_ms: prepared?.durationMs || 0,
-          attempt: requestAttempts,
-        });
-      },
-    );
+          input,
+          generation_config: { transcription_config: settings },
+          usage_label: 'transcription',
+        },
+        requestSignal,
+        () => {
+          requestAttempts++;
+          submittedAudioMs += prepared?.durationMs || 0;
+          // Counts model submissions only. Files API upload traffic is separate
+          // and does not multiply the model's RPM/RPD quota.
+          log.info('Transcription audio submission', {
+            model: config.gemini.transcribeModel,
+            speed: prepared?.speed || 1,
+            audio_ms: prepared?.durationMs || 0,
+            attempt: requestAttempts,
+            transport: options.useFileApi ? 'file-uri' : 'inline',
+          });
+        },
+      );
     // A missing output is a provider failure, not evidence of silence.
     if (
       !response.steps?.some(
@@ -140,17 +155,26 @@ export async function transcribeSegment(
         undefined,
         { model: config.gemini.transcribeModel, stage: 'transcription' },
       );
-    return response;
+      return response;
+    } finally {
+      if (uploaded) await deleteGeminiFile(uploaded);
+    }
   };
-  // Google documents lower recognition accuracy with word timestamps. Keep them
-  // out of the primary pass. An optional second pass can add matching labels.
+  // Long-batch mode deliberately enables word timestamps in the primary pass:
+  // they are the deterministic boundary map back to the encrypted 30-second
+  // source windows. Ordinary single-window ASR keeps Google's higher-accuracy
+  // text-first mode and requests annotations only when explicitly needed.
+  const primaryMode = options.primaryWordTimestamps
+    ? { type: 'verbatim', timestamp_granularities: ['word'] }
+    : 'verbatim';
   const requested = {
-    mode: 'verbatim',
+    mode: primaryMode,
     ...(languageCodes ? { language_codes: languageCodes } : {}),
   };
   const variants: Record<string, unknown>[] = [requested];
-  if (languageCodes) variants.push({ mode: 'verbatim' });
-  variants.push({}); // Provider defaults, for a rejected optional mode setting.
+  if (languageCodes) variants.push({ mode: primaryMode });
+  if (!options.primaryWordTimestamps)
+    variants.push({}); // Compatibility fallback is unsafe when timestamps are required for splitting.
   let response: InteractionResponse | undefined;
   let attempted = false;
   try {
@@ -214,7 +238,7 @@ export async function transcribeSegment(
     attempted = true;
     if (prepared?.speed === 1.5)
       prepared = { ...originalAudio(audio), fallback: 'empty-recognition' };
-    response = await run({ mode: 'verbatim' });
+    response = await run({ mode: primaryMode });
     rawText = interactionText(response).trim();
     if (!rawText) return empty('no-speech', true);
   }
@@ -261,8 +285,19 @@ export async function transcribeSegment(
       if (signal?.aborted && signal.reason?.name !== 'TimeoutError') throw error;
     }
   }
-  const complete = annotationsComplete(rawText, words);
-  // Partial/disagreeing annotations must not feed speaker identification either.
+  const complete = options.primaryWordTimestamps
+    ? timestampAnnotationsComplete(rawText, words)
+    : annotationsComplete(rawText, words);
+  if (options.primaryWordTimestamps && !complete)
+    throw new GeminiError(
+      'Long transcription batch returned incomplete word timestamps. Saved audio is retained.',
+      0,
+      true,
+      'incomplete',
+      undefined,
+      { model: config.gemini.transcribeModel, stage: 'transcription' },
+    );
+  // Partial/disagreeing optional annotations must not feed speaker identification.
   if (!complete) words = [];
   return {
     text: `[${formatMs(baseOffsetMs)}] S?: ${rawText}`,
@@ -286,7 +321,7 @@ export async function transcribeSegment(
 const reviewText = (text: string) =>
   text.normalize('NFKC').toLocaleLowerCase('und').replace(/\s+/gu, ' ').trim();
 
-export function annotationsComplete(text: string, words: TranscriptWord[]): boolean {
+export function timestampAnnotationsComplete(text: string, words: TranscriptWord[]): boolean {
   if (!text.trim()) return words.length === 0;
   return (
     words.length > 0 &&
@@ -295,10 +330,13 @@ export function annotationsComplete(text: string, words: TranscriptWord[]): bool
       (word) =>
         Number.isFinite(word.start_ms) &&
         Number.isFinite(word.end_ms) &&
-        word.end_ms > word.start_ms &&
-        Boolean(word.speaker),
+        word.end_ms > word.start_ms,
     )
   );
+}
+
+export function annotationsComplete(text: string, words: TranscriptWord[]): boolean {
+  return timestampAnnotationsComplete(text, words) && words.every((word) => Boolean(word.speaker));
 }
 
 function comparableText(value: string): string {
