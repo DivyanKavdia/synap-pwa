@@ -1,8 +1,12 @@
 # Transcription input and cost controls
 
-Managed standalone audio now uses a pitch-preserving 1.5× ASR copy. A 30-second
-window becomes approximately 20 seconds at the same 16 kHz mono PCM16 format.
-The browser uploads and retains the original bytes; after decrypting a window,
+Managed standalone audio keeps 30-second local recovery windows, but new Synap
+Cloud recordings aggregate up to ten contiguous saved windows into one five-minute
+cloud segment before upload. The browser still retains the original 30-second
+sources for crash recovery. The backend then uses a pitch-preserving 1.5× ASR copy:
+a five-minute cloud segment becomes approximately 3m20s at the same 16 kHz mono
+PCM16 format. Older recordings without the stored cloud-window policy remain on
+their original 30-second cloud numbering. After decrypting a cloud segment,
 the backend runs FFmpeg `atempo=1.5` through stdin/stdout immediately before
 submitting to Gemini. It writes no plaintext temporary files and never replaces
 the encrypted source. This optimizes provider input, not phone upload bandwidth.
@@ -63,7 +67,7 @@ Reviewed [ScalabeMeetingTranscribe at fb33a87](https://github.com/myExperimentsW
 It is an MIT-licensed Python meeting pipeline, not a cost-governance framework.
 Its applicable ideas are FFmpeg tempo adjustment, source-time correction,
 chronological chunk assembly, cached completed chunks and bounded retry/backoff.
-Synap already implements durable 30-second windows, completed-result reuse,
+Synap already implements durable 30-second local windows, five-minute managed cloud batching, completed-result reuse,
 retry backoff and bounded processing concurrency; those remain in place.
 
 This implementation uses the atempo/time-mapping approach independently without
