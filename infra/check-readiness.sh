@@ -26,6 +26,24 @@ const [file, expected, status] = process.argv.slice(2);
 const result = JSON.parse(fs.readFileSync(file, 'utf8'));
 // The endpoint deliberately returns only build identity and sanitized checks.
 console.log(JSON.stringify(result));
-if (status !== '200' || result.ok !== true || result.commit !== expected || !result.checks?.length)
+if (result.commit !== expected || !Array.isArray(result.checks) || !result.checks.length)
   process.exit(1);
+if (status === '200' && result.ok === true && result.checks.every(check => check?.ok === true))
+  process.exit(0);
+
+// Exit 75 means "known transient provider cooldown". deploy.sh never promotes on
+// this signal alone: it must observe the same class of cooldown on the currently
+// serving revision, proving the failure is shared upstream rather than candidate-specific.
+const failures = result.checks.filter(check => check?.ok !== true);
+const cooldownCodes = new Set(['processing_deferred', 'model_rate_limited', 'model_daily_quota']);
+const cooldown = status === '503' &&
+  result.ok === false &&
+  failures.length === 1 &&
+  failures[0]?.name === 'audio_storage_and_transcription' &&
+  cooldownCodes.has(failures[0]?.code) &&
+  failures[0]?.httpStatus === 503 &&
+  result.checks.some(check => check?.name === 'key_and_session' && check.ok === true) &&
+  result.checks.some(check => check?.name === 'fixture_cleanup' && check.ok === true);
+if (cooldown) process.exit(75);
+process.exit(1);
 NODE
