@@ -290,7 +290,7 @@
     var recording = null;
     let audioStage = 'registering recording';
     return safePatchLocalProcessing(processor, job.recordingId, {
-      processingStage: 'uploading', processingError: '', processingRetryable: true
+      processingStage: 'uploading', processingError: '', processingRetryable: true, processingRetryAt: 0
     }).then(function () {
       audioStage = 'reading saved segment';
       return ensureRecording(processor, job.recordingId, signal);
@@ -408,7 +408,7 @@
         }).then(function (result) {
           return safePatchLocalProcessing(processor, job.recordingId, {
             processingStage: 'uploaded', processingProgress: 0,
-            processingFailedStage: '', processingError: '', processingRetryable: true
+            processingFailedStage: '', processingError: '', processingRetryable: true, processingRetryAt: 0
           }).then(function () { return result; });
         });
       });
@@ -429,11 +429,16 @@
       return request('/v1/recordings/' + encodeURIComponent(job.recordingId) + '/processing', { signal: signal }).then(function (status) {
         var state = String(status && status.state || '');
         var progress = Number(status && status.progress);
+        var detail = status && status.error || {};
+        var retryAt = Number(detail.retryAt || 0);
+        if (!(retryAt > Date.now()) && Number(detail.retryAfterMs) > 0)
+          retryAt = Date.now() + Number(detail.retryAfterMs);
         var fields = {
           processingStage: state || lastBackendStage,
           processingProgress: Number.isFinite(progress) ? progress : null,
           processingError: (status && status.error_code) || '',
-          processingRetryable: Boolean(status && status.retryable)
+          processingRetryable: Boolean(status && status.retryable),
+          processingRetryAt: state === 'failed' && retryAt > Date.now() ? retryAt : 0
         };
         if (state === 'failed') fields.processingFailedStage = lastBackendStage;
         else if (state) { lastBackendStage = state; fields.processingFailedStage = ''; }
@@ -441,7 +446,6 @@
           if (onProgress) onProgress(status);
           if (state === 'ready') return status;
           if (state === 'failed') {
-            var detail = status.error || {};
             processor.diagnostic?.('Cloud processing failure', {
               recordingId: job.recordingId, jobId: job.id, failureId: status.failure_id || null,
               code: detail.code || null, source: detail.source || 'unknown',
@@ -513,7 +517,7 @@
       people: memory.people || [],
       conversations: memory.conversations || [],
       processingState: 'done', processingStage: 'ready', processingProgress: 1,
-      processingFailedStage: '', processingError: '', processingRetryable: false,
+      processingFailedStage: '', processingError: '', processingRetryable: false, processingRetryAt: 0,
       provider: 'synap', processedAt: new Date().toISOString()
     };
   }
