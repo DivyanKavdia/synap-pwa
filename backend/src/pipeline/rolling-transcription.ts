@@ -1,10 +1,10 @@
 import { openBytes, openText, sealJson, sealText, type Binding } from '../crypto/envelope.js';
 import { config } from '../config.js';
 import { transcribeSegment } from '../gemini/transcribe.js';
-import { parsePcm16Wav } from '../speaker/audio.js';
+import { makePcm16Wav, parsePcm16Wav } from '../speaker/audio.js';
 import * as db from '../store/firestore.js';
 import { readSealedSegment } from '../store/gcs.js';
-import type { RecordingDoc, SegmentDoc } from '../store/types.js';
+import type { RecordingDoc, SegmentDoc, TranscriptWord } from '../store/types.js';
 import { hasTranscription } from './recording-segments.js';
 import { newId } from '../util/ids.js';
 import { GeminiError } from '../gemini/client.js';
@@ -71,6 +71,152 @@ export async function transcribeUploadedWindow(
   } finally {
     if (release) await db.releaseSegmentTranscription(uid, recordingId, segment.index, lease)
       .catch(() => log.warn('Transcription lease will recover at expiry'));
+  }
+}
+
+/**
+ * Transcribe a contiguous set of durable 30-second source windows as one Gemini
+ * request, then project timestamped words back onto the original windows.
+ *
+ * Storage/recovery granularity stays small while provider request granularity
+ * follows Gemini 3.5 Transcribe's long-form file-processing model.
+ */
+export async function transcribeUploadedBatch(
+  uid: string,
+  recordingId: string,
+  sources: SegmentDoc[],
+  dek: Buffer,
+): Promise<SegmentDoc[]> {
+  if (!sources.length) return [];
+  const recording = await db.getRecording(uid, recordingId);
+  if (!recording || recording.deleting) throw new db.SegmentWriteError(404, 'Unknown recording');
+
+  const ordered = sources.slice().sort((a, b) => a.index - b.index);
+  for (let i = 1; i < ordered.length; i++)
+    if (ordered[i]!.index !== ordered[i - 1]!.index + 1)
+      throw new db.SegmentWriteError(409, 'Transcription batch must contain contiguous audio windows', true);
+
+  const lease = newId();
+  const claimed: SegmentDoc[] = [];
+  let ambiguous = false;
+  let batchSignal: AbortSignal | undefined;
+  try {
+    // Claim every source before the paid request. Existing legacy clients may
+    // still ask for one rolling window directly; per-window leases fence that
+    // path from this batch worker.
+    for (const source of ordered) {
+      const claim = await db.claimSegmentTranscription(uid, recordingId, source, lease);
+      if (!claim.claimed) {
+        if (hasUsableTranscription(uid, recordingId, dek, claim.segment))
+          throw new db.TranscriptionBusyError(1_000);
+        throw new db.TranscriptionBusyError(db.TRANSCRIPTION_LEASE_MS);
+      }
+      claimed.push(claim.segment);
+    }
+
+    const pcm: Buffer[] = [];
+    for (const segment of claimed) {
+      const sealed = segment.storagePath ? await readSealedSegment(segment.storagePath) : null;
+      if (!sealed) throw new Error(`Segment audio missing for ${segment.index}`);
+      const audio = openBytes(
+        dek,
+        sealed,
+        binding(uid, `recording/${recordingId}/segment/${segment.index}`, 'audio'),
+      );
+      let parsed;
+      try { parsed = parsePcm16Wav(audio); }
+      catch { throw new db.SegmentWriteError(409, 'Stored audio is malformed. Keep the original for recovery.'); }
+      pcm.push(parsed.data);
+    }
+
+    const batchAudio = makePcm16Wav(Buffer.concat(pcm));
+    batchSignal = AbortSignal.timeout(300_000);
+    const result = await transcribeSegment(batchAudio, 'audio/wav', {
+      baseOffsetMs: claimed[0]!.startMs,
+      speed: config.gemini.transcriptionSpeed,
+      language: recording.language,
+      diarize: false,
+      wordTimestamps: true,
+      primaryWordTimestamps: true,
+      useFileApi: true,
+      enrichAnnotations: false,
+      signal: batchSignal,
+    });
+    ambiguous = batchSignal.aborted;
+
+    const wordsBySegment = new Map<number, TranscriptWord[]>();
+    for (const segment of claimed) wordsBySegment.set(segment.index, []);
+    for (const word of result.words) {
+      const point = (word.start_ms + word.end_ms) / 2;
+      const owner = claimed.find((segment, index) =>
+        point < segment.endMs || index === claimed.length - 1,
+      );
+      if (owner) wordsBySegment.get(owner.index)!.push(word);
+    }
+
+    if (result.review.outcome === 'speech' && result.words.length === 0)
+      throw new GeminiError(
+        'Long transcription batch returned no usable word timestamps.',
+        0,
+        true,
+        'incomplete',
+        undefined,
+        { model: config.gemini.transcribeModel, stage: 'transcription' },
+      );
+
+    const completed: SegmentDoc[] = [];
+    for (let i = 0; i < claimed.length; i++) {
+      const segment = claimed[i]!;
+      const words = wordsBySegment.get(segment.index) || [];
+      const text = words.map(word => word.text).join(' ').trim();
+      const outcome = result.review.outcome === 'digital-silence'
+        ? 'digital-silence'
+        : text ? 'speech' : 'no-speech';
+      const doc: SegmentDoc = {
+        ...segment,
+        state: 'transcribed',
+        language: recording.language,
+        transcribedAt: new Date().toISOString(),
+        transcriptionReview: {
+          attempted: result.review.attempted,
+          annotationsComplete: true,
+          policy: 'text-first-v1',
+          outcome,
+        },
+        transcriptionAudioPolicy: result.audioUsage?.policy || 'stored-upload-v1',
+        ...(i === 0 && result.audioUsage ? { transcriptionAudioUsage: result.audioUsage } : {}),
+        sealedTranscript: sealText(
+          dek,
+          text ? `[${formatMs(segment.startMs)}] S?: ${text}` : '',
+          binding(uid, `recording/${recordingId}/segment/${segment.index}`, 'transcript'),
+        ),
+        sealedWords: sealJson(
+          dek,
+          words,
+          binding(uid, `recording/${recordingId}/segment/${segment.index}`, 'words'),
+        ),
+      };
+      completed.push(await db.completeSegmentTranscription(
+        uid,
+        recordingId,
+        doc,
+        segment.sealedTranscript,
+        lease,
+      ));
+    }
+    return completed;
+  } catch (cause) {
+    ambiguous ||= Boolean(batchSignal?.aborted) ||
+      (cause instanceof GeminiError && cause.status === 0 && cause.reason === 'request');
+    throw cause;
+  } finally {
+    // A lost provider response may still be running/billed. Preserve those
+    // leases until expiry; all other failures can release immediately.
+    if (!ambiguous)
+      await Promise.all(claimed.map(segment =>
+        db.releaseSegmentTranscription(uid, recordingId, segment.index, lease)
+          .catch(() => undefined),
+      ));
   }
 }
 
