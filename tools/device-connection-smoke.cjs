@@ -16,7 +16,19 @@ const server = createStaticServer(process.env.SYNAP_UI_ROOT || path.resolve(__di
       const page = await context.newPage(), errors = [];
       page.on('pageerror', error => errors.push(error.message));
       await page.goto(origin + '/?native-link-reject&inventory&ota');
-      await page.waitForFunction(() => document.querySelector('#reconnectStatus')?.textContent.includes('tap Reselect pendant'));
+      try {
+        await page.waitForFunction(() => document.querySelector('#reconnectStatus')?.textContent.includes('tap Reselect pendant'));
+      } catch (error) {
+        console.error('Native-link reselection did not settle', await page.evaluate(() => ({
+          startup: document.body.dataset.startup,
+          state: document.body.dataset.state,
+          reconnect: document.querySelector('#reconnectStatus')?.textContent,
+          connects: bleFixture.connects,
+          appDisconnects: bleFixture.appDisconnects,
+          diagnostics: document.querySelector('#diagnosticsLog')?.textContent,
+        })));
+        throw error;
+      }
       assert.equal(await page.evaluate(() => Number(sessionStorage.getItem('qa-connects'))), 2);
       assert.equal(await page.evaluate(() => bleFixture.appDisconnects), 0, 'settled native rejection does not need another disconnect');
       await page.evaluate(() => { bleFixture.hide(); bleFixture.show(); });
