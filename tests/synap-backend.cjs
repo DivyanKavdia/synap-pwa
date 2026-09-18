@@ -142,7 +142,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell145-chakshu-voice'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell146-asr-batch'/);
   assert.match(sw, /\.\/devices\/chakshu\/voice\.js/, 'installed shell must precache the voice-v2 companion');
   assert.match(html, /data-synap-chakshu-voice="2" src="devices\/chakshu\/voice\.js\?v=1\.0\.0-chakshu-voice2"/,
     'voice-v2 companion must load deterministically before app startup');
@@ -452,6 +452,40 @@ test('the backend read helpers cover the second-brain surface', () => {
   ]) {
     assert.equal(typeof context.SynapBackend[method], 'function', `${method} is exported`);
   }
+});
+
+test('new managed recordings batch ten local recovery windows into one cloud segment', () => {
+  const context = load(backendSource, { localStorage: storage() });
+  const recording = {
+    cloudTranscriptionWindowSeconds: 300,
+    durationMs: 620000,
+    sealed: true,
+    status: 'saved',
+  };
+  assert.equal(context.SynapBackend.cloudSegmentSeconds(recording), 300);
+  const batch = context.SynapBackend.cloudBatch(recording, 13);
+  assert.equal(batch.index, 1);
+  assert.equal(batch.firstLocal, 10);
+  assert.equal(batch.lastLocal, 19);
+  assert.equal(batch.size, 10);
+  assert.equal(context.SynapBackend.segmentBounds(recording, 1).startMs, 300000);
+  assert.equal(context.SynapBackend.segmentBounds(recording, 1).endMs, 600000);
+  assert.equal(
+    context.SynapBackend.cloudSegmentCount(
+      recording,
+      Array.from({ length: 21 }, (_, index) => ({ index, frameCount: 600 })),
+    ),
+    3,
+  );
+});
+
+test('recordings without a stored cloud window keep legacy 30-second cloud numbering', () => {
+  const context = load(backendSource, { localStorage: storage() });
+  const recording = { durationMs: 80000, sealed: true, status: 'saved' };
+  assert.equal(context.SynapBackend.cloudSegmentSeconds(recording), 30);
+  assert.equal(context.SynapBackend.cloudBatch(recording, 2).index, 2);
+  assert.equal(context.SynapBackend.segmentBounds(recording, 2).startMs, 60000);
+  assert.equal(context.SynapBackend.segmentBounds(recording, 2).endMs, 80000);
 });
 
 test('a recording is created once, not once per segment', () => {
