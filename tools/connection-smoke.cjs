@@ -256,9 +256,14 @@ const server = createStaticServer(root);
     assert.equal(
       await page.evaluate(() => bleFixture.statusReads),
       idleReads,
-      'foregrounding an idle link does not probe native GATT',
+      'yielding idle ownership does not probe native GATT before reconnect is requested',
     );
-    assert.equal(await page.evaluate(() => bleFixture.appDisconnects), 0);
+    const ownershipDisconnects = await page.evaluate(() => bleFixture.appDisconnects);
+    assert.equal(ownershipDisconnects, 1, 'an idle hidden page deliberately releases its native pendant link');
+    assert(
+      await page.evaluate(() => document.querySelector('#diagnosticsLog').textContent.includes('App ownership released')),
+      'ownership release is visible in diagnostics',
+    );
 
     await page.locator('#headerCaptureToggle').click();
     await page.waitForFunction(() => document.body.dataset.state === 'recording');
@@ -333,8 +338,8 @@ const server = createStaticServer(root);
     );
     assert.equal(
       await page.evaluate(() => bleFixture.appDisconnects),
-      0,
-      'native Bluetooth UI must not cancel recording reconnect',
+      ownershipDisconnects,
+      'native Bluetooth UI must not add an app disconnect during recording reconnect',
     );
     const readsBeforeForeground = await page.evaluate(() => bleFixture.statusReads);
     await page.evaluate(() => bleFixture.show());
@@ -349,7 +354,7 @@ const server = createStaticServer(root);
     assert.equal(await page.evaluate(() => bleFixture.readPending), false);
     assert.equal(
       await page.evaluate(() => bleFixture.appDisconnects),
-      0,
+      ownershipDisconnects,
       'a passive diagnostic read must be deferred without touching the recording link',
     );
     assert.equal(await page.evaluate(() => document.body.dataset.state), 'recording');
@@ -370,7 +375,7 @@ const server = createStaticServer(root);
     await page.locator('.brain-tabs a[href="#today"]').click();
     assert.equal(
       await page.evaluate(() => bleFixture.appDisconnects),
-      0,
+      ownershipDisconnects,
       'day and section browsing preserves capture',
     );
     assert.deepEqual(
@@ -639,7 +644,7 @@ const server = createStaticServer(root);
     );
     await page.waitForFunction(() => document.body.dataset.eventChannel === 'event');
     console.log(
-      'PASS: foreground preserves an idle link; reload adopts a retained native connection without disconnect/connect churn',
+      'PASS: idle background yields ownership; reload adopts a retained native connection without disconnect/connect churn',
     );
     // A user can cancel Start while an earlier idle read still owns native ATT.
     // Releasing that read must run STOP without sending the cancelled START.
