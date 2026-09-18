@@ -67,6 +67,8 @@ export async function transcribeSegment(
   } = options;
   signal?.throwIfAborted();
   let prepared: TranscriptionAudio | undefined;
+  let usedModel = config.gemini.transcribeModel;
+  let generalFallback = false;
   let submittedAudioMs = 0,
     requestAttempts = 0;
   const audioUsage = (): TranscriptionAudioUsage | undefined =>
@@ -88,7 +90,7 @@ export async function transcribeSegment(
     text: '',
     words: [],
     speakers: [],
-    model: config.gemini.transcribeModel,
+    model: usedModel,
     review: { attempted, annotationsComplete: true, policy: 'text-first-v1', outcome },
     audioUsage: audioUsage(),
   });
@@ -99,6 +101,16 @@ export async function transcribeSegment(
   if (mimeType === 'audio/wav' && options.speed)
     prepared = await prepareTranscriptionAudio(audio, options.speed, signal);
   const languageCodes = transcriptionLanguageCodes(language);
+  const noteSubmission = (model: string) => {
+    requestAttempts++;
+    submittedAudioMs += prepared?.durationMs || 0;
+    log.info('Transcription audio submission', {
+      model,
+      speed: prepared?.speed || 1,
+      audio_ms: prepared?.durationMs || 0,
+      attempt: requestAttempts,
+    });
+  };
   const run = async (settings: Record<string, unknown>, requestSignal = signal) => {
     const input: InteractionPart[] = [
       { type: 'audio', data: (prepared?.audio || audio).toString('base64'), mime_type: mimeType },
@@ -111,18 +123,7 @@ export async function transcribeSegment(
         usage_label: 'transcription',
       },
       requestSignal,
-      () => {
-        requestAttempts++;
-        submittedAudioMs += prepared?.durationMs || 0;
-        // Includes HTTP retries and the annotation pass. This is submitted input,
-        // not a bill: a timeout may have been charged without a response.
-        log.info('Transcription audio submission', {
-          model: config.gemini.transcribeModel,
-          speed: prepared?.speed || 1,
-          audio_ms: prepared?.durationMs || 0,
-          attempt: requestAttempts,
-        });
-      },
+      () => noteSubmission(config.gemini.transcribeModel),
     );
     // A missing output is a provider failure, not evidence of silence.
     if (
@@ -142,6 +143,60 @@ export async function transcribeSegment(
       );
     return response;
   };
+
+  const runGeneralFallback = async (requestSignal = signal) => {
+    // General Gemini audio understanding is a continuity path, not a silent
+    // replacement for dedicated ASR. Use the original WAV where available and
+    // return flat text only; do not invent word timestamps or speaker labels.
+    if (mimeType === 'audio/wav')
+      prepared = { ...originalAudio(audio), fallback: 'provider-failure' };
+    const input: InteractionPart[] = [
+      { type: 'audio', data: (prepared?.audio || audio).toString('base64'), mime_type: mimeType },
+      {
+        type: 'text',
+        text:
+          'Transcribe every intelligible spoken word in this audio as faithfully as possible. ' +
+          'Preserve the spoken language and code-switching, numbers, names, hesitations and repetitions. ' +
+          'Do not summarize, explain, add speaker labels, timestamps or commentary. ' +
+          'Return only the transcript text. If there is no intelligible speech, return exactly [NO_SPEECH].',
+      },
+    ];
+    const response = await createInteraction(
+      {
+        model: config.gemini.transcribeFallbackModel,
+        input,
+        generation_config: { temperature: 0 },
+        usage_label: 'transcription',
+      },
+      requestSignal,
+      () => noteSubmission(config.gemini.transcribeFallbackModel),
+    );
+    if (
+      !response.steps?.some(
+        (step) =>
+          step.type === 'model_output' &&
+          step.content?.some((part) => part.type === 'text' && typeof part.text === 'string'),
+      )
+    )
+      throw new GeminiError(
+        'Fallback transcription returned no completed text output. Saved audio is retained.',
+        0,
+        true,
+        'missing-text',
+        undefined,
+        { model: config.gemini.transcribeFallbackModel, stage: 'transcription' },
+      );
+    usedModel = config.gemini.transcribeFallbackModel;
+    generalFallback = true;
+    return response;
+  };
+
+  const longAsrCooldown = (error: unknown) =>
+    error instanceof GeminiError &&
+    (error.reason === 'cooldown' || error.status === 429) &&
+    Number(error.rateLimit?.retryAfterMs || 0) >= config.gemini.transcribeFallbackAfterMs &&
+    config.gemini.transcribeFallbackModel !== config.gemini.transcribeModel;
+
   // Google documents lower recognition accuracy with word timestamps. Keep them
   // out of the primary pass. An optional second pass can add matching labels.
   const requested = {
