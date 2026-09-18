@@ -1,61 +1,94 @@
-# synap — PWA
+# Synap
 
-**Stay present. Keep the memory.**
+**Current production baseline — 18 September 2026**
 
-Synap is the companion experience for the Synap wearable family. It receives pendant audio over Bluetooth, preserves recordings, turns conversations into grounded searchable memory, surfaces follow-through, and manages device health and firmware updates. Chakshu extends the same experience with camera capture and a local photo/video library. Firmware lives in [synap-firmware](https://github.com/DivyanKavdia/synap-firmware).
+Synap is the companion application and cloud memory platform for the Synap wearable family. This repository owns the browser/PWA experience and the production backend. Device firmware is maintained separately in `DivyanKavdia/synap-firmware`.
 
-## The current Synap experience
+## Production baseline
 
-The app is organized around four persistent destinations:
+- **PWA:** deployed from `main` through GitHub Pages.
+- **Backend:** Google Cloud Run, region `asia-south1`.
+- **Backend application baseline:** `b7fbcb7cb8df7ea69a802a666dc633ff8c900eeb`.
+- **Firmware baseline:** Synap OS build **1262** from the firmware repository.
+- **Primary transcription:** `gemini-3.5-transcribe`.
+- **Memory / reasoning:** Gemini models behind the Synap backend.
+- **Storage and orchestration:** encrypted object storage, Firestore state, Cloud Tasks and the private speaker service.
 
-- **Brief** — a compact daily or weekly view of what happened, what matters and what needs attention. Activity metrics and priorities link back to their source memories.
-- **Memories** — recordings, transcripts, summaries and source evidence. Recognition preserves the complete transcript before optional speaker annotations, and readable transcript windows can appear before final summarization completes.
-- **Actions** — evidence-backed commitments and follow-ups extracted from conversations, with ownership, deadlines and stable status. Actions refresh when new memory processing completes.
-- **Ask** — grounded recall across captured memories. Answers are scoped to available Synap sources rather than presented as unsupported recollection.
+The production backend is promoted only after a synthetic end-to-end readiness check validates session/key handling, audio storage, transcription, Cloud Tasks, memory creation, summaries, retrieval indexes, Ask Synap, voice profiles and cleanup.
 
-Recording and device controls remain available across navigation. The responsive header keeps connection, battery, microphone and supported camera/video controls together without taking over the workspace.
+## Current architecture
 
-## Recording → memory → follow-through
+```text
+Synap / Chakshu device
+        |
+        | BLE
+        v
+Browser / PWA
+        |
+        | durable 30-second local recovery windows
+        v
+Synap Cloud API
+        |
+        +--> encrypted source audio / media metadata
+        +--> Firestore processing state
+        +--> Cloud Tasks
+        |
+        v
+Gemini transcription
+        |
+        | bounded long-form file batches
+        v
+Transcript + memory extraction + retrieval
+        |
+        +--> Memories
+        +--> Brief
+        +--> Actions
+        +--> Ask Synap
+```
 
-Connect a pendant through the device picker and start listening from the microphone control. Synap journals a recording before processing so the source remains recoverable, then makes it available for playback or WAV export. Compatible firmware can replay a short volatile buffer after a brief Bluetooth interruption; it is not unlimited background storage.
+### Transcription invariant
 
-After capture, Synap preserves the source recording and complete transcript, then adds optional speaker information, grounded summaries and actionable outcomes. Optional speaker-label failures or timeouts do not discard an already completed transcription. Source evidence remains the basis for summaries, Brief items, Actions and Ask results.
+The **30-second segment is a durability and recovery boundary, not the Gemini request boundary**.
 
-On iPhone, keep Synap visible in Bluefy with the screen unlocked while recording. See [recording lifecycle](docs/RECORDING_LIFECYCLE.md), [audio pipeline](docs/AUDIO_PIPELINE.md), [background limits](docs/BACKGROUND_RECORDING.md) and [transcription quality and recovery](docs/TRANSCRIPTION_QUALITY.md).
+Contiguous missing source windows are grouped into long-form provider batches. The current default is **20 minutes**, with a code hard cap of **25 minutes**. Word timestamps are projected back to the immutable source windows so existing recovery, playback and deletion semantics remain intact.
 
-## Voice identity
+Missing, incomplete or rate-limited model responses are handled through durable retry/cooldown logic rather than immediate duplicate audio submission.
 
-A user can set their name and, with consent, enroll a bounded voice sample. Synap keeps the completed sample visible while the private speaker profile is being saved and reports save failures explicitly. Delayed saves and timeouts do not silently restart the microphone.
+## Product surface
 
-When speaker timing is available, a consented enrolled profile can be used conservatively to identify the wearer by their confirmed name. Recognition and speaker identification are separate stages: speaker-service failure must not invalidate the underlying transcript. See [speaker names](SPEAKER_NAMES.md), [speaker identification](docs/SPEAKER_IDENTIFICATION.md) and [voice profiles](docs/VOICE_PROFILE.md).
+Synap currently exposes:
 
-## Devices
+- **Brief** — daily/weekly memory and priority view.
+- **Memories** — source recordings, transcripts, summaries and evidence.
+- **Actions** — commitments and follow-ups extracted from memory.
+- **Ask** — grounded recall over stored Synap memories.
+- **Device controls** — connection, recording, battery/status and firmware management.
+- **Voice identity** — consented speaker profile and downstream speaker enrichment.
+- **Chakshu media** — photo/video controls, SD/offline media metadata and move-to-app workflows.
 
-| Device | Recording | Additional hardware and controls |
-| --- | --- | --- |
-| ESP32-C3 SuperMini | Audio, playback, transcription and memory | External I2S mic, touch, battery telemetry, BLE standby and deep sleep |
-| ESP32-S3 SuperMini / S3FH4R2 | Same audio workflow; longer recovery with PSRAM | External I2S mic, touch, battery monitoring, BLE standby and deep sleep |
-| Chakshu / XIAO ESP32S3 Sense | Same audio workflow using onboard PDM | Phone-local photos and timestamped video with local soundtracks; existing SD imports |
+### Chakshu baseline
 
-`devices/catalog.json` mirrors the firmware catalog. Firmware reports supported capabilities and hardware readiness independently; the PWA also verifies protocol support, account association and connection ownership before enabling an action. Unknown devices cannot unlock Chakshu-only controls. See [device capabilities](docs/DEVICE_CAPABILITIES.md).
+The current companion flow supports the production Chakshu voice/media protocol, including:
 
-## Chakshu
+- SD clear and Synap-owned FIFO space management.
+- Verified move-to-app semantics before deleting the source SD object.
+- Offline audio and video capture on SD.
+- Default 10-second video capture and explicit requested durations.
+- Local `Hey Synap` command recognition in firmware.
+- Photo capture and explicit “what do you see” vision workflow.
+- Imported offline audio entering the normal transcription and memory pipeline.
 
-A Chakshu associated with the signed-in account unlocks its photo/video library. Header camera and video controls open the capture preview. New photos, video frames and their soundtracks stay on the current phone/browser, including when an SD card is inserted; no cloud image processing or soundtrack transcription is implied by capture. Existing SD files can still be imported or downloaded locally. S3/C3 expose audio controls without unsupported camera controls. See [Chakshu capture and playback](docs/CHAKSHU.md).
+## Source-of-truth rules
 
-## AI, storage and endpoints
-
-Settings → **Memory** configures Synap Cloud or a compatible custom endpoint for standalone audio processing. Custom endpoint authentication failures are surfaced separately from Synap Cloud routing so a bad custom configuration does not silently fall through to the wrong service.
-
-Original audio is preserved; optional enhancement creates a separate copy. Local browser data remains device/browser scoped, so export local originals before clearing site data. Settings also exposes pendant, browser-storage, offline-app and network health information. See [memory workspace](docs/MEMORY_WORKSPACE.md), [memory and audio](docs/MEMORY_AND_AUDIO.md), [backend/custom endpoint contract](docs/BACKEND_AI_STT_ENDPOINT_SPEC.md) and [encryption](docs/ENCRYPTION.md).
-
-## Firmware updates
-
-Settings → **Firmware** reads the permanent device ID and target and selects the corresponding production manifest. Target, build, image structure, size and SHA-256 checks remain mandatory. The published firmware feed—not a source commit by itself—determines the latest installable build. First installation is performed over USB; routine compatible updates use BLE OTA.
+1. `main` is the only current development baseline.
+2. Historical architecture decisions live in Git history, merged PRs and releases—not in parallel design documents.
+3. Device capability truth comes from the synchronized device catalog and firmware capability protocol.
+4. Original source media is not replaced by an enhanced or accelerated inference copy.
+5. A successful software build does not replace physical device acceptance testing.
 
 ## Development
 
-Use Node.js 22 or later:
+Node.js 22 or later is required.
 
 ```sh
 npm ci
@@ -64,17 +97,52 @@ npx playwright install chromium
 npm run dev
 ```
 
-Open `http://localhost:4173`. Before publishing, run `npm test`, `npm run typecheck`, `npm run test:backend` and `npm run test:browser`. Browser fixtures exercise the application flows, but real Bluetooth throughput, microphone quality, camera behavior and device power characteristics still require physical hardware validation. See [Contributing](CONTRIBUTING.md) for focused suites, formatting, catalog synchronization and release checks.
+Open `http://localhost:4173`.
 
-## Guides
+Before merging application changes:
 
-- [Architecture and source ownership](docs/ARCHITECTURE.md), [device capabilities](docs/DEVICE_CAPABILITIES.md)
-- [Audio pipeline and diagnostics](docs/AUDIO_PIPELINE.md), [recording lifecycle](docs/RECORDING_LIFECYCLE.md)
-- [Memory workspace](docs/MEMORY_WORKSPACE.md), [memory and audio](docs/MEMORY_AND_AUDIO.md)
-- [My actions](docs/MY_ACTIONS.md), [meeting features](docs/MEETING_FEATURES.md)
-- [Settings and navigation](docs/SETTINGS_AND_NAVIGATION.md)
-- [Speaker names](SPEAKER_NAMES.md), [speaker identification](docs/SPEAKER_IDENTIFICATION.md), [voice profiles](docs/VOICE_PROFILE.md)
-- [Chakshu](docs/CHAKSHU.md), [recording notifications](docs/RECORDING_NOTIFICATIONS.md)
-- [Authentication compatibility](docs/auth-compatibility.md), [encryption](docs/ENCRYPTION.md)
-- [GCP deployment](docs/GCP_DEPLOYMENT.md), [GitHub deployment](docs/GITHUB_DEPLOY.md)
-- [Backend/custom endpoint contract](docs/BACKEND_AI_STT_ENDPOINT_SPEC.md)
+```sh
+npm test
+npm run typecheck
+npm run test:backend
+npm run test:browser
+```
+
+The backend has its own unit/integration validation under `backend/`.
+
+## Deployment
+
+### PWA
+
+Changes reaching `main` are validated and GitHub Pages publishes the browser application.
+
+### Backend
+
+Backend-affecting changes on `main` trigger the production deployment workflow. The workflow:
+
+1. runs backend type checks and tests,
+2. builds and pushes the container,
+3. deploys a zero-traffic Cloud Run candidate,
+4. executes production-dependency readiness checks,
+5. promotes the verified revision to 100% traffic,
+6. leaves rollback instructions if promotion fails.
+
+Terraform remains reviewed infrastructure-as-code and is not implicitly applied by ordinary application pushes.
+
+## Physical acceptance boundary
+
+Software CI verifies protocol, storage, recovery, browser workflows and backend processing. Physical acceptance is still required for:
+
+- sustained BLE microphone delivery,
+- reconnect behavior under real radio conditions,
+- local `Hey Synap` recognition,
+- camera quality,
+- long SD recording and FIFO behavior,
+- move-to-app/delete behavior,
+- complete device → transcript → memory flow.
+
+The immediate hardware baseline for that acceptance testing is **firmware build 1262**.
+
+## Working convention from this baseline
+
+New work starts from current `main`. Do not revive superseded feature branches or old design PRs. Keep documentation in this README current and concise; use code, tests, releases and Git history as the detailed audit trail.
