@@ -191,7 +191,9 @@ test('a long ASR batch never falls back to flat text because timestamps are requ
   const original = fetch;
   const fixtureModel = config.gemini.transcribeModel;
   let calls = 0;
-  t.mock.method(Date, 'now', () => 1_000_000);
+  // Advance beyond the previous test's in-memory model cooldown so this case
+  // observes the fresh provider RetryInfo rather than cross-test state.
+  t.mock.method(Date, 'now', () => 10_000_000);
   globalThis.fetch = async (_url, init) => {
     calls++;
     const request = JSON.parse(String(init?.body));
