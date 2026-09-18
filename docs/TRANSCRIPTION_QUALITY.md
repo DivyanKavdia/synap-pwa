@@ -8,7 +8,7 @@ keeps capture/reconnect integrity separate from model recovery.
 
 Local capture and cloud source storage remain 30-second durable windows. Final
 processing no longer sends those windows to Gemini one by one. The backend groups
-contiguous missing windows into provider batches, 15 minutes by default, decrypts
+contiguous missing windows into provider batches, 20 minutes by default, decrypts
 and concatenates PCM only in memory, prepares the disposable 1.5× copy and sends
 that batch through the Gemini Files API.
 
@@ -44,8 +44,8 @@ or incomplete output uses a separate 120-second recording retry delay. Completed
 source windows remain completed, failed batches retain all encrypted audio, and
 explicit retry cannot bypass an active provider deadline.
 
-The default 15-minute batch turns a fully untranscribed 60-minute recording from
-roughly 120 primary ASR calls into about four, while leaving capture durability
+The default 20-minute batch turns a fully untranscribed 60-minute recording from
+roughly 120 primary ASR calls into about three, while leaving capture durability
 unchanged. See [audio cost controls](TRANSCRIPTION_COST.md).
 
 ## Grounded summaries
