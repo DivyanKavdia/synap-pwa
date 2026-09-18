@@ -117,7 +117,7 @@ export async function transcribeSegment(
     ];
     const response = await createInteraction(
       {
-        model: config.gemini.transcribeModel,
+        model: usedModel,
         input,
         generation_config: { transcription_config: settings },
         usage_label: 'transcription',
@@ -233,38 +233,51 @@ export async function transcribeSegment(
     }
   } catch (error) {
     signal?.throwIfAborted();
-    const resultFailure =
-      error instanceof GeminiError &&
-      (error.reason === 'incomplete' || error.reason === 'missing-text');
-    const acceleratedRejection =
-      prepared?.speed === 1.5 &&
-      error instanceof GeminiError &&
-      error.status === 400 &&
-      !/api[_ -]?key|credential|permission|billing|quota/i.test(error.message);
-    if (mimeType !== 'audio/wav' || (!resultFailure && !acceleratedRejection)) throw error;
-    // Change the input/settings once, instead of repeatedly submitting the same
-    // failed accelerated window. Never use this for rate limits or access errors.
-    attempted = true;
-    prepared = { ...originalAudio(audio), fallback: 'provider-failure' };
-    log.warn('Retrying transcription with original audio and default settings', {
-      model: config.gemini.transcribeModel,
-      stage: 'transcription',
-      reason: error.reason,
-      http_status: error.status,
-      source_duration_ms: prepared.sourceDurationMs,
-    });
-    response = await run({});
+    if (longAsrCooldown(error)) {
+      attempted = true;
+      log.warn('Dedicated ASR has a long cooldown; using one general-audio fallback', {
+        model: config.gemini.transcribeModel,
+        fallback_model: config.gemini.transcribeFallbackModel,
+        stage: 'transcription',
+        retry_after_ms: error instanceof GeminiError ? error.rateLimit?.retryAfterMs : undefined,
+      });
+      response = await runGeneralFallback();
+    } else {
+      const resultFailure =
+        error instanceof GeminiError &&
+        (error.reason === 'incomplete' || error.reason === 'missing-text');
+      const acceleratedRejection =
+        prepared?.speed === 1.5 &&
+        error instanceof GeminiError &&
+        error.status === 400 &&
+        !/api[_ -]?key|credential|permission|billing|quota/i.test(error.message);
+      if (mimeType !== 'audio/wav' || (!resultFailure && !acceleratedRejection)) throw error;
+      // Change the input/settings once, instead of repeatedly submitting the same
+      // failed accelerated window. Never use this for short rate limits or access errors.
+      attempted = true;
+      prepared = { ...originalAudio(audio), fallback: 'provider-failure' };
+      log.warn('Retrying transcription with original audio and default settings', {
+        model: config.gemini.transcribeModel,
+        stage: 'transcription',
+        reason: error instanceof GeminiError ? error.reason : 'unknown',
+        http_status: error instanceof GeminiError ? error.status : 0,
+        source_duration_ms: prepared.sourceDurationMs,
+      });
+      response = await run({});
+    }
   }
   if (!response) throw new GeminiError('Transcription returned no response', 0, true);
   let rawText = interactionText(response).trim();
+  if (generalFallback && rawText === '[NO_SPEECH]') return empty('no-speech', true);
   if (!rawText) {
     // One fresh, automatic-language pass for an explicitly empty result. Never
     // seal transport failures as empty speech or repeatedly summarize emptiness.
     attempted = true;
     if (prepared?.speed === 1.5)
       prepared = { ...originalAudio(audio), fallback: 'empty-recognition' };
-    response = await run({ mode: 'verbatim' });
+    response = generalFallback ? await runGeneralFallback() : await run({ mode: 'verbatim' });
     rawText = interactionText(response).trim();
+    if (generalFallback && rawText === '[NO_SPEECH]') return empty('no-speech', true);
     if (!rawText) return empty('no-speech', true);
   }
   const sourceOffset = (offset: string | undefined) => {
@@ -282,7 +295,7 @@ export async function transcribeSegment(
       end_ms: sourceOffset(word.end_offset),
     }));
   let words = convert(response);
-  if (options.enrichAnnotations === true && (diarize || wordTimestamps) && !annotationsComplete(rawText, words)) {
+  if (!generalFallback && options.enrichAnnotations === true && (diarize || wordTimestamps) && !annotationsComplete(rawText, words)) {
     attempted = true;
     try {
       const budget = AbortSignal.timeout(45000);
