@@ -16,12 +16,14 @@ No microphone, Bluetooth, camera, SD or local voice firmware changes are needed.
 - Bound the subprocess to 10 seconds, one filter thread and a 2 MB input limit.
   Abort cancels it; conversion failure uses the original recording.
 - If accelerated recognition returns explicitly empty text, the existing single
-  empty-result retry uses original 1× audio with automatic language detection.
-  Missing/incomplete output also gets one original-audio pass with provider-default
-  settings. A 400 rejection of accelerated input gets this fallback after optional
-  settings are removed. Rate limits, authorization failures and service outages
-  never trigger extra original-audio submissions. A failed fallback remains an
-  error, not evidence of silence.
+  empty-result review uses original 1× audio with automatic language detection.
+  Missing/incomplete provider output does **not** trigger an immediate second audio
+  submission: it returns to the durable recording queue and waits at least 120
+  seconds before recovery from the saved source. A deterministic HTTP 400 rejection
+  of accelerated input may still fall back to original audio/default settings after
+  optional settings are removed because that is request-shape compatibility, not a
+  quota retry. Rate limits, authorization failures and service outages never trigger
+  extra original-audio submissions inside the same processing attempt.
 - Map each word to `window start + ASR offset × speed`, bounded to source duration.
   On a normal-speed fallback use factor 1. Speaker extraction, navigation and
   summaries therefore continue to refer to the original timeline.
