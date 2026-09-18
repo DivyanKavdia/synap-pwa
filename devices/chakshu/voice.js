@@ -4,6 +4,7 @@
   const CONTROL = '4fa12356-0000-1000-8000-00805f9b34fb',
     EVENTS = '4fa12357-0000-1000-8000-00805f9b34fb',
     PROTOCOL = 2,
+    WAKE = 1,
     PHOTO = 2,
     VIDEO_START = 3,
     VIDEO_STOP = 4,
@@ -17,11 +18,13 @@
     timer = null,
     lastPoll = 0,
     message = '',
-    state = null;
+    state = null,
+    feedbackTimer = null;
   const api = () => root.SynapChakshu;
   const supported = () => root.SynapCapabilities?.hasVoice(root.SynapModules?.client?.module);
   function validCommand(command) {
     return command === 0 ||
+      command === WAKE ||
       (command >= PHOTO && command <= DESCRIBE) ||
       (command >= DURATION_BASE && command <= DURATION_LAST);
   }
@@ -46,6 +49,35 @@
       offline: Boolean(value.getUint8(18)),
       value: value.getUint16(20, true),
     });
+  }
+  function commandLabel(incoming) {
+    if (incoming.command === WAKE) return 'Hey Synap';
+    if (incoming.command === PHOTO) return 'Take a snap';
+    if (incoming.command === VIDEO_START) return 'Record a video';
+    if (incoming.command === VIDEO_STOP) return 'Stop video';
+    if (incoming.command === AUDIO_ON) return 'Start audio';
+    if (incoming.command === AUDIO_OFF) return 'Stop audio';
+    if (incoming.command === DESCRIBE) return 'What do you see';
+    if (incoming.command >= DURATION_BASE && incoming.command <= DURATION_LAST)
+      return `Record for ${incoming.value} seconds`;
+    return 'Voice command';
+  }
+  function feedback(text, tone = 'listening', ttl = 0) {
+    const element = root.document?.getElementById?.('heySynapFeedback'),
+      label = root.document?.getElementById?.('heySynapFeedbackText');
+    clearTimeout(feedbackTimer);
+    feedbackTimer = null;
+    if (!element || !label) return;
+    if (!text) {
+      element.hidden = true;
+      delete element.dataset.tone;
+      label.textContent = '';
+      return;
+    }
+    label.textContent = text;
+    element.dataset.tone = tone;
+    element.hidden = false;
+    if (ttl > 0) feedbackTimer = setTimeout(() => feedback('', tone, 0), ttl);
   }
   function current(b) {
     return Boolean(
@@ -75,6 +107,9 @@
     lastPoll = 0;
     clearTimeout(timer);
     timer = null;
+    clearTimeout(feedbackTimer);
+    feedbackTimer = null;
+    feedback('', 'listening', 0);
     notify();
   }
   async function highQualitySnap() {
@@ -109,12 +144,30 @@
       delta = (incoming.sequence - b.sequence) >>> 0;
     if (delta >= 0x80000000) return; // stale poll after a newer notification
     state = incoming;
-    notify();
-    if (!delta) return;
+    if (!delta) {
+      notify();
+      return;
+    }
     b.sequence = incoming.sequence;
-    if (incoming.result !== 2 || incoming.status !== 1 || !incoming.command) return;
+    if (incoming.status !== 1 || !incoming.command) {
+      notify();
+      return;
+    }
+    if (incoming.command === WAKE) {
+      message = 'Listening for command…';
+      feedback('Hey Synap · Listening for command…', 'listening', 8200);
+      notify();
+      return;
+    }
+    if (incoming.result !== 2) {
+      notify();
+      return;
+    }
+    const label = commandLabel(incoming);
+    feedback(`Heard · ${label}`, 'heard', 3000);
     if (b.queued >= 4) {
       message = 'Voice commands are busy. Please try again.';
+      feedback(message, 'error', 5000);
       notify();
       return;
     }
@@ -126,9 +179,15 @@
           return;
         try {
           await perform(incoming);
-          if (current(b)) message = '';
+          if (current(b)) {
+            message = '';
+            feedback(`Done · ${label}`, 'success', 2500);
+          }
         } catch (error) {
-          if (current(b)) message = error.message;
+          if (current(b)) {
+            message = error.message;
+            feedback(error.message, 'error', 5000);
+          }
         } finally {
           notify();
         }
@@ -206,6 +265,7 @@
     try {
       await write(b, value ? 1 : 0);
       if (current(b)) state = decode(await b.context.mediaQueue(() => b.control.readValue(), 'Read voice setting'));
+      if (!value) feedback('', 'listening', 0);
       message = '';
       return state;
     } finally {
@@ -215,8 +275,9 @@
     }
   }
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice2',
+    revision: '1.0.0-chakshu-voice3',
     decode,
+    label: commandLabel,
     perform,
     sync,
     enabled,
