@@ -313,8 +313,10 @@ export async function transcribeSegment(
   let rawText = interactionText(response).trim();
   if (generalFallback && rawText === '[NO_SPEECH]') return empty('no-speech', true);
   if (!rawText) {
-    // One fresh, automatic-language pass for an explicitly empty result. Never
-    // seal transport failures as empty speech or repeatedly summarize emptiness.
+    // A completed long-form ASR response with no text is accepted as no speech.
+    // Do not immediately spend a second RPD unit on the same large batch. The
+    // legacy short-window path keeps its one guarded empty-result recovery pass.
+    if (options.primaryWordTimestamps) return empty('no-speech', true);
     attempted = true;
     if (prepared?.speed === 1.5)
       prepared = { ...originalAudio(audio), fallback: 'empty-recognition' };
