@@ -454,6 +454,40 @@ test('the backend read helpers cover the second-brain surface', () => {
   }
 });
 
+test('new managed recordings batch ten local recovery windows into one cloud segment', () => {
+  const context = load(backendSource, { localStorage: storage() });
+  const recording = {
+    cloudTranscriptionWindowSeconds: 300,
+    durationMs: 620000,
+    sealed: true,
+    status: 'saved',
+  };
+  assert.equal(context.SynapBackend.cloudSegmentSeconds(recording), 300);
+  const batch = context.SynapBackend.cloudBatch(recording, 13);
+  assert.equal(batch.index, 1);
+  assert.equal(batch.firstLocal, 10);
+  assert.equal(batch.lastLocal, 19);
+  assert.equal(batch.size, 10);
+  assert.equal(context.SynapBackend.segmentBounds(recording, 1).startMs, 300000);
+  assert.equal(context.SynapBackend.segmentBounds(recording, 1).endMs, 600000);
+  assert.equal(
+    context.SynapBackend.cloudSegmentCount(
+      recording,
+      Array.from({ length: 21 }, (_, index) => ({ index, frameCount: 600 })),
+    ),
+    3,
+  );
+});
+
+test('recordings without a stored cloud window keep legacy 30-second cloud numbering', () => {
+  const context = load(backendSource, { localStorage: storage() });
+  const recording = { durationMs: 80000, sealed: true, status: 'saved' };
+  assert.equal(context.SynapBackend.cloudSegmentSeconds(recording), 30);
+  assert.equal(context.SynapBackend.cloudBatch(recording, 2).index, 2);
+  assert.equal(context.SynapBackend.segmentBounds(recording, 2).startMs, 60000);
+  assert.equal(context.SynapBackend.segmentBounds(recording, 2).endMs, 80000);
+});
+
 test('a recording is created once, not once per segment', () => {
   // ensureRecording ran for every 30s chunk. The endpoint is idempotent, but
   // repeating it multiplied requests by capture length and widened the window
