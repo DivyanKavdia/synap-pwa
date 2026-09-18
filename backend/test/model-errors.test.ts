@@ -47,8 +47,22 @@ test('public model diagnostics classify failures without returning provider bodi
     );
     assert.equal(responseStatus, retryable ? 503 : 502);
     assert.deepEqual(body.error, safe);
-    assert.equal(headers['Retry-After'], status === 429 ? '60' : undefined);
+    assert.equal(
+      headers['Retry-After'],
+      reason === 'missing-text' ? '120' : status === 429 ? '60' : undefined,
+    );
+    if (reason === 'missing-text') assert.equal(safe.retryAfterMs, 120000);
   }
+});
+
+test('missing transcription output retains its model route and a durable retry delay', () => {
+  const route = { model: 'gemini-3.5-transcribe', stage: 'transcription' };
+  const failure = modelFailure(new GeminiError('PRIVATE AUDIO', 0, true, 'missing-text', undefined, route));
+  assert.equal(failure.code, 'model_missing_text');
+  assert.equal(failure.model, route.model);
+  assert.equal(failure.modelStage, route.stage);
+  assert.equal(failure.retryAfterMs, 120000);
+  assert.doesNotMatch(JSON.stringify(failure), /PRIVATE AUDIO/);
 });
 
 test('diagnostics distinguish a provider rejection from a suppressed request without exposing its body', () => {
