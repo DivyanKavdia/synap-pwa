@@ -74,7 +74,7 @@ The current companion flow supports the production Chakshu voice/media protocol,
 - Verified move-to-app semantics before deleting the source SD object.
 - Offline audio and video capture on SD.
 - Default 10-second video capture and explicit requested durations.
-- Local `Hey Synap` command recognition in firmware.
+- Local `Hey Snap` command recognition in firmware.
 - Photo capture and explicit “what do you see” vision workflow.
 - Imported offline audio entering the normal transcription and memory pipeline.
 
@@ -135,7 +135,7 @@ Software CI verifies protocol, storage, recovery, browser workflows and backend 
 
 - sustained BLE microphone delivery,
 - reconnect behavior under real radio conditions,
-- local `Hey Synap` recognition,
+- local `Hey Snap` recognition,
 - camera quality,
 - long SD recording and FIFO behavior,
 - move-to-app/delete behavior,
