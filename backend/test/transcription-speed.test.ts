@@ -66,6 +66,59 @@ test('ASR receives only the faster copy and word times return to the source time
   assert.equal(result.audioUsage?.policy, 'atempo-1.5-v1');
 });
 
+test('long-form ASR uploads audio once and transcribes by file URI with primary timestamps', async (t) => {
+  const calls: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.includes('/upload/v1beta/files')) {
+      return new Response('{}', {
+        status: 200,
+        headers: { 'x-goog-upload-url': 'https://upload.example.test/session' },
+      });
+    }
+    if (url === 'https://upload.example.test/session') {
+      assert(init?.body, 'file bytes must be uploaded separately from the model request');
+      return new Response(JSON.stringify({
+        file: { name: 'files/synap-test', uri: 'https://files.example.test/synap-test', mimeType: 'audio/wav', state: 'ACTIVE' },
+      }));
+    }
+    if (url.endsWith('/interactions')) {
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.input[0].uri, 'https://files.example.test/synap-test');
+      assert.equal(body.input[0].data, undefined);
+      assert.deepEqual(body.generation_config.transcription_config.mode, {
+        type: 'verbatim',
+        timestamp_granularities: ['word'],
+      });
+      return response('Hello world', [
+        { type: 'word_info', text: 'Hello', start_offset: '0.4s', end_offset: '0.8s' },
+        { type: 'word_info', text: 'world', start_offset: '0.9s', end_offset: '1.2s' },
+      ]);
+    }
+    if (url.includes('/v1beta/files/synap-test') && init?.method === 'DELETE')
+      return new Response('{}');
+    throw new Error('Unexpected request: ' + url);
+  });
+  const result = await transcribeSegment(tone(), 'audio/wav', {
+    speed: 1.5,
+    baseOffsetMs: 30_000,
+    primaryWordTimestamps: true,
+    wordTimestamps: true,
+    diarize: false,
+    useFileApi: true,
+  });
+  assert.equal(result.audioUsage?.requestAttempts, 1);
+  assert.equal(result.review.annotationsComplete, true);
+  assert.deepEqual(result.words, [
+    { text: 'Hello', speaker: null, start_ms: 30600, end_ms: 31200 },
+    { text: 'world', speaker: null, start_ms: 31350, end_ms: 31800 },
+  ]);
+  assert.equal(calls.filter(url => url.endsWith('/interactions')).length, 1);
+  assert(calls.some(url => url.includes('/upload/v1beta/files')));
+  assert(calls.some(url => url.includes('/v1beta/files/synap-test')));
+});
+
 test('empty sped-up recognition retries the original once and accounts for both inputs', async (t) => {
   const source = tone();
   let calls = 0;
