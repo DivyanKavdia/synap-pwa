@@ -14,6 +14,8 @@ import {
   createInteraction,
   interactionText,
   interactionWords,
+  uploadGeminiFile,
+  deleteGeminiFile,
   GeminiError,
   type InteractionPart,
   type InteractionResponse,
@@ -48,6 +50,11 @@ export interface TranscribeOptions {
   language?: string;
   diarize?: boolean;
   wordTimestamps?: boolean;
+  /** Require timestamps in the primary pass so a long provider batch can be
+   * projected back onto Synap's durable 30-second source windows. */
+  primaryWordTimestamps?: boolean;
+  /** Reference audio through Gemini Files API rather than embedding it inline. */
+  useFileApi?: boolean;
   /** Extra audio submission; opt in only when a caller explicitly needs labels. */
   enrichAnnotations?: boolean;
   signal?: AbortSignal;
@@ -112,36 +119,52 @@ export async function transcribeSegment(
     });
   };
   const run = async (settings: Record<string, unknown>, requestSignal = signal) => {
-    const input: InteractionPart[] = [
-      { type: 'audio', data: (prepared?.audio || audio).toString('base64'), mime_type: mimeType },
-    ];
-    const response = await createInteraction(
-      {
-        model: usedModel,
-        input,
-        generation_config: { transcription_config: settings },
-        usage_label: 'transcription',
-      },
-      requestSignal,
-      () => noteSubmission(config.gemini.transcribeModel),
-    );
-    // A missing output is a provider failure, not evidence of silence.
-    if (
-      !response.steps?.some(
-        (step) =>
-          step.type === 'model_output' &&
-          step.content?.some((part) => part.type === 'text' && typeof part.text === 'string'),
-      )
-    )
-      throw new GeminiError(
-        'Transcription returned no completed text output. Saved audio is retained.',
-        0,
-        true,
-        'missing-text',
-        undefined,
-        { model: config.gemini.transcribeModel, stage: 'transcription' },
+    const submitted = prepared?.audio || audio;
+    let uploaded: Awaited<ReturnType<typeof uploadGeminiFile>> | undefined;
+    let input: InteractionPart[];
+    try {
+      if (options.useFileApi) {
+        uploaded = await uploadGeminiFile(submitted, mimeType, requestSignal);
+        input = [{ type: 'audio', uri: uploaded.uri, mime_type: uploaded.mimeType || mimeType }];
+      } else {
+        input = [{ type: 'audio', data: submitted.toString('base64'), mime_type: mimeType }];
+      }
+      const response = await createInteraction(
+        {
+          model: usedModel,
+          input,
+          generation_config: { transcription_config: settings },
+          usage_label: 'transcription',
+        },
+        requestSignal,
+        () => {
+          noteSubmission(usedModel);
+          log.info('Transcription transport', {
+            model: usedModel,
+            transport: options.useFileApi ? 'file-uri' : 'inline',
+          });
+        },
       );
-    return response;
+      // A missing output is a provider failure, not evidence of silence.
+      if (
+        !response.steps?.some(
+          (step) =>
+            step.type === 'model_output' &&
+            step.content?.some((part) => part.type === 'text' && typeof part.text === 'string'),
+        )
+      )
+        throw new GeminiError(
+          'Transcription returned no completed text output. Saved audio is retained.',
+          0,
+          true,
+          'missing-text',
+          undefined,
+          { model: config.gemini.transcribeModel, stage: 'transcription' },
+        );
+      return response;
+    } finally {
+      if (uploaded) await deleteGeminiFile(uploaded);
+    }
   };
 
   const runGeneralFallback = async (requestSignal = signal) => {
@@ -192,20 +215,26 @@ export async function transcribeSegment(
   };
 
   const longAsrCooldown = (error: unknown) =>
+    !options.primaryWordTimestamps &&
     error instanceof GeminiError &&
     (error.reason === 'cooldown' || error.status === 429) &&
     Number(error.rateLimit?.retryAfterMs || 0) >= config.gemini.transcribeFallbackAfterMs &&
     config.gemini.transcribeFallbackModel !== config.gemini.transcribeModel;
 
-  // Google documents lower recognition accuracy with word timestamps. Keep them
-  // out of the primary pass. An optional second pass can add matching labels.
+  // Batch mode enables primary word timestamps only because they are the
+  // deterministic map back to 30-second encrypted source windows. Ordinary
+  // single-window ASR keeps the higher-accuracy text-first pass.
+  const primaryMode = options.primaryWordTimestamps
+    ? { type: 'verbatim', timestamp_granularities: ['word'] }
+    : 'verbatim';
   const requested = {
-    mode: 'verbatim',
+    mode: primaryMode,
     ...(languageCodes ? { language_codes: languageCodes } : {}),
   };
   const variants: Record<string, unknown>[] = [requested];
-  if (languageCodes) variants.push({ mode: 'verbatim' });
-  variants.push({}); // Provider defaults, for a rejected optional mode setting.
+  if (languageCodes) variants.push({ mode: primaryMode });
+  if (!options.primaryWordTimestamps)
+    variants.push({}); // Unsafe when timestamps are required for deterministic splitting.
   let response: InteractionResponse | undefined;
   let attempted = false;
   try {
@@ -251,9 +280,13 @@ export async function transcribeSegment(
         error instanceof GeminiError &&
         error.status === 400 &&
         !/api[_ -]?key|credential|permission|billing|quota/i.test(error.message);
-      if (mimeType !== 'audio/wav' || (!resultFailure && !acceleratedRejection)) throw error;
-      // Change the input/settings once, instead of repeatedly submitting the same
-      // failed accelerated window. Never use this for short rate limits or access errors.
+      // Missing/incomplete output already consumed provider capacity. Recovery
+      // belongs to the durable queue after its 120-second delay, never to an
+      // immediate second audio submission inside this request.
+      if (resultFailure) throw error;
+      if (mimeType !== 'audio/wav' || !acceleratedRejection) throw error;
+      // A deterministic HTTP 400 is request-shape compatibility, not quota
+      // recovery, so one original-audio/default-settings retry remains bounded.
       attempted = true;
       prepared = { ...originalAudio(audio), fallback: 'provider-failure' };
       log.warn('Retrying transcription with original audio and default settings', {
@@ -275,7 +308,7 @@ export async function transcribeSegment(
     attempted = true;
     if (prepared?.speed === 1.5)
       prepared = { ...originalAudio(audio), fallback: 'empty-recognition' };
-    response = generalFallback ? await runGeneralFallback() : await run({ mode: 'verbatim' });
+    response = generalFallback ? await runGeneralFallback() : await run({ mode: primaryMode });
     rawText = interactionText(response).trim();
     if (generalFallback && rawText === '[NO_SPEECH]') return empty('no-speech', true);
     if (!rawText) return empty('no-speech', true);
@@ -325,8 +358,19 @@ export async function transcribeSegment(
       if (signal?.aborted && signal.reason?.name !== 'TimeoutError') throw error;
     }
   }
-  const complete = !generalFallback && annotationsComplete(rawText, words);
-  // Partial/disagreeing annotations must not feed speaker identification either.
+  const complete = options.primaryWordTimestamps
+    ? timestampAnnotationsComplete(rawText, words)
+    : !generalFallback && annotationsComplete(rawText, words);
+  if (options.primaryWordTimestamps && !complete)
+    throw new GeminiError(
+      'Long transcription batch returned incomplete word timestamps. Saved audio is retained.',
+      0,
+      true,
+      'incomplete',
+      undefined,
+      { model: config.gemini.transcribeModel, stage: 'transcription' },
+    );
+  // Partial/disagreeing optional annotations must not feed speaker identification.
   if (!complete) words = [];
   return {
     text: `[${formatMs(baseOffsetMs)}] S?: ${rawText}`,
@@ -350,7 +394,7 @@ export async function transcribeSegment(
 const reviewText = (text: string) =>
   text.normalize('NFKC').toLocaleLowerCase('und').replace(/\s+/gu, ' ').trim();
 
-export function annotationsComplete(text: string, words: TranscriptWord[]): boolean {
+export function timestampAnnotationsComplete(text: string, words: TranscriptWord[]): boolean {
   if (!text.trim()) return words.length === 0;
   return (
     words.length > 0 &&
@@ -359,10 +403,13 @@ export function annotationsComplete(text: string, words: TranscriptWord[]): bool
       (word) =>
         Number.isFinite(word.start_ms) &&
         Number.isFinite(word.end_ms) &&
-        word.end_ms > word.start_ms &&
-        Boolean(word.speaker),
+        word.end_ms > word.start_ms,
     )
   );
+}
+
+export function annotationsComplete(text: string, words: TranscriptWord[]): boolean {
+  return timestampAnnotationsComplete(text, words) && words.every((word) => Boolean(word.speaker));
 }
 
 function comparableText(value: string): string {
