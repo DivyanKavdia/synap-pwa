@@ -1,6 +1,6 @@
 import { openBytes, openText, sealJson, sealText, type Binding } from '../crypto/envelope.js';
 import { config } from '../config.js';
-import { transcribeSegment } from '../gemini/transcribe.js';
+import { formatMs, transcribeSegment } from '../gemini/transcribe.js';
 import { makePcm16Wav, parsePcm16Wav } from '../speaker/audio.js';
 import * as db from '../store/firestore.js';
 import { readSealedSegment } from '../store/gcs.js';
