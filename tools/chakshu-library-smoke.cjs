@@ -166,7 +166,8 @@ async function until(page, predicate, arg) {
         });
       }
       assert.equal(await page.locator('#chakshuVoice').count(), 0);
-      assert.equal(await page.evaluate(() => Boolean(window.SynapChakshuVoice || window.SynapChakshuModel)), false);
+      assert.equal(await page.evaluate(() => Boolean(window.SynapChakshuVoice)), true);
+      assert.equal(await page.evaluate(() => Boolean(window.SynapChakshuModel)), false);
       assert.equal(await page.evaluate(() => bleFixture.voiceLease), 0);
       // Hold cleanup after the audio journal has cleared its ID. Video must wait
       // for the capture owner, even though there is no longer an active journal.
