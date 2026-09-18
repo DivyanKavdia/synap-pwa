@@ -333,7 +333,7 @@ export async function transcribeSegment(
       0,
       8,
     ) as string[],
-    model: config.gemini.transcribeModel,
+    model: usedModel,
     audioUsage: audioUsage(),
     review: {
       attempted,
