@@ -68,7 +68,8 @@ export async function transcribeSegment(
   signal?.throwIfAborted();
   let prepared: TranscriptionAudio | undefined;
   let submittedAudioMs = 0,
-    requestAttempts = 0;
+    requestAttempts = 0,
+    usedModel = config.gemini.transcribeModel;
   const audioUsage = (): TranscriptionAudioUsage | undefined =>
     prepared
       ? {
@@ -88,7 +89,7 @@ export async function transcribeSegment(
     text: '',
     words: [],
     speakers: [],
-    model: config.gemini.transcribeModel,
+    model: usedModel,
     review: { attempted, annotationsComplete: true, policy: 'text-first-v1', outcome },
     audioUsage: audioUsage(),
   });
@@ -99,27 +100,49 @@ export async function transcribeSegment(
   if (mimeType === 'audio/wav' && options.speed)
     prepared = await prepareTranscriptionAudio(audio, options.speed, signal);
   const languageCodes = transcriptionLanguageCodes(language);
-  const run = async (settings: Record<string, unknown>, requestSignal = signal) => {
-    const input: InteractionPart[] = [
-      { type: 'audio', data: (prepared?.audio || audio).toString('base64'), mime_type: mimeType },
-    ];
+  const run = async (
+    settings: Record<string, unknown>,
+    requestSignal = signal,
+    model = config.gemini.transcribeModel,
+    audioUnderstandingFallback = false,
+  ) => {
+    const requestAudio = audioUnderstandingFallback ? audio : (prepared?.audio || audio);
+    const input: InteractionPart[] = audioUnderstandingFallback
+      ? [
+          {
+            type: 'text',
+            text: 'Transcribe this audio verbatim. Return only the words that were spoken. Preserve the spoken language and code-switching. Do not summarize, translate, identify speakers, or infer missing words. If there is no intelligible speech, return no text.',
+          },
+          { type: 'audio', data: requestAudio.toString('base64'), mime_type: mimeType },
+        ]
+      : [
+          { type: 'audio', data: requestAudio.toString('base64'), mime_type: mimeType },
+        ];
     const response = await createInteraction(
       {
-        model: config.gemini.transcribeModel,
+        model,
         input,
-        generation_config: { transcription_config: settings },
+        generation_config: audioUnderstandingFallback
+          ? { temperature: 0, max_output_tokens: 8192 }
+          : { transcription_config: settings },
         usage_label: 'transcription',
       },
       requestSignal,
       () => {
         requestAttempts++;
-        submittedAudioMs += prepared?.durationMs || 0;
-        // Includes HTTP retries and the annotation pass. This is submitted input,
-        // not a bill: a timeout may have been charged without a response.
+        submittedAudioMs += audioUnderstandingFallback
+          ? (prepared?.sourceDurationMs || prepared?.durationMs || 0)
+          : (prepared?.durationMs || 0);
+        // Includes HTTP retries and the optional annotation pass. This is
+        // submitted input, not a bill: a timeout may have been charged without
+        // a response.
         log.info('Transcription audio submission', {
-          model: config.gemini.transcribeModel,
-          speed: prepared?.speed || 1,
-          audio_ms: prepared?.durationMs || 0,
+          model,
+          fallback: audioUnderstandingFallback,
+          speed: audioUnderstandingFallback ? 1 : (prepared?.speed || 1),
+          audio_ms: audioUnderstandingFallback
+            ? (prepared?.sourceDurationMs || prepared?.durationMs || 0)
+            : (prepared?.durationMs || 0),
           attempt: requestAttempts,
         });
       },
@@ -138,7 +161,7 @@ export async function transcribeSegment(
         true,
         'missing-text',
         undefined,
-        { model: config.gemini.transcribeModel, stage: 'transcription' },
+        { model, stage: 'transcription' },
       );
     return response;
   };
@@ -178,6 +201,28 @@ export async function transcribeSegment(
     }
   } catch (error) {
     signal?.throwIfAborted();
+    const fallbackModel = config.gemini.transcribeFallbackModel;
+    const dedicatedUnavailable =
+      error instanceof GeminiError &&
+      (error.status === 429 || error.reason === 'cooldown') &&
+      fallbackModel &&
+      fallbackModel !== config.gemini.transcribeModel;
+    if (dedicatedUnavailable) {
+      attempted = true;
+      if (mimeType === 'audio/wav')
+        prepared = { ...originalAudio(audio), fallback: 'provider-failure' };
+      usedModel = fallbackModel;
+      log.warn('Dedicated transcription model unavailable; using audio-understanding fallback', {
+        model: config.gemini.transcribeModel,
+        fallback_model: fallbackModel,
+        stage: 'transcription',
+        reason: error.reason,
+        http_status: error.status,
+        retryAfterMs: error.rateLimit?.retryAfterMs,
+        quotaKind: error.rateLimit?.quotaKind,
+      });
+      response = await run({}, signal, fallbackModel, true);
+    } else {
     const resultFailure =
       error instanceof GeminiError &&
       (error.reason === 'incomplete' || error.reason === 'missing-text');
@@ -199,12 +244,16 @@ export async function transcribeSegment(
       source_duration_ms: prepared.sourceDurationMs,
     });
     response = await run({});
+    }
   }
   if (!response) throw new GeminiError('Transcription returned no response', 0, true);
   let rawText = interactionText(response).trim();
   if (!rawText) {
-    // One fresh, automatic-language pass for an explicitly empty result. Never
-    // seal transport failures as empty speech or repeatedly summarize emptiness.
+    // A successful fallback request that found no text is already our one
+    // alternate-model attempt. Do not bounce back to the quota-blocked ASR.
+    if (usedModel !== config.gemini.transcribeModel) return empty('no-speech', true);
+    // One fresh, automatic-language pass for an explicitly empty primary result.
+    // Never seal transport failures as empty speech or repeatedly summarize emptiness.
     attempted = true;
     if (prepared?.speed === 1.5)
       prepared = { ...originalAudio(audio), fallback: 'empty-recognition' };
@@ -227,7 +276,12 @@ export async function transcribeSegment(
       end_ms: sourceOffset(word.end_offset),
     }));
   let words = convert(response);
-  if (options.enrichAnnotations === true && (diarize || wordTimestamps) && !annotationsComplete(rawText, words)) {
+  if (
+    usedModel === config.gemini.transcribeModel &&
+    options.enrichAnnotations === true &&
+    (diarize || wordTimestamps) &&
+    !annotationsComplete(rawText, words)
+  ) {
     attempted = true;
     try {
       const budget = AbortSignal.timeout(45000);
@@ -265,7 +319,7 @@ export async function transcribeSegment(
       0,
       8,
     ) as string[],
-    model: config.gemini.transcribeModel,
+    model: usedModel,
     audioUsage: audioUsage(),
     review: {
       attempted,
