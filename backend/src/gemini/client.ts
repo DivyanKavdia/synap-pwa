@@ -189,6 +189,7 @@ export async function deleteGeminiFile(file: GeminiUploadedFile): Promise<void> 
     await fetch(`${config.gemini.endpoint}/${file.name}`, {
       method: 'DELETE',
       headers: { 'x-goog-api-key': geminiApiKey },
+      signal: AbortSignal.timeout(10_000),
     });
   } catch {
     // Files expire automatically; cleanup is privacy/cost hygiene, not a reason
