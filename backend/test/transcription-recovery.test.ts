@@ -142,7 +142,9 @@ test('a long dedicated-ASR cooldown falls back once to general audio understandi
     assert.equal(request.input[1].type, 'text');
     assert.equal(request.generation_config.temperature, 0);
     assert.equal(request.generation_config.transcription_config, undefined);
-    return reply(false);
+    // Even if a general model unexpectedly emits word annotations, the
+    // degraded fallback must discard them rather than claiming ASR diarization.
+    return reply(true);
   };
   try {
     const result = await transcribeSegment(audio, 'audio/wav', {
