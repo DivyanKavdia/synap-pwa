@@ -264,6 +264,21 @@ const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS = 4;
 const modelCooldowns = new ModelCooldowns();
 
+export async function ensureModelAvailable(model: string, stage: string): Promise<void> {
+  const cooldown = modelCooldowns.remaining(model) ||
+    (config.gemini.sharedCooldown ? await sharedModelCooldown(model) : undefined);
+  if (!cooldown) return;
+  modelCooldowns.defer(model, cooldown);
+  throw new GeminiError(
+    'Gemini request deferred after rate limit.',
+    429,
+    true,
+    'cooldown',
+    cooldown,
+    { model, stage },
+  );
+}
+
 async function call<T>(
   path: string,
   body: unknown,
@@ -281,12 +296,7 @@ async function call<T>(
   const maxAttempts = context.stage === 'transcription' ? 1 : MAX_ATTEMPTS;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     signal?.throwIfAborted();
-    const cooldown = modelCooldowns.remaining(context.model) ||
-      (config.gemini.sharedCooldown ? await sharedModelCooldown(context.model) : undefined);
-    if (cooldown) {
-      modelCooldowns.defer(context.model, cooldown);
-      throw new GeminiError('Gemini request deferred after rate limit.', 429, true, 'cooldown', cooldown, context);
-    }
+    await ensureModelAvailable(context.model, context.stage);
     signal?.throwIfAborted();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.gemini.requestTimeoutMs);
