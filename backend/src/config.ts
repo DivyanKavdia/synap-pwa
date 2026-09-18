@@ -97,6 +97,13 @@ export const config = {
     transcribeFallbackAfterMs: Number(optional('SYNAP_GEMINI_STT_FALLBACK_AFTER_MS', '300000')),
     /** Reversible ASR-only optimization; originals and summary models are unchanged. */
     transcriptionSpeed: optional('SYNAP_TRANSCRIPTION_SPEED', '1.5') === '1' ? 1 as const : 1.5 as const,
+    /** Provider request unit; source storage remains 30-second windows. This is
+     * capped below Gemini's 30-minute annotated-audio limit because long batches
+     * require word timestamps to map output back to source windows. */
+    transcriptionBatchMinutes: Math.min(
+      25,
+      Math.max(1, Number(optional('SYNAP_TRANSCRIPTION_BATCH_MINUTES', '15')) || 15),
+    ),
     /** Stable structured reasoning for summaries, outcomes, people and commitments. */
     memoryModel: optional('SYNAP_GEMINI_MEMORY_MODEL', 'gemini-3.8-flash'),
     /** Query interpretation also uses full Flash so names/dates/topics are not silently lost. */
