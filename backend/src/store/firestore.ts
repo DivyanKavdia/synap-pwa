@@ -216,7 +216,14 @@ export class TranscriptionBusyError extends SegmentWriteError {
 export const TRANSCRIPTION_LEASE_MS = 120_000;
 
 /** Claim before any paid work. Transaction retries cannot create another owner. */
-export async function claimSegmentTranscription(uid: string, recordingId: string, source: SegmentDoc, lease: string, now = Date.now()): Promise<{ segment: SegmentDoc; claimed: boolean }> {
+export async function claimSegmentTranscription(
+  uid: string,
+  recordingId: string,
+  source: SegmentDoc,
+  lease: string,
+  now = Date.now(),
+  leaseMs = TRANSCRIPTION_LEASE_MS,
+): Promise<{ segment: SegmentDoc; claimed: boolean }> {
   const parent = paths.recording(uid, recordingId), ref = paths.segments(uid, recordingId).doc(String(source.index));
   return firestore().runTransaction(async tx => {
     const recording = (await tx.get(parent)).data() as RecordingDoc | undefined;
@@ -228,7 +235,7 @@ export async function claimSegmentTranscription(uid: string, recordingId: string
       return { segment: current, claimed: false };
     if (current.transcriptionLease && (current.transcriptionLeaseUntil || 0) > now)
       throw new TranscriptionBusyError(current.transcriptionLeaseUntil! - now);
-    const fields = { transcriptionLease: lease, transcriptionLeaseUntil: now + TRANSCRIPTION_LEASE_MS };
+    const fields = { transcriptionLease: lease, transcriptionLeaseUntil: now + Math.max(1, leaseMs) };
     tx.update(ref, fields);
     return { segment: { ...current, ...fields }, claimed: true };
   });

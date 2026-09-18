@@ -57,3 +57,36 @@ export async function transcribeRecordingSegments(
   if (failure) throw failure;
   return ordered;
 }
+
+
+/** Group only contiguous missing windows into bounded provider request units. */
+export function transcriptionBatches(
+  ordered: SegmentDoc[],
+  maxDurationMs: number,
+  needsTranscription: (segment: SegmentDoc) => boolean,
+): SegmentDoc[][] {
+  if (!(maxDurationMs > 0)) throw new Error('Transcription batch duration must be positive');
+  const batches: SegmentDoc[][] = [];
+  let batch: SegmentDoc[] = [];
+  const flush = () => {
+    if (batch.length) batches.push(batch);
+    batch = [];
+  };
+  for (const segment of ordered) {
+    if (!needsTranscription(segment)) {
+      flush();
+      continue;
+    }
+    const first = batch[0];
+    const previous = batch.at(-1);
+    if (
+      first &&
+      previous &&
+      (segment.index !== previous.index + 1 || segment.endMs - first.startMs > maxDurationMs)
+    )
+      flush();
+    batch.push(segment);
+  }
+  flush();
+  return batches;
+}

@@ -1,18 +1,52 @@
 # Transcription quality and recovery
 
-Standalone audio from S3, C3 and Chakshu follows the same source-preserving pipeline. Improving a transcript cannot recover samples that never reached storage. The header distinguishes elapsed time from audio received; transport gaps and microphone quality remain separate from model failures.
+Standalone audio from S3, C3 and Chakshu follows the same source-preserving
+pipeline. Better ASR cannot recover samples that never reached storage, so Synap
+keeps capture/reconnect integrity separate from model recovery.
 
-## Recognition before speaker labels
+## Long-form recognition
 
-The first transcription pass uses verbatim text without word timestamps. It keeps the original language, including mixed-language speech. An optional speaker/timestamp pass has a bounded deadline and can contribute annotations only when its complete text agrees with the first pass. Missing or partial annotations never replace recognized words. Managed ASR uses a disposable, pitch-preserving 1.5× copy for both passes; the source WAV remains unchanged in the browser and encrypted storage. See [audio cost controls](TRANSCRIPTION_COST.md).
+Local capture and cloud source storage remain 30-second durable windows. Final
+processing no longer sends those windows to Gemini one by one. The backend groups
+contiguous missing windows into provider batches, 20 minutes by default, decrypts
+and concatenates PCM only in memory, prepares the disposable 1.5× copy and sends
+that batch through the Gemini Files API.
 
-Explicitly incomplete provider responses and missing text output get one recovery pass with original 1× audio and default recognition settings. A failed recovery remains a retryable error and cannot be sealed as silence. An explicitly empty result gets one fresh pass with automatic language detection using the original 1× audio. If both results are empty, the recording completes as **No recognizable speech**, with its original audio still available; it does not enter an endless summarisation retry. Digitally zero windows retain their source and skip the model. Windows under five seconds remain at normal speed.
+Long batches use Gemini 3.5 Transcribe verbatim mode with primary word timestamps.
+The returned words are mapped back to the original 30-second source timeline and
+sealed per source window, so the rest of Synap does not need a storage migration.
+If the user has explicitly enrolled a wearer voice or known speakers, diarization
+is enabled in that **same** primary request. Without that opt-in, only timestamps
+are requested. This avoids a second transcription request solely for annotations.
 
-Cloud errors distinguish missing output, incomplete output, request rejection, rate limits and model access failures. The browser retains the public error code and numeric provider HTTP status, and labels model failures as transcription of saved audio rather than failed upload. Provider bodies, audio, transcript content and keys are never included in these diagnostics. The subsequent September 17 shell131 log identifies Gemini HTTP 429 on the final window. This confirms a provider rate or usage limit; the log alone does not identify which project quota was reached.
+The batch result is accepted only when timestamped words reproduce the complete
+recognized text after the existing evidence-preserving normalization. Incomplete
+timestamps, incomplete provider responses and missing output leave the original
+audio untouched and schedule durable recovery. They do not trigger an immediate
+second submission of the same audio. Digitally zero batches skip the model;
+source windows with no words inside an otherwise valid batch are stored as
+no-speech windows.
 
-HTTP 429 stops backend transport retries immediately. Structured `RetryInfo` and `Retry-After` delays are honored with a minimum 60-second cooldown; an explicitly identified daily quota starts at one hour. Other requests for the same model are suppressed within that backend runtime until the deadline. The browser persists a provider/account cooldown with the job, waits across reloads and selected Retry clicks, and increases repeated rate-limit delays from one minute to fifteen minutes (or a longer provider delay). A 429 leaves jobs pending without consuming the five-attempt failure budget; completed segments remain complete. This suppression does not increase project quota or provide a distributed quota reservation across backend instances. [Gemini quota documentation](https://ai.google.dev/gemini-api/docs/rate-limits) explains the project-level limits.
+Legacy/single-window ASR retains the existing text-first compatibility path and
+the long-cooldown `gemini-3.8-flash` continuity fallback. That flat-text fallback
+is intentionally **not** used for a long batch, because a batch without timestamps
+cannot be safely projected back onto its source windows.
 
-Each successful upload response includes the window transcript, which is saved in IndexedDB before the job completes. The PWA displays joined window text while final processing continues. Retrying an already uploaded window preserves this text and the exact original upload bytes.
+## Rate limits and recovery
+
+Gemini 429s are treated as project/model conditions, not individual-window errors.
+Both Files API and Interactions API 429 responses preserve provider retry guidance
+and write the same shared cooldown. All Cloud Run instances check that deadline
+before a new long-file upload or model request.
+
+Short throttles wait. Explicit daily quota guidance gets a long cooldown. Missing
+or incomplete output uses a separate 120-second recording retry delay. Completed
+source windows remain completed, failed batches retain all encrypted audio, and
+explicit retry cannot bypass an active provider deadline.
+
+The default 20-minute batch turns a fully untranscribed 60-minute recording from
+roughly 120 primary ASR calls into about three, while leaving capture durability
+unchanged. See [audio cost controls](TRANSCRIPTION_COST.md).
 
 ## Grounded summaries
 
@@ -39,4 +73,4 @@ Photos, video frames and newly paired soundtracks stay on the current browser. T
 
 ## Validation
 
-Tests cover original WAV integrity, real FFmpeg pitch and tail preservation, accelerated timestamp mapping, normal-speed empty-result recovery, retry submission counts, mixed-language text preservation, disagreeing annotations, incomplete output, empty-result recovery and atomic publication. Browser tests cover rolling local soundtracks across a 30-second boundary, reload, export, no cloud jobs and blocked stale jobs, plus partial transcript persistence before summaries. Fixture tests do not measure speech accuracy on the user's microphones or prove radio endurance; representative physical recordings remain the acceptance check.
+Tests cover original WAV integrity, real FFmpeg pitch and tail preservation, accelerated timestamp mapping, cloud-batch numbering and legacy 30-second compatibility, normal-speed empty-result recovery, retry submission counts, mixed-language text preservation, disagreeing annotations, incomplete output, empty-result recovery and atomic publication. Browser tests cover rolling local soundtracks across a 30-second boundary, reload, export, no cloud jobs and blocked stale jobs, plus partial transcript persistence before summaries. Fixture tests do not measure speech accuracy on the user's microphones or prove radio endurance; representative physical recordings remain the acceptance check.

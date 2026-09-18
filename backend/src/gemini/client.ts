@@ -28,7 +28,8 @@ export interface InteractionTextPart {
 
 export interface InteractionAudioPart {
   type: 'audio';
-  data: string;
+  data?: string;
+  uri?: string;
   mime_type: string;
 }
 
@@ -70,6 +71,145 @@ export interface InteractionRequest {
   response_format?: Record<string, unknown>;
   /** Internal-only billing label. Stripped before the request is sent. */
   usage_label?: string;
+  /** Internal transport budget. Stripped before the request is sent. */
+  request_timeout_ms?: number;
+}
+
+export interface GeminiUploadedFile {
+  name: string;
+  uri: string;
+  mimeType: string;
+  state?: 'PROCESSING' | 'ACTIVE' | 'FAILED' | string;
+}
+
+function filesUploadEndpoint(): string {
+  return config.gemini.endpoint.replace(/\/v1beta\/?$/, '') + '/upload/v1beta/files';
+}
+
+/**
+ * Upload larger ASR inputs through Gemini Files API. Google recommends file
+ * references for longer recordings instead of embedding the full audio payload
+ * in every model request. The upload itself is not a transcription request.
+ */
+export async function uploadGeminiFile(
+  bytes: Buffer,
+  mimeType: string,
+  signal?: AbortSignal,
+): Promise<GeminiUploadedFile> {
+  signal?.throwIfAborted();
+  const { geminiApiKey } = await loadSecrets();
+  const start = await fetch(filesUploadEndpoint(), {
+    method: 'POST',
+    headers: {
+      'x-goog-api-key': geminiApiKey,
+      'Content-Type': 'application/json',
+      'X-Goog-Upload-Protocol': 'resumable',
+      'X-Goog-Upload-Command': 'start',
+      'X-Goog-Upload-Header-Content-Length': String(bytes.length),
+      'X-Goog-Upload-Header-Content-Type': mimeType,
+    },
+    body: JSON.stringify({ file: { display_name: 'synap-transcription-window' } }),
+    signal,
+  });
+  if (!start.ok) {
+    const detail = await start.text().catch(() => '');
+    const context = { model: config.gemini.transcribeModel, stage: 'file-upload' };
+    let rateLimit = start.status === 429
+      ? rateLimitAdvice(start.headers.get('retry-after'), detail)
+      : undefined;
+    if (rateLimit) rateLimit = await applyRateLimit(config.gemini.transcribeModel, context, rateLimit);
+    throw new GeminiError(
+      `Gemini file upload start HTTP ${start.status}: ${detail.slice(0, 200)}`,
+      start.status,
+      RETRYABLE_STATUS.has(start.status),
+      'request',
+      rateLimit,
+      context,
+    );
+  }
+  const uploadUrl = start.headers.get('x-goog-upload-url');
+  if (!uploadUrl) throw new GeminiError('Gemini file upload URL missing', 0, true, 'request',
+    undefined, { model: config.gemini.transcribeModel, stage: 'file-upload' });
+
+  const uploaded = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Length': String(bytes.length),
+      'Content-Type': mimeType,
+      'X-Goog-Upload-Offset': '0',
+      'X-Goog-Upload-Command': 'upload, finalize',
+    },
+    body: new Uint8Array(bytes),
+    signal,
+  });
+  if (!uploaded.ok) {
+    const detail = await uploaded.text().catch(() => '');
+    const context = { model: config.gemini.transcribeModel, stage: 'file-upload' };
+    let rateLimit = uploaded.status === 429
+      ? rateLimitAdvice(uploaded.headers.get('retry-after'), detail)
+      : undefined;
+    if (rateLimit) rateLimit = await applyRateLimit(config.gemini.transcribeModel, context, rateLimit);
+    throw new GeminiError(
+      `Gemini file upload HTTP ${uploaded.status}: ${detail.slice(0, 200)}`,
+      uploaded.status,
+      RETRYABLE_STATUS.has(uploaded.status),
+      'request',
+      rateLimit,
+      context,
+    );
+  }
+  const payload = await uploaded.json() as { file?: GeminiUploadedFile };
+  let file = payload.file;
+  if (!file?.name || !file.uri)
+    throw new GeminiError('Gemini file upload returned no usable file reference', 0, true, 'request',
+      undefined, { model: config.gemini.transcribeModel, stage: 'file-upload' });
+
+  const deadline = Date.now() + 30_000;
+  while (file.state === 'PROCESSING' && Date.now() < deadline) {
+    await sleep(500, undefined, { signal });
+    const status = await fetch(`${config.gemini.endpoint}/${file.name}`, {
+      headers: { 'x-goog-api-key': geminiApiKey },
+      signal,
+    });
+    if (!status.ok) {
+      const detail = await status.text().catch(() => '');
+      const context = { model: config.gemini.transcribeModel, stage: 'file-upload' };
+      let rateLimit = status.status === 429
+        ? rateLimitAdvice(status.headers.get('retry-after'), detail)
+        : undefined;
+      if (rateLimit) rateLimit = await applyRateLimit(config.gemini.transcribeModel, context, rateLimit);
+      throw new GeminiError(
+        `Gemini file status HTTP ${status.status}: ${detail.slice(0, 200)}`,
+        status.status,
+        RETRYABLE_STATUS.has(status.status),
+        'request',
+        rateLimit,
+        context,
+      );
+    }
+    file = await status.json() as GeminiUploadedFile;
+  }
+  if (file.state === 'FAILED')
+    throw new GeminiError('Gemini file processing failed', 0, true, 'request',
+      undefined, { model: config.gemini.transcribeModel, stage: 'file-upload' });
+  if (file.state === 'PROCESSING')
+    throw new GeminiError('Gemini file processing did not become ready in time', 0, true, 'request',
+      undefined, { model: config.gemini.transcribeModel, stage: 'file-upload' });
+  return file;
+}
+
+export async function deleteGeminiFile(file: GeminiUploadedFile): Promise<void> {
+  try {
+    const { geminiApiKey } = await loadSecrets();
+    await fetch(`${config.gemini.endpoint}/${file.name}`, {
+      method: 'DELETE',
+      headers: { 'x-goog-api-key': geminiApiKey },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    // Files expire automatically; cleanup is privacy/cost hygiene, not a reason
+    // to discard a completed transcript.
+  }
 }
 
 export class GeminiError extends Error {
@@ -100,10 +240,10 @@ export interface ModelFailure {
 
 /** Fixed public messages; a provider body can echo private input or credentials. */
 export function modelFailure(error: GeminiError): ModelFailure {
-  // Missing model output is not evidence that the audio is empty. Give the
-  // durable queue a real cooldown so one anomalous response cannot create a
-  // tight paid retry loop and then trip the provider's project rate limit.
-  const missingTextRetryMs = 120_000;
+  // Missing/incomplete model output is not evidence that the audio is empty.
+  // Give the durable queue a real delay so one anomalous provider response
+  // cannot create a tight paid retry loop and then trip the project rate limit.
+  const outputRetryMs = 120_000;
   // This metadata comes from our routing configuration, never a provider body.
   const route = error.route ? { model: error.route.model, modelStage: error.route.stage } : {};
   if (error.reason === 'cooldown') return {
@@ -140,7 +280,7 @@ export function modelFailure(error: GeminiError): ModelFailure {
   }
   return { code, message, retryable: error.retryable, providerStatus: error.status,
     ...(error.status > 0 ? { source: 'provider' as const } : {}), ...route,
-    ...(error.reason === 'missing-text' ? { retryAfterMs: missingTextRetryMs } : {}),
+    ...(['missing-text', 'incomplete'].includes(error.reason) ? { retryAfterMs: outputRetryMs } : {}),
     ...(error.status === 429 ? {
       retryAfterMs: error.rateLimit?.retryAfterMs ?? 60000,
       quotaKind: error.rateLimit?.quotaKind ?? 'unknown',
@@ -152,12 +292,48 @@ const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS = 4;
 const modelCooldowns = new ModelCooldowns();
 
+async function applyRateLimit(
+  model: string,
+  context: { model: string; stage: string },
+  advice: RateLimitAdvice,
+): Promise<RateLimitAdvice> {
+  // Suppress this runtime immediately. Persist the same deadline so every
+  // Cloud Run instance and every recovery path observes one shared backoff,
+  // whether the 429 came from Files API preparation or model inference.
+  const localLimit = modelCooldowns.reject(model, advice);
+  let effective = localLimit;
+  if (config.gemini.sharedCooldown) {
+    try { effective = await deferSharedModel(model, advice); }
+    catch {
+      log.warn('Shared model cooldown could not be saved', context);
+    }
+  }
+  modelCooldowns.defer(model, effective);
+  return effective;
+}
+
+export async function ensureModelAvailable(model: string, stage: string): Promise<void> {
+  const cooldown = modelCooldowns.remaining(model) ||
+    (config.gemini.sharedCooldown ? await sharedModelCooldown(model) : undefined);
+  if (!cooldown) return;
+  modelCooldowns.defer(model, cooldown);
+  throw new GeminiError(
+    'Gemini request deferred after rate limit.',
+    429,
+    true,
+    'cooldown',
+    cooldown,
+    { model, stage },
+  );
+}
+
 async function call<T>(
   path: string,
   body: unknown,
   context: { model: string; stage: string },
   signal?: AbortSignal,
   onAttempt?: () => void,
+  requestTimeoutMs = config.gemini.requestTimeoutMs,
 ): Promise<T> {
   signal?.throwIfAborted();
   const { geminiApiKey } = await loadSecrets();
@@ -169,15 +345,10 @@ async function call<T>(
   const maxAttempts = context.stage === 'transcription' ? 1 : MAX_ATTEMPTS;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     signal?.throwIfAborted();
-    const cooldown = modelCooldowns.remaining(context.model) ||
-      (config.gemini.sharedCooldown ? await sharedModelCooldown(context.model) : undefined);
-    if (cooldown) {
-      modelCooldowns.defer(context.model, cooldown);
-      throw new GeminiError('Gemini request deferred after rate limit.', 429, true, 'cooldown', cooldown, context);
-    }
+    await ensureModelAvailable(context.model, context.stage);
     signal?.throwIfAborted();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), config.gemini.requestTimeoutMs);
+    const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
     const onAbort = () => controller.abort();
     signal?.addEventListener('abort', onAbort, { once: true });
 
@@ -197,19 +368,7 @@ async function call<T>(
 
       const detail = await response.text().catch(() => '');
       let rateLimit = response.status === 429 ? rateLimitAdvice(response.headers.get('retry-after'), detail) : undefined;
-      if (rateLimit) {
-        // Suppress this runtime immediately. A failed Firestore write must not
-        // replace a real 429 with a transport error and resubmit the request.
-        const localLimit = modelCooldowns.reject(context.model, rateLimit);
-        if (config.gemini.sharedCooldown) {
-          try { rateLimit = await deferSharedModel(context.model, rateLimit); }
-          catch {
-            rateLimit = localLimit;
-            log.warn('Shared model cooldown could not be saved', context);
-          }
-        } else rateLimit = localLimit;
-        modelCooldowns.defer(context.model, rateLimit);
-      }
+      if (rateLimit) rateLimit = await applyRateLimit(context.model, context, rateLimit);
       const error = new GeminiError(
         `Gemini ${context.stage} (${context.model}) HTTP ${response.status}: ${detail.slice(0, 400)}`,
         response.status,
@@ -275,14 +434,22 @@ export async function createInteraction(
   signal?: AbortSignal,
   onAttempt?: () => void,
 ): Promise<InteractionResponse> {
-  const { usage_label: usageLabel, ...apiRequest } = request;
+  const { usage_label: usageLabel, request_timeout_ms: requestTimeoutMs, ...apiRequest } = request;
   const response = await call<InteractionResponse>('/interactions', { ...apiRequest, store: false },
-    { model: request.model, stage: usageLabel || 'generation' }, signal, onAttempt);
+    { model: request.model, stage: usageLabel || 'generation' }, signal, onAttempt,
+    requestTimeoutMs ?? config.gemini.requestTimeoutMs);
   const fields = usageLogFields(request.model, usageLabel, response.usage);
   if (fields) log.info('Gemini usage', fields);
   if (response.status && response.status !== 'completed') {
     log.warn('Gemini interaction did not complete', { model: request.model, stage: usageLabel || 'generation', code: 'model_incomplete' });
-    throw new GeminiError(`Gemini ${usageLabel || 'generation'} did not complete (${response.status}).`, 0, true, 'incomplete');
+    throw new GeminiError(
+      `Gemini ${usageLabel || 'generation'} did not complete (${response.status}).`,
+      0,
+      true,
+      'incomplete',
+      undefined,
+      { model: request.model, stage: usageLabel || 'generation' },
+    );
   }
   return response;
 }

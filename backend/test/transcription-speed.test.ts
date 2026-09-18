@@ -66,6 +66,117 @@ test('ASR receives only the faster copy and word times return to the source time
   assert.equal(result.audioUsage?.policy, 'atempo-1.5-v1');
 });
 
+test('long-form ASR uploads audio once and transcribes by file URI with primary timestamps', async (t) => {
+  const calls: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.includes('/upload/v1beta/files')) {
+      return new Response('{}', {
+        status: 200,
+        headers: { 'x-goog-upload-url': 'https://upload.example.test/session' },
+      });
+    }
+    if (url === 'https://upload.example.test/session') {
+      assert(init?.body, 'file bytes must be uploaded separately from the model request');
+      return new Response(JSON.stringify({
+        file: { name: 'files/synap-test', uri: 'https://files.example.test/synap-test', mimeType: 'audio/wav', state: 'ACTIVE' },
+      }));
+    }
+    if (url.endsWith('/interactions')) {
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.input[0].uri, 'https://files.example.test/synap-test');
+      assert.equal(body.input[0].data, undefined);
+      assert.deepEqual(body.generation_config.transcription_config.mode, {
+        type: 'verbatim',
+        timestamp_granularities: ['word'],
+      });
+      return response('Hello world', [
+        { type: 'word_info', text: 'Hello', start_offset: '0.4s', end_offset: '0.8s' },
+        { type: 'word_info', text: 'world', start_offset: '0.9s', end_offset: '1.2s' },
+      ]);
+    }
+    if (url.includes('/v1beta/files/synap-test') && init?.method === 'DELETE')
+      return new Response('{}');
+    throw new Error('Unexpected request: ' + url);
+  });
+  const result = await transcribeSegment(tone(), 'audio/wav', {
+    speed: 1.5,
+    baseOffsetMs: 30_000,
+    primaryWordTimestamps: true,
+    wordTimestamps: true,
+    diarize: false,
+    useFileApi: true,
+  });
+  assert.equal(result.audioUsage?.requestAttempts, 1);
+  assert.equal(result.review.annotationsComplete, true);
+  assert.deepEqual(result.words, [
+    { text: 'Hello', speaker: null, start_ms: 30600, end_ms: 31200 },
+    { text: 'world', speaker: null, start_ms: 31350, end_ms: 31800 },
+  ]);
+  assert.equal(calls.filter(url => url.endsWith('/interactions')).length, 1);
+  assert(calls.some(url => url.includes('/upload/v1beta/files')));
+  assert(calls.some(url => url.includes('/v1beta/files/synap-test')));
+});
+
+test('long-form speaker mode keeps diarization and timestamps in one model call', async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+    calls++;
+    const body = JSON.parse(String(init?.body));
+    assert.deepEqual(body.generation_config.transcription_config.mode, {
+      type: 'verbatim',
+      timestamp_granularities: ['word'],
+      diarization_mode: 'speaker',
+    });
+    return response('Hello', [
+      { type: 'word_info', text: 'Hello', speaker: 'S1', start_offset: '0.2s', end_offset: '0.6s' },
+    ]);
+  });
+  const result = await transcribeSegment(tone(), 'audio/wav', {
+    speed: 1.5,
+    primaryWordTimestamps: true,
+    primaryDiarization: true,
+    wordTimestamps: true,
+    diarize: true,
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.review.annotationsComplete, true);
+  assert.deepEqual(result.words, [
+    { text: 'Hello', speaker: 'S1', start_ms: 300, end_ms: 900 },
+  ]);
+});
+
+test('empty long-form batch completes after one ASR request', async (t) => {
+  let interactions = 0;
+  t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/upload/v1beta/files'))
+      return new Response('{}', { headers: { 'x-goog-upload-url': 'https://upload.example.test/empty-batch' } });
+    if (href === 'https://upload.example.test/empty-batch')
+      return new Response(JSON.stringify({
+        file: { name: 'files/empty-batch', uri: 'https://files.example.test/empty-batch', mimeType: 'audio/wav', state: 'ACTIVE' },
+      }));
+    if (href.endsWith('/interactions')) {
+      interactions++;
+      return response('');
+    }
+    if (href.includes('/v1beta/files/empty-batch') && init?.method === 'DELETE')
+      return new Response('{}');
+    throw new Error('Unexpected request: ' + href);
+  });
+  const result = await transcribeSegment(tone(), 'audio/wav', {
+    speed: 1.5,
+    primaryWordTimestamps: true,
+    wordTimestamps: true,
+    diarize: false,
+    useFileApi: true,
+  });
+  assert.equal(interactions, 1);
+  assert.equal(result.review.outcome, 'no-speech');
+  assert.equal(result.audioUsage?.requestAttempts, 1);
+});
+
 test('empty sped-up recognition retries the original once and accounts for both inputs', async (t) => {
   const source = tone();
   let calls = 0;
@@ -121,47 +232,57 @@ test('a 3.3-second final window reaches ASR unchanged while the 30-second window
   assert.equal(result.text, '[00:30] S?: Final words.');
 });
 
-for (const failure of ['missing-text', 'incomplete', 'rejected'] as const) {
-  test(`${failure} accelerated ASR recovers once with original bytes and original timestamps`, async (t) => {
-    const source = tone(),
-      before = Buffer.from(source),
-      requests: any[] = [];
-    t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body));
-      requests.push(body);
-      const original = Buffer.from(body.input[0].data, 'base64').equals(source);
-      if (!original) {
-        if (failure === 'rejected')
-          return new Response('{"error":{"message":"Invalid argument"}}', { status: 400 });
-        return new Response(
-          JSON.stringify(
-            failure === 'missing-text'
-              ? { status: 'completed', steps: [] }
-              : { status: 'incomplete', steps: [] },
-          ),
-        );
-      }
-      assert.deepEqual(body.generation_config.transcription_config, {});
-      return response('Hello', [
-        { type: 'word_info', text: 'Hello', speaker: 'S1', start_offset: '0.4s', end_offset: '1s' },
-      ]);
+for (const failure of ['missing-text', 'incomplete'] as const) {
+  test(`${failure} ASR output is deferred without an immediate second audio submission`, async (t) => {
+    let calls = 0;
+    t.mock.method(globalThis, 'fetch', async () => {
+      calls++;
+      return new Response(
+        JSON.stringify(
+          failure === 'missing-text'
+            ? { status: 'completed', steps: [] }
+            : { status: 'incomplete', steps: [] },
+        ),
+      );
     });
-    const result = await transcribeSegment(source, 'audio/wav', {
-      speed: 1.5,
-      baseOffsetMs: 30000,
-    });
-    assert.equal(requests.length, failure === 'rejected' ? 3 : 2);
-    assert.equal(result.audioUsage?.fallback, 'provider-failure');
-    assert.equal(result.audioUsage?.requestAttempts, requests.length);
-    assert.equal(result.audioUsage?.speed, 1);
-    assert.deepEqual(result.words, [
-      { text: 'Hello', speaker: 'S1', start_ms: 30400, end_ms: 31000 },
-    ]);
-    assert.deepEqual(source, before);
+    await assert.rejects(
+      transcribeSegment(tone(), 'audio/wav', { speed: 1.5, baseOffsetMs: 30000 }),
+      { reason: failure, retryable: true },
+    );
+    assert.equal(calls, 1);
   });
 }
 
-test('repeated missing output fails after one original fallback and is never sealed as silence', async (t) => {
+test('accelerated HTTP 400 falls back once to original bytes and original timestamps', async (t) => {
+  const source = tone(),
+    before = Buffer.from(source),
+    requests: any[] = [];
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    requests.push(body);
+    const original = Buffer.from(body.input[0].data, 'base64').equals(source);
+    if (!original)
+      return new Response('{"error":{"message":"Invalid argument"}}', { status: 400 });
+    assert.deepEqual(body.generation_config.transcription_config, {});
+    return response('Hello', [
+      { type: 'word_info', text: 'Hello', speaker: 'S1', start_offset: '0.4s', end_offset: '1s' },
+    ]);
+  });
+  const result = await transcribeSegment(source, 'audio/wav', {
+    speed: 1.5,
+    baseOffsetMs: 30000,
+  });
+  assert.equal(requests.length, 3);
+  assert.equal(result.audioUsage?.fallback, 'provider-failure');
+  assert.equal(result.audioUsage?.requestAttempts, requests.length);
+  assert.equal(result.audioUsage?.speed, 1);
+  assert.deepEqual(result.words, [
+    { text: 'Hello', speaker: 'S1', start_ms: 30400, end_ms: 31000 },
+  ]);
+  assert.deepEqual(source, before);
+});
+
+test('missing output fails after one submission and is never sealed as silence', async (t) => {
   let calls = 0;
   t.mock.method(globalThis, 'fetch', async () => {
     calls++;
@@ -171,7 +292,7 @@ test('repeated missing output fails after one original fallback and is never sea
     reason: 'missing-text',
     retryable: true,
   });
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
 });
 
 for (const status of [401, 403, 429, 503]) {

@@ -3,6 +3,7 @@ import test from 'node:test';
 import { transcribeSegment } from '../src/gemini/transcribe.js';
 import { GeminiError, createInteraction } from '../src/gemini/client.js';
 import { makePcm16Wav } from '../src/speaker/audio.js';
+import { config } from '../src/config.js';
 
 // Valid, non-silent audio so the tests exercise the provider request path.
 const audio = makePcm16Wav(Buffer.alloc(32000, 16));
@@ -184,6 +185,44 @@ test('a short dedicated-ASR rate limit waits instead of spending a fallback requ
     });
     assert.equal(calls, 1);
   } finally { globalThis.fetch = original; }
+});
+
+test('a long ASR batch never falls back to flat text because timestamps are required for splitting', async (t) => {
+  const original = fetch;
+  const fixtureModel = config.gemini.transcribeModel;
+  let calls = 0;
+  // Advance beyond the previous test's in-memory model cooldown so this case
+  // observes the fresh provider RetryInfo rather than cross-test state.
+  t.mock.method(Date, 'now', () => 10_000_000);
+  globalThis.fetch = async (_url, init) => {
+    calls++;
+    const request = JSON.parse(String(init?.body));
+    assert.equal(request.model, fixtureModel);
+    return new Response(JSON.stringify({
+      error: {
+        details: [
+          { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '3600s' },
+        ],
+      },
+    }), { status: 429 });
+  };
+  try {
+    await assert.rejects(
+      transcribeSegment(audio, 'audio/wav', {
+        primaryWordTimestamps: true,
+        wordTimestamps: true,
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof GeminiError);
+        assert.equal(error.status, 429);
+        assert.equal(error.rateLimit?.retryAfterMs, 3600000);
+        return true;
+      },
+    );
+    assert.equal(calls, 1, 'timestamped batches must not spend a flat-text fallback request');
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('authentication failures and cancellation never start an alternate transcription request', async () => {

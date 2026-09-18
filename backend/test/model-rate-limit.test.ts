@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createInteraction, GeminiError, modelFailure } from '../src/gemini/client.js';
-import { ModelCooldowns, rateLimitAdvice } from '../src/gemini/rate-limit.js';
+import { ModelCooldowns, pacificDailyResetDelayMs, rateLimitAdvice } from '../src/gemini/rate-limit.js';
 
 const details = (...entries: unknown[]) =>
   JSON.stringify({ error: { message: 'PRIVATE INPUT KEY', details: entries } });
@@ -34,21 +34,41 @@ test('429 advice honors the longest provider delay and defaults safely for missi
   assert.equal(rateLimitAdvice('999999999999', '{}').retryAfterMs, 604800000);
 });
 
-test('daily quota classification requires structured quota evidence and never exposes provider text', () => {
+test('daily quota classification waits until the documented Pacific reset', () => {
+  const now = Date.parse('2026-09-17T00:00:00Z'); // 17:00 PDT on Sep 16.
   const daily = rateLimitAdvice(
     '120',
     details(quota('GenerateRequestsPerDayPerProjectPerModel'), quota('RequestsPerMinute')),
+    now,
   );
-  assert.deepEqual(daily, { quotaKind: 'daily', retryAfterMs: 3600000 });
-  assert.equal(rateLimitAdvice(null, details(quota('requests_per_minute'))).quotaKind, 'rate');
+  assert.deepEqual(daily, { quotaKind: 'daily', retryAfterMs: 7 * 60 * 60 * 1000 });
+  assert.equal(rateLimitAdvice(null, details(quota('requests_per_minute')), now).quotaKind, 'rate');
   assert.equal(
-    rateLimitAdvice(null, '{"error":{"message":"daily quota exceeded"}}').quotaKind,
+    rateLimitAdvice(null, '{"error":{"message":"daily quota exceeded"}}', now).quotaKind,
     'unknown',
   );
   const safe = modelFailure(new GeminiError('PRIVATE INPUT KEY', 429, true, 'request', daily));
   assert.equal(safe.code, 'model_daily_quota');
-  assert.equal(safe.retryAfterMs, 3600000);
+  assert.equal(safe.retryAfterMs, 7 * 60 * 60 * 1000);
   assert.doesNotMatch(JSON.stringify(safe), /PRIVATE|INPUT KEY|GenerateRequests/);
+});
+
+test('Pacific daily reset calculation follows daylight-saving time', () => {
+  assert.equal(
+    pacificDailyResetDelayMs(Date.parse('2026-01-18T10:00:00Z')),
+    22 * 60 * 60 * 1000,
+    '02:00 PST waits until 08:00Z midnight',
+  );
+  assert.equal(
+    pacificDailyResetDelayMs(Date.parse('2026-09-18T10:00:00Z')),
+    21 * 60 * 60 * 1000,
+    '03:00 PDT waits until 07:00Z midnight',
+  );
+  assert.equal(
+    pacificDailyResetDelayMs(Date.parse('2026-03-08T07:30:00Z')),
+    30 * 60 * 1000,
+    '23:30 PST before the spring transition still resets at local midnight',
+  );
 });
 
 test('model cooldowns expire independently and concurrent failures cannot shorten the delay', () => {
