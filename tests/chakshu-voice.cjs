@@ -26,7 +26,8 @@ afterEach(()=>{
 });
 
 test('decodes only bounded Chakshu voice protocol v2 status',()=>{
-  const voice=load(),decoded=voice.decode(packet({command:155,value:600}));
+  const voice=load(),wake=voice.decode(packet({command:1})),decoded=voice.decode(packet({command:155,value:600}));
+  assert.equal(wake.command,1);assert.equal(voice.label(wake),'Hey Synap');
   assert.equal(decoded.sequence,1);assert.equal(decoded.command,155);assert.equal(decoded.value,600);assert.equal(decoded.drops,4);
   assert.throws(()=>voice.decode(new DataView(new Uint8Array(20).buffer)),/Unsupported/);
   const bad=packet();bad.setUint8(1,1);assert.throws(()=>voice.decode(bad),/Unsupported/);
@@ -40,6 +41,7 @@ test('dispatches default and explicit video durations to high-detail SD recordin
   await voice.perform(voice.decode(packet({sequence:2,command:20,value:1})));
   await voice.perform(voice.decode(packet({sequence:3,command:155,value:600})));
   assert.deepEqual(calls,[[0,10],[0,1],[0,600]]);
+  assert.equal(voice.label(voice.decode(packet({command:20,value:1}))),'Record for 1 seconds');
 });
 
 test('dispatches audio, stop, explicit vision and verified full-quality snap',async()=>{

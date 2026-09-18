@@ -1125,3 +1125,54 @@ body.synap-refresh :is(#myActions, #actionFocus) .synap-follow-edit {
 :root[data-theme='light'] {
   --control-border: #859089;
 }
+
+
+/* Local Chakshu wake-word acknowledgement. */
+.hey-synap-feedback {
+  position: fixed;
+  z-index: 80;
+  top: calc(env(safe-area-inset-top) + 72px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(92vw, 420px);
+  min-height: 42px;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 8px 26px var(--shadow);
+  backdrop-filter: blur(14px);
+  font-size: 13px;
+  font-weight: 700;
+  pointer-events: none;
+}
+.hey-synap-feedback-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 5px var(--accent-soft);
+}
+.hey-synap-feedback[data-tone='heard'] .hey-synap-feedback-dot {
+  background: var(--amber);
+  box-shadow: 0 0 0 5px var(--amber-soft);
+}
+.hey-synap-feedback[data-tone='success'] .hey-synap-feedback-dot {
+  background: var(--success);
+  box-shadow: 0 0 0 5px var(--success-soft);
+}
+.hey-synap-feedback[data-tone='error'] .hey-synap-feedback-dot {
+  background: var(--rose);
+  box-shadow: 0 0 0 5px var(--rose-soft);
+}
+@media (max-width: 480px) {
+  .hey-synap-feedback {
+    top: calc(env(safe-area-inset-top) + 68px);
+    font-size: 12px;
+  }
+}

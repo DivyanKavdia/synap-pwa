@@ -33,11 +33,13 @@ test('desktop navigation accounts for side rail and keyboard focus', () => {
 test('fresh and cached shells share the refresh generation without changing BLE compatibility', () => {
   const sw=read('sw.js');
   const revision=sw.match(/const CACHE_REVISION='([^']+)'/)[1];
-  assert.equal(revision,'1.0.0-shell145-chakshu-voice');
+  assert.equal(revision,'1.0.0-shell146-hey-synap-feedback');
   assert(read('enhancements.js').includes(`SHELL_REVISION='${revision}'`));
   assert.match(sw,/CLIENT_REVISION='1\.0\.0-audio6'/);
   assert.match(sw,/'\.\/compact\.css'/);
   assert.match(read('index.html'),/compact\.css\?v=/);
+  assert.match(read('index.html'),/id="heySynapFeedback"/);
+  assert.match(read('workspace.css'),/\.hey-synap-feedback/);
 });
 
 test('refreshed light and dark semantic palettes meet text and control contrast', () => {
