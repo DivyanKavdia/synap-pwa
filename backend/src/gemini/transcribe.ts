@@ -186,9 +186,15 @@ export async function transcribeSegment(
       error instanceof GeminiError &&
       error.status === 400 &&
       !/api[_ -]?key|credential|permission|billing|quota/i.test(error.message);
-    if (mimeType !== 'audio/wav' || (!resultFailure && !acceleratedRejection)) throw error;
-    // Change the input/settings once, instead of repeatedly submitting the same
-    // failed accelerated window. Never use this for rate limits or access errors.
+    // Missing/incomplete output already consumed a provider request. Do not
+    // submit the same audio again inside this request: the durable recording
+    // retry owns recovery after its 120-second delay. This is the boundary that
+    // prevents one anomalous ASR response from becoming an RPM/RPD burst.
+    if (resultFailure) throw error;
+    if (mimeType !== 'audio/wav' || !acceleratedRejection) throw error;
+    // A deterministic 400 is request-shape compatibility, not a transient
+    // provider failure. Retrying once with original input/default settings
+    // remains useful and cannot be confused with quota recovery.
     attempted = true;
     prepared = { ...originalAudio(audio), fallback: 'provider-failure' };
     log.warn('Retrying transcription with original audio and default settings', {
