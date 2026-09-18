@@ -189,10 +189,8 @@ test('a short dedicated-ASR rate limit waits instead of spending a fallback requ
 
 test('a long ASR batch never falls back to flat text because timestamps are required for splitting', async (t) => {
   const original = fetch;
-  const originalModel = config.gemini.transcribeModel;
-  const fixtureModel = 'batch-timestamp-fixture';
+  const fixtureModel = config.gemini.transcribeModel;
   let calls = 0;
-  config.gemini.transcribeModel = fixtureModel;
   t.mock.method(Date, 'now', () => 1_000_000);
   globalThis.fetch = async (_url, init) => {
     calls++;
@@ -221,7 +219,6 @@ test('a long ASR batch never falls back to flat text because timestamps are requ
     );
     assert.equal(calls, 1, 'timestamped batches must not spend a flat-text fallback request');
   } finally {
-    config.gemini.transcribeModel = originalModel;
     globalThis.fetch = original;
   }
 });
