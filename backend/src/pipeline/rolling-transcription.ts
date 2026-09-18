@@ -99,6 +99,7 @@ export async function transcribeUploadedBatch(
   const lease = newId();
   const claimed: SegmentDoc[] = [];
   let ambiguous = false;
+  let batchSignal: AbortSignal | undefined;
   try {
     // Claim every source before the paid request. Existing legacy clients may
     // still ask for one rolling window directly; per-window leases fence that
@@ -129,7 +130,7 @@ export async function transcribeUploadedBatch(
     }
 
     const batchAudio = makePcm16Wav(Buffer.concat(pcm));
-    const signal = AbortSignal.timeout(300_000);
+    batchSignal = AbortSignal.timeout(300_000);
     const result = await transcribeSegment(batchAudio, 'audio/wav', {
       baseOffsetMs: claimed[0]!.startMs,
       speed: config.gemini.transcriptionSpeed,
@@ -139,9 +140,9 @@ export async function transcribeUploadedBatch(
       primaryWordTimestamps: true,
       useFileApi: true,
       enrichAnnotations: false,
-      signal,
+      signal: batchSignal,
     });
-    ambiguous = signal.aborted;
+    ambiguous = batchSignal.aborted;
 
     const wordsBySegment = new Map<number, TranscriptWord[]>();
     for (const segment of claimed) wordsBySegment.set(segment.index, []);
@@ -205,7 +206,8 @@ export async function transcribeUploadedBatch(
     }
     return completed;
   } catch (cause) {
-    ambiguous ||= cause instanceof GeminiError && cause.status === 0 && cause.reason === 'request';
+    ambiguous ||= Boolean(batchSignal?.aborted) ||
+      (cause instanceof GeminiError && cause.status === 0 && cause.reason === 'request');
     throw cause;
   } finally {
     // A lost provider response may still be running/billed. Preserve those
