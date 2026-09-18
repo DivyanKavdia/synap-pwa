@@ -137,6 +137,8 @@ export async function transcribeSegment(
         0,
         true,
         'missing-text',
+        undefined,
+        { model: config.gemini.transcribeModel, stage: 'transcription' },
       );
     return response;
   };
