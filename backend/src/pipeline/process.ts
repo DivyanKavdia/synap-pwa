@@ -43,10 +43,11 @@ import { log } from '../util/log.js';
 import { rebuildDay } from './brief.js';
 import { indexMemory } from './index-memory.js';
 import { chooseTranscript } from './source-materialize.js';
-import { transcribeUploadedWindow, hasUsableTranscription } from './rolling-transcription.js';
-import { requireCompleteSegments, transcribeRecordingSegments } from './recording-segments.js';
+import { transcribeUploadedBatch, hasUsableTranscription } from './rolling-transcription.js';
+import { requireCompleteSegments } from './recording-segments.js';
 
 const SEGMENT_MS = 30_000;
+const ASR_BATCH_MS = 15 * 60_000;
 
 export interface ProcessRecordingOptions {
   /** Reuse sealed segment transcripts only. Missing transcript windows are an error; never call STT. */
@@ -158,14 +159,30 @@ async function transcribeAll(
   recording: RecordingDoc,
   patch: (fields: Partial<RecordingDoc>) => Promise<void>,
 ): Promise<SegmentDoc[]> {
-  const segments = await db.listSegments(uid, recordingId);
-  return transcribeRecordingSegments(
-    segments,
-    recording.segmentCount || segments.length,
-    segment => transcribeUploadedWindow(uid, recordingId, segment.index, dek),
-    (done, total) => patch({ progress: 0.05 + 0.5 * (done / total) }),
-    segment => !hasUsableTranscription(uid, recordingId, dek, segment),
-  );
+  const listed = await db.listSegments(uid, recordingId);
+  const ordered = requireCompleteSegments(listed, recording.segmentCount || listed.length);
+  let done = ordered.filter(segment => hasUsableTranscription(uid, recordingId, dek, segment)).length;
+
+  for (let cursor = 0; cursor < ordered.length;) {
+    if (hasUsableTranscription(uid, recordingId, dek, ordered[cursor]!)) {
+      cursor++;
+      continue;
+    }
+    const batch: SegmentDoc[] = [];
+    const batchStart = ordered[cursor]!.startMs;
+    while (cursor < ordered.length) {
+      const segment = ordered[cursor]!;
+      if (hasUsableTranscription(uid, recordingId, dek, segment)) break;
+      if (batch.length && segment.endMs - batchStart > ASR_BATCH_MS) break;
+      batch.push(segment);
+      cursor++;
+    }
+    const completed = await transcribeUploadedBatch(uid, recordingId, batch, dek);
+    for (const segment of completed) ordered[segment.index] = segment;
+    done += completed.length;
+    await patch({ progress: 0.05 + 0.5 * (done / ordered.length) });
+  }
+  return ordered;
 }
 
 // ---------------------------------------------------------------------------
