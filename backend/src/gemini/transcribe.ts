@@ -140,6 +140,7 @@ export async function transcribeSegment(
           input,
           generation_config: { transcription_config: settings },
           usage_label: 'transcription',
+          ...(options.useFileApi ? { request_timeout_ms: 240_000 } : {}),
         },
         requestSignal,
         () => {
