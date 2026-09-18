@@ -253,7 +253,7 @@ test('background 429 retains diagnostics and schedules a durable cooldown before
   t.after(async()=>{await new Promise<void>(resolve=>server.close(()=>resolve()));});
   const invoke=()=>fetch(origin+'/v1/tasks/process',{method:'POST',headers:{Authorization:'Bearer task','Content-Type':'application/json'},body:JSON.stringify({uid:'u',recordingId:'r'})});
   const before=Date.now(),result=await invoke();assert.equal(result.status,200);assert.equal((await result.json() as any).state,'deferred');
-  assert.equal(calls,1);assert.equal(tasks.length,1);
+  assert.equal(calls,2,'dedicated ASR and the independent Flash fallback each get one attempt');assert.equal(tasks.length,1);
   assert(tasks[0].task.scheduleTime.seconds*1000>=before+120000);
   assert.deepEqual(JSON.parse(tasks[0].task.httpRequest.body.toString()),{uid:'u',recordingId:'r'});
   const status=await fetch(origin+'/v1/recordings/r/processing',{headers:{Authorization:'Bearer '+token}});
@@ -261,6 +261,7 @@ test('background 429 retains diagnostics and schedules a durable cooldown before
   assert.equal(body.state,'failed');assert.equal(body.error.code,'model_rate_limited');
   assert.equal(body.failure_id,f.rows.get(f.parent).updatedAt);
   assert.equal(body.error.providerStatus,429);assert.equal(body.error.retryable,true);
+  assert.equal(body.error.model,'gemini-3.8-flash','final diagnostics identify the exhausted fallback model');
   assert(body.error.retryAfterMs>110000);assert.equal(f.rows.get(f.child).state,'accepted');assert.equal(objects.size,1);
   const retry=()=>fetch(origin+'/v1/recordings/r/retry',{method:'POST',headers:{Authorization:'Bearer '+token,'Idempotency-Key':'retry-fixture-key'}});
   const savedFailure=structuredClone(f.rows.get(f.parent));
@@ -271,11 +272,11 @@ test('background 429 retains diagnostics and schedules a durable cooldown before
     assert.equal(tasks.at(-1).task.name,tasks[0].task.name,'taps reuse the scheduled task');
   }
   assert.deepEqual(f.rows.get(f.parent),savedFailure,'retry during cooldown cannot clear the provider deadline');
-  assert.equal(calls,1,'retry endpoint does not submit audio');
+  assert.equal(calls,2,'retry endpoint does not submit audio');
   const recovery=await fetch(origin+'/v1/recordings/r/process-now',{method:'POST',headers:{Authorization:'Bearer '+token}});
   assert.equal(recovery.status,503);assert(tasks.at(-1).task.scheduleTime,'authenticated recovery must leave a durable retry');
   failSchedule=true;assert.equal((await invoke()).status,500,'failed scheduling retains the current delivery for retry');
-  assert.equal(calls,1,'a cooldown retry never submits the audio again');
+  assert.equal(calls,2,'a cooldown retry never submits the audio again');
 
   // Once the old deadline expires, explicit recovery queues fresh work. A lost
   // response replay is idempotent; completed transcripts and source stay intact.
@@ -286,7 +287,7 @@ test('background 429 retains diagnostics and schedules a durable cooldown before
   assert.equal(f.rows.get(f.parent).state,'uploaded');assert.equal(tasks.length,beforeRetryTasks+1);
   assert.equal(f.rows.get(f.parent).processingFailure,null);
   await retry();assert.equal(tasks.length,beforeRetryTasks+1,'same request cannot enqueue twice');
-  assert.equal(calls,1);assert.equal(objects.size,1);
+  assert.equal(calls,2);assert.equal(objects.size,1);
 });
 
 test('processing retry cannot overwrite a new worker, newer failure, cooldown, or deletion',async t=>{
