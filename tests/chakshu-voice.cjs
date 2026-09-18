@@ -27,7 +27,7 @@ afterEach(()=>{
 
 test('decodes only bounded Chakshu voice protocol v2 status',()=>{
   const voice=load(),wake=voice.decode(packet({command:1})),decoded=voice.decode(packet({command:155,value:600}));
-  assert.equal(wake.command,1);assert.equal(voice.label(wake),'Hey Snap');
+  assert.equal(wake.command,1);assert.equal(voice.label(wake),'Hi ESP');
   assert.equal(decoded.sequence,1);assert.equal(decoded.command,155);assert.equal(decoded.value,600);assert.equal(decoded.drops,4);
   assert.throws(()=>voice.decode(new DataView(new Uint8Array(20).buffer)),/Unsupported/);
   const bad=packet();bad.setUint8(1,1);assert.throws(()=>voice.decode(bad),/Unsupported/);
