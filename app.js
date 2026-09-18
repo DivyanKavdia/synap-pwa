@@ -4374,10 +4374,8 @@
     return false;
   }
 
-  function acquireAppOwnership() {
-    if (appLockHeld) return Promise.resolve(true);
-    if (appLockRequest) return appLockRequest;
-    appLockRequest = new Promise(function (resolve, reject) {
+  function requestAppOwnershipOnce() {
+    return new Promise(function (resolve, reject) {
       let settled = false;
       Promise.resolve(navigator.locks.request("dk-pendant-app", {ifAvailable:true}, async function (lock) {
         if (!lock) {
@@ -4402,7 +4400,23 @@
         if (!settled) reject(error);
         else log("App ownership lock ended unexpectedly", friendlyError(error));
       });
-    }).finally(function () { appLockRequest = null; });
+    });
+  }
+
+  function acquireAppOwnership() {
+    if (appLockHeld) return Promise.resolve(true);
+    if (appLockRequest) return appLockRequest;
+    appLockRequest = (async function () {
+      // Reload/page restoration can overlap the previous document's asynchronous
+      // Web-Lock release for a few event-loop turns. Give that handoff a short,
+      // bounded grace period; never wait long enough to silently steal a live tab.
+      const deadline = Date.now() + 1200;
+      for (;;) {
+        if (await requestAppOwnershipOnce()) return true;
+        if (document.visibilityState === "hidden" || Date.now() >= deadline) return false;
+        await new Promise(function (resolve) { setTimeout(resolve, 75); });
+      }
+    })().finally(function () { appLockRequest = null; });
     return appLockRequest;
   }
 
