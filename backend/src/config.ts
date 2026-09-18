@@ -102,7 +102,7 @@ export const config = {
      * require word timestamps to map output back to source windows. */
     transcriptionBatchMinutes: Math.min(
       25,
-      Math.max(1, Number(optional('SYNAP_TRANSCRIPTION_BATCH_MINUTES', '15')) || 15),
+      Math.max(1, Number(optional('SYNAP_TRANSCRIPTION_BATCH_MINUTES', '20')) || 20),
     ),
     /** Stable structured reasoning for summaries, outcomes, people and commitments. */
     memoryModel: optional('SYNAP_GEMINI_MEMORY_MODEL', 'gemini-3.8-flash'),
