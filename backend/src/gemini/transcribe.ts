@@ -16,6 +16,7 @@ import {
   interactionWords,
   uploadGeminiFile,
   deleteGeminiFile,
+  ensureModelAvailable,
   GeminiError,
   type InteractionPart,
   type InteractionResponse,
@@ -124,6 +125,7 @@ export async function transcribeSegment(
     let input: InteractionPart[];
     try {
       if (options.useFileApi) {
+        await ensureModelAvailable(usedModel, 'transcription');
         uploaded = await uploadGeminiFile(submitted, mimeType, requestSignal);
         input = [{ type: 'audio', uri: uploaded.uri, mime_type: uploaded.mimeType || mimeType }];
       } else {
