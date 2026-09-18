@@ -3,6 +3,7 @@ import test from 'node:test';
 import { transcribeSegment } from '../src/gemini/transcribe.js';
 import { GeminiError, createInteraction } from '../src/gemini/client.js';
 import { makePcm16Wav } from '../src/speaker/audio.js';
+import { config } from '../src/config.js';
 
 // Valid, non-silent audio so the tests exercise the provider request path.
 const audio = makePcm16Wav(Buffer.alloc(32000, 16));
@@ -188,10 +189,15 @@ test('a short dedicated-ASR rate limit waits instead of spending a fallback requ
 
 test('a long ASR batch never falls back to flat text because timestamps are required for splitting', async (t) => {
   const original = fetch;
+  const originalModel = config.gemini.transcribeModel;
+  const fixtureModel = 'batch-timestamp-fixture';
   let calls = 0;
+  config.gemini.transcribeModel = fixtureModel;
   t.mock.method(Date, 'now', () => 1_000_000);
-  globalThis.fetch = async () => {
+  globalThis.fetch = async (_url, init) => {
     calls++;
+    const request = JSON.parse(String(init?.body));
+    assert.equal(request.model, fixtureModel);
     return new Response(JSON.stringify({
       error: {
         details: [
@@ -213,8 +219,11 @@ test('a long ASR batch never falls back to flat text because timestamps are requ
         return true;
       },
     );
-    assert.equal(calls, 1);
-  } finally { globalThis.fetch = original; }
+    assert.equal(calls, 1, 'timestamped batches must not spend a flat-text fallback request');
+  } finally {
+    config.gemini.transcribeModel = originalModel;
+    globalThis.fetch = original;
+  }
 });
 
 test('authentication failures and cancellation never start an alternate transcription request', async () => {
