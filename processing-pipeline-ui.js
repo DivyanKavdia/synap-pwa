@@ -117,12 +117,16 @@
     if (failureKey) {
       var failedStep = steps.find(function (item) { return item.key === failureKey; });
       if (failedStep) failedStep.state = 'error';
+      var retryAt = Number(recording.processingRetryAt || 0);
+      var coolingDown = retryAt > Date.now();
       return {
-        status: 'Needs retry',
+        status: coolingDown ? 'Cooling down' : 'Needs retry',
         tone: 'error',
         percent: percent(recording.processingProgress),
         error: recording.processingError || (failedJob && failedJob.lastError) || 'Processing stopped before this memory was ready.',
         retryable: recording.processingRetryable !== false,
+        retryAt: retryAt,
+        coolingDown: coolingDown,
         steps: steps
       };
     }
@@ -263,6 +267,15 @@
   async function retryRecording(recording, button) {
     var id = String(recording && recording.id || '');
     if (!id || retrying.has(id)) return;
+    var retryAt = Number(recording && recording.processingRetryAt || 0);
+    if (retryAt > Date.now()) {
+      var waitSeconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000));
+      var cooldown = new Error('AI cooldown is still active. Retry in about ' + waitSeconds + ' seconds.');
+      cooldown.code = 'processing_deferred';
+      cooldown.retryable = true;
+      cooldown.retryAfterMs = retryAt - Date.now();
+      throw cooldown;
+    }
     if (!root.SynapProcessingQueue || typeof root.SynapProcessingQueue.retryRecording !== 'function') {
       throw new Error('Processing is not ready yet. Reopen synap and try again.');
     }
@@ -313,7 +326,7 @@
   function ensureStatus(card, recording, model) {
     var info = card.querySelector('.recording-row-info');
     if (!info) return;
-    var canRetry = model.tone === 'error' && model.retryable !== false;
+    var canRetry = model.tone === 'error' && model.retryable !== false && !model.coolingDown;
     var current = info.querySelector('.recording-pipeline-status');
     var status = replaceStatus(info, current, canRetry ? 'BUTTON' : 'SPAN');
     status.dataset.tone = model.tone || 'waiting';
@@ -357,6 +370,11 @@
     title.textContent = 'Memory pipeline';
     var status = root.document.createElement('span');
     status.textContent = retrying.has(String(recording.id)) ? 'Retrying…' : model.status;
+    if (model.coolingDown && model.retryAt > Date.now()) {
+      var remaining = Math.max(1, Math.ceil((model.retryAt - Date.now()) / 1000));
+      status.textContent = 'Cooling down · ' + (remaining >= 60 ? Math.ceil(remaining / 60) + 'm' : remaining + 's');
+      scheduleRefresh(Math.min(30000, Math.max(1000, model.retryAt - Date.now() + 50)));
+    }
     head.append(title, status);
 
     var track = root.document.createElement('div');
@@ -397,8 +415,13 @@
         var retry = root.document.createElement('button');
         retry.type = 'button';
         retry.className = 'button button-secondary button-small recording-processing-retry';
-        retry.disabled = retrying.has(String(recording.id));
-        retry.textContent = retry.disabled ? 'Retrying…' : 'Retry processing';
+        retry.disabled = retrying.has(String(recording.id)) || Boolean(model.coolingDown);
+        if (retrying.has(String(recording.id))) retry.textContent = 'Retrying…';
+        else if (model.coolingDown) {
+          var seconds = Math.max(1, Math.ceil((model.retryAt - Date.now()) / 1000));
+          retry.textContent = 'Retry after ' + (seconds >= 60 ? Math.ceil(seconds / 60) + 'm' : seconds + 's');
+          retry.title = 'Synap will resume automatically after the AI cooldown.';
+        } else retry.textContent = 'Retry processing';
         retry.addEventListener('click', function () {
           retryRecording(recording, retry).catch(function (retryError) {
             if (root.console && root.console.error) root.console.error('Recording retry failed', retryError);
