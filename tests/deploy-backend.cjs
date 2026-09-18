@@ -89,9 +89,24 @@ if (command === 'curl') {
   const url = args.at(-1);
   if (url.endsWith('/ops/readiness')) {
     const tagged = url.startsWith('https://candidate.');
-    const ok = !(tagged && scenario === 'candidate-readiness') && !(!tagged && scenario === 'live-readiness');
-    const sha = state.revisions[state.candidate].spec.containers[0].env.find(e=>e.name==='SYNAP_BUILD_SHA').value;
-    fs.writeFileSync(args[args.indexOf('--output')+1], JSON.stringify({ok,commit:sha,checks:[{name:'cloud_tasks_and_memory',ok}]}));
+    const active = state.service.status.traffic.find(t => t.percent === 100).revisionName;
+    const revision = tagged ? state.candidate : active;
+    const sha = state.revisions[revision].spec.containers[0].env.find(e=>e.name==='SYNAP_BUILD_SHA').value;
+    const cooldown = (tagged && ['candidate-cooldown','shared-cooldown'].includes(scenario)) ||
+      (!tagged && scenario === 'shared-cooldown');
+    const failed = (tagged && scenario === 'candidate-readiness') ||
+      (!tagged && active === state.candidate && scenario === 'live-readiness');
+    const ok = !cooldown && !failed;
+    const checks = cooldown ? [
+      {name:'key_and_session',ok:true},
+      {name:'audio_storage_and_transcription',ok:false,code:'processing_deferred',httpStatus:503,quotaKind:'unknown'},
+      {name:'fixture_cleanup',ok:true}
+    ] : failed ? [
+      {name:'key_and_session',ok:true},
+      {name:'audio_storage_and_transcription',ok:false,code:'transcription_failed',httpStatus:503},
+      {name:'fixture_cleanup',ok:true}
+    ] : [{name:'cloud_tasks_and_memory',ok:true}];
+    fs.writeFileSync(args[args.indexOf('--output')+1], JSON.stringify({ok,commit:sha,checks}));
     out(ok ? '200' : '503');
     process.exit(0);
   }
@@ -162,6 +177,8 @@ if (command === 'curl') {
 
 for (const scenario of [
   'success',
+  'shared-cooldown',
+  'candidate-cooldown',
   'candidate-health',
   'candidate-readiness',
   'lost-secret',
@@ -206,16 +223,16 @@ for (const scenario of [
         .map(JSON.parse);
       const moves = calls.filter((c) => c.args.some((a) => a.startsWith('--to-revisions=')));
       const active = state.service.status.traffic.filter((t) => t.percent > 0);
-      assert.equal(result.status, scenario === 'success' ? 0 : 1, result.stdout + result.stderr);
+      assert.equal(result.status, ['success', 'shared-cooldown'].includes(scenario) ? 0 : 1, result.stdout + result.stderr);
       assert.equal(active.length, 1);
       assert.equal(active[0].percent, 100);
       assert.equal(
         active[0].revisionName,
-        ['success', 'rollback-error'].includes(scenario) ? state.candidate : 'synap-backend-old',
+        ['success', 'shared-cooldown', 'rollback-error'].includes(scenario) ? state.candidate : 'synap-backend-old',
       );
       assert.equal(
         moves.length,
-        scenario === 'success'
+        ['success', 'shared-cooldown'].includes(scenario)
           ? 1
           : ['live-health', 'live-readiness', 'promotion-error', 'rollback-error'].includes(scenario)
             ? 2
