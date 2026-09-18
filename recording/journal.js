@@ -19,7 +19,12 @@
       metadata: () => ({
         ownerUid: String(root.SynapAuth?.session?.()?.profile?.uid || '') || null,
         rollingTranscription: true,
+        // Keep 30-second local windows for crash recovery, but let the managed
+        // cloud adapter combine ten immutable windows into one five-minute ASR
+        // request. The policy is stored per recording so older 30-second cloud
+        // recordings keep their original segment numbering after an upgrade.
         transcriptionWindowSeconds: 30,
+        cloudTranscriptionWindowSeconds: 300,
         uploadAudioProcessing: 'none',
       }),
       onWindowReady(detail) {
