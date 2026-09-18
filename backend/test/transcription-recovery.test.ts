@@ -161,10 +161,35 @@ test('a long dedicated-ASR cooldown falls back once to general audio understandi
   } finally { globalThis.fetch = original; }
 });
 
-test('a long ASR batch never falls back to flat text because timestamps are required for splitting', async (t) => {
+test('a short dedicated-ASR rate limit waits instead of spending a fallback request', async (t) => {
   const original = fetch;
   let calls = 0;
   t.mock.method(Date, 'now', () => 1000);
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response(JSON.stringify({
+      error: {
+        details: [
+          { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '60s' },
+        ],
+      },
+    }), { status: 429 });
+  };
+  try {
+    await assert.rejects(transcribeSegment(audio, 'audio/wav'), (error: unknown) => {
+      assert.ok(error instanceof GeminiError);
+      assert.equal(error.status, 429);
+      assert.equal(error.rateLimit?.retryAfterMs, 60000);
+      return true;
+    });
+    assert.equal(calls, 1);
+  } finally { globalThis.fetch = original; }
+});
+
+test('a long ASR batch never falls back to flat text because timestamps are required for splitting', async (t) => {
+  const original = fetch;
+  let calls = 0;
+  t.mock.method(Date, 'now', () => 1_000_000);
   globalThis.fetch = async () => {
     calls++;
     return new Response(JSON.stringify({
@@ -188,31 +213,6 @@ test('a long ASR batch never falls back to flat text because timestamps are requ
         return true;
       },
     );
-    assert.equal(calls, 1);
-  } finally { globalThis.fetch = original; }
-});
-
-test('a short dedicated-ASR rate limit waits instead of spending a fallback request', async (t) => {
-  const original = fetch;
-  let calls = 0;
-  t.mock.method(Date, 'now', () => 1000);
-  globalThis.fetch = async () => {
-    calls++;
-    return new Response(JSON.stringify({
-      error: {
-        details: [
-          { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '60s' },
-        ],
-      },
-    }), { status: 429 });
-  };
-  try {
-    await assert.rejects(transcribeSegment(audio, 'audio/wav'), (error: unknown) => {
-      assert.ok(error instanceof GeminiError);
-      assert.equal(error.status, 429);
-      assert.equal(error.rateLimit?.retryAfterMs, 60000);
-      return true;
-    });
     assert.equal(calls, 1);
   } finally { globalThis.fetch = original; }
 });
