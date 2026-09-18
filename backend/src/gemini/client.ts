@@ -100,10 +100,10 @@ export interface ModelFailure {
 
 /** Fixed public messages; a provider body can echo private input or credentials. */
 export function modelFailure(error: GeminiError): ModelFailure {
-  // Missing model output is not evidence that the audio is empty. Give the
-  // durable queue a real cooldown so one anomalous response cannot create a
-  // tight paid retry loop and then trip the provider's project rate limit.
-  const missingTextRetryMs = 120_000;
+  // Missing/incomplete model output is not evidence that the audio is empty.
+  // Give the durable queue a real delay so one anomalous provider response
+  // cannot create a tight paid retry loop and then trip the project rate limit.
+  const outputRetryMs = 120_000;
   // This metadata comes from our routing configuration, never a provider body.
   const route = error.route ? { model: error.route.model, modelStage: error.route.stage } : {};
   if (error.reason === 'cooldown') return {
@@ -140,7 +140,7 @@ export function modelFailure(error: GeminiError): ModelFailure {
   }
   return { code, message, retryable: error.retryable, providerStatus: error.status,
     ...(error.status > 0 ? { source: 'provider' as const } : {}), ...route,
-    ...(error.reason === 'missing-text' ? { retryAfterMs: missingTextRetryMs } : {}),
+    ...(['missing-text', 'incomplete'].includes(error.reason) ? { retryAfterMs: outputRetryMs } : {}),
     ...(error.status === 429 ? {
       retryAfterMs: error.rateLimit?.retryAfterMs ?? 60000,
       quotaKind: error.rateLimit?.quotaKind ?? 'unknown',
@@ -282,7 +282,14 @@ export async function createInteraction(
   if (fields) log.info('Gemini usage', fields);
   if (response.status && response.status !== 'completed') {
     log.warn('Gemini interaction did not complete', { model: request.model, stage: usageLabel || 'generation', code: 'model_incomplete' });
-    throw new GeminiError(`Gemini ${usageLabel || 'generation'} did not complete (${response.status}).`, 0, true, 'incomplete');
+    throw new GeminiError(
+      `Gemini ${usageLabel || 'generation'} did not complete (${response.status}).`,
+      0,
+      true,
+      'incomplete',
+      undefined,
+      { model: request.model, stage: usageLabel || 'generation' },
+    );
   }
   return response;
 }
