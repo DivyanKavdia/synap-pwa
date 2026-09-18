@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell144-voice-brief";
+  const APP_SHELL_REVISION = "1.0.0-shell145-chakshu-voice";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -4566,7 +4566,7 @@
       components: {
         bluetooth: globalThis.SynapBluetoothSession?.revision || "unknown",
         camera: globalThis.SynapChakshuTransfer?.revision || "unknown",
-        localVoice: "disabled",
+        localVoice: globalThis.SynapChakshuVoice?.revision || "disabled",
         capture: globalThis.SynapCaptureUIRevision || "unknown"
       },
       protocol: PROTOCOL_VERSION,

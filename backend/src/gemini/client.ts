@@ -100,6 +100,10 @@ export interface ModelFailure {
 
 /** Fixed public messages; a provider body can echo private input or credentials. */
 export function modelFailure(error: GeminiError): ModelFailure {
+  // Missing model output is not evidence that the audio is empty. Give the
+  // durable queue a real cooldown so one anomalous response cannot create a
+  // tight paid retry loop and then trip the provider's project rate limit.
+  const missingTextRetryMs = 120_000;
   // This metadata comes from our routing configuration, never a provider body.
   const route = error.route ? { model: error.route.model, modelStage: error.route.stage } : {};
   if (error.reason === 'cooldown') return {
@@ -136,6 +140,7 @@ export function modelFailure(error: GeminiError): ModelFailure {
   }
   return { code, message, retryable: error.retryable, providerStatus: error.status,
     ...(error.status > 0 ? { source: 'provider' as const } : {}), ...route,
+    ...(error.reason === 'missing-text' ? { retryAfterMs: missingTextRetryMs } : {}),
     ...(error.status === 429 ? {
       retryAfterMs: error.rateLimit?.retryAfterMs ?? 60000,
       quotaKind: error.rateLimit?.quotaKind ?? 'unknown',

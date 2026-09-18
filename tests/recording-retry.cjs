@@ -81,6 +81,8 @@ function uiAndBackendContract() {
   assert.match(retryRoute, /enqueueProcessing\(req\.uid, recordingId, taskSuffix\)/,
     'retry must enqueue a unique processing task when cloud work needs restarting');
   assert.match(retryRoute, /resetProcessingForRetry/, 'retry must atomically preserve a worker that started after the status read');
+  assert.match(retryRoute, /model_missing_text/, 'legacy missing-output failures must receive a cooldown after upgrade');
+  assert.match(retryRoute, /MISSING_TEXT_RETRY_MS\s*=\s*120_000/, 'missing-output recovery must not become a tight retry loop');
   assert.doesNotMatch(retryRoute, /db\.patchRecording\(/, 'dispatch errors must not overwrite an active worker');
 
   const app = read('backend/src/http/app.ts');

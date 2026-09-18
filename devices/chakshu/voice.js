@@ -215,6 +215,7 @@
     }
   }
   root.SynapChakshuVoice = Object.freeze({
+    revision: '1.0.0-chakshu-voice2',
     decode,
     perform,
     sync,
