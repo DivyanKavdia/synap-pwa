@@ -7,6 +7,7 @@ import { HttpError, handler } from '../errors.js';
 
 const ACTIVE_STATES = new Set(['transcribing', 'understanding', 'indexing']);
 const UPLOAD_STATES = new Set(['created', 'uploading']);
+const MISSING_TEXT_RETRY_MS = 120_000;
 
 function idempotencyKey(req: AuthedRequest): string {
   const key = req.header('idempotency-key');
@@ -101,7 +102,16 @@ export function retryRoutes(): Router {
       // An old failure may predate durable cooldown scheduling. Ensure the task
       // exists, but never turn a user's repeated tap into another paid request
       // before the provider's deadline. Identical deadlines share a task name.
-      const retryAt = recording.processingFailure?.retryAt;
+      const storedRetryAt = recording.processingFailure?.retryAt;
+      // Failures written before the durable missing-output cooldown existed have
+      // no retryAt. Reconstruct one from the failure revision so an upgraded
+      // client cannot immediately hammer the same saved audio again.
+      const failedAt = Date.parse(recording.updatedAt);
+      const legacyMissingTextRetryAt =
+        recording.processingFailure?.code === 'model_missing_text' && Number.isFinite(failedAt)
+          ? failedAt + MISSING_TEXT_RETRY_MS
+          : undefined;
+      const retryAt = storedRetryAt || legacyMissingTextRetryAt;
       if (recording.state === 'failed' && retryAt && retryAt > Date.now()) {
         await enqueueProcessing(req.uid, recordingId, 'cooldown-' + Math.ceil(retryAt / 1000), retryAt);
         res.status(202).json({ recording_id: recordingId, state: 'failed',
