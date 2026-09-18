@@ -131,6 +131,9 @@
   let startupPending = null;
   let recoveryPending = null;
   let appLockHeld = false;
+  let appLockRequest = null;
+  let appLockRelease = null;
+  let ownershipYieldedConnection = false;
   let firmwareControlsBound = false;
   let eventsBound = false;
   let bluetoothDevice = null;
@@ -4274,13 +4277,37 @@
     });
 
     document.addEventListener("visibilitychange", function () {
-      if (
-        document.visibilityState === "visible" &&
-        (recordingConfirmed || firmwareBusy) &&
-        settings.wakeLock
-      ) {
-        acquireWakeLock();
+      if (document.visibilityState === "hidden") {
+        // Bluefy/WebKit may keep a background page alive indefinitely. An idle
+        // hidden page must relinquish the page-wide pendant lock so the visible
+        // tab can take over without being told to close a tab that is no longer
+        // usable. Active recording/update state remains protected by canReload().
+        releaseAppOwnership("Page hidden while idle");
+        return;
       }
+
+      if (!appLockHeld && startupReady && !startupPending) {
+        acquireAppOwnership().then(async function (owned) {
+          if (!owned) {
+            setStartup("ready", "Another active Synap tab is using the pendant. Return to it or close it, then retry.");
+            return;
+          }
+          setStartup("ready", "");
+          if (!isGattConnected()) {
+            setAppState("disconnected");
+            await recoverRememberedConnection("tab-foreground", true);
+          }
+        }).catch(function (error) {
+          log("App ownership reacquire failed", friendlyError(error));
+          setStartup("ready", "Could not reclaim pendant access. Tap Retry.");
+        });
+      }
+
+      if ((recordingConfirmed || firmwareBusy) && settings.wakeLock) acquireWakeLock();
+    });
+
+    window.addEventListener("pagehide", function () {
+      releaseAppOwnership("Page closed");
     });
 
     window.addEventListener("beforeunload", function (event) {
@@ -4345,6 +4372,59 @@
     if (startupReady) return true;
     toast(startupPending ? "Opening saved recordings…" : "The app could not start. Tap Retry above.", "error");
     return false;
+  }
+
+  function acquireAppOwnership() {
+    if (appLockHeld) return Promise.resolve(true);
+    if (appLockRequest) return appLockRequest;
+    appLockRequest = new Promise(function (resolve, reject) {
+      let settled = false;
+      Promise.resolve(navigator.locks.request("dk-pendant-app", {ifAvailable:true}, async function (lock) {
+        if (!lock) {
+          settled = true;
+          resolve(false);
+          return;
+        }
+        let release;
+        const held = new Promise(function (done) { release = done; });
+        appLockHeld = true;
+        appLockRelease = release;
+        if (ownershipYieldedConnection) {
+          ownershipYieldedConnection = false;
+          manualDisconnect = false;
+        }
+        settled = true;
+        resolve(true);
+        await held;
+        if (appLockRelease === release) appLockRelease = null;
+        appLockHeld = false;
+      })).catch(function (error) {
+        if (!settled) reject(error);
+        else log("App ownership lock ended unexpectedly", friendlyError(error));
+      });
+    }).finally(function () { appLockRequest = null; });
+    return appLockRequest;
+  }
+
+  function appOwnershipCanYield() {
+    return appLockHeld && !connectInProgress && canReload();
+  }
+
+  function releaseAppOwnership(reason) {
+    if (!appOwnershipCanYield() || !appLockRelease) return false;
+    const release = appLockRelease;
+    appLockRelease = null;
+    appLockHeld = false;
+    clearReconnectTimer(true);
+    stopRememberedMonitoring();
+    if (isGattConnected()) {
+      ownershipYieldedConnection = true;
+      manualDisconnect = true;
+      disconnectGatt(reason || "Yielding pendant ownership");
+    }
+    release();
+    log("App ownership released", { reason: reason || "idle", visibility: document.visibilityState });
+    return true;
   }
 
   function requireAppOwnership() {
@@ -4532,13 +4612,9 @@
     bindCoreControls();
     bindFirmwareUpdate();
     if (!journal) throw new Error("Audio storage did not load. Reload the app to download its files.");
-    if (!navigator.locks) throw new Error("This build needs Web Locks for safe local storage. Use current Android Chrome over HTTPS.");
-    if (!appLockHeld) await new Promise(function (resolve, reject) {
-      navigator.locks.request("dk-pendant-app", {ifAvailable:true}, async function (lock) {
-        if (!lock) {reject(new Error("Another pendant tab is open. Close it before using this one."));return;}
-        appLockHeld=true;resolve();await new Promise(function () {}); // Released automatically when this page closes.
-      }).catch(reject);
-    });
+    if (!navigator.locks) throw new Error("This build needs Web Locks for safe local storage. Use a current browser over HTTPS.");
+    if (!appLockHeld && !(await acquireAppOwnership()))
+      throw new Error("Another active Synap tab is using the pendant. Return to it or close it, then tap Retry.");
     await journal.open();
     globalThis.SynapMoments?.configure({store:journal,context:()=>({active:recordingConfirmed&&appState==='recording'&&!recordingReconnectPending,recordingId:currentRecordingId,offsetMs:journal.timelineOffsetMs(currentRecordingId)})});
     const recovered = await journal.recover();
