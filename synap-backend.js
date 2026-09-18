@@ -10,6 +10,9 @@
 
   var PREF_KEY = 'synap-ai-provider-settings';
   var SEGMENT_SECONDS = 30;
+  // Local capture stays in 30-second recovery windows. New managed recordings
+  // aggregate ten of those immutable windows for each cloud ASR request.
+  var MAX_CLOUD_SEGMENT_SECONDS = 300;
   var UPLOAD_TIMEOUT_MS = 120000;
   var REQUEST_TIMEOUT_MS = 60000;
   var STATUS_REQUEST_TIMEOUT_MS = 30000;
@@ -185,14 +188,50 @@
     return new Date(started.getTime() + duration).toISOString();
   }
 
+  function cloudSegmentSeconds(recording) {
+    var configured = Math.round(Number(recording && recording.cloudTranscriptionWindowSeconds) || SEGMENT_SECONDS);
+    if (!Number.isSafeInteger(configured) || configured < SEGMENT_SECONDS ||
+        configured > MAX_CLOUD_SEGMENT_SECONDS || configured % SEGMENT_SECONDS)
+      return SEGMENT_SECONDS;
+    return configured;
+  }
+
+  function cloudBatch(recording, localSegmentIndex) {
+    var seconds = cloudSegmentSeconds(recording);
+    var size = Math.max(1, seconds / SEGMENT_SECONDS);
+    var local = Math.max(0, Math.floor(Number(localSegmentIndex) || 0));
+    var index = Math.floor(local / size);
+    var firstLocal = index * size;
+    return {
+      index: index,
+      seconds: seconds,
+      size: size,
+      firstLocal: firstLocal,
+      lastLocal: firstLocal + size - 1
+    };
+  }
+
   function segmentBounds(recording, segmentIndex) {
-    var startMs = Math.max(0, Number(segmentIndex) || 0) * SEGMENT_SECONDS * 1000;
-    var fullEndMs = startMs + SEGMENT_SECONDS * 1000;
+    var seconds = cloudSegmentSeconds(recording);
+    var startMs = Math.max(0, Number(segmentIndex) || 0) * seconds * 1000;
+    var fullEndMs = startMs + seconds * 1000;
     var durationMs = Math.max(0, Math.round(Number(recording && recording.durationMs) || 0));
     var sealed = Boolean(recording && recording.sealed && recording.status !== 'recording');
     var endMs = sealed && durationMs > startMs ? Math.min(fullEndMs, durationMs) : fullEndMs;
     if (endMs <= startMs) endMs = fullEndMs;
     return { startMs: startMs, endMs: endMs };
+  }
+
+  function cloudSegmentCount(recording, segments) {
+    var size = cloudBatch(recording, 0).size;
+    var indexes = (segments || [])
+      .filter(function (segment) {
+        return segment && Number.isSafeInteger(segment.index) &&
+          (segment.frameCount || segment.pcmBuffer !== undefined || segment.pcmBlob);
+      })
+      .map(function (segment) { return segment.index; });
+    if (!indexes.length) return 0;
+    return Math.ceil((Math.max.apply(Math, indexes) + 1) / size);
   }
 
   function patchLocalProcessing(processor, recordingId, fields) {
@@ -283,92 +322,153 @@
     return selected;
   }
 
+  function batchWait() {
+    var error = new Error('Waiting for the next saved audio windows before cloud upload.');
+    error.code = 'processing_deferred';
+    error.retryable = true;
+    error.retryAfterMs = 30000;
+    return error;
+  }
+
+  function storedWindow(segment) {
+    return Boolean(segment && segment.closed &&
+      (segment.pcmBuffer !== undefined || segment.pcmBlob || segment.legacy));
+  }
+
+  async function cloudUploadAudio(store, recording, job, signal) {
+    var batch = cloudBatch(recording, job.segmentIndex);
+    if (batch.size === 1) {
+      var single = await store.segment(job.recordingId, job.segmentIndex);
+      if (!single.blob && !single.frames.length) throw permanent('Segment has no complete PCM frames.');
+      var singleWav = single.blob || root.DKAudioCodec.wav(single.frames);
+      return {
+        batch: batch,
+        members: [job.segmentIndex],
+        audio: await transcriptionAudio(store, job, singleWav, signal)
+      };
+    }
+
+    var segments = (await store.all('segments', 'recording', job.recordingId)).sort(function (a, b) {
+      return a.index - b.index;
+    });
+    var byIndex = new Map(segments.map(function (segment) { return [segment.index, segment]; }));
+    var lastLocal = batch.lastLocal;
+    if (recording && recording.sealed) {
+      var totalLocal = Math.max(
+        batch.firstLocal + 1,
+        Math.ceil(Math.max(0, Number(recording.durationMs) || 0) / (SEGMENT_SECONDS * 1000))
+      );
+      lastLocal = Math.min(lastLocal, totalLocal - 1);
+    } else if (!storedWindow(byIndex.get(batch.lastLocal))) {
+      throw batchWait();
+    }
+
+    var members = [], pcm = [];
+    var validate = root.DKAudioCodec?.validateWav;
+    var readBlob = root.DKAudioCodec?.readBlob;
+    if (!validate || !readBlob || !root.DKAudioCodec?.wav)
+      throw permanent('Audio validation did not load. Reopen Synap online, then retry.');
+
+    for (var index = batch.firstLocal; index <= lastLocal; index += 1) {
+      if (signal?.aborted) throw new DOMException('Upload cancelled.', 'AbortError');
+      var meta = byIndex.get(index);
+      if (!storedWindow(meta)) {
+        if (!recording?.sealed) throw batchWait();
+        throw permanent('A saved audio window is missing; keep the original for recovery.');
+      }
+      var data = await store.segment(job.recordingId, index);
+      if (!data.blob && !data.frames.length)
+        throw permanent('A saved audio window has no complete PCM frames.');
+      var wav = data.blob || root.DKAudioCodec.wav(data.frames);
+      var info = await validate(wav);
+      var bytes = await readBlob(wav);
+      pcm.push(bytes.slice(info.start, info.start + info.bytes));
+      members.push(index);
+    }
+
+    var combined = root.DKAudioCodec.wav(pcm);
+    var anchorJob = Object.assign({}, job, { segmentIndex: batch.firstLocal });
+    return {
+      batch: batch,
+      members: members,
+      audio: await transcriptionAudio(store, anchorJob, combined, signal)
+    };
+  }
+
+  async function markCloudBatchUploaded(store, recordingId, prepared, response) {
+    if (!store.atomic) return;
+    await store.atomic(['segments'], function (stores) {
+      for (const index of prepared.members) {
+        const get = stores.segments.get([recordingId, index]);
+        get.onsuccess = function () {
+          if (!get.result) return;
+          const meta = {
+            ...get.result,
+            uploadedToBackend: true,
+            cloudSegmentIndex: prepared.batch.index,
+            cloudSegmentSeconds: prepared.batch.seconds,
+            transcript: typeof response?.transcript === 'string' ? response.transcript : (get.result.transcript || ''),
+            transcriptionOutcome: response?.transcription_outcome || get.result.transcriptionOutcome || 'pending',
+            ...(response?.transcription_audio ? { transcriptionAudioUsage: response.transcription_audio } : {})
+          };
+          delete meta.transcriptionBlob;
+          stores.segments.put(meta);
+        };
+      }
+    });
+  }
+
   async function uploadSegment(processor, job, signal) {
     const savedSegment = await processor.store.get('segments', [job.recordingId, job.segmentIndex]);
     if (savedSegment?.uploadedToBackend)
-      return { transcript: savedSegment.transcript || '', transcriptionOutcome: savedSegment.transcriptionOutcome, uploadedToBackend: true, provider: 'synap' };
-    var recording = null;
+      return {
+        transcript: savedSegment.transcript || '',
+        transcriptionOutcome: savedSegment.transcriptionOutcome,
+        uploadedToBackend: true,
+        provider: 'synap'
+      };
+
     let audioStage = 'registering recording';
-    return safePatchLocalProcessing(processor, job.recordingId, {
-      processingStage: 'uploading', processingError: '', processingRetryable: true
-    }).then(function () {
-      audioStage = 'reading saved segment';
-      return ensureRecording(processor, job.recordingId, signal);
-    }).then(function () {
-      return Promise.all([
-        processor.store.segment(job.recordingId, job.segmentIndex),
-        processor.store.get('recordings', job.recordingId)
-      ]);
-    }).then(function (values) {
-      var data = values[0]; recording = values[1];
-      if (!data.blob && !data.frames.length) throw permanent('Segment has no complete PCM frames.');
-      var wav = data.blob || root.DKAudioCodec.wav(data.frames);
-      audioStage = 'validating upload audio';
-      return transcriptionAudio(processor.store,job,wav,signal).then(function(copy){
-        audioStage = 'reading upload bytes';
-        return root.DKAudioCodec.readBlob(copy);
+    try {
+      await safePatchLocalProcessing(processor, job.recordingId, {
+        processingStage: 'uploading', processingError: '', processingRetryable: true
       });
-    }).then(function (buffer) {
-      return sha256Hex(buffer).then(function (digest) {
-        var bounds = segmentBounds(recording, job.segmentIndex);
-        var headers = {
-          'Content-Type': 'audio/wav',
-          'X-Synap-Start-Ms': String(bounds.startMs),
-          'X-Synap-End-Ms': String(bounds.endMs)
-        };
-        if (digest) headers['X-Synap-Sha256'] = digest;
-        audioStage = 'sending upload';
-        return request('/v1/recordings/' + encodeURIComponent(job.recordingId) + '/segments/' + encodeURIComponent(job.segmentIndex) + '?transcription=deferred', {
-          method: 'PUT', headers: headers, body: buffer, signal: signal
-        });
-      });
-    }).then(async function (response) {
+      const recording = await ensureRecording(processor, job.recordingId, signal);
+      audioStage = 'building cloud audio window';
+      const prepared = await cloudUploadAudio(processor.store, recording, job, signal);
+      audioStage = 'reading upload bytes';
+      const buffer = await root.DKAudioCodec.readBlob(prepared.audio);
+      const digest = await sha256Hex(buffer);
+      const bounds = segmentBounds(recording, prepared.batch.index);
+      const headers = {
+        'Content-Type': 'audio/wav',
+        'X-Synap-Start-Ms': String(bounds.startMs),
+        'X-Synap-End-Ms': String(bounds.endMs)
+      };
+      if (digest) headers['X-Synap-Sha256'] = digest;
+
+      audioStage = 'sending upload';
+      const response = await request(
+        '/v1/recordings/' + encodeURIComponent(job.recordingId) + '/segments/' +
+          encodeURIComponent(prepared.batch.index) + '?transcription=deferred',
+        { method: 'PUT', headers: headers, body: buffer, signal: signal }
+      );
+
       audioStage = 'saving upload result';
-      const transcript = typeof response?.transcript === 'string' ? response.transcript : '';
-      const outcome = response?.transcription_outcome || (transcript.trim() ? 'speech' : 'pending');
-      if (processor.store.atomic) await processor.store.atomic(['segments', 'recordings'], function(stores) {
-        const get = stores.segments.get([job.recordingId, job.segmentIndex]);
-        get.onsuccess = function() {
-          if (!get.result) return;
-          const meta = { ...get.result, uploadedToBackend: true, transcript, transcriptionOutcome: outcome,
-            ...(response?.transcription_audio ? { transcriptionAudioUsage: response.transcription_audio } : {}) };
-          delete meta.transcriptionBlob;
-          stores.segments.put(meta);
-          const segments = stores.segments.index('recording').getAll(job.recordingId);
-          segments.onsuccess = function() {
-            const getRecording = stores.recordings.get(job.recordingId);
-            getRecording.onsuccess = function() {
-              const current = getRecording.result;
-              if (!current || current.localOnly) return;
-              const windows = segments.result.sort((a, b) => a.index - b.index);
-              const transcriptionAudioUsage = windows.reduce((sum, segment) => {
-                const usage = segment.transcriptionAudioUsage;
-                if (!usage) return sum;
-                sum.windows++;
-                for (const key of ['sourceDurationMs','preparedDurationMs','submittedAudioMs','requestAttempts'])
-                  sum[key] += Math.max(0, Number(usage[key]) || 0);
-                if (usage.speed === 1.5) sum.acceleratedWindows++;
-                if (usage.fallback) sum.fallbackWindows++;
-                return sum;
-              }, { windows:0, acceleratedWindows:0, fallbackWindows:0, sourceDurationMs:0,
-                preparedDurationMs:0, submittedAudioMs:0, requestAttempts:0 });
-              if (current.transcriptComplete || current.processingStage === 'ready') {
-                stores.recordings.put({ ...current, transcriptionAudioUsage }); return;
-              }
-              const text = windows.map(segment => segment.transcript || '').filter(Boolean).join('\n');
-              stores.recordings.put({ ...current, transcriptionAudioUsage, transcript: text || current.transcript || '',
-                transcriptComplete: false,
-                transcriptSegments: windows.filter(segment => segment.uploadedToBackend && segment.transcriptionOutcome !== 'pending').length });
-            };
-          };
-        };
-      });
-      return { transcript, transcriptionOutcome: outcome, uploadedToBackend: true, provider: 'synap', uploadedAt: new Date().toISOString() };
-    }).catch(function (error) {
+      await markCloudBatchUploaded(processor.store, job.recordingId, prepared, response);
+      return {
+        transcript: typeof response?.transcript === 'string' ? response.transcript : '',
+        transcriptionOutcome: response?.transcription_outcome || 'pending',
+        uploadedToBackend: true,
+        cloudSegmentIndex: prepared.batch.index,
+        provider: 'synap',
+        uploadedAt: new Date().toISOString()
+      };
+    } catch (error) {
       error.audioStage = audioStage === 'sending upload' && String(error.code || '').startsWith('model_')
         ? 'transcribing saved audio' : audioStage;
       throw error;
-    });
+    }
   }
 
   function uploadHighlights(processor, recordingId, signal) {
@@ -396,7 +496,7 @@
   function finalize(processor, job, signal) {
     return processor.store.get('recordings', job.recordingId).then(function (recording) {
       return processor.store.all('segments', 'recording', job.recordingId).then(function (segments) {
-        var counted = segments.filter(function (segment) { return segment.frameCount || segment.pcmBuffer || segment.pcmBlob; }).length;
+        var counted = cloudSegmentCount(recording, segments);
         return request('/v1/recordings/' + encodeURIComponent(job.recordingId) + '/finalize', {
           method: 'POST', signal: signal,
           headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey(job, 'finalize-v2') },
@@ -624,6 +724,9 @@
     toRecordingFields:toRecordingFields,
     recordingMemory:function(id){return request('/v1/recordings/'+encodeURIComponent(id)+'/source');},
     segmentBounds:segmentBounds,
+    cloudBatch:cloudBatch,
+    cloudSegmentSeconds:cloudSegmentSeconds,
+    cloudSegmentCount:cloudSegmentCount,
     transcriptionAudio:transcriptionAudio,
     requestBudget:requestBudget,
     ask:function(query,scope){return request('/v1/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:query,scope:scope||{}})});},
