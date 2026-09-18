@@ -26,8 +26,10 @@ export async function prepareTranscriptionAudio(
   if (speed === 1) return original;
   // Short tails gain little from acceleration; preserve their recognition context.
   if (original.durationMs < 5000) return { ...original, fallback: 'short-window' };
-  // The upload contract bounds windows to 30 s. Refuse an unbounded subprocess.
-  if (audio.length > 2_000_000) return { ...original, fallback: 'conversion-failed' };
+  // Normal ASR batches are up to 15 minutes. Keep a hard in-memory/FFmpeg
+  // ceiling well below the one-hour model limit so a malformed source cannot
+  // turn audio preparation into an unbounded Cloud Run allocation.
+  if (audio.length > 40 * 1024 * 1024) return { ...original, fallback: 'conversion-failed' };
   try {
     const pcm = parsePcm16Wav(audio).data;
     const output = await new Promise<Buffer>((resolve, reject) => {
@@ -69,7 +71,7 @@ export async function prepareTranscriptionAudio(
         failure ||= error;
         child.kill('SIGKILL');
       };
-      const timer = setTimeout(() => fail(new Error('Audio preparation timed out')), 10000);
+      const timer = setTimeout(() => fail(new Error('Audio preparation timed out')), 30000);
       const abort = () => fail(new Error('Audio preparation cancelled'));
       signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) abort();
