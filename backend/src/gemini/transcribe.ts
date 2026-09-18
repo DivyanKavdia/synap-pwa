@@ -294,7 +294,9 @@ export async function transcribeSegment(
       start_ms: sourceOffset(word.start_offset),
       end_ms: sourceOffset(word.end_offset),
     }));
-  let words = convert(response);
+  // Never promote incidental annotations from the general audio fallback to
+  // evidence-grade speaker/timing data. Only the dedicated ASR path may supply them.
+  let words = generalFallback ? [] : convert(response);
   if (!generalFallback && options.enrichAnnotations === true && (diarize || wordTimestamps) && !annotationsComplete(rawText, words)) {
     attempted = true;
     try {
@@ -323,7 +325,7 @@ export async function transcribeSegment(
       if (signal?.aborted && signal.reason?.name !== 'TimeoutError') throw error;
     }
   }
-  const complete = annotationsComplete(rawText, words);
+  const complete = !generalFallback && annotationsComplete(rawText, words);
   // Partial/disagreeing annotations must not feed speaker identification either.
   if (!complete) words = [];
   return {
