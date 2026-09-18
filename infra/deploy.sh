@@ -54,6 +54,58 @@ check_health() {
   return 1
 }
 
+# check-readiness.sh returns 75 only for a tightly validated Gemini quota/cooldown
+# at the ASR stage. A candidate is never promoted from that signal alone: the
+# currently serving revision must independently show the same upstream condition.
+readiness_shared_cooldown=false
+probe_readiness() {
+  local endpoint="$1" audience="$2" expected="$3" rc
+  set +e
+  bash "${here}/infra/check-readiness.sh" "$endpoint" "$audience" "$expected"
+  rc=$?
+  set -e
+  return "$rc"
+}
+
+verify_candidate_readiness() {
+  local candidate_rc serving_rc
+  if probe_readiness "$candidate_url" "$url" "$build_sha"; then
+    return 0
+  else
+    candidate_rc=$?
+  fi
+  [[ "$candidate_rc" == 75 ]] || return "$candidate_rc"
+
+  echo "==> Candidate reached a Gemini cooldown; checking the serving revision"
+  if probe_readiness "$url" "$url" "$previous_sha"; then
+    echo "Serving revision is healthy while the candidate is deferred; refusing promotion." >&2
+    return 1
+  else
+    serving_rc=$?
+  fi
+  if [[ "$serving_rc" != 75 ]]; then
+    echo "Serving revision did not show the same verified provider cooldown; refusing promotion." >&2
+    return 1
+  fi
+
+  readiness_shared_cooldown=true
+  echo "==> Shared Gemini cooldown confirmed on candidate and serving revision; continuing with non-model rollout checks"
+}
+
+verify_live_readiness() {
+  local rc
+  if probe_readiness "$url" "$url" "$build_sha"; then
+    return 0
+  else
+    rc=$?
+  fi
+  if [[ "$readiness_shared_cooldown" == true && "$rc" == 75 ]]; then
+    echo "==> Live revision still sees the previously confirmed shared Gemini cooldown"
+    return 0
+  fi
+  return "$rc"
+}
+
 finish() {
   local result=$?
   trap - EXIT
@@ -176,7 +228,7 @@ candidate_url="$("${check[@]}" staged "${work}/staged.json" "${previous_revision
 check_health "${candidate_url}" "${build_sha}"
 
 echo "==> Verifying a synthetic recording through production dependencies"
-bash "${here}/infra/check-readiness.sh" "${candidate_url}" "${url}" "${build_sha}"
+verify_candidate_readiness
 
 # Recheck after the probe so an observed concurrent rollout cannot be promoted.
 describe_service "${work}/staged.json"
@@ -188,7 +240,7 @@ gcloud run services update-traffic "${SERVICE}" "${run_scope[@]}" \
 describe_service "${work}/live.json"
 "${check[@]}" serving "${work}/live.json" "${candidate_revision}"
 check_health "${url}" "${build_sha}"
-bash "${here}/infra/check-readiness.sh" "${url}" "${url}" "${build_sha}"
+verify_live_readiness
 promotion_attempted=false
 
 echo
