@@ -1,64 +1,91 @@
 # Transcription input and cost controls
 
-Managed standalone audio keeps 30-second local recovery windows, but new Synap
-Cloud recordings aggregate up to ten contiguous saved windows into one five-minute
-cloud segment before upload. The browser still retains the original 30-second
-sources for crash recovery. The backend then uses a pitch-preserving 1.5× ASR copy:
-a five-minute cloud segment becomes approximately 3m20s at the same 16 kHz mono
-PCM16 format. Older recordings without the stored cloud-window policy remain on
-their original 30-second cloud numbering. After decrypting a cloud segment,
-the backend runs FFmpeg `atempo=1.5` through stdin/stdout immediately before
-submitting to Gemini. It writes no plaintext temporary files and never replaces
-the encrypted source. This optimizes provider input, not phone upload bandwidth.
-No microphone, Bluetooth, camera, SD or local voice firmware changes are needed.
+Synap deliberately separates **storage/recovery granularity** from **Gemini request
+granularity**.
 
-## Quality and bounds
+The browser continues to seal and upload the existing 30-second PCM16 WAV windows.
+Those small immutable objects are the recovery boundary: reconnect, upload retry,
+deletion and source integrity remain unchanged. After a recording is finalized,
+the backend reads only the contiguous windows that still need ASR, decrypts them
+in memory and groups them into long provider batches. The default is 15 minutes
+(`SYNAP_TRANSCRIPTION_BATCH_MINUTES=15`), with a hard code cap of 25 minutes so
+timestamped requests remain below Gemini 3.5 Transcribe's 30-minute annotated-audio
+limit.
 
-- Keep windows shorter than five seconds at normal speed; never discard tails.
-  This protects short final utterances while retaining acceleration on full windows.
-- Validate the entire WAV before preparation and the derived duration afterward.
-- Bound the subprocess to 10 seconds, one filter thread and a 2 MB input limit.
-  Abort cancels it; conversion failure uses the original recording.
-- If accelerated recognition returns explicitly empty text, the existing single
-  empty-result review uses original 1× audio with automatic language detection.
-  Missing/incomplete provider output does **not** trigger an immediate second audio
-  submission: it returns to the durable recording queue and waits at least 120
-  seconds before recovery from the saved source. A deterministic HTTP 400 rejection
-  of accelerated input may still fall back to original audio/default settings after
-  optional settings are removed because that is request-shape compatibility, not a
-  quota retry. Rate limits, authorization failures and service outages never trigger
-  extra original-audio submissions inside the same processing attempt.
-- Map each word to `window start + ASR offset × speed`, bounded to source duration.
-  On a normal-speed fallback use factor 1. Speaker extraction, navigation and
-  summaries therefore continue to refer to the original timeline.
-- Retain the text-first ASR policy and only accept complete, agreeing annotations.
-  Keep the existing summary models and grounding checks.
-- `SYNAP_TRANSCRIPTION_SPEED=1` disables acceleration for a reversible rollout.
-  Completed transcripts stay cached; changing speed does not re-bill old windows.
+Before provider submission, the backend makes a disposable pitch-preserving 1.5×
+copy with FFmpeg. A full 15-minute source batch therefore becomes about 10 minutes
+of submitted audio. The encrypted GCS source objects are never replaced and no
+plaintext temporary file is written to disk.
+
+Long batches are uploaded through the Gemini Files API and the returned URI is
+passed to the Interactions API. Synap deletes the temporary Gemini file best-effort
+as soon as inference finishes; provider expiry is the cleanup backstop. A known
+shared model cooldown is checked before the Files API upload so Synap does not
+upload a large temporary file that cannot yet be transcribed.
+
+## Request-count control
+
+The old design could make one Gemini transcription request for every 30-second
+storage window: up to 120 ASR requests for one hour of audio. With the default
+15-minute provider batch, the same hour needs about four primary ASR requests
+when every window is missing a transcript. The source still consists of the same
+120 independently recoverable 30-second windows.
+
+Provider batching is sequential within a recording. Each batch claims every
+source-window transcription lease before any paid model request. The ordinary
+single-window lease remains 120 seconds; a long-form batch gets a six-minute
+lease around a five-minute batch budget. Its Interactions request has a four-minute
+transport timeout. This prevents a slow valid batch from being claimed again by
+a recovery worker while also bounding genuinely stuck work.
+
+HTTP 429 handling is shared across Files API preparation and Interactions API
+inference. `Retry-After` / structured retry guidance is persisted as a project/model
+cooldown so another worker cannot immediately upload or submit the same batch.
+Missing or incomplete model output is a separate retry class: it returns to the
+durable recording queue with a 120-second delay rather than immediately submitting
+the same audio again.
+
+## Quality and timestamps
+
+A long batch requests word timestamps in its **primary** Gemini 3.5 Transcribe
+call. Those timestamps exist for one reason: to project the batch result
+deterministically back onto the original 30-second source windows. The complete
+recognized text must agree with the returned word annotations before Synap accepts
+the batch.
+
+If the account has opted into wearer/known-speaker identity, the same primary
+request also asks for speaker diarization. It does not spend a second Gemini
+transcription call for speaker labels. Accounts without speaker identity request
+timestamps only. Existing downstream speaker enrichment and consent boundaries
+remain in place.
+
+Word timestamps can reduce ASR accuracy, so the batch size is intentionally well
+inside the provider's annotated-audio limit and transcript/annotation agreement
+is validated before publication. Legacy/single-window transcription keeps its
+text-first behavior. A deterministic HTTP 400 request-shape rejection can retry
+once with a compatible configuration; rate limits, access failures, missing output
+and incomplete output never trigger an immediate duplicate audio submission.
+
+Short windows under five seconds stay at normal speed. `SYNAP_TRANSCRIPTION_SPEED=1`
+disables the 1.5× optimization without changing saved source audio or completed
+transcripts.
 
 ## What savings mean
 
-1.5× reduces the duration of a single audio input by approximately 33.3%.
-It does **not** imply a 33.3% reduction in total charges: recognized text still has
-the same output tokens, annotations may need a second pass, retries add input,
-and summaries, embeddings and infrastructure have their own costs.
+1.5× reduces submitted audio duration by approximately one third. Long-form
+batching separately reduces the **number of transcription requests** by up to
+about 30× versus one request per 30-second window. Neither number is a statement
+about the final bill: output tokens, retries, memory extraction, embeddings,
+speaker-service work and infrastructure have their own costs.
 
-Each completed window stores source/prepared duration, final speed/fallback,
-submitted audio milliseconds and HTTP attempt count. The attempt hook runs at
-every provider submission, including retries and annotation passes. Numeric-only
-submission logs also cover attempts in jobs that ultimately fail. Existing Gemini
-usage logs retain provider token counters. Neither log includes audio, transcript
-text or recording IDs. A timed-out request may still have been billed.
+A completed long batch records its provider submission usage once rather than
+duplicating the same batch usage onto every 30-second source window. Numeric-only
+logs retain model/stage and provider usage counters; they never include audio,
+transcript text or recording IDs. A timed-out provider request may still have
+been billed even if no response reached Synap.
 
-The phone replaces each window's usage checkpoint rather than accumulating PUT
-responses, so duplicate successful upload responses do not multiply displayed
-usage. The UI labels this as usage for completed windows; failed jobs and
-concurrent discarded results can add usage. It is not an account billing ledger.
-
-The existing rupee calculation uses a 9 September historical blended-rate and
-Flash-Lite snapshot, while current summaries use Flash. It is now explicitly
-labelled a historical illustration, and no blanket speed discount is applied.
-Do not promote it to a current bill until current model-specific input/output
+The UI's rupee estimate remains a historical illustration, not an account billing
+ledger. Do not present it as a current invoice until model-specific input/output
 rates, provider counters and failed-job usage are reconciled.
 
 ## Reference repository assessment
@@ -67,21 +94,16 @@ Reviewed [ScalabeMeetingTranscribe at fb33a87](https://github.com/myExperimentsW
 It is an MIT-licensed Python meeting pipeline, not a cost-governance framework.
 Its applicable ideas are FFmpeg tempo adjustment, source-time correction,
 chronological chunk assembly, cached completed chunks and bounded retry/backoff.
-Synap already implements durable 30-second local windows, five-minute managed cloud batching, completed-result reuse,
-retry backoff and bounded processing concurrency; those remain in place.
-
-This implementation uses the atempo/time-mapping approach independently without
-importing its Python application. We do not adopt its 2× default, long chunks,
-short-tail deletion, model choices or self-reported price/accuracy claims.
-Photos, video and their paired soundtracks remain device-only and never enter
-this provider pipeline. Only standalone audio is eligible.
+Synap uses those general ideas independently while retaining its own encrypted
+30-second recovery source, long-form provider batching, leases and durable queue.
 
 ## Verification and practical limit
 
-Automated checks use real FFmpeg to verify duration, stable pitch, tail retention
-and byte-for-byte original preservation. Mocked provider checks cover source-time
-mapping, empty-result fallback, retry/annotation accounting, digital silence and
-completed-result reuse. These are correctness checks, not measured recognition
-accuracy. Compare representative Hindi/English and quiet/noisy recordings at 1×
-and 1.5× for word errors, names, numbers, final corrections and summary evidence
-before claiming an accuracy or monetary improvement.
+Automated checks cover real FFmpeg duration/pitch/tail preservation, original
+source integrity, 15-minute batch grouping, Gemini Files API URI transport,
+timestamp projection, one-call diarization, missing/incomplete-output backoff,
+429 cooldown propagation and lease fencing. Firestore integration tests exercise
+publication/recovery transactions. These checks prove pipeline behavior, not
+measured recognition accuracy; representative Hindi, English and Hinglish audio
+should still be compared for names, numbers, corrections, noisy rooms and final
+utterances before claiming an accuracy improvement.
