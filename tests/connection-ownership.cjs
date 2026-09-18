@@ -228,3 +228,14 @@ for (const [id, supportsStandby] of [[1,true],[2,true],[3,false]]) {
     assert.equal(h.calls.includes('standby:3,2'),supportsStandby);
   });
 }
+
+
+test('idle hidden Bluefy tabs yield pendant ownership and visible tabs reacquire it',()=>{
+  assert.match(app,/function acquireAppOwnership\(\)/);
+  assert.match(app,/function appOwnershipCanYield\(\)[\s\S]*canReload\(\)/);
+  assert.match(app,/function releaseAppOwnership\(reason\)[\s\S]*disconnectGatt\(reason \|\| "Yielding pendant ownership"\)[\s\S]*release\(\)/);
+  assert.match(app,/document\.visibilityState === "hidden"[\s\S]*releaseAppOwnership\("Page hidden while idle"\)/);
+  assert.match(app,/!appLockHeld && startupReady && !startupPending[\s\S]*acquireAppOwnership\(\)/);
+  assert.match(app,/Another active Synap tab is using the pendant/);
+  assert.doesNotMatch(app,/Another pendant tab is open\. Close it before using this one\./);
+});
