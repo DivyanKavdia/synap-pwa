@@ -119,6 +119,34 @@ test('long-form ASR uploads audio once and transcribes by file URI with primary 
   assert(calls.some(url => url.includes('/v1beta/files/synap-test')));
 });
 
+test('long-form speaker mode keeps diarization and timestamps in one model call', async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+    calls++;
+    const body = JSON.parse(String(init?.body));
+    assert.deepEqual(body.generation_config.transcription_config.mode, {
+      type: 'verbatim',
+      timestamp_granularities: ['word'],
+      diarization_mode: 'speaker',
+    });
+    return response('Hello', [
+      { type: 'word_info', text: 'Hello', speaker: 'S1', start_offset: '0.2s', end_offset: '0.6s' },
+    ]);
+  });
+  const result = await transcribeSegment(tone(), 'audio/wav', {
+    speed: 1.5,
+    primaryWordTimestamps: true,
+    primaryDiarization: true,
+    wordTimestamps: true,
+    diarize: true,
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.review.annotationsComplete, true);
+  assert.deepEqual(result.words, [
+    { text: 'Hello', speaker: 'S1', start_ms: 300, end_ms: 900 },
+  ]);
+});
+
 test('empty sped-up recognition retries the original once and accounts for both inputs', async (t) => {
   const source = tone();
   let calls = 0;
