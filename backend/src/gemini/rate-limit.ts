@@ -38,6 +38,52 @@ function positiveDelay(value: number): number {
   return Number.isFinite(value) && value > 0 ? Math.min(MAX_RETRY_MS, Math.ceil(value)) : 0;
 }
 
+const PACIFIC_ZONE = 'America/Los_Angeles';
+const pacificClock = new Intl.DateTimeFormat('en-US', {
+  timeZone: PACIFIC_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+function zonedParts(at: number): Record<string, number> {
+  const values: Record<string, number> = {};
+  for (const part of pacificClock.formatToParts(new Date(at)))
+    if (part.type !== 'literal') values[part.type] = Number(part.value);
+  return values;
+}
+
+function pacificOffsetMs(at: number): number {
+  const p = zonedParts(at);
+  const represented = Date.UTC(p.year!, p.month! - 1, p.day!, p.hour!, p.minute!, p.second!);
+  return represented - Math.floor(at / 1000) * 1000;
+}
+
+function pacificMidnightUtc(year: number, month: number, day: number): number {
+  const wall = Date.UTC(year, month - 1, day, 0, 0, 0);
+  let utc = wall;
+  // Two passes are sufficient across DST boundaries; a third is cheap insurance
+  // against an offset change between the initial UTC guess and Pacific midnight.
+  for (let pass = 0; pass < 3; pass++) utc = wall - pacificOffsetMs(utc);
+  return utc;
+}
+
+/** Gemini RPD resets at midnight Pacific, including PDT/PST transitions. */
+export function pacificDailyResetDelayMs(now = Date.now()): number {
+  const current = zonedParts(now);
+  const nextCalendar = new Date(Date.UTC(current.year!, current.month! - 1, current.day! + 1));
+  const reset = pacificMidnightUtc(
+    nextCalendar.getUTCFullYear(),
+    nextCalendar.getUTCMonth() + 1,
+    nextCalendar.getUTCDate(),
+  );
+  return positiveDelay(reset - now);
+}
+
 /** Read only timing and quota category, never return provider messages or identifiers. */
 export function rateLimitAdvice(
   header: string | null,
@@ -84,7 +130,10 @@ export function rateLimitAdvice(
   }
   return {
     quotaKind,
-    retryAfterMs: Math.max(retryAfterMs, quotaKind === 'daily' ? 3600000 : 60000),
+    retryAfterMs: Math.max(
+      retryAfterMs,
+      quotaKind === 'daily' ? pacificDailyResetDelayMs(now) : 60000,
+    ),
   };
 }
 
