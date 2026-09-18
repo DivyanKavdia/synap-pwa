@@ -93,6 +93,13 @@ export const config = {
     transcribeModel: optional('SYNAP_GEMINI_STT_MODEL', 'gemini-3.5-transcribe'),
     /** Reversible ASR-only optimization; originals and summary models are unchanged. */
     transcriptionSpeed: optional('SYNAP_TRANSCRIPTION_SPEED', '1.5') === '1' ? 1 as const : 1.5 as const,
+    /** Provider request unit; storage remains 30-second windows. Kept below
+     * Gemini's 30-minute annotated-audio ceiling because batch splitting relies
+     * on word timestamps. */
+    transcriptionBatchMinutes: Math.min(
+      25,
+      Math.max(1, Number(optional('SYNAP_TRANSCRIPTION_BATCH_MINUTES', '15')) || 15),
+    ),
     /** Stable structured reasoning for summaries, outcomes, people and commitments. */
     memoryModel: optional('SYNAP_GEMINI_MEMORY_MODEL', 'gemini-3.8-flash'),
     /** Query interpretation also uses full Flash so names/dates/topics are not silently lost. */
