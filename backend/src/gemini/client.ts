@@ -71,6 +71,8 @@ export interface InteractionRequest {
   response_format?: Record<string, unknown>;
   /** Internal-only billing label. Stripped before the request is sent. */
   usage_label?: string;
+  /** Internal transport budget. Stripped before the request is sent. */
+  request_timeout_ms?: number;
 }
 
 export interface GeminiUploadedFile {
@@ -315,6 +317,7 @@ async function call<T>(
   context: { model: string; stage: string },
   signal?: AbortSignal,
   onAttempt?: () => void,
+  requestTimeoutMs = config.gemini.requestTimeoutMs,
 ): Promise<T> {
   signal?.throwIfAborted();
   const { geminiApiKey } = await loadSecrets();
@@ -329,7 +332,7 @@ async function call<T>(
     await ensureModelAvailable(context.model, context.stage);
     signal?.throwIfAborted();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), config.gemini.requestTimeoutMs);
+    const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
     const onAbort = () => controller.abort();
     signal?.addEventListener('abort', onAbort, { once: true });
 
@@ -415,9 +418,10 @@ export async function createInteraction(
   signal?: AbortSignal,
   onAttempt?: () => void,
 ): Promise<InteractionResponse> {
-  const { usage_label: usageLabel, ...apiRequest } = request;
+  const { usage_label: usageLabel, request_timeout_ms: requestTimeoutMs, ...apiRequest } = request;
   const response = await call<InteractionResponse>('/interactions', { ...apiRequest, store: false },
-    { model: request.model, stage: usageLabel || 'generation' }, signal, onAttempt);
+    { model: request.model, stage: usageLabel || 'generation' }, signal, onAttempt,
+    requestTimeoutMs ?? config.gemini.requestTimeoutMs);
   const fields = usageLogFields(request.model, usageLabel, response.usage);
   if (fields) log.info('Gemini usage', fields);
   if (response.status && response.status !== 'completed') {
