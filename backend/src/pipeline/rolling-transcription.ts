@@ -74,6 +74,8 @@ export async function transcribeUploadedWindow(
   }
 }
 
+const BATCH_TRANSCRIPTION_LEASE_MS = 6 * 60_000;
+
 /**
  * Transcribe a contiguous set of durable 30-second source windows as one Gemini
  * request, then project timestamped words back onto the original windows.
@@ -105,11 +107,18 @@ export async function transcribeUploadedBatch(
     // still ask for one rolling window directly; per-window leases fence that
     // path from this batch worker.
     for (const source of ordered) {
-      const claim = await db.claimSegmentTranscription(uid, recordingId, source, lease);
+      const claim = await db.claimSegmentTranscription(
+        uid,
+        recordingId,
+        source,
+        lease,
+        Date.now(),
+        BATCH_TRANSCRIPTION_LEASE_MS,
+      );
       if (!claim.claimed) {
         if (hasUsableTranscription(uid, recordingId, dek, claim.segment))
           throw new db.TranscriptionBusyError(1_000);
-        throw new db.TranscriptionBusyError(db.TRANSCRIPTION_LEASE_MS);
+        throw new db.TranscriptionBusyError(BATCH_TRANSCRIPTION_LEASE_MS);
       }
       claimed.push(claim.segment);
     }
