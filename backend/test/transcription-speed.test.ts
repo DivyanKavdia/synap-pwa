@@ -174,18 +174,55 @@ test('repeated missing output fails after one original fallback and is never sea
   assert.equal(calls, 2);
 });
 
+test('dedicated ASR quota rejection falls back once to Flash audio understanding', async (t) => {
+  const source = tone();
+  const requests: any[] = [];
+  // Leave this synthetic cooldown far behind real wall-clock time after the test.
+  t.mock.method(Date, 'now', () => 1_000_000);
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    requests.push(body);
+    if (requests.length === 1) return new Response('{}', { status: 429 });
+    assert.equal(body.model, 'gemini-3.8-flash');
+    assert.equal(body.input[0].type, 'text');
+    assert.equal(body.input[1].type, 'audio');
+    assert.deepEqual(Buffer.from(body.input[1].data, 'base64'), source);
+    assert.equal('transcription_config' in body.generation_config, false);
+    return response('Fallback transcript');
+  });
+  const result = await transcribeSegment(source, 'audio/wav', {
+    speed: 1.5,
+    enrichAnnotations: true,
+    baseOffsetMs: 30000,
+  });
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].model, 'gemini-3.5-transcribe');
+  assert.equal(result.model, 'gemini-3.8-flash');
+  assert.equal(result.text, '[00:30] S?: Fallback transcript');
+  assert.deepEqual(result.words, []);
+  assert.equal(result.review.attempted, true);
+  assert.equal(result.review.annotationsComplete, false);
+  assert.equal(result.audioUsage?.requestAttempts, 2);
+  assert.equal(result.audioUsage?.fallback, 'provider-failure');
+  assert.equal(result.audioUsage?.speed, 1);
+});
+
 for (const status of [401, 403, 429, 503]) {
-  test(`HTTP ${status} does not resubmit extra original audio`, async (t) => {
+  test(`HTTP ${status} never resubmits the same model after a provider failure`, async (t) => {
     let calls = 0;
+    const models: string[] = [];
     // Keep this fixture's shared-model cooldown in the past for later cases.
-    if (status === 429) t.mock.method(Date, 'now', () => 1000);
+    if (status === 429) t.mock.method(Date, 'now', () => 2_000_000);
     t.mock.method(Math, 'random', () => 0);
-    t.mock.method(globalThis, 'fetch', async () => {
+    t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
       calls++;
+      models.push(JSON.parse(String(init?.body)).model);
       return new Response('{}', { status });
     });
     await assert.rejects(transcribeSegment(tone(), 'audio/wav', { speed: 1.5 }), { status });
-    assert.equal(calls, 1);
+    assert.equal(calls, status === 429 ? 2 : 1);
+    assert.equal(models.filter(model => model === 'gemini-3.5-transcribe').length, 1);
+    if (status === 429) assert.deepEqual(models, ['gemini-3.5-transcribe', 'gemini-3.8-flash']);
   });
 }
 
