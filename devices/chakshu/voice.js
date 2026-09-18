@@ -51,7 +51,7 @@
     });
   }
   function commandLabel(incoming) {
-    if (incoming.command === WAKE) return 'Hey Synap';
+    if (incoming.command === WAKE) return 'Hey Snap';
     if (incoming.command === PHOTO) return 'Take a snap';
     if (incoming.command === VIDEO_START) return 'Record a video';
     if (incoming.command === VIDEO_STOP) return 'Stop video';
@@ -155,7 +155,7 @@
     }
     if (incoming.command === WAKE) {
       message = 'Listening for command…';
-      feedback('Hey Synap · Listening for command…', 'listening', 8200);
+      feedback('Hey Snap · Listening for command…', 'listening', 8200);
       notify();
       return;
     }
@@ -233,7 +233,7 @@
           }
         });
         b.events.addEventListener('characteristicvaluechanged', b.handler);
-        await context.mediaQueue(() => b.events.startNotifications(), 'Listen for Hey Synap commands');
+        await context.mediaQueue(() => b.events.startNotifications(), 'Listen for Hey Snap commands');
         b.started = true;
       }
       const b = binding;
@@ -275,7 +275,7 @@
     }
   }
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice3',
+    revision: '1.0.0-chakshu-voice4',
     decode,
     label: commandLabel,
     perform,
