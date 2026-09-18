@@ -71,7 +71,12 @@
   root.SynapCapabilities = api;
   // Keep index.html stable: capability discovery owns the optional voice companion.
   // Guard Node/native tests where document does not exist.
-  if (root.document && !root.document.querySelector('script[data-synap-chakshu-voice]')) {
+  if (
+    typeof root.document?.querySelector === 'function' &&
+    typeof root.document?.createElement === 'function' &&
+    root.document.head &&
+    !root.document.querySelector('script[data-synap-chakshu-voice]')
+  ) {
     const script = root.document.createElement('script');
     script.src = 'devices/chakshu/voice.js?v=1.0.0-chakshu-voice2';
     script.defer = true;
