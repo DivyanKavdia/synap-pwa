@@ -121,47 +121,57 @@ test('a 3.3-second final window reaches ASR unchanged while the 30-second window
   assert.equal(result.text, '[00:30] S?: Final words.');
 });
 
-for (const failure of ['missing-text', 'incomplete', 'rejected'] as const) {
-  test(`${failure} accelerated ASR recovers once with original bytes and original timestamps`, async (t) => {
-    const source = tone(),
-      before = Buffer.from(source),
-      requests: any[] = [];
-    t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body));
-      requests.push(body);
-      const original = Buffer.from(body.input[0].data, 'base64').equals(source);
-      if (!original) {
-        if (failure === 'rejected')
-          return new Response('{"error":{"message":"Invalid argument"}}', { status: 400 });
-        return new Response(
-          JSON.stringify(
-            failure === 'missing-text'
-              ? { status: 'completed', steps: [] }
-              : { status: 'incomplete', steps: [] },
-          ),
-        );
-      }
-      assert.deepEqual(body.generation_config.transcription_config, {});
-      return response('Hello', [
-        { type: 'word_info', text: 'Hello', speaker: 'S1', start_offset: '0.4s', end_offset: '1s' },
-      ]);
+for (const failure of ['missing-text', 'incomplete'] as const) {
+  test(`${failure} ASR output is deferred without an immediate second audio submission`, async (t) => {
+    let calls = 0;
+    t.mock.method(globalThis, 'fetch', async () => {
+      calls++;
+      return new Response(
+        JSON.stringify(
+          failure === 'missing-text'
+            ? { status: 'completed', steps: [] }
+            : { status: 'incomplete', steps: [] },
+        ),
+      );
     });
-    const result = await transcribeSegment(source, 'audio/wav', {
-      speed: 1.5,
-      baseOffsetMs: 30000,
-    });
-    assert.equal(requests.length, failure === 'rejected' ? 3 : 2);
-    assert.equal(result.audioUsage?.fallback, 'provider-failure');
-    assert.equal(result.audioUsage?.requestAttempts, requests.length);
-    assert.equal(result.audioUsage?.speed, 1);
-    assert.deepEqual(result.words, [
-      { text: 'Hello', speaker: 'S1', start_ms: 30400, end_ms: 31000 },
-    ]);
-    assert.deepEqual(source, before);
+    await assert.rejects(
+      transcribeSegment(tone(), 'audio/wav', { speed: 1.5, baseOffsetMs: 30000 }),
+      { reason: failure, retryable: true },
+    );
+    assert.equal(calls, 1);
   });
 }
 
-test('repeated missing output fails after one original fallback and is never sealed as silence', async (t) => {
+test('accelerated HTTP 400 falls back once to original bytes and original timestamps', async (t) => {
+  const source = tone(),
+    before = Buffer.from(source),
+    requests: any[] = [];
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    requests.push(body);
+    const original = Buffer.from(body.input[0].data, 'base64').equals(source);
+    if (!original)
+      return new Response('{"error":{"message":"Invalid argument"}}', { status: 400 });
+    assert.deepEqual(body.generation_config.transcription_config, {});
+    return response('Hello', [
+      { type: 'word_info', text: 'Hello', speaker: 'S1', start_offset: '0.4s', end_offset: '1s' },
+    ]);
+  });
+  const result = await transcribeSegment(source, 'audio/wav', {
+    speed: 1.5,
+    baseOffsetMs: 30000,
+  });
+  assert.equal(requests.length, 3);
+  assert.equal(result.audioUsage?.fallback, 'provider-failure');
+  assert.equal(result.audioUsage?.requestAttempts, requests.length);
+  assert.equal(result.audioUsage?.speed, 1);
+  assert.deepEqual(result.words, [
+    { text: 'Hello', speaker: 'S1', start_ms: 30400, end_ms: 31000 },
+  ]);
+  assert.deepEqual(source, before);
+});
+
+test('missing output fails after one submission and is never sealed as silence', async (t) => {
   let calls = 0;
   t.mock.method(globalThis, 'fetch', async () => {
     calls++;
@@ -171,7 +181,7 @@ test('repeated missing output fails after one original fallback and is never sea
     reason: 'missing-text',
     retryable: true,
   });
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
 });
 
 for (const status of [401, 403, 429, 503]) {
