@@ -54,6 +54,9 @@ export interface TranscribeOptions {
   /** Require timestamps in the primary pass so a long provider batch can be
    * projected back onto Synap's durable 30-second source windows. */
   primaryWordTimestamps?: boolean;
+  /** Add speaker diarization to the same primary long-form request when the
+   * account has explicitly configured speaker identity. */
+  primaryDiarization?: boolean;
   /** Reference audio through Gemini Files API rather than embedding it inline. */
   useFileApi?: boolean;
   /** Extra audio submission; opt in only when a caller explicitly needs labels. */
@@ -227,7 +230,11 @@ export async function transcribeSegment(
   // deterministic map back to 30-second encrypted source windows. Ordinary
   // single-window ASR keeps the higher-accuracy text-first pass.
   const primaryMode = options.primaryWordTimestamps
-    ? { type: 'verbatim', timestamp_granularities: ['word'] }
+    ? {
+        type: 'verbatim',
+        timestamp_granularities: ['word'],
+        ...(options.primaryDiarization ? { diarization_mode: 'speaker' } : {}),
+      }
     : 'verbatim';
   const requested = {
     mode: primaryMode,
@@ -361,7 +368,9 @@ export async function transcribeSegment(
     }
   }
   const complete = options.primaryWordTimestamps
-    ? timestampAnnotationsComplete(rawText, words)
+    ? (options.primaryDiarization
+        ? annotationsComplete(rawText, words)
+        : timestampAnnotationsComplete(rawText, words))
     : !generalFallback && annotationsComplete(rawText, words);
   if (options.primaryWordTimestamps && !complete)
     throw new GeminiError(
