@@ -147,6 +147,36 @@ test('long-form speaker mode keeps diarization and timestamps in one model call'
   ]);
 });
 
+test('empty long-form batch completes after one ASR request', async (t) => {
+  let interactions = 0;
+  t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/upload/v1beta/files'))
+      return new Response('{}', { headers: { 'x-goog-upload-url': 'https://upload.example.test/empty-batch' } });
+    if (href === 'https://upload.example.test/empty-batch')
+      return new Response(JSON.stringify({
+        file: { name: 'files/empty-batch', uri: 'https://files.example.test/empty-batch', mimeType: 'audio/wav', state: 'ACTIVE' },
+      }));
+    if (href.endsWith('/interactions')) {
+      interactions++;
+      return response('');
+    }
+    if (href.includes('/v1beta/files/empty-batch') && init?.method === 'DELETE')
+      return new Response('{}');
+    throw new Error('Unexpected request: ' + href);
+  });
+  const result = await transcribeSegment(tone(), 'audio/wav', {
+    speed: 1.5,
+    primaryWordTimestamps: true,
+    wordTimestamps: true,
+    diarize: false,
+    useFileApi: true,
+  });
+  assert.equal(interactions, 1);
+  assert.equal(result.review.outcome, 'no-speech');
+  assert.equal(result.audioUsage?.requestAttempts, 1);
+});
+
 test('empty sped-up recognition retries the original once and accounts for both inputs', async (t) => {
   const source = tone();
   let calls = 0;
