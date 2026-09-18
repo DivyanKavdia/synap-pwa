@@ -91,6 +91,8 @@ export const config = {
     ),
     /** Dedicated ASR for code-switched, timestamped ambient speech. */
     transcribeModel: optional('SYNAP_GEMINI_STT_MODEL', 'gemini-3.5-transcribe'),
+    /** Text-preserving audio-understanding fallback when the dedicated ASR model is quota blocked. */
+    transcribeFallbackModel: optional('SYNAP_GEMINI_STT_FALLBACK_MODEL', 'gemini-3.8-flash'),
     /** Reversible ASR-only optimization; originals and summary models are unchanged. */
     transcriptionSpeed: optional('SYNAP_TRANSCRIPTION_SPEED', '1.5') === '1' ? 1 as const : 1.5 as const,
     /** Stable structured reasoning for summaries, outcomes, people and commitments. */
