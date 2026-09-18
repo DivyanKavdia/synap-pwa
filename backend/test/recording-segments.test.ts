@@ -3,12 +3,15 @@ import test from 'node:test';
 import {
   requireCompleteSegments,
   transcribeRecordingSegments,
+  transcriptionBatches,
 } from '../src/pipeline/recording-segments.js';
 import type { SegmentDoc } from '../src/store/types.js';
 
 const segment = (index: number, complete = false) =>
   ({
     index,
+    startMs: index * 30_000,
+    endMs: (index + 1) * 30_000,
     storagePath: `audio/${index}`,
     state: complete ? 'transcribed' : 'accepted',
     sealedTranscript: complete ? { ciphertext: 'text' } : null,
@@ -83,4 +86,22 @@ test('windows run one at a time and a quota failure stops before submitting the 
   assert.deepEqual(calls, [0, 1]);
   assert.deepEqual(progress, [1]);
   assert.equal(active, 0);
+});
+
+
+test('long-form ASR groups 30-second storage windows into 15-minute provider calls', () => {
+  const all = Array.from({ length: 65 }, (_, index) => segment(index));
+  const batches = transcriptionBatches(all, 15 * 60_000, () => true);
+  assert.deepEqual(batches.map(batch => batch.length), [30, 30, 5]);
+  assert(batches.every(batch => batch.at(-1)!.endMs - batch[0]!.startMs <= 15 * 60_000));
+
+  // A completed window is a durable checkpoint and must split request groups;
+  // a batch never retranscribes already-complete source just to stay large.
+  const mixed = Array.from({ length: 65 }, (_, index) => segment(index, index === 30));
+  const pending = transcriptionBatches(mixed, 15 * 60_000, item => item.state !== 'transcribed');
+  assert.deepEqual(pending.map(batch => [batch[0]!.index, batch.at(-1)!.index]), [
+    [0, 29],
+    [31, 60],
+    [61, 64],
+  ]);
 });
