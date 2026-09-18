@@ -28,7 +28,8 @@ export interface InteractionTextPart {
 
 export interface InteractionAudioPart {
   type: 'audio';
-  data: string;
+  data?: string;
+  uri?: string;
   mime_type: string;
 }
 
@@ -70,6 +71,117 @@ export interface InteractionRequest {
   response_format?: Record<string, unknown>;
   /** Internal-only billing label. Stripped before the request is sent. */
   usage_label?: string;
+}
+
+export interface GeminiUploadedFile {
+  name: string;
+  uri: string;
+  mimeType: string;
+  state?: 'PROCESSING' | 'ACTIVE' | 'FAILED' | string;
+}
+
+function filesUploadEndpoint(): string {
+  return config.gemini.endpoint.replace(/\/v1beta\/?$/, '') + '/upload/v1beta/files';
+}
+
+/**
+ * Upload larger ASR inputs through Gemini Files API. Google recommends file
+ * references for longer recordings instead of embedding the full audio payload
+ * in every model request. The upload itself is not a transcription request.
+ */
+export async function uploadGeminiFile(
+  bytes: Buffer,
+  mimeType: string,
+  signal?: AbortSignal,
+): Promise<GeminiUploadedFile> {
+  signal?.throwIfAborted();
+  const { geminiApiKey } = await loadSecrets();
+  const start = await fetch(filesUploadEndpoint(), {
+    method: 'POST',
+    headers: {
+      'x-goog-api-key': geminiApiKey,
+      'Content-Type': 'application/json',
+      'X-Goog-Upload-Protocol': 'resumable',
+      'X-Goog-Upload-Command': 'start',
+      'X-Goog-Upload-Header-Content-Length': String(bytes.length),
+      'X-Goog-Upload-Header-Content-Type': mimeType,
+    },
+    body: JSON.stringify({ file: { display_name: 'synap-transcription-window' } }),
+    signal,
+  });
+  if (!start.ok) {
+    const detail = await start.text().catch(() => '');
+    throw new GeminiError(
+      `Gemini file upload start HTTP ${start.status}: ${detail.slice(0, 200)}`,
+      start.status,
+      RETRYABLE_STATUS.has(start.status),
+      'request',
+      undefined,
+      { model: config.gemini.transcribeModel, stage: 'file-upload' },
+    );
+  }
+  const uploadUrl = start.headers.get('x-goog-upload-url');
+  if (!uploadUrl) throw new GeminiError('Gemini file upload URL missing', 0, true, 'request',
+    undefined, { model: config.gemini.transcribeModel, stage: 'file-upload' });
+
+  const uploaded = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Length': String(bytes.length),
+      'Content-Type': mimeType,
+      'X-Goog-Upload-Offset': '0',
+      'X-Goog-Upload-Command': 'upload, finalize',
+    },
+    body: new Uint8Array(bytes),
+    signal,
+  });
+  if (!uploaded.ok) {
+    const detail = await uploaded.text().catch(() => '');
+    throw new GeminiError(
+      `Gemini file upload HTTP ${uploaded.status}: ${detail.slice(0, 200)}`,
+      uploaded.status,
+      RETRYABLE_STATUS.has(uploaded.status),
+      'request',
+      undefined,
+      { model: config.gemini.transcribeModel, stage: 'file-upload' },
+    );
+  }
+  const payload = await uploaded.json() as { file?: GeminiUploadedFile };
+  let file = payload.file;
+  if (!file?.name || !file.uri)
+    throw new GeminiError('Gemini file upload returned no usable file reference', 0, true, 'request',
+      undefined, { model: config.gemini.transcribeModel, stage: 'file-upload' });
+
+  const deadline = Date.now() + 30_000;
+  while (file.state === 'PROCESSING' && Date.now() < deadline) {
+    await sleep(500, undefined, { signal });
+    const status = await fetch(`${config.gemini.endpoint}/${file.name}`, {
+      headers: { 'x-goog-api-key': geminiApiKey },
+      signal,
+    });
+    if (!status.ok) break;
+    file = await status.json() as GeminiUploadedFile;
+  }
+  if (file.state === 'FAILED')
+    throw new GeminiError('Gemini file processing failed', 0, true, 'request',
+      undefined, { model: config.gemini.transcribeModel, stage: 'file-upload' });
+  if (file.state === 'PROCESSING')
+    throw new GeminiError('Gemini file processing did not become ready in time', 0, true, 'request',
+      undefined, { model: config.gemini.transcribeModel, stage: 'file-upload' });
+  return file;
+}
+
+export async function deleteGeminiFile(file: GeminiUploadedFile): Promise<void> {
+  try {
+    const { geminiApiKey } = await loadSecrets();
+    await fetch(`${config.gemini.endpoint}/${file.name}`, {
+      method: 'DELETE',
+      headers: { 'x-goog-api-key': geminiApiKey },
+    });
+  } catch {
+    // Files expire automatically; cleanup is privacy/cost hygiene, not a reason
+    // to discard a completed transcript.
+  }
 }
 
 export class GeminiError extends Error {
