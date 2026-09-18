@@ -120,6 +120,72 @@ test('persistent invalid arguments stop after distinct configurations and identi
   }
 });
 
+test('a long dedicated-ASR cooldown falls back once to general audio understanding', async (t) => {
+  const original = fetch;
+  let calls = 0;
+  t.mock.method(Date, 'now', () => 1000);
+  globalThis.fetch = async (_url, init) => {
+    calls++;
+    const request = JSON.parse(String(init?.body));
+    if (calls === 1) {
+      assert.equal(request.model, 'gemini-3.5-transcribe');
+      return new Response(JSON.stringify({
+        error: {
+          details: [
+            { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '3600s' },
+          ],
+        },
+      }), { status: 429 });
+    }
+    assert.equal(request.model, 'gemini-3.8-flash');
+    assert.equal(request.input[0].type, 'audio');
+    assert.equal(request.input[1].type, 'text');
+    assert.equal(request.generation_config.temperature, 0);
+    assert.equal(request.generation_config.transcription_config, undefined);
+    // Even if a general model unexpectedly emits word annotations, the
+    // degraded fallback must discard them rather than claiming ASR diarization.
+    return reply(true);
+  };
+  try {
+    const result = await transcribeSegment(audio, 'audio/wav', {
+      baseOffsetMs: 30000,
+      enrichAnnotations: true,
+    });
+    assert.equal(calls, 2);
+    assert.equal(result.model, 'gemini-3.8-flash');
+    assert.equal(result.text, '[00:30] S?: Keep every word.');
+    assert.deepEqual(result.words, []);
+    assert.deepEqual(result.speakers, []);
+    assert.equal(result.review.attempted, true);
+    assert.equal(result.review.annotationsComplete, false);
+  } finally { globalThis.fetch = original; }
+});
+
+test('a short dedicated-ASR rate limit waits instead of spending a fallback request', async (t) => {
+  const original = fetch;
+  let calls = 0;
+  t.mock.method(Date, 'now', () => 1000);
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response(JSON.stringify({
+      error: {
+        details: [
+          { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '60s' },
+        ],
+      },
+    }), { status: 429 });
+  };
+  try {
+    await assert.rejects(transcribeSegment(audio, 'audio/wav'), (error: unknown) => {
+      assert.ok(error instanceof GeminiError);
+      assert.equal(error.status, 429);
+      assert.equal(error.rateLimit?.retryAfterMs, 60000);
+      return true;
+    });
+    assert.equal(calls, 1);
+  } finally { globalThis.fetch = original; }
+});
+
 test('authentication failures and cancellation never start an alternate transcription request', async () => {
   for (const cancel of [false, true]) {
     const original = fetch;
