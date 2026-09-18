@@ -7,13 +7,13 @@ The browser continues to seal and upload the existing 30-second PCM16 WAV window
 Those small immutable objects are the recovery boundary: reconnect, upload retry,
 deletion and source integrity remain unchanged. After a recording is finalized,
 the backend reads only the contiguous windows that still need ASR, decrypts them
-in memory and groups them into long provider batches. The default is 15 minutes
-(`SYNAP_TRANSCRIPTION_BATCH_MINUTES=15`), with a hard code cap of 25 minutes so
+in memory and groups them into long provider batches. The default is 20 minutes
+(`SYNAP_TRANSCRIPTION_BATCH_MINUTES=20`), with a hard code cap of 25 minutes so
 timestamped requests remain below Gemini 3.5 Transcribe's 30-minute annotated-audio
 limit.
 
 Before provider submission, the backend makes a disposable pitch-preserving 1.5×
-copy with FFmpeg. A full 15-minute source batch therefore becomes about 10 minutes
+copy with FFmpeg. A full 20-minute source batch therefore becomes about 10 minutes
 of submitted audio. The encrypted GCS source objects are never replaced and no
 plaintext temporary file is written to disk.
 
@@ -27,7 +27,7 @@ upload a large temporary file that cannot yet be transcribed.
 
 The old design could make one Gemini transcription request for every 30-second
 storage window: up to 120 ASR requests for one hour of audio. With the default
-15-minute provider batch, the same hour needs about four primary ASR requests
+20-minute provider batch, the same hour needs about three primary ASR requests
 when every window is missing a transcript. The source still consists of the same
 120 independently recoverable 30-second windows.
 
@@ -100,7 +100,7 @@ Synap uses those general ideas independently while retaining its own encrypted
 ## Verification and practical limit
 
 Automated checks cover real FFmpeg duration/pitch/tail preservation, original
-source integrity, 15-minute batch grouping, Gemini Files API URI transport,
+source integrity, 20-minute batch grouping, Gemini Files API URI transport,
 timestamp projection, one-call diarization, missing/incomplete-output backoff,
 429 cooldown propagation and lease fencing. Firestore integration tests exercise
 publication/recovery transactions. These checks prove pipeline behavior, not
