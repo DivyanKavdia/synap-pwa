@@ -87,7 +87,7 @@
       ],
       "protocols": {
         "media": 1,
-        "voice": 0
+        "voice": 2
       }
     }
   ]

@@ -29,8 +29,10 @@
       return { state: 'unavailable', message: 'Chakshu connected, but its device ID could not be read. Reconnect to identify it.' };
     return { state: 'connected', message: 'Chakshu connected.' };
   }
-  const protocol = (info, key) =>
-    Boolean(isChakshu(info) && profile(info).protocols[key] === 1 && info[key + 'Version'] === 1);
+  function protocol(info, key) {
+    const expected = isChakshu(info) ? profile(info).protocols[key] : 0;
+    return Boolean(Number.isInteger(expected) && expected > 0 && info[key + 'Version'] === expected);
+  }
   const hasMedia = (info) => protocol(info, 'media');
   const hasVoice = (info) => protocol(info, 'voice') && supports(info, 'audio');
   function canCapture(info, kind, offline = false) {
@@ -67,5 +69,19 @@
     hardwareCheck,
   });
   root.SynapCapabilities = api;
+  // Keep index.html stable: capability discovery owns the optional voice companion.
+  // Guard Node/native tests where document does not exist.
+  if (
+    typeof root.document?.querySelector === 'function' &&
+    typeof root.document?.createElement === 'function' &&
+    root.document.head &&
+    !root.document.querySelector('script[data-synap-chakshu-voice]')
+  ) {
+    const script = root.document.createElement('script');
+    script.src = 'devices/chakshu/voice.js?v=1.0.0-chakshu-voice2';
+    script.defer = true;
+    script.dataset.synapChakshuVoice = '2';
+    root.document.head.append(script);
+  }
   if (typeof module !== 'undefined') module.exports = api;
 })(globalThis);

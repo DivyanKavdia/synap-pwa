@@ -129,7 +129,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       await page.locator('#capturePreviewClose').click();
       await page.locator('#visualMode').selectOption('video');
       await page.locator('#visualSDQuality').selectOption('1');
-      await page.locator('#visualSDLength').selectOption('15');
+      await page.locator('#visualSDLength').fill('15');
       await page.locator('#visualRecordSD').click();
       await page.waitForFunction(() => SynapChakshu.state.offline && !SynapChakshu.state.working);
       assert.equal(await page.evaluate(() => bleFixture.sdVideoOptions), 1 | (15 << 8));
