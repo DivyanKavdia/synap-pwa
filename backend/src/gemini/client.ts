@@ -111,13 +111,18 @@ export async function uploadGeminiFile(
   });
   if (!start.ok) {
     const detail = await start.text().catch(() => '');
+    const context = { model: config.gemini.transcribeModel, stage: 'file-upload' };
+    let rateLimit = start.status === 429
+      ? rateLimitAdvice(start.headers.get('retry-after'), detail)
+      : undefined;
+    if (rateLimit) rateLimit = await applyRateLimit(config.gemini.transcribeModel, context, rateLimit);
     throw new GeminiError(
       `Gemini file upload start HTTP ${start.status}: ${detail.slice(0, 200)}`,
       start.status,
       RETRYABLE_STATUS.has(start.status),
       'request',
-      undefined,
-      { model: config.gemini.transcribeModel, stage: 'file-upload' },
+      rateLimit,
+      context,
     );
   }
   const uploadUrl = start.headers.get('x-goog-upload-url');
@@ -137,13 +142,18 @@ export async function uploadGeminiFile(
   });
   if (!uploaded.ok) {
     const detail = await uploaded.text().catch(() => '');
+    const context = { model: config.gemini.transcribeModel, stage: 'file-upload' };
+    let rateLimit = uploaded.status === 429
+      ? rateLimitAdvice(uploaded.headers.get('retry-after'), detail)
+      : undefined;
+    if (rateLimit) rateLimit = await applyRateLimit(config.gemini.transcribeModel, context, rateLimit);
     throw new GeminiError(
       `Gemini file upload HTTP ${uploaded.status}: ${detail.slice(0, 200)}`,
       uploaded.status,
       RETRYABLE_STATUS.has(uploaded.status),
       'request',
-      undefined,
-      { model: config.gemini.transcribeModel, stage: 'file-upload' },
+      rateLimit,
+      context,
     );
   }
   const payload = await uploaded.json() as { file?: GeminiUploadedFile };
@@ -264,6 +274,26 @@ const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS = 4;
 const modelCooldowns = new ModelCooldowns();
 
+async function applyRateLimit(
+  model: string,
+  context: { model: string; stage: string },
+  advice: RateLimitAdvice,
+): Promise<RateLimitAdvice> {
+  // Suppress this runtime immediately. Persist the same deadline so every
+  // Cloud Run instance and every recovery path observes one shared backoff,
+  // whether the 429 came from Files API preparation or model inference.
+  const localLimit = modelCooldowns.reject(model, advice);
+  let effective = localLimit;
+  if (config.gemini.sharedCooldown) {
+    try { effective = await deferSharedModel(model, advice); }
+    catch {
+      log.warn('Shared model cooldown could not be saved', context);
+    }
+  }
+  modelCooldowns.defer(model, effective);
+  return effective;
+}
+
 export async function ensureModelAvailable(model: string, stage: string): Promise<void> {
   const cooldown = modelCooldowns.remaining(model) ||
     (config.gemini.sharedCooldown ? await sharedModelCooldown(model) : undefined);
@@ -319,19 +349,7 @@ async function call<T>(
 
       const detail = await response.text().catch(() => '');
       let rateLimit = response.status === 429 ? rateLimitAdvice(response.headers.get('retry-after'), detail) : undefined;
-      if (rateLimit) {
-        // Suppress this runtime immediately. A failed Firestore write must not
-        // replace a real 429 with a transport error and resubmit the request.
-        const localLimit = modelCooldowns.reject(context.model, rateLimit);
-        if (config.gemini.sharedCooldown) {
-          try { rateLimit = await deferSharedModel(context.model, rateLimit); }
-          catch {
-            rateLimit = localLimit;
-            log.warn('Shared model cooldown could not be saved', context);
-          }
-        } else rateLimit = localLimit;
-        modelCooldowns.defer(context.model, rateLimit);
-      }
+      if (rateLimit) rateLimit = await applyRateLimit(context.model, context, rateLimit);
       const error = new GeminiError(
         `Gemini ${context.stage} (${context.model}) HTTP ${response.status}: ${detail.slice(0, 400)}`,
         response.status,
