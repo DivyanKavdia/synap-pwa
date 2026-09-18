@@ -139,14 +139,16 @@ export async function transcribeUploadedBatch(
     }
 
     const batchAudio = makePcm16Wav(Buffer.concat(pcm));
+    const annotateSpeakers = await needsSpeakerAnnotations(uid, dek);
     batchSignal = AbortSignal.timeout(300_000);
     const result = await transcribeSegment(batchAudio, 'audio/wav', {
       baseOffsetMs: claimed[0]!.startMs,
       speed: config.gemini.transcriptionSpeed,
       language: recording.language,
-      diarize: false,
+      diarize: annotateSpeakers,
       wordTimestamps: true,
       primaryWordTimestamps: true,
+      primaryDiarization: annotateSpeakers,
       useFileApi: true,
       enrichAnnotations: false,
       signal: batchSignal,
