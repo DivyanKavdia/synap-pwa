@@ -47,7 +47,7 @@ import { transcribeUploadedBatch, hasUsableTranscription } from './rolling-trans
 import { requireCompleteSegments } from './recording-segments.js';
 
 const SEGMENT_MS = 30_000;
-const ASR_BATCH_MS = 15 * 60_000;
+const ASR_BATCH_MS = config.gemini.transcriptionBatchMinutes * 60_000;
 
 export interface ProcessRecordingOptions {
   /** Reuse sealed segment transcripts only. Missing transcript windows are an error; never call STT. */
