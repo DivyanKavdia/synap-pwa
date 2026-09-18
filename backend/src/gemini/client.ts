@@ -171,7 +171,22 @@ export async function uploadGeminiFile(
       headers: { 'x-goog-api-key': geminiApiKey },
       signal,
     });
-    if (!status.ok) break;
+    if (!status.ok) {
+      const detail = await status.text().catch(() => '');
+      const context = { model: config.gemini.transcribeModel, stage: 'file-upload' };
+      let rateLimit = status.status === 429
+        ? rateLimitAdvice(status.headers.get('retry-after'), detail)
+        : undefined;
+      if (rateLimit) rateLimit = await applyRateLimit(config.gemini.transcribeModel, context, rateLimit);
+      throw new GeminiError(
+        `Gemini file status HTTP ${status.status}: ${detail.slice(0, 200)}`,
+        status.status,
+        RETRYABLE_STATUS.has(status.status),
+        'request',
+        rateLimit,
+        context,
+      );
+    }
     file = await status.json() as GeminiUploadedFile;
   }
   if (file.state === 'FAILED')
