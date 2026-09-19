@@ -13,8 +13,35 @@ import * as db from '../../store/firestore.js';
 import { mergeAliasKeys, nameKey, normalizeName } from '../../util/ids.js';
 import { editAction, ActionEditConflict } from '../../store/action-edits.js';
 import type { FollowUpContent } from '../../store/types.js';
+import { log } from '../../util/log.js';
 import { requireAuth, type AuthedRequest } from '../auth.js';
 import { HttpError, handler } from '../errors.js';
+
+/**
+ * Open one sealed record in a list without letting it take the list down.
+ *
+ * A list endpoint that decrypts inside `.map()` fails whole. One record whose
+ * AES-GCM tag does not verify became a 500 on /v1/people, /v1/follow-ups and
+ * /v1/voice-profile at once, so the People and Actions screens showed nothing
+ * rather than showing everything that was still readable.
+ *
+ * The id is logged and the record skipped. The id is a per-user HMAC, not a
+ * name, so this stays safe to read in Cloud Logging while telling us exactly
+ * which records to examine.
+ */
+function openSealedRecord<T>(kind: string, uid: string, id: string, read: () => T): T | null {
+  try {
+    return read();
+  } catch (cause) {
+    log.error('Sealed record failed to open', {
+      kind,
+      uid,
+      id,
+      error: (cause as Error).message,
+    });
+    return null;
+  }
+}
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const actionDate = z.string().regex(DAY_PATTERN).refine(value => {
@@ -82,17 +109,24 @@ export function brainRoutes(): Router {
     handler<AuthedRequest>(async (req, res) => {
       const people = await db.listPeople(req.uid);
       res.status(200).json({
-        people: people.map((person) => {
-          const profile = openJson<{
-            name: string;
-            role: string;
-            evidence: string;
-            confidence: number;
-          }>(
-            req.dek,
-            person.sealedProfile,
-            binding(req.uid, `person/${person.personId}`, 'profile'),
+        people: people.flatMap((person) => {
+          const profile = openSealedRecord(
+            'person',
+            req.uid,
+            person.personId,
+            () =>
+              openJson<{
+                name: string;
+                role: string;
+                evidence: string;
+                confidence: number;
+              }>(
+                req.dek,
+                person.sealedProfile,
+                binding(req.uid, `person/${person.personId}`, 'profile'),
+              ),
           );
+          if (!profile) return [];
           return {
             person_id: person.personId,
             name: profile.name,
@@ -217,12 +251,15 @@ export function brainRoutes(): Router {
 
       res.status(200).json({
         capabilities: { actions_version: 2 },
-        follow_ups: items.map((item) => {
-          const task = openJson<FollowUpContent>(
-            req.dek,
-            item.sealedTask,
-            binding(req.uid, `followUp/${item.followUpId}`, 'task'),
+        follow_ups: items.flatMap((item) => {
+          const task = openSealedRecord('followUp', req.uid, item.followUpId, () =>
+            openJson<FollowUpContent>(
+              req.dek,
+              item.sealedTask,
+              binding(req.uid, `followUp/${item.followUpId}`, 'task'),
+            ),
           );
+          if (!task) return [];
           return {
             id: item.followUpId,
             task: task.task,

@@ -1,6 +1,7 @@
 import { openJson, sealJson, type Binding, type Sealed } from '../crypto/envelope.js';
 import { cosineSimilarity } from './audio.js';
 import type { SpeakerEmbeddingResult } from './client.js';
+import { log } from '../util/log.js';
 import * as db from '../store/firestore.js';
 
 export interface VoiceProfilePayload {
@@ -49,7 +50,18 @@ export async function voiceProfileStatus(uid: string, dek: Buffer): Promise<Voic
     return { enrolled: false, model: null, sampleDurationMs: null, createdAt: null, updatedAt: null, displayName: null };
   }
   const doc = snapshot.data() as VoiceProfileDoc;
-  const profile = openJson<VoiceProfilePayload>(dek, doc.sealedProfile, binding(uid));
+  let profile: VoiceProfilePayload;
+  try {
+    profile = openJson<VoiceProfilePayload>(dek, doc.sealedProfile, binding(uid));
+  } catch (cause) {
+    // An unreadable voice profile must not 500 the whole settings screen. It is
+    // re-enrollable from the app, unlike a transcript, so reporting "not
+    // enrolled" is both honest and the state the user can act on.
+    log.error('Sealed record failed to open', {
+      kind: 'voiceProfile', uid, error: (cause as Error).message,
+    });
+    return { enrolled: false, model: null, sampleDurationMs: null, createdAt: null, updatedAt: null, displayName: null };
+  }
   return {
     enrolled: true,
     model: profile.model,
