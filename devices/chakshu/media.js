@@ -861,38 +861,16 @@
     if (autoSyncPromise) return autoSyncPromise;
     if (!owner || !connected() || !ready() || working || session || offline || wifi?.active) return 0;
     const expected = owner,
-      device = connected(),
-      deviceId = device?.deviceId;
+      deviceId = connected()?.deviceId;
     if (!deviceId) return 0;
+    // Background sync is discovery-only. SD media remains on Chakshu and is
+    // represented in the shared Library until the user explicitly chooses
+    // Move to app. moveSD() is the only path that may delete an SD original.
     autoSyncPromise = (async () => {
       const files = await catalogue();
-      let count = 0;
-      for (const file of files) {
-        check(expected);
-        if (
-          connected()?.deviceId !== deviceId ||
-          working ||
-          session ||
-          offline ||
-          wifi?.active
-        )
-          break;
-        const sourceName = file.path.split('/').pop(),
-          rows = await store.list(),
-          alreadyImported = rows.some(
-            (row) =>
-              row.deviceId === deviceId &&
-              row.sourceName === sourceName &&
-              row.state === 'saved',
-          );
-        if (!alreadyImported) await importSD(file.path);
-        check(expected);
-        if (connected()?.deviceId !== deviceId) break;
-        await deleteSyncedSet(file.path);
-        count++;
-      }
-      if (count) root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
-      return count;
+      check(expected);
+      if (connected()?.deviceId !== deviceId) return 0;
+      return files.length;
     })().finally(() => {
       autoSyncPromise = null;
     });
