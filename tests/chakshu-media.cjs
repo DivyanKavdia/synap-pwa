@@ -505,3 +505,22 @@ test('device voice media sync imports before deleting SD originals and companion
   assert.match(voice,/synap-chakshu-media-pending/);
   assert.doesNotMatch(voice,/startOffline\(0, 10\)|describeNow\(\)|highQualitySnap/);
 });
+
+test('SD-only Chakshu photo and video captures surface in the shared Library before transfer',()=> {
+  const fs=require('node:fs'),path=require('node:path');
+  const media=fs.readFileSync(path.join(__dirname,'../devices/chakshu/media.js'),'utf8');
+  const library=fs.readFileSync(path.join(__dirname,'../devices/chakshu/library.js'),'utf8');
+  const voice=fs.readFileSync(path.join(__dirname,'../devices/chakshu/voice.js'),'utf8');
+  const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+  assert.match(media,/function rememberCatalogue\(files, deviceId\)/);
+  assert.match(media,/async function moveSD\(path, progress\)/);
+  assert.match(media,/The capture was not verified in the app\. The SD original was kept\./);
+  assert.match(media,/sdFiles: sdFiles\.slice\(\)/);
+  assert.match(library,/sdOnly: true/);
+  assert.match(library,/Move to app/);
+  assert.match(library,/api\(\)\.moveSD\(item\.sourcePath/);
+  assert.match(voice,/localMediaCommand\(incoming\.command\) && incoming\.result !== 3/);
+  assert.match(voice,/incoming\.result === 3/);
+  const headerStart=html.indexOf('class="topbar"'),headerEnd=html.indexOf('</header>',headerStart),feedback=html.indexOf('id="heySynapFeedback"');
+  assert(headerStart>=0&&feedback>headerStart&&feedback<headerEnd,'voice feedback must render inside the header, below device controls');
+});
