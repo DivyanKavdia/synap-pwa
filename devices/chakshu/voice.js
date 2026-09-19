@@ -126,7 +126,7 @@
   async function perform(incoming) {
     const command = incoming.command;
     if (command === PHOTO) return highQualitySnap();
-    if (command === VIDEO_START) return root.SynapChakshuV2.startOffline(0, 10);
+    if (command === VIDEO_START) return root.SynapChakshuV2.startOffline(0, 25);
     if (command === VIDEO_STOP) return api().stop();
     if (command === AUDIO_ON) return api().setAudio(true);
     if (command === AUDIO_OFF) return api().setAudio(false);
