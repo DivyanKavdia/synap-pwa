@@ -1150,7 +1150,9 @@
       const epoch = connectionEpoch;
       const connectingDevice = bluetoothDevice;
       setupDevice = connectingDevice;
-      audioOnly = audioOnlyConnections.has(connectingDevice.id);
+      // A temporary Bluefy optional-discovery failure must never permanently downgrade
+      // an idle/manual connection. Reuse audio-only only while recovering an active take.
+      audioOnly = resumingRecording && audioOnlyConnections.has(connectingDevice.id);
       connectionStage("Bluetooth link");
       lastGattDisconnectRequest = null;
       try {
@@ -1218,6 +1220,7 @@
         : nativeService;
       assertConnection();
       if (service.characteristicCount) log("Pendant characteristics discovered", { count: service.characteristicCount });
+      if (!audioOnly) audioOnlyConnections.delete(connectingDevice.id);
       if (audioOnly) probingExtras = false;
       connectionStage("device identity");
       let connectedDeviceId = null;
@@ -1425,7 +1428,7 @@
       if (setupSucceeded && isGattConnected()) {
         connectionReadyAt = performance.now();
         setReconnectCapability(audioOnly
-          ? "Audio connected. Extra device features are unavailable on this connection. Reload to retry full setup."
+          ? "Audio recovery mode. Finish this recording, then reconnect to restore camera, SD, OTA and voice features."
           : "Pendant connection ready");
         log("Connection setup complete", { elapsedMs: Math.round(performance.now() - setupStartedAt), audioOnly });
         globalThis.dispatchEvent(new CustomEvent('synap-gatt-ready'));
