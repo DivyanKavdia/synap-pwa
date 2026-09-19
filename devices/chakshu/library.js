@@ -439,7 +439,7 @@
       sd = (state.sdFiles || [])
         .filter((file) => /\\.(jpg|mjpeg)$/i.test(file.path) && !imported.has(file.path.split('/').pop()))
         .map((file) => {
-          const sourceName = file.path.split('/').pop(), mediaId = 'sd:' + encodeURIComponent(file.path), video = /\\.mjpeg$/i.test(file.path);
+          const sourceName = file.path.split('/').pop(), mediaId = 'sd:' + encodeURIComponent(file.path), video = /\.mjpeg$/i.test(file.path);
           return {
             id: 'visual:' + mediaId,
             mediaId,
