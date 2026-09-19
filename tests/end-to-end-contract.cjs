@@ -44,17 +44,17 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   assert.match(sleepGuard, /synap-gatt-service-ready/);
 
   assert.doesNotMatch(events, /script\.src=['"]audio-codec-v3/);
-  assert.match(sw, /1\.0\.0-shell147-chakshu-sd-library/);
-  assert.match(sw, /UI_RECOVERY_REVISION='1\.0\.0-shell147-chakshu-sd-library'/);
+  assert.match(sw, /1\.0\.0-shell148-reconnect-fallback/);
+  assert.match(sw, /UI_RECOVERY_REVISION='1\.0\.0-shell148-reconnect-fallback'/);
   assert.match(sw, /\.\/dashboard-ui\.js/);
   assert.match(sw, /\.\/ask-synap\.js/);
   assert.match(sw, /\.\/sleep-state-guard\.js/);
   assert.match(sw, /\.\/runtime-compat\.js/);
   assert.match(sw, /\.\/processing-recovery\.js/);
-  assert.match(html, /dashboard-ui\.js\?v=1\.0\.0-shell147-chakshu-sd-library/);
+  assert.match(html, /dashboard-ui\.js\?v=1\.0\.0-shell148-reconnect-fallback/);
   assert.match(sw, /\.\/my-actions\.js/);
-  assert.match(html, /my-actions\.js\?v=1\.0\.0-shell147-chakshu-sd-library/);
-  assert.match(html, /ask-synap\.js\?v=1\.0\.0-shell147-chakshu-sd-library/);
+  assert.match(html, /my-actions\.js\?v=1\.0\.0-shell148-reconnect-fallback/);
+  assert.match(html, /ask-synap\.js\?v=1\.0\.0-shell148-reconnect-fallback/);
   assert.match(html, /sleep-state-guard\.js\?v=/);
   assert.match(html, /recording-bridge\.js\?v=/);
   assert.match(ask, /SynapAuth\.authedFetch\(ASK_ENDPOINT/);

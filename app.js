@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell147-chakshu-sd-library";
+  const APP_SHELL_REVISION = "1.0.0-shell148-reconnect-fallback";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -1150,9 +1150,10 @@
       const epoch = connectionEpoch;
       const connectingDevice = bluetoothDevice;
       setupDevice = connectingDevice;
-      // A temporary Bluefy optional-discovery failure must never permanently downgrade
-      // an idle/manual connection. Reuse audio-only only while recovering an active take.
-      audioOnly = resumingRecording && audioOnlyConnections.has(connectingDevice.id);
+      // Keep a failed optional-discovery fallback for this page session so
+      // reconnect does not repeat a bridge/native inventory failure. Reloading the
+      // PWA clears this Set and retries full discovery, so the downgrade is not persistent.
+      audioOnly = audioOnlyConnections.has(connectingDevice.id);
       connectionStage("Bluetooth link");
       lastGattDisconnectRequest = null;
       try {
