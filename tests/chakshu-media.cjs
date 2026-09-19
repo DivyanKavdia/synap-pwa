@@ -508,5 +508,5 @@ test('verified SD cleanup uses operation 17 and rejects paths outside the Synap 
   });
   await client.remove('/synap/abcdef01-00000001.mjpeg');
   assert.deepEqual(writes,[{op:17,id:1,path:'/synap/abcdef01-00000001.mjpeg'}]);
-  await assert.rejects(client.remove('/photos/not-synap.jpg'),/Invalid SD path/);
+  assert.throws(() => client.remove('/photos/not-synap.jpg'),/Invalid SD path/);
 });
