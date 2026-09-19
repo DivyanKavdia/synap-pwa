@@ -40,7 +40,7 @@ test('dispatches default and explicit video durations to high-detail SD recordin
   await voice.perform(voice.decode(packet({command:3})));
   await voice.perform(voice.decode(packet({sequence:2,command:20,value:1})));
   await voice.perform(voice.decode(packet({sequence:3,command:155,value:600})));
-  assert.deepEqual(calls,[[0,10],[0,1],[0,600]]);
+  assert.deepEqual(calls,[[0,25],[0,1],[0,600]]);
   assert.equal(voice.label(voice.decode(packet({command:20,value:1}))),'Record for 1 seconds');
 });
 
@@ -59,4 +59,14 @@ test('dispatches audio, stop, explicit vision and verified full-quality snap',as
   const id=await voice.perform(voice.decode(packet({command:2})));
   assert.equal(id,'visual-1');
   assert.deepEqual(calls,[['audio',true],['audio',false],['stop'],['describe'],['preview'],['move','/synap/aaaaaaaa-bbbbbbbb.jpg']]);
+});
+test('device-local voice results never execute the legacy PWA capture path',()=>{
+  const fs=require('node:fs'),path=require('node:path');
+  const source=fs.readFileSync(path.join(__dirname,'../devices/chakshu/voice.js'),'utf8');
+  const local=source.indexOf('if (incoming.result === 0)');
+  const legacy=source.indexOf('if (incoming.result !== 2)',local);
+  const perform=source.indexOf('await perform(incoming)',legacy);
+  assert(local>=0 && legacy>local && perform>legacy);
+  assert.match(source,/queueSDSync\?\.\(incoming\.command === VIDEO_START \? 28000 : 1500\)/);
+  assert.match(source,/Recording 25 seconds to Chakshu SD/);
 });

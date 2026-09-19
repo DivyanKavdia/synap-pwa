@@ -126,7 +126,7 @@
   async function perform(incoming) {
     const command = incoming.command;
     if (command === PHOTO) return highQualitySnap();
-    if (command === VIDEO_START) return root.SynapChakshuV2.startOffline(0, 10);
+    if (command === VIDEO_START) return root.SynapChakshuV2.startOffline(0, 25);
     if (command === VIDEO_STOP) return api().stop();
     if (command === AUDIO_ON) return api().setAudio(true);
     if (command === AUDIO_OFF) return api().setAudio(false);
@@ -159,11 +159,29 @@
       notify();
       return;
     }
-    if (incoming.result !== 2) {
+    const label = commandLabel(incoming);
+    if (incoming.result === 0) {
+      message =
+        incoming.command === VIDEO_START
+          ? 'Recording 25 seconds to Chakshu SD…'
+          : incoming.command === AUDIO_ON
+            ? 'Recording audio to Chakshu SD…'
+            : incoming.command === VIDEO_STOP || incoming.command === AUDIO_OFF
+              ? 'Local recording stopped.'
+              : 'Saved locally on Chakshu. Syncing to Library when ready.';
+      feedback(`Done locally · ${label}`, 'success', 3500);
+      if (incoming.command === VIDEO_START || incoming.command === AUDIO_ON)
+        api().pollOffline?.().catch(() => {});
+      api().queueSDSync?.(incoming.command === VIDEO_START ? 28000 : 1500);
       notify();
       return;
     }
-    const label = commandLabel(incoming);
+    if (incoming.result !== 2) {
+      message = 'Chakshu could not complete the local voice command.';
+      feedback(message, 'error', 5000);
+      notify();
+      return;
+    }
     feedback(`Heard · ${label}`, 'heard', 3000);
     if (b.queued >= 4) {
       message = 'Voice commands are busy. Please try again.';
@@ -275,7 +293,7 @@
     }
   }
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice4',
+    revision: '1.0.0-chakshu-voice5',
     decode,
     label: commandLabel,
     perform,
