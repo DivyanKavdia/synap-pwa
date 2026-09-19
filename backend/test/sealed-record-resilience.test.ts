@@ -53,3 +53,15 @@ test('skipping one unreadable record preserves the rest of the list', () => {
   assert.deepEqual(names, ['Ankit', 'Priya'], 'readable records still reach the user');
   assert.deepEqual(skipped, ['p2'], 'and the unreadable one is identified, not silently dropped');
 });
+
+test('mixed success in one request proves the key is fine and the binding is not', () => {
+  // Every record in a request is opened with the same unwrapped DEK, so the
+  // count of successes is the whole diagnosis. This is the logic behind the
+  // "Sealed reads failed in one request" verdict.
+  const verdict = (opened: number, failed: number) =>
+    !failed ? 'ok' : opened > 0 ? 'per-record binding mismatch' : 'no record opened with this key';
+
+  assert.equal(verdict(12, 0), 'ok');
+  assert.equal(verdict(12, 20), 'per-record binding mismatch', 'same key opened twelve of them');
+  assert.equal(verdict(0, 20), 'no record opened with this key', 'nothing opened: suspect the key');
+});

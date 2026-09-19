@@ -29,10 +29,19 @@ import { HttpError, handler } from '../errors.js';
  * name, so this stays safe to read in Cloud Logging while telling us exactly
  * which records to examine.
  */
-function openSealedRecord<T>(kind: string, uid: string, id: string, read: () => T): T | null {
+function openSealedRecord<T>(
+  kind: string,
+  uid: string,
+  id: string,
+  read: () => T,
+  tally?: { opened: number; failed: number },
+): T | null {
   try {
-    return read();
+    const value = read();
+    if (tally) tally.opened += 1;
+    return value;
   } catch (cause) {
+    if (tally) tally.failed += 1;
     log.error('Sealed record failed to open', {
       kind,
       uid,
@@ -42,6 +51,38 @@ function openSealedRecord<T>(kind: string, uid: string, id: string, read: () => 
     return null;
   }
 }
+
+/**
+ * Report how a single request's sealed reads went, which is the one measurement
+ * that separates the two explanations for a list of failures.
+ *
+ * Every record in one request is opened with the same unwrapped DEK. So if any
+ * record opens while others fail, the key is demonstrably correct and the fault
+ * is per-record: ciphertext bound to a place that no longer matches, which is
+ * repairable. If nothing opens, the key itself is wrong for this data, which is
+ * a different and much worse problem.
+ *
+ * Deciding that from outside would mean reading a user's documents. Deciding it
+ * here costs one log line and no access to anything.
+ */
+function reportSealedReads(kind: string, uid: string, tally: { opened: number; failed: number }): void {
+  if (!tally.failed) return;
+  log.error('Sealed reads failed in one request', {
+    kind,
+    uid,
+    opened: tally.opened,
+    failed: tally.failed,
+    verdict: tally.opened > 0 ? 'per-record binding mismatch' : 'no record opened with this key',
+  });
+}
+
+/**
+ * A person whose sealed profile will not open is not a server fault and not a
+ * missing record. Saying so lets the PWA offer to remove or rebuild it instead
+ * of showing a generic failure the user can do nothing about.
+ */
+const UNREADABLE_PERSON = () =>
+  new HttpError(409, 'person_unreadable', 'This person\u2019s details cannot be opened.', false);
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const actionDate = z.string().regex(DAY_PATTERN).refine(value => {
@@ -108,7 +149,8 @@ export function brainRoutes(): Router {
     requireAuth(),
     handler<AuthedRequest>(async (req, res) => {
       const people = await db.listPeople(req.uid);
-      res.status(200).json({
+      const tally = { opened: 0, failed: 0 };
+      const body = {
         people: people.flatMap((person) => {
           const profile = openSealedRecord(
             'person',
@@ -125,6 +167,7 @@ export function brainRoutes(): Router {
                 person.sealedProfile,
                 binding(req.uid, `person/${person.personId}`, 'profile'),
               ),
+            tally,
           );
           if (!profile) return [];
           return {
@@ -142,7 +185,9 @@ export function brainRoutes(): Router {
             conversation_count: person.conversationCount,
           };
         }),
-      });
+      };
+      reportSealedReads('person', req.uid, tally);
+      res.status(200).json({ ...body, unreadable: tally.failed });
     }),
   );
 
@@ -153,11 +198,14 @@ export function brainRoutes(): Router {
       const personId = String(req.params.personId);
       const person = await db.getPerson(req.uid, personId);
       if (!person) throw new HttpError(404, 'not_found', 'Unknown person.');
-      const profile = openJson<{ name: string }>(
-        req.dek,
-        person.sealedProfile,
-        binding(req.uid, `person/${personId}`, 'profile'),
+      const profile = openSealedRecord('person', req.uid, personId, () =>
+        openJson<{ name: string }>(
+          req.dek,
+          person.sealedProfile,
+          binding(req.uid, `person/${personId}`, 'profile'),
+        ),
       );
+      if (!profile) throw UNREADABLE_PERSON();
       const [conversations, followUps] = await Promise.all([
         db.conversationsForPerson(req.uid, personId),
         db.listFollowUps(req.uid, 'open', 'all'),
@@ -180,12 +228,15 @@ export function brainRoutes(): Router {
       const person = await db.getPerson(req.uid, personId);
       if (!person) throw new HttpError(404, 'not_found', 'Unknown person');
 
-      const profile = openJson<{
-        name: string;
-        role: string;
-        evidence: string;
-        confidence: number;
-      }>(req.dek, person.sealedProfile, binding(req.uid, `person/${personId}`, 'profile'));
+      const profile = openSealedRecord('person', req.uid, personId, () =>
+        openJson<{
+          name: string;
+          role: string;
+          evidence: string;
+          confidence: number;
+        }>(req.dek, person.sealedProfile, binding(req.uid, `person/${personId}`, 'profile')),
+      );
+      if (!profile) throw UNREADABLE_PERSON();
 
       const renamed = body.data.name !== undefined && body.data.name !== profile.name;
       if (renamed && !normalizeName(body.data.name ?? '')) {
@@ -248,16 +299,22 @@ export function brainRoutes(): Router {
       const state = String(req.query.state ?? 'open') as 'open' | 'done' | 'dismissed' | 'all';
       const owner = String(req.query.owner ?? 'all') as 'self' | 'other' | 'all';
       const items = await db.listFollowUps(req.uid, state, owner);
+      const followUpTally = { opened: 0, failed: 0 };
 
       res.status(200).json({
         capabilities: { actions_version: 2 },
         follow_ups: items.flatMap((item) => {
-          const task = openSealedRecord('followUp', req.uid, item.followUpId, () =>
-            openJson<FollowUpContent>(
-              req.dek,
-              item.sealedTask,
-              binding(req.uid, `followUp/${item.followUpId}`, 'task'),
-            ),
+          const task = openSealedRecord(
+            'followUp',
+            req.uid,
+            item.followUpId,
+            () =>
+              openJson<FollowUpContent>(
+                req.dek,
+                item.sealedTask,
+                binding(req.uid, `followUp/${item.followUpId}`, 'task'),
+              ),
+            followUpTally,
           );
           if (!task) return [];
           return {
@@ -291,6 +348,7 @@ export function brainRoutes(): Router {
           };
         }),
       });
+      reportSealedReads('followUp', req.uid, followUpTally);
     }),
   );
 
