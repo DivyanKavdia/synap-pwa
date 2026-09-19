@@ -27,7 +27,7 @@ afterEach(()=>{
 
 test('decodes the bounded single-model Chakshu voice protocol',()=>{
   const voice=load(),wake=voice.decode(packet({command:1})),stop=voice.decode(packet({command:8}));
-  assert.equal(wake.command,1);assert.equal(voice.label(wake),'Hi ESP');
+  assert.equal(wake.command,1);assert.equal(voice.label(wake),'Hey Snap');
   assert.equal(voice.label(stop),'Stop');
   assert.throws(()=>voice.decode(packet({command:20})),/Unsupported/);
   assert.throws(()=>voice.decode(new DataView(new Uint8Array(20).buffer)),/Unsupported/);
@@ -37,4 +37,18 @@ test('voice perform is informational because firmware owns SD-first actions',asy
   const voice=load();
   assert.deepEqual(await voice.perform(voice.decode(packet({command:2}))),{local:true,command:2});
   assert.deepEqual(await voice.perform(voice.decode(packet({command:3}))),{local:true,command:3});
+});
+
+function diagnosticPacket({status=1,enabled=true,meanAbs=321,peak=2345,candidate=1,confidence=612,at=456,count=7,active=true}={}){
+  const bytes=new Uint8Array(20),view=new DataView(bytes.buffer);
+  bytes[0]=0xce;bytes[1]=1;bytes[2]=status;bytes[3]=enabled?1:0;
+  view.setUint16(4,meanAbs,true);view.setUint16(6,peak,true);bytes[8]=candidate;
+  view.setUint16(9,confidence,true);view.setUint32(11,at,true);view.setUint32(15,count,true);bytes[19]=active?1:0;
+  return view;
+}
+test('decodes Hey Snap classifier and microphone diagnostics',()=>{
+  const voice=load(),d=voice.decodeDiagnostic(diagnosticPacket());
+  assert.equal(d.meanAbs,321);assert.equal(d.peak,2345);assert.equal(d.candidate,1);
+  assert.equal(d.confidence,0.612);assert.equal(d.candidateCount,7);assert.equal(d.active,true);
+  assert.throws(()=>voice.decodeDiagnostic(new DataView(new Uint8Array(19).buffer)),/Unsupported/);
 });

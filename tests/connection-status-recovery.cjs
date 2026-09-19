@@ -110,3 +110,9 @@ test('firmware error status does not publish a ready connection', async () => {
   assert(!h.logs.some(entry => entry.text === 'Connection setup complete'));
   assert.equal(h.logs.find(entry => entry.text === 'Connection failure details').detail.stage, 'status acknowledgement');
 });
+
+test('temporary Bluefy audio-only fallback is reused only for active recording recovery',()=>{
+  assert.match(app,/audioOnly = resumingRecording && audioOnlyConnections\.has\(connectingDevice\.id\)/);
+  assert.match(app,/if \(!audioOnly\) audioOnlyConnections\.delete\(connectingDevice\.id\)/);
+  assert.doesNotMatch(app,/Extra device features are unavailable on this connection\. Reload to retry full setup/);
+});

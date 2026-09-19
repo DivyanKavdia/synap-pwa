@@ -3,6 +3,7 @@
   'use strict';
   const CONTROL = '4fa12356-0000-1000-8000-00805f9b34fb',
     EVENTS = '4fa12357-0000-1000-8000-00805f9b34fb',
+    DIAGNOSTICS = '4fa12358-0000-1000-8000-00805f9b34fb',
     PROTOCOL = 2,
     WAKE = 1,
     PHOTO = 2,
@@ -18,6 +19,7 @@
     lastPoll = 0,
     message = '',
     state = null,
+    diagnostic = null,
     feedbackTimer = null;
   const api = () => root.SynapChakshu;
   const supported = () => root.SynapCapabilities?.hasVoice(root.SynapModules?.client?.module);
@@ -46,8 +48,29 @@
       value: value.getUint16(20, true),
     });
   }
+  function decodeDiagnostic(value) {
+    if (
+      value?.byteLength !== 20 ||
+      value.getUint8(0) !== 0xce ||
+      value.getUint8(1) !== 1 ||
+      value.getUint8(2) > 5 ||
+      !validCommand(value.getUint8(8))
+    )
+      throw Error('Unsupported Chakshu voice diagnostic.');
+    return Object.freeze({
+      status: value.getUint8(2),
+      enabled: Boolean(value.getUint8(3)),
+      meanAbs: value.getUint16(4, true),
+      peak: value.getUint16(6, true),
+      candidate: value.getUint8(8),
+      confidence: value.getUint16(9, true) / 1000,
+      candidateAtMs: value.getUint32(11, true),
+      candidateCount: value.getUint32(15, true),
+      active: Boolean(value.getUint8(19)),
+    });
+  }
   function commandLabel(incoming) {
-    if (incoming.command === WAKE) return 'Hi ESP';
+    if (incoming.command === WAKE) return 'Hey Snap';
     if (incoming.command === PHOTO) return 'Take a snap';
     if (incoming.command === VIDEO_START) return 'Record a video';
     if (incoming.command === VIDEO_STOP) return 'Stop video';
@@ -99,6 +122,7 @@
       binding.events.removeEventListener('characteristicvaluechanged', binding.handler);
     binding = null;
     state = null;
+    diagnostic = null;
     lastPoll = 0;
     clearTimeout(timer);
     timer = null;
@@ -131,7 +155,7 @@
     }
     if (incoming.command === WAKE) {
       message = 'Listening for command…';
-      feedback('Hi ESP · Listening for command…', 'listening', 5200);
+      feedback('Hey Snap · Listening for command…', 'listening', 5200);
       notify();
       return;
     }
@@ -176,6 +200,19 @@
           'Find Chakshu voice events',
         );
         if (!current(b)) return;
+        try {
+          b.diagnostics = await context.mediaQueue(
+            () => context.service.getCharacteristic(DIAGNOSTICS),
+            'Find Chakshu voice diagnostics',
+          );
+        } catch (error) {
+          b.diagnostics = null;
+          root.dispatchEvent?.(
+            new CustomEvent('synap-voice-diagnostic', {
+              detail: { available: false, message: error.message || String(error) },
+            }),
+          );
+        }
         state = decode(await context.mediaQueue(() => b.control.readValue(), 'Read Chakshu voice status'));
         b.sequence = state.sequence;
         b.handler = (event) => command(b, event.target.value).catch((error) => {
@@ -195,6 +232,36 @@
         if (!current(b)) return;
         const value = await b.context.mediaQueue(() => b.control.readValue(), 'Check Chakshu voice status');
         if (current(b)) await command(b, value);
+        if (current(b) && b.diagnostics) {
+          const before = diagnostic?.candidateCount || 0,
+            raw = await b.context.mediaQueue(
+              () => b.diagnostics.readValue(),
+              'Read Chakshu voice diagnostics',
+            );
+          if (current(b)) {
+            diagnostic = decodeDiagnostic(raw);
+            const candidateLabel = diagnostic.candidate
+              ? commandLabel({ command: diagnostic.candidate })
+              : 'None';
+            root.dispatchEvent?.(
+              new CustomEvent('synap-voice-diagnostic', {
+                detail: {
+                  available: true,
+                  ...diagnostic,
+                  candidateLabel,
+                  confidencePercent: Math.round(diagnostic.confidence * 100),
+                },
+              }),
+            );
+            if (diagnostic.candidateCount !== before && diagnostic.candidate) {
+              feedback(
+                `Voice candidate · ${candidateLabel} · ${Math.round(diagnostic.confidence * 100)}%`,
+                'heard',
+                2200,
+              );
+            }
+          }
+        }
       } else await write(b, 3);
       lastPoll = Date.now();
       message = '';
@@ -227,13 +294,15 @@
     }
   }
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice5',
+    revision: '1.0.0-chakshu-voice6',
     decode,
+    decodeDiagnostic,
     label: commandLabel,
     perform,
     sync,
     enabled,
     get state() { return state; },
+    get diagnostic() { return diagnostic; },
     get message() { return message; },
   });
   for (const name of ['synap-chakshu-changed', 'synap-module-changed', 'synap-gatt-disconnected'])
