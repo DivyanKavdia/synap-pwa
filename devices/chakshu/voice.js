@@ -11,8 +11,7 @@
     AUDIO_ON = 5,
     AUDIO_OFF = 6,
     DESCRIBE = 7,
-    DURATION_BASE = 20,
-    DURATION_LAST = 155;
+    STOP = 8;
   let binding = null,
     pending = false,
     timer = null,
@@ -23,10 +22,7 @@
   const api = () => root.SynapChakshu;
   const supported = () => root.SynapCapabilities?.hasVoice(root.SynapModules?.client?.module);
   function validCommand(command) {
-    return command === 0 ||
-      command === WAKE ||
-      (command >= PHOTO && command <= DESCRIBE) ||
-      (command >= DURATION_BASE && command <= DURATION_LAST);
+    return command === 0 || command === WAKE || (command >= PHOTO && command <= STOP);
   }
   function decode(value) {
     if (
@@ -58,8 +54,7 @@
     if (incoming.command === AUDIO_ON) return 'Start audio';
     if (incoming.command === AUDIO_OFF) return 'Stop audio';
     if (incoming.command === DESCRIBE) return 'What do you see';
-    if (incoming.command >= DURATION_BASE && incoming.command <= DURATION_LAST)
-      return `Record for ${incoming.value} seconds`;
+    if (incoming.command === STOP) return 'Stop';
     return 'Voice command';
   }
   function feedback(text, tone = 'listening', ttl = 0) {
@@ -112,31 +107,12 @@
     feedback('', 'listening', 0);
     notify();
   }
-  async function highQualitySnap() {
-    const connection = root.SynapDevices?.connection;
-    if (!connection || !api()?.state.storageReady)
-      throw Error('Insert an SD card and connect Chakshu for a full-quality snap.');
-    const transfer = new root.SynapChakshuTransfer.Client(connection),
-      saved = await transfer.savedPreview(),
-      receipt = await root.SynapChakshuV2.moveSD(saved.path);
-    if (!receipt?.visualId) throw Error('The snap could not be saved to the app.');
-    root.dispatchEvent?.(new CustomEvent('synap-visual-library-updated'));
-    return receipt.visualId;
+  function localMediaCommand(command) {
+    return command === PHOTO || command === VIDEO_START || command === AUDIO_ON || command === DESCRIBE;
   }
-  async function perform(incoming) {
-    const command = incoming.command;
-    if (command === PHOTO) return highQualitySnap();
-    if (command === VIDEO_START) return root.SynapChakshuV2.startOffline(0, 10);
-    if (command === VIDEO_STOP) return api().stop();
-    if (command === AUDIO_ON) return api().setAudio(true);
-    if (command === AUDIO_OFF) return api().setAudio(false);
-    if (command === DESCRIBE) return root.SynapChakshuV2.describeNow();
-    if (command >= DURATION_BASE && command <= DURATION_LAST) {
-      if (!Number.isInteger(incoming.value) || incoming.value < 1 || incoming.value > 600)
-        throw Error('Chakshu reported an invalid recording length.');
-      return root.SynapChakshuV2.startOffline(0, incoming.value);
-    }
-    throw Error('Unsupported local voice command.');
+  function perform(incoming) {
+    // Firmware owns capture. The app only observes the event and syncs durable SD media later.
+    return Promise.resolve({ local: true, command: incoming.command });
   }
   async function command(b, value) {
     if (!current(b) || document.visibilityState !== 'visible') return;
@@ -159,42 +135,18 @@
       notify();
       return;
     }
-    if (incoming.result !== 2) {
-      notify();
-      return;
-    }
     const label = commandLabel(incoming);
-    feedback(`Heard · ${label}`, 'heard', 3000);
-    if (b.queued >= 4) {
-      message = 'Voice commands are busy. Please try again.';
+    if (incoming.result === 1) {
+      message = `Could not start · ${label}`;
       feedback(message, 'error', 5000);
       notify();
       return;
     }
-    b.queued++;
-    const received = Date.now();
-    b.actions = b.actions
-      .then(async () => {
-        if (!current(b) || document.visibilityState !== 'visible' || Date.now() - received > 15000)
-          return;
-        try {
-          await perform(incoming);
-          if (current(b)) {
-            message = '';
-            feedback(`Done · ${label}`, 'success', 2500);
-          }
-        } catch (error) {
-          if (current(b)) {
-            message = error.message;
-            feedback(error.message, 'error', 5000);
-          }
-        } finally {
-          notify();
-        }
-      })
-      .finally(() => {
-        b.queued--;
-      });
+    message = '';
+    feedback(`Saved on Chakshu · ${label}`, incoming.result === 3 ? 'heard' : 'success', 3000);
+    if (localMediaCommand(incoming.command))
+      root.dispatchEvent?.(new CustomEvent('synap-chakshu-media-pending', { detail: incoming }));
+    notify();
   }
   async function sync() {
     const context = root.SynapDevices?.connection,
@@ -275,7 +227,7 @@
     }
   }
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice4',
+    revision: '1.0.0-chakshu-voice5',
     decode,
     label: commandLabel,
     perform,

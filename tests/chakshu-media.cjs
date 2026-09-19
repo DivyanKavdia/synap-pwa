@@ -489,3 +489,19 @@ test('video requests smaller frames while photo bytes, progress and cancellation
     'a cancelled video must not poison the next standalone photo',
   );
 });
+
+test('device voice media sync imports before deleting SD originals and companions',()=>{
+  const fs=require('node:fs'),path=require('node:path');
+  const media=fs.readFileSync(path.join(__dirname,'../devices/chakshu/media.js'),'utf8');
+  const voice=fs.readFileSync(path.join(__dirname,'../devices/chakshu/voice.js'),'utf8');
+  assert.match(media,/async function syncPendingSD\(\)/);
+  assert.match(media,/if \(!alreadyImported\) await importSD\(file\.path\)/);
+  assert.match(media,/await deleteSyncedSet\(file\.path\)/);
+  assert.match(media,/camera\(\)\.request\(17, 0, path\)/);
+  const deletion=media.slice(media.indexOf('async function deleteSyncedSet'));
+  assert(deletion.indexOf("path.replace(/mjpeg$/i, 'json')") < deletion.indexOf('await removeSyncedPath(path);'));
+  assert(deletion.indexOf("path.replace(/mjpeg$/i, 'wav')") < deletion.indexOf('await removeSyncedPath(path);'));
+  assert.match(voice,/Firmware owns capture\. The app only observes the event/);
+  assert.match(voice,/synap-chakshu-media-pending/);
+  assert.doesNotMatch(voice,/startOffline\(0, 10\)|describeNow\(\)|highQualitySnap/);
+});
