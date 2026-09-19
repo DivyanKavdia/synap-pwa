@@ -490,13 +490,17 @@ test('video requests smaller frames while photo bytes, progress and cancellation
   );
 });
 
-test('device voice media sync imports before deleting SD originals and companions',()=>{
+test('device voice media sync discovers SD media and only explicit move deletes verified originals',()=>{
   const fs=require('node:fs'),path=require('node:path');
   const media=fs.readFileSync(path.join(__dirname,'../devices/chakshu/media.js'),'utf8');
   const voice=fs.readFileSync(path.join(__dirname,'../devices/chakshu/voice.js'),'utf8');
-  assert.match(media,/async function syncPendingSD\(\)/);
-  assert.match(media,/if \(!alreadyImported\) await importSD\(file\.path\)/);
-  assert.match(media,/await deleteSyncedSet\(file\.path\)/);
+  const sync=media.slice(media.indexOf('async function syncPendingSD()'),media.indexOf('const apiObject'));
+  const move=media.slice(media.indexOf('async function moveSD('),media.indexOf('async function syncPendingSD()'));
+  assert.match(sync,/const files = await catalogue\(\)/);
+  assert.doesNotMatch(sync,/importSD\(|deleteSyncedSet\(/);
+  assert.match(move,/if \(!\(await imported\(\)\)\) await importSD\(path, progress\)/);
+  assert.match(move,/if \(!\(await imported\(\)\)\)[\s\S]*SD original was kept/);
+  assert.match(move,/await deleteSyncedSet\(path\)/);
   assert.match(media,/camera\(\)\.request\(17, 0, path\)/);
   const deletion=media.slice(media.indexOf('async function deleteSyncedSet'));
   assert(deletion.indexOf("path.replace(/mjpeg$/i, 'json')") < deletion.indexOf('await removeSyncedPath(path);'));
