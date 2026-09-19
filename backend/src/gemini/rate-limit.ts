@@ -1,4 +1,41 @@
+import { createHash } from 'node:crypto';
+
 const MAX_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * A provider wait at least this long is a daily or rolling-window quota,
+ * whatever the response called it. No per-minute limit is answered with an
+ * hour of backoff.
+ */
+export const LONG_QUOTA_MS = 60 * 60 * 1000;
+
+/** How widely a long shared wait is spread across the recordings it blocked. */
+const SPREAD_WINDOW_MS = 15 * 60 * 1000;
+
+/**
+ * Deterministic offset added to a long shared cooldown deadline.
+ *
+ * Every recording blocked by one model cooldown reads the same deadline, so
+ * without this they all wake inside the same second, spend whatever quota the
+ * window just released, and earn the next block. That is how a 13-hour wait
+ * became a 24-hour wait renewing itself every morning at 05:30.
+ *
+ * The offset is derived from the recording id rather than randomised. The
+ * stored processingFailure.retryAt is what actually keeps the Cloud Tasks dedup
+ * name stable across redeliveries, but a deterministic offset adds no new
+ * variance to it and keeps this testable.
+ *
+ * Short waits are left alone. Spreading a one-minute rate limit would only add
+ * latency to something that clears on its own.
+ */
+export function retrySpreadMs(
+  recordingId: string,
+  retryAfterMs: number,
+  windowMs = SPREAD_WINDOW_MS,
+): number {
+  if (!(retryAfterMs >= LONG_QUOTA_MS) || !(windowMs > 0)) return 0;
+  return createHash('sha256').update(recordingId).digest().readUInt32BE(0) % Math.ceil(windowMs);
+}
 
 export interface RateLimitAdvice {
   retryAfterMs: number;
@@ -128,12 +165,18 @@ export function rateLimitAdvice(
   } catch {
     /* A non-JSON provider response still receives conservative backoff. */
   }
+  const effective = Math.max(
+    retryAfterMs,
+    quotaKind === 'daily' ? pacificDailyResetDelayMs(now) : 60000,
+  );
   return {
-    quotaKind,
-    retryAfterMs: Math.max(
-      retryAfterMs,
-      quotaKind === 'daily' ? pacificDailyResetDelayMs(now) : 60000,
-    ),
+    // Relabel only after the timing is settled. Classifying earlier would let
+    // the Pacific-midnight floor stretch a shorter provider wait, and the
+    // point here is truthful logs, not a longer block: a 24-hour wait logged
+    // as quotaKind "unknown" is what sent us auditing our own arithmetic
+    // instead of the daily request limit that actually caused it.
+    quotaKind: quotaKind === 'unknown' && effective >= LONG_QUOTA_MS ? 'daily' : quotaKind,
+    retryAfterMs: effective,
   };
 }
 

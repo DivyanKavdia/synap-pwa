@@ -15,6 +15,7 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
+import { retrySpreadMs } from '../../gemini/rate-limit.js';
 import { processRecording, processingFailure } from '../../pipeline/process.js';
 import { enqueueProcessing } from '../../pipeline/queue.js';
 import * as db from '../../store/firestore.js';
@@ -66,7 +67,12 @@ export function taskRoutes(): Router {
           // Schedule durably before acknowledging this delivery. A quota wait
           // must not consume the queue's short transport-retry budget.
           const current = await db.getRecording(uid, recordingId);
-          const retryAt = current?.processingFailure?.retryAt || Date.now() + failure.retryAfterMs;
+          // A long wait is shared by every recording the model cooldown blocked.
+          // Spreading the wake-ups stops them draining the released quota in one
+          // burst and immediately earning the next block.
+          const retryAt =
+            current?.processingFailure?.retryAt ||
+            Date.now() + failure.retryAfterMs + retrySpreadMs(recordingId, failure.retryAfterMs);
           await enqueueProcessing(uid, recordingId, 'cooldown-' + Math.ceil(retryAt / 1000), retryAt);
           res.status(200).json({ state: 'deferred', retry_at: retryAt });
           return;
@@ -163,7 +169,9 @@ export function taskRoutes(): Router {
         const failure = processingFailure(cause);
         if (!rebuild && failure.retryable && failure.retryAfterMs) {
           const current = await db.getRecording(req.uid, recordingId);
-          const retryAt = current?.processingFailure?.retryAt || Date.now() + failure.retryAfterMs;
+          const retryAt =
+            current?.processingFailure?.retryAt ||
+            Date.now() + failure.retryAfterMs + retrySpreadMs(recordingId, failure.retryAfterMs);
           await enqueueProcessing(req.uid, recordingId, 'cooldown-' + Math.ceil(retryAt / 1000), retryAt);
         }
         throw cause;

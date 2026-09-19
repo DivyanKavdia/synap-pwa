@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createInteraction, GeminiError, modelFailure } from '../src/gemini/client.js';
-import { ModelCooldowns, pacificDailyResetDelayMs, rateLimitAdvice } from '../src/gemini/rate-limit.js';
+import { LONG_QUOTA_MS, ModelCooldowns, pacificDailyResetDelayMs, rateLimitAdvice, retrySpreadMs } from '../src/gemini/rate-limit.js';
 
 const details = (...entries: unknown[]) =>
   JSON.stringify({ error: { message: 'PRIVATE INPUT KEY', details: entries } });
@@ -148,4 +148,40 @@ test('a provider-specified long wait remains authoritative over exponential back
   assert.equal(gate.reject('stt', advice, 1000).retryAfterMs, 7200000);
   assert.equal(gate.reject('stt', { quotaKind: 'rate', retryAfterMs: 60000 }, 2000).retryAfterMs, 7199000);
   assert.equal(gate.remaining('stt', 2000)?.quotaKind, 'daily');
+});
+
+test('a long unknown wait is relabelled daily without changing its timing', () => {
+  const now = Date.parse('2026-09-19T00:00:00.000Z');
+  // The exact RetryInfo Gemini returned on 19 Sep: 49605s + 573ms, arriving
+  // with no QuotaFailure violation, so the classifier saw only "unknown".
+  const body = JSON.stringify({
+    error: { details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+      retryDelay: { seconds: '49605', nanos: 573000000 } }] },
+  });
+  const advice = rateLimitAdvice(null, body, now);
+  assert.equal(advice.retryAfterMs, 49605573, 'timing is still the provider value');
+  assert.equal(advice.quotaKind, 'daily', 'a 13-hour wait is not a per-minute limit');
+
+  // Short waits keep their honest "unknown" label and their own timing.
+  assert.deepEqual(rateLimitAdvice('120', 'not JSON', now), {
+    quotaKind: 'unknown', retryAfterMs: 120000,
+  });
+});
+
+test('long shared waits are spread per recording, short ones are not', () => {
+  const day = 24 * 60 * 60 * 1000;
+  assert.equal(retrySpreadMs('rec-a', 60000), 0, 'a one-minute wait is left alone');
+  assert.equal(retrySpreadMs('rec-a', LONG_QUOTA_MS - 1), 0);
+
+  const a = retrySpreadMs('rec-a', day);
+  const b = retrySpreadMs('rec-b', day);
+  for (const value of [a, b]) {
+    assert.ok(Number.isInteger(value) && value >= 0 && value < 15 * 60 * 1000);
+  }
+  assert.notEqual(a, b, 'two recordings must not wake in the same instant');
+  assert.equal(retrySpreadMs('rec-a', day), a, 'stable, so the Cloud Tasks dedup name is stable');
+
+  // The whole point: deadlines land across a window instead of on one second.
+  const spread = new Set(Array.from({ length: 200 }, (_, i) => retrySpreadMs('rec-' + i, day)));
+  assert.ok(spread.size > 150, 'spread should be well distributed, saw ' + spread.size);
 });
