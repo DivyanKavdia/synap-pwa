@@ -510,6 +510,20 @@ test('device voice media sync discovers SD media and only explicit move deletes 
   assert.doesNotMatch(voice,/startOffline\(0, 10\)|describeNow\(\)|highQualitySnap/);
 });
 
+test('automatic SD discovery backs off after a confirmed card failure and waits for readiness',()=>{
+  const fs=require('node:fs'),path=require('node:path');
+  const media=fs.readFileSync(path.join(__dirname,'../devices/chakshu/media.js'),'utf8');
+  const schedule=media.slice(media.indexOf('function schedulePendingSync'),media.indexOf('async function pollOffline'));
+  const sync=media.slice(media.indexOf('async function syncPendingSD()'),media.indexOf('const apiObject'));
+  const refresh=media.slice(media.indexOf('async function refreshSD()'),media.indexOf('function decodeWifi'));
+  assert.match(schedule,/!capabilities\.ready\(moduleInfo\(\), 'sd'\)/);
+  assert.match(schedule,/Date\.now\(\) < sdCatalogueBackoffUntil/);
+  assert.match(sync,/sdCatalogueBackoffUntil = Date\.now\(\) \+ 60000/);
+  assert.match(sync,/SynapModules\?\.refresh/);
+  assert.match(sync,/SD file unavailable\|SD write\\\/read failed\|SD card/);
+  assert.match(refresh,/sdCatalogueBackoffUntil = 0/);
+});
+
 test('SD-only Chakshu photo and video captures surface in the shared Library before transfer',()=> {
   const fs=require('node:fs'),path=require('node:path');
   const media=fs.readFileSync(path.join(__dirname,'../devices/chakshu/media.js'),'utf8');
