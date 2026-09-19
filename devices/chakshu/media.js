@@ -618,7 +618,7 @@
     const previous = new Map(sdFiles.map((file) => [file.path, file])),
       next = files.flatMap((file) => {
         const path = String(file?.path || ''), bytes = Number(file?.bytes);
-        if (!/^\\/synap\\/[a-f0-9]{8}-[a-f0-9]{8}\\.(jpg|wav|mjpeg)$/i.test(path) || !Number.isSafeInteger(bytes) || bytes < 0) return [];
+        if (!/^\/synap\/[a-f0-9]{8}-[a-f0-9]{8}\.(jpg|wav|mjpeg)$/i.test(path) || !Number.isSafeInteger(bytes) || bytes < 0) return [];
         return [{ path, bytes, seenAt: previous.get(path)?.seenAt || new Date().toISOString() }];
       }),
       before = JSON.stringify([sdFilesDeviceId, sdFiles.map((file) => [file.path, file.bytes])]),
@@ -847,7 +847,7 @@
   async function moveSD(path, progress) {
     const scope = requireAccess(), expected = scope.owner, deviceId = connected()?.deviceId;
     if (!deviceId) throw Error('Connect Chakshu before moving an SD capture.');
-    if (!/^\\/synap\\/[a-f0-9]{8}-[a-f0-9]{8}\\.(jpg|mjpeg)$/i.test(path)) throw Error('Only Chakshu photos and videos can be moved into this library.');
+    if (!/^\/synap\/[a-f0-9]{8}-[a-f0-9]{8}\.(jpg|mjpeg)$/i.test(path)) throw Error('Only Chakshu photos and videos can be moved into this library.');
     const sourceName = path.split('/').pop(), imported = async () => (await scope.store.list()).some((row) => row.deviceId === deviceId && row.sourceName === sourceName && row.state === 'saved');
     if (!(await imported())) await importSD(path, progress);
     check(expected);
