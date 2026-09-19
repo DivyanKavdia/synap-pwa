@@ -166,9 +166,21 @@
       notify();
       return;
     }
+    if (incoming.command === STOP) {
+      message = '';
+      feedback('Stopped on Chakshu', 'success', 2500);
+      notify();
+      return;
+    }
+    if (localMediaCommand(incoming.command) && incoming.result !== 3) {
+      message = `Queued on Chakshu · ${label}`;
+      feedback(message, 'heard', 2800);
+      notify();
+      return;
+    }
     message = '';
-    feedback(`Saved on Chakshu · ${label}`, incoming.result === 3 ? 'heard' : 'success', 3000);
-    if (localMediaCommand(incoming.command))
+    feedback(`Saved on Chakshu · ${label}`, 'success', 3500);
+    if (localMediaCommand(incoming.command) && incoming.result === 3)
       root.dispatchEvent?.(new CustomEvent('synap-chakshu-media-pending', { detail: incoming }));
     notify();
   }
@@ -294,7 +306,7 @@
     }
   }
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice6',
+    revision: '1.0.0-chakshu-voice7',
     decode,
     decodeDiagnostic,
     label: commandLabel,
