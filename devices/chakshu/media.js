@@ -493,6 +493,7 @@
   async function refreshSD() {
     if (root.SynapAppControls.recordingState().active)
       throw Error('Stop recording before checking the SD card.');
+    sdCatalogueBackoffUntil = 0;
     try {
       if (moduleInfo()?.mediaFeatures & 8)
         await operation(async (signal) => camera().request(14, 0, '', signal));
@@ -571,11 +572,18 @@
     } while (Date.now() < deadline);
     throw Error('Finishing the current download. Use Finish downloads on Chakshu’s download page.');
   }
-  let offlineTimer, autoSyncTimer, autoSyncPromise;
+  let offlineTimer, autoSyncTimer, autoSyncPromise, sdCatalogueBackoffUntil = 0;
   function schedulePendingSync(delayMs = 1200) {
     clearTimeout(autoSyncTimer);
     autoSyncTimer = null;
-    if (!owner || !connected() || !ready()) return;
+    if (
+      !owner ||
+      !connected() ||
+      !ready() ||
+      !capabilities.ready(moduleInfo(), 'sd') ||
+      Date.now() < sdCatalogueBackoffUntil
+    )
+      return;
     autoSyncTimer = setTimeout(() => {
       autoSyncTimer = null;
       syncPendingSD().catch((e) => {
@@ -859,7 +867,18 @@
   }
   async function syncPendingSD() {
     if (autoSyncPromise) return autoSyncPromise;
-    if (!owner || !connected() || !ready() || working || session || offline || wifi?.active) return 0;
+    if (
+      !owner ||
+      !connected() ||
+      !ready() ||
+      !capabilities.ready(moduleInfo(), 'sd') ||
+      Date.now() < sdCatalogueBackoffUntil ||
+      working ||
+      session ||
+      offline ||
+      wifi?.active
+    )
+      return 0;
     const expected = owner,
       deviceId = connected()?.deviceId;
     if (!deviceId) return 0;
@@ -867,10 +886,19 @@
     // represented in the shared Library until the user explicitly chooses
     // Move to app. moveSD() is the only path that may delete an SD original.
     autoSyncPromise = (async () => {
-      const files = await catalogue();
-      check(expected);
-      if (connected()?.deviceId !== deviceId) return 0;
-      return files.length;
+      try {
+        const files = await catalogue();
+        sdCatalogueBackoffUntil = 0;
+        check(expected);
+        if (connected()?.deviceId !== deviceId) return 0;
+        return files.length;
+      } catch (e) {
+        if (/SD file unavailable|SD write\/read failed|SD card/i.test(String(e?.message || ''))) {
+          sdCatalogueBackoffUntil = Date.now() + 60000;
+          await root.SynapModules?.refresh?.().catch(() => {});
+        }
+        throw e;
+      }
     })().finally(() => {
       autoSyncPromise = null;
     });
