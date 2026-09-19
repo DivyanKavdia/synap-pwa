@@ -956,7 +956,9 @@
   root.addEventListener('synap-gatt-disconnected', () => {
     context = null;
     transfer = null;
+    clearTimeout(sdSyncTimer);
     session?.controller.abort();
+    workController?.abort();
     notify();
   });
   root.addEventListener('online', () => {
