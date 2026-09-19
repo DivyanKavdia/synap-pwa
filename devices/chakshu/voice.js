@@ -49,15 +49,19 @@
     });
   }
   function decodeDiagnostic(value) {
+    const version = value?.byteLength >= 2 ? value.getUint8(1) : 0,
+      v1 = value?.byteLength === 20 && version === 1,
+      v2 = value?.byteLength === 44 && version === 2;
     if (
-      value?.byteLength !== 20 ||
+      (!v1 && !v2) ||
       value.getUint8(0) !== 0xce ||
-      value.getUint8(1) !== 1 ||
       value.getUint8(2) > 5 ||
-      !validCommand(value.getUint8(8))
+      !validCommand(value.getUint8(8)) ||
+      (v2 && !validCommand(value.getUint8(32)))
     )
       throw Error('Unsupported Chakshu voice diagnostic.');
-    return Object.freeze({
+    const base = {
+      diagnosticVersion: version,
       status: value.getUint8(2),
       enabled: Boolean(value.getUint8(3)),
       meanAbs: value.getUint16(4, true),
@@ -67,6 +71,20 @@
       candidateAtMs: value.getUint32(11, true),
       candidateCount: value.getUint32(15, true),
       active: Boolean(value.getUint8(19)),
+    };
+    if (!v2) return Object.freeze(base);
+    return Object.freeze({
+      ...base,
+      noiseFloor: value.getUint16(20, true),
+      speechThreshold: value.getUint16(22, true),
+      vadRun: value.getUint8(24),
+      holdActive: Boolean(value.getUint8(25)),
+      maxMeanAbs: value.getUint16(26, true),
+      vadOpenCount: value.getUint32(28, true),
+      acceptedCommand: value.getUint8(32),
+      acceptedConfidence: value.getUint16(33, true) / 1000,
+      acceptedAtMs: value.getUint32(35, true),
+      acceptedCount: value.getUint32(39, true),
     });
   }
   function commandLabel(incoming) {
@@ -253,8 +271,11 @@
           if (current(b)) {
             diagnostic = decodeDiagnostic(raw);
             const candidateLabel = diagnostic.candidate
-              ? commandLabel({ command: diagnostic.candidate })
-              : 'None';
+                ? commandLabel({ command: diagnostic.candidate })
+                : 'None',
+              acceptedLabel = diagnostic.acceptedCommand
+                ? commandLabel({ command: diagnostic.acceptedCommand })
+                : 'None';
             root.dispatchEvent?.(
               new CustomEvent('synap-voice-diagnostic', {
                 detail: {
@@ -262,6 +283,11 @@
                   ...diagnostic,
                   candidateLabel,
                   confidencePercent: Math.round(diagnostic.confidence * 100),
+                  acceptedLabel,
+                  acceptedConfidencePercent:
+                    diagnostic.acceptedConfidence == null
+                      ? null
+                      : Math.round(diagnostic.acceptedConfidence * 100),
                 },
               }),
             );
@@ -301,7 +327,7 @@
     }
   }
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice8',
+    revision: '1.0.0-chakshu-voice9',
     decode,
     decodeDiagnostic,
     label: commandLabel,
