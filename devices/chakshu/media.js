@@ -5,6 +5,7 @@
   const capabilities = root.SynapCapabilities;
   const moduleInfo = () => root.SynapModules?.client?.module;
   const CACHE = 'synap-account-chakshu-v1:';
+  const SD_ACK_CACHE = 'synap-chakshu-sd-imported-v1:';
   const uid = () => String(root.SynapAuth?.session?.()?.profile?.uid || '');
   const delay = (ms) => new Promise((resolve) => root.setTimeout(resolve, ms));
   let owner = '',
@@ -21,7 +22,9 @@
   let offlineStatus = null,
     wifi = null,
     wifiTimer,
-    wifiPoll = null;
+    wifiPoll = null,
+    sdSyncTimer = null,
+    sdSyncPromise = null;
   const controllers = new Set();
   let workController = null;
   let associatedConnection = null;
@@ -178,6 +181,7 @@
           !working
         )
           pollOffline();
+        queueSDSync(2000);
       }
     }
   }
@@ -599,7 +603,7 @@
       return files;
     });
   }
-  async function importAudio(blob, deviceId, scope, onBegin, localOnly = false) {
+  async function importAudio(blob, deviceId, scope, onBegin, localOnly = false, sourcePath = '') {
     const bytes = new Uint8Array(await blob.arrayBuffer()),
       view = new DataView(bytes.buffer);
     const text = (at, n) => new TextDecoder().decode(bytes.subarray(at, at + n));
@@ -624,6 +628,7 @@
         rollingTranscription: true,
         transcriptionWindowSeconds: 30,
         uploadAudioProcessing: 'none',
+        ...(sourcePath ? { sourcePath } : {}),
       }),
     });
     const id = await journal.begin(
@@ -653,7 +658,7 @@
       throw e;
     }
   }
-  async function importFilesNow(files, deviceId = devices[0]?.deviceId) {
+  async function importFilesNow(files, deviceId = devices[0]?.deviceId, sourcePath = '') {
     const scope = requireAccess();
     let count = 0;
     for (const file of files) {
@@ -691,6 +696,7 @@
         localOnly: true,
         timingEstimated: !image && !timing,
         sourceName: file.name,
+        ...(sourcePath ? { sourcePath } : {}),
         ...(!image &&
         timing &&
         Number.isInteger(timing.width) &&
@@ -747,7 +753,7 @@
       )
         continue;
       if (file.size > MAX_VIDEO_BYTES) throw Error('Import audio files up to 32 MiB each.');
-      await importAudio(file, deviceId, scope, async () => {});
+      await importAudio(file, deviceId, scope, async () => {}, false, sourcePath);
       count++;
     }
     if (!count)
@@ -755,30 +761,125 @@
     notify();
     return count;
   }
-  async function importSD(path, progress) {
-    return operation(async (signal) => {
-      const scope = requireAccess(),
-        client = camera(),
-        files = [];
-      const deviceId = connected().deviceId;
-      const add = async (name) => {
-        const blob = await client.file(name, signal, progress);
-        files.push(new File([blob], name.split('/').pop()));
-      };
-      await add(path);
+  function sdAckKey(deviceId) {
+    return SD_ACK_CACHE + owner + ':' + deviceId;
+  }
+  function readSdAcks(deviceId) {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(sdAckKey(deviceId)) || '[]'));
+    } catch (_) {
+      return new Set();
+    }
+  }
+  function writeSdAcks(deviceId, values) {
+    if (values.size) localStorage.setItem(sdAckKey(deviceId), JSON.stringify([...values]));
+    else localStorage.removeItem(sdAckKey(deviceId));
+  }
+  async function importSDNow(path, signal, progress) {
+    const scope = requireAccess(),
+      client = camera(),
+      deviceId = connected().deviceId,
+      acknowledged = readSdAcks(deviceId);
+    if (acknowledged.has(path)) {
+      await client.remove(path, signal);
+      acknowledged.delete(path);
+      writeSdAcks(deviceId, acknowledged);
+      return 0;
+    }
+    if (/\.(jpg|mjpeg)$/i.test(path)) {
+      const rows = await scope.store.list();
       check(scope.owner);
-      if (path.endsWith('.mjpeg')) {
-        for (const extension of ['json', 'wav']) {
-          try {
-            await add(path.replace(/mjpeg$/, extension));
-          } catch (e) {
-            if (!/SD file unavailable/.test(e.message)) throw e;
-          }
+      if (rows.some((row) => row.state === 'saved' && row.sourcePath === path)) {
+        acknowledged.add(path);
+        writeSdAcks(deviceId, acknowledged);
+        await client.remove(path, signal);
+        acknowledged.delete(path);
+        writeSdAcks(deviceId, acknowledged);
+        return 0;
+      }
+    }
+    const files = [];
+    const add = async (name) => {
+      const blob = await client.file(name, signal, progress);
+      files.push(new File([blob], name.split('/').pop()));
+    };
+    await add(path);
+    check(scope.owner);
+    if (path.endsWith('.mjpeg')) {
+      for (const extension of ['json', 'wav']) {
+        try {
+          await add(path.replace(/mjpeg$/, extension));
+        } catch (e) {
+          if (!/SD file unavailable/.test(e.message)) throw e;
         }
       }
-      check(scope.owner);
-      return importFilesNow(files, deviceId);
-    });
+    }
+    check(scope.owner);
+    const count = await importFilesNow(files, deviceId, path);
+    check(scope.owner);
+    acknowledged.add(path);
+    writeSdAcks(deviceId, acknowledged);
+    try {
+      await client.remove(path, signal);
+      acknowledged.delete(path);
+      writeSdAcks(deviceId, acknowledged);
+    } catch (_) {
+      error = 'Media is safely in the library; SD cleanup will retry on the next connection.';
+    }
+    return count;
+  }
+  async function importSD(path, progress) {
+    return operation((signal) => importSDNow(path, signal, progress));
+  }
+  function queueSDSync(delayMs = 1500) {
+    clearTimeout(sdSyncTimer);
+    if (!ready() || !connected()) return;
+    sdSyncTimer = setTimeout(() => autoSyncSD().catch(() => {}), Math.max(250, delayMs));
+  }
+  async function autoSyncSD() {
+    if (sdSyncPromise) return sdSyncPromise;
+    if (
+      document.visibilityState !== 'visible' ||
+      !ready() ||
+      !connected() ||
+      !capabilities.ready(moduleInfo(), 'sd') ||
+      working ||
+      session ||
+      offline ||
+      wifi?.active
+    )
+      return;
+    const expected = owner,
+      deviceId = connected().deviceId;
+    sdSyncPromise = operation(async (signal) => {
+      const files = await camera().catalogue(signal);
+      if (!Array.isArray(files)) throw Error('Invalid SD catalogue.');
+      for (const file of files) {
+        check(expected);
+        if (connected()?.deviceId !== deviceId || signal.aborted) break;
+        if (!/^\/synap\/[a-f0-9]{8}-[a-f0-9]{8}\.(jpg|mjpeg|wav)$/.test(file.path)) continue;
+        await importSDNow(file.path, signal, (fraction, totalBytes) => {
+          transferProgress = {
+            percent: Math.floor(fraction * 100),
+            totalBytes,
+            receivedBytes: Math.round(fraction * totalBytes),
+          };
+          notify();
+        });
+      }
+      transferProgress = null;
+      notify();
+    })
+      .catch((e) => {
+        if (owner === expected && e?.name !== 'AbortError') error = e.message;
+      })
+      .finally(() => {
+        sdSyncPromise = null;
+        transferProgress = null;
+        notify();
+        if (owner === expected && connected()?.deviceId === deviceId) queueSDSync(15000);
+      });
+    return sdSyncPromise;
   }
   const apiObject = {
     sync,
@@ -794,6 +895,8 @@
     describe,
     catalogue,
     importSD,
+    autoSyncSD,
+    queueSDSync,
     importFiles: (files, deviceId) => operation(() => importFilesNow(files, deviceId)),
     pollOffline,
     get state() {
@@ -847,6 +950,7 @@
       sync();
     }
     if (next && wifi?.active && !working) pollWifi();
+    if (next && !wifi?.active) queueSDSync(2000);
     notify();
   });
   root.addEventListener('synap-gatt-disconnected', () => {
@@ -855,7 +959,13 @@
     session?.controller.abort();
     notify();
   });
-  root.addEventListener('online', sync);
+  root.addEventListener('online', () => {
+    sync();
+    queueSDSync(1000);
+  });
+  root.document?.addEventListener?.('visibilitychange', () => {
+    if (document.visibilityState === 'visible') queueSDSync(1000);
+  });
   root.SynapAuth?.onChange(sync);
   sync();
 })(globalThis);
