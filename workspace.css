@@ -61,7 +61,7 @@ body.synap-refresh .topbar {
   border-bottom: 1px solid var(--border);
   background: var(--chrome);
 }
-body.synap-refresh .topbar > :is(#recordingSessionBar, .header-media-notice) {
+body.synap-refresh .topbar > :is(#recordingSessionBar, .header-media-notice, .hey-synap-feedback) {
   grid-column: 1 / -1;
 }
 body.synap-refresh .brand-logo.synap-brand-image {
@@ -1175,4 +1175,17 @@ body.synap-refresh :is(#myActions, #actionFocus) .synap-follow-edit {
     top: calc(env(safe-area-inset-top) + 68px);
     font-size: 12px;
   }
+}
+
+/* Voice feedback belongs to the header flow so it never obscures app content. */
+body.synap-refresh .topbar > .hey-synap-feedback {
+  position: static;
+  z-index: 1;
+  top: auto;
+  left: auto;
+  transform: none;
+  justify-self: center;
+  width: fit-content;
+  max-width: min(100%, 420px);
+  margin: -2px auto 0;
 }

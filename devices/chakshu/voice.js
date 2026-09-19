@@ -166,9 +166,21 @@
       notify();
       return;
     }
+    if (incoming.command === STOP) {
+      message = '';
+      feedback('Stopped on Chakshu', 'success', 2500);
+      notify();
+      return;
+    }
+    if (localMediaCommand(incoming.command) && incoming.result !== 3) {
+      message = `Queued on Chakshu · ${label}`;
+      feedback(message, 'heard', 2800);
+      notify();
+      return;
+    }
     message = '';
-    feedback(`Saved on Chakshu · ${label}`, incoming.result === 3 ? 'heard' : 'success', 3000);
-    if (localMediaCommand(incoming.command))
+    feedback(`Saved on Chakshu · ${label}`, 'success', 3500);
+    if (localMediaCommand(incoming.command) && incoming.result === 3)
       root.dispatchEvent?.(new CustomEvent('synap-chakshu-media-pending', { detail: incoming }));
     notify();
   }
@@ -253,13 +265,8 @@
                 },
               }),
             );
-            if (diagnostic.candidateCount !== before && diagnostic.candidate) {
-              feedback(
-                `Voice candidate · ${candidateLabel} · ${Math.round(diagnostic.confidence * 100)}%`,
-                'heard',
-                2200,
-              );
-            }
+            // Candidate scores are diagnostic-only. User-facing feedback is reserved
+            // for accepted wake/command events so model exploration cannot obscure the UI.
           }
         }
       } else await write(b, 3);
@@ -294,7 +301,7 @@
     }
   }
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice6',
+    revision: '1.0.0-chakshu-voice8',
     decode,
     decodeDiagnostic,
     label: commandLabel,

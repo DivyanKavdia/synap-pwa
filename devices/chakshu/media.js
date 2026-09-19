@@ -17,7 +17,9 @@
     transfer = null,
     context = null,
     accountPending = false;
-  let transferProgress = null;
+  let transferProgress = null,
+    sdFiles = [],
+    sdFilesDeviceId = '';
   let offlineStatus = null,
     wifi = null,
     wifiTimer,
@@ -117,6 +119,8 @@
       offline = false;
       offlineStatus = null;
       wifi = null;
+      sdFiles = [];
+      sdFilesDeviceId = '';
       clearTimeout(wifiTimer);
       clearTimeout(offlineTimer);
       clearTimeout(autoSyncTimer);
@@ -609,11 +613,36 @@
     if (offline && connected()) offlineTimer = setTimeout(pollOffline, 2000);
     else if (connected()) schedulePendingSync(300);
   }
+  function rememberCatalogue(files, deviceId) {
+    if (!Array.isArray(files)) throw Error('Invalid SD catalogue.');
+    const previous = new Map(sdFiles.map((file) => [file.path, file])),
+      next = files.flatMap((file) => {
+        const path = String(file?.path || ''), bytes = Number(file?.bytes);
+        if (!/^\/synap\/[a-f0-9]{8}-[a-f0-9]{8}\.(jpg|wav|mjpeg)$/i.test(path) || !Number.isSafeInteger(bytes) || bytes < 0) return [];
+        return [{ path, bytes, seenAt: previous.get(path)?.seenAt || new Date().toISOString() }];
+      }),
+      before = JSON.stringify([sdFilesDeviceId, sdFiles.map((file) => [file.path, file.bytes])]),
+      after = JSON.stringify([deviceId || '', next.map((file) => [file.path, file.bytes])]);
+    sdFiles = next;
+    sdFilesDeviceId = deviceId || '';
+    if (before !== after) {
+      notify();
+      root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
+    }
+    return sdFiles.slice();
+  }
+  function forgetSDPath(path) {
+    const before = sdFiles.length;
+    sdFiles = sdFiles.filter((file) => file.path !== path);
+    if (sdFiles.length !== before) {
+      notify();
+      root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
+    }
+  }
   async function catalogue() {
     return operation(async (signal) => {
-      const files = await camera().catalogue(signal);
-      if (!Array.isArray(files)) throw Error('Invalid SD catalogue.');
-      return files;
+      const deviceId = connected()?.deviceId || '', files = await camera().catalogue(signal);
+      return rememberCatalogue(files, deviceId);
     });
   }
   async function importAudio(blob, deviceId, scope, onBegin, localOnly = false) {
@@ -813,43 +842,35 @@
       await removeSyncedPath(path.replace(/mjpeg$/i, 'wav'), true);
     }
     await removeSyncedPath(path);
+    forgetSDPath(path);
+  }
+  async function moveSD(path, progress) {
+    const scope = requireAccess(), expected = scope.owner, deviceId = connected()?.deviceId;
+    if (!deviceId) throw Error('Connect Chakshu before moving an SD capture.');
+    if (!/^\/synap\/[a-f0-9]{8}-[a-f0-9]{8}\.(jpg|mjpeg)$/i.test(path)) throw Error('Only Chakshu photos and videos can be moved into this library.');
+    const sourceName = path.split('/').pop(), imported = async () => (await scope.store.list()).some((row) => row.deviceId === deviceId && row.sourceName === sourceName && row.state === 'saved');
+    if (!(await imported())) await importSD(path, progress);
+    check(expected);
+    if (connected()?.deviceId !== deviceId) throw Error('Chakshu connection changed before the SD original could be cleared.');
+    if (!(await imported())) throw Error('The capture was not verified in the app. The SD original was kept.');
+    await deleteSyncedSet(path);
+    root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
+    return sourceName;
   }
   async function syncPendingSD() {
     if (autoSyncPromise) return autoSyncPromise;
     if (!owner || !connected() || !ready() || working || session || offline || wifi?.active) return 0;
     const expected = owner,
-      device = connected(),
-      deviceId = device?.deviceId;
+      deviceId = connected()?.deviceId;
     if (!deviceId) return 0;
+    // Background sync is discovery-only. SD media remains on Chakshu and is
+    // represented in the shared Library until the user explicitly chooses
+    // Move to app. moveSD() is the only path that may delete an SD original.
     autoSyncPromise = (async () => {
       const files = await catalogue();
-      let count = 0;
-      for (const file of files) {
-        check(expected);
-        if (
-          connected()?.deviceId !== deviceId ||
-          working ||
-          session ||
-          offline ||
-          wifi?.active
-        )
-          break;
-        const sourceName = file.path.split('/').pop(),
-          rows = await store.list(),
-          alreadyImported = rows.some(
-            (row) =>
-              row.deviceId === deviceId &&
-              row.sourceName === sourceName &&
-              row.state === 'saved',
-          );
-        if (!alreadyImported) await importSD(file.path);
-        check(expected);
-        if (connected()?.deviceId !== deviceId) break;
-        await deleteSyncedSet(file.path);
-        count++;
-      }
-      if (count) root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
-      return count;
+      check(expected);
+      if (connected()?.deviceId !== deviceId) return 0;
+      return files.length;
     })().finally(() => {
       autoSyncPromise = null;
     });
@@ -869,6 +890,7 @@
     describe,
     catalogue,
     importSD,
+    moveSD,
     syncPendingSD,
     importFiles: (files, deviceId) => operation(() => importFilesNow(files, deviceId)),
     pollOffline,
@@ -886,6 +908,8 @@
           capabilities.canCapture(moduleInfo(), 'video', true),
         sdProfilesSupported: Boolean(moduleInfo()?.mediaFeatures & 16),
         storageReady: capabilities.hasMedia(moduleInfo()) && capabilities.ready(moduleInfo(), 'sd'),
+        sdFiles: sdFiles.slice(),
+        sdFilesDeviceId,
         mediaSupported: capabilities.hasMedia(moduleInfo()),
         voiceSupported: false,
         devices,
@@ -911,6 +935,11 @@
   root.addEventListener('synap-module-changed', () => {
     const next = connected();
     const deviceId = root.SynapDevices?.connection?.deviceId;
+    if (sdFilesDeviceId && deviceId && sdFilesDeviceId !== deviceId) {
+      sdFiles = [];
+      sdFilesDeviceId = '';
+      root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
+    }
     if (wifi?.deviceId && deviceId && wifi.deviceId !== deviceId) {
       wifi = null;
       clearTimeout(wifiTimer);

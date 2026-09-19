@@ -22,6 +22,12 @@
   function status(message) {
     $('visualStatus').textContent = message || '';
   }
+  function byteLabel(value) {
+    const bytes = Math.max(0, Number(value) || 0);
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
   function sdQuality(info) {
     if (!info?.width || !info?.height) return '';
     const fps =
@@ -419,17 +425,41 @@
       store = api().store;
     if (!state.available || !store) return [];
     const rows = await store.list();
-    if (store !== api().store || state.owner !== api().state.owner || !api().state.available)
-      return [];
-    return rows.map((row) => ({
-      ...row,
-      id: 'visual:' + row.id,
-      mediaId: row.id,
-      mediaKind: row.kind,
-      localOnly: true,
-      sealed: row.state !== 'capturing',
-      status: row.state === 'capturing' ? 'recording' : 'saved',
-    }));
+    if (store !== api().store || state.owner !== api().state.owner || !api().state.available) return [];
+    const local = rows.map((row) => ({
+        ...row,
+        id: 'visual:' + row.id,
+        mediaId: row.id,
+        mediaKind: row.kind,
+        localOnly: true,
+        sealed: row.state !== 'capturing',
+        status: row.state === 'capturing' ? 'recording' : 'saved',
+      })),
+      imported = new Set(rows.filter((row) => row.state === 'saved' && row.sourceName).map((row) => row.sourceName)),
+      sd = (state.sdFiles || [])
+        .filter((file) => /\\.(jpg|mjpeg)$/i.test(file.path) && !imported.has(file.path.split('/').pop()))
+        .map((file) => {
+          const sourceName = file.path.split('/').pop(), mediaId = 'sd:' + encodeURIComponent(file.path), video = /\.mjpeg$/i.test(file.path);
+          return {
+            id: 'visual:' + mediaId,
+            mediaId,
+            mediaKind: video ? 'video' : 'image',
+            kind: video ? 'video' : 'image',
+            ownerUid: state.owner,
+            deviceId: state.sdFilesDeviceId || null,
+            name: sourceName,
+            sourceName,
+            sourcePath: file.path,
+            byteSize: file.bytes,
+            createdAt: file.seenAt || new Date().toISOString(),
+            localOnly: true,
+            sealed: true,
+            status: 'saved',
+            state: 'sd-only',
+            sdOnly: true,
+          };
+        });
+    return local.concat(sd);
   }
   function disposeCard(card) {
     card.querySelectorAll?.('.library-media-card').forEach(disposeCard);
@@ -439,14 +469,20 @@
   }
   function updateCard(card, row) {
     card.synapRecording = row;
-    const title = row.name || (row.mediaKind === 'video' ? 'Video' : 'Photo');
+    const title = row.name || (row.mediaKind === 'video' ? 'Video' : 'Photo'),
+      opener = card.querySelector('.library-media-open'), image = card.querySelector('img'), preview = card.querySelector('.recording-row-preview');
     card.querySelector('.recording-row-name').textContent = title;
-    card
-      .querySelector('.library-media-open')
-      .setAttribute(
-        'aria-label',
-        (row.mediaKind === 'video' ? 'Play video: ' : 'Open photo: ') + title,
-      );
+    if (row.sdOnly) {
+      opener.setAttribute('aria-label', 'Move to app: ' + title);
+      card.querySelector('.recording-row-meta').textContent = (row.mediaKind === 'video' ? 'Video' : 'Photo') + ' · On Chakshu SD · ' + byteLabel(row.byteSize);
+      preview.textContent = 'Move to app';
+      preview.hidden = false;
+      disposeCard(card);
+      image.removeAttribute('src');
+      image.hidden = true;
+      return;
+    }
+    opener.setAttribute('aria-label', (row.mediaKind === 'video' ? 'Play video: ' : 'Open photo: ') + title);
     card.querySelector('.recording-row-meta').textContent =
       (row.mediaKind === 'video'
         ? 'Video · ' + ((row.durationMs || 0) / 1000).toFixed(1) + ' s'
@@ -461,7 +497,6 @@
       (row.favourite ? ' · Favourite' : '') +
       (row.audioId ? ' · with audio' : '') +
       (row.state === 'interrupted' ? ' · interrupted' : '');
-    const preview = card.querySelector('.recording-row-preview');
     preview.textContent = row.notes || '';
     preview.hidden = !row.notes;
     const key = row.ownerUid + ':' + row.mediaId + ':' + Boolean(row.frameCount);
@@ -510,13 +545,22 @@
       copy.append(part);
     }
     opener.append(image, copy);
-    opener.addEventListener('click', () => action(() => open(row.mediaId)));
+    opener.addEventListener('click', () => action(async () => {
+      const item = card.synapRecording;
+      if (item?.sdOnly) {
+        await api().moveSD(item.sourcePath, (progress) => status('Moving from Chakshu SD · ' + Math.round(progress * 100) + '%'));
+        await render();
+        return 'Moved to app.';
+      }
+      return open(item.mediaId);
+    }));
     header.append(opener);
     card.append(header);
     updateCard(card, row);
     return card;
   }
   async function remove(id, expectedOwner) {
+    if (String(id).startsWith('sd:')) throw Error('Move this SD capture to the app before deleting it.');
     const state = api().state,
       store = api().store;
     if (!store || !state.available || state.owner !== expectedOwner)
