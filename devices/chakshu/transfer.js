@@ -373,6 +373,11 @@
         return JSON.parse(await blob.text());
       });
     }
+    remove(path, signal) {
+      if (!/^\/synap\/[a-f0-9]{8}-[a-f0-9]{8}\.(jpg|wav|mjpeg|json)$/.test(path))
+        throw Error('Invalid SD path.');
+      return this.serialize(() => this._request(17, 0, path, signal));
+    }
   }
   root.SynapChakshuTransfer = { Client, MediaWindow, decode, revision: '1.0.0-chakshu-core14' };
   if (typeof module !== 'undefined') module.exports = root.SynapChakshuTransfer;
