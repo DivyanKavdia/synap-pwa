@@ -52,3 +52,28 @@ test('decodes Hey Snap classifier and microphone diagnostics',()=>{
   assert.equal(d.confidence,0.612);assert.equal(d.candidateCount,7);assert.equal(d.active,true);
   assert.throws(()=>voice.decodeDiagnostic(new DataView(new Uint8Array(19).buffer)),/Unsupported/);
 });
+
+
+function diagnosticPacketV2({
+  status=1,enabled=true,meanAbs=120,peak=500,candidate=3,confidence=910,at=456,count=12,active=true,
+  noiseFloor=180,speechThreshold=440,vadRun=2,holdActive=true,maxMeanAbs=720,vadOpenCount=4,
+  acceptedCommand=1,acceptedConfidence=930,acceptedAt=444,acceptedCount=2
+}={}){
+  const bytes=new Uint8Array(44),view=new DataView(bytes.buffer);
+  bytes[0]=0xce;bytes[1]=2;bytes[2]=status;bytes[3]=enabled?1:0;
+  view.setUint16(4,meanAbs,true);view.setUint16(6,peak,true);bytes[8]=candidate;
+  view.setUint16(9,confidence,true);view.setUint32(11,at,true);view.setUint32(15,count,true);bytes[19]=active?1:0;
+  view.setUint16(20,noiseFloor,true);view.setUint16(22,speechThreshold,true);bytes[24]=vadRun;bytes[25]=holdActive?1:0;
+  view.setUint16(26,maxMeanAbs,true);view.setUint32(28,vadOpenCount,true);bytes[32]=acceptedCommand;
+  view.setUint16(33,acceptedConfidence,true);view.setUint32(35,acceptedAt,true);view.setUint32(39,acceptedCount,true);
+  return view;
+}
+test('decodes v2 VAD and accepted-command diagnostics while preserving v1',()=>{
+  const voice=load(),d=voice.decodeDiagnostic(diagnosticPacketV2());
+  assert.equal(d.diagnosticVersion,2);
+  assert.equal(d.noiseFloor,180);assert.equal(d.speechThreshold,440);assert.equal(d.vadRun,2);assert.equal(d.holdActive,true);
+  assert.equal(d.maxMeanAbs,720);assert.equal(d.vadOpenCount,4);
+  assert.equal(d.acceptedCommand,1);assert.equal(d.acceptedConfidence,0.93);assert.equal(d.acceptedAtMs,444);assert.equal(d.acceptedCount,2);
+  assert.equal(voice.decodeDiagnostic(diagnosticPacket()).diagnosticVersion,1);
+  assert.throws(()=>voice.decodeDiagnostic(diagnosticPacketV2({acceptedCommand:20})),/Unsupported/);
+});
