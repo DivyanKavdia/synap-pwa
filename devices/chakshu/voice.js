@@ -47,7 +47,7 @@
     });
   }
   function commandLabel(incoming) {
-    if (incoming.command === WAKE) return 'Hey Snap';
+    if (incoming.command === WAKE) return 'Hi ESP';
     if (incoming.command === PHOTO) return 'Take a snap';
     if (incoming.command === VIDEO_START) return 'Record a video';
     if (incoming.command === VIDEO_STOP) return 'Stop video';
@@ -131,7 +131,7 @@
     }
     if (incoming.command === WAKE) {
       message = 'Listening for command…';
-      feedback('Hey Snap · Listening for command…', 'listening', 8200);
+      feedback('Hi ESP · Listening for command…', 'listening', 5200);
       notify();
       return;
     }
@@ -185,7 +185,7 @@
           }
         });
         b.events.addEventListener('characteristicvaluechanged', b.handler);
-        await context.mediaQueue(() => b.events.startNotifications(), 'Listen for Hey Snap commands');
+        await context.mediaQueue(() => b.events.startNotifications(), 'Listen for Chakshu voice commands');
         b.started = true;
       }
       const b = binding;
