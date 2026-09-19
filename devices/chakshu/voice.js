@@ -265,13 +265,8 @@
                 },
               }),
             );
-            if (diagnostic.candidateCount !== before && diagnostic.candidate) {
-              feedback(
-                `Voice candidate · ${candidateLabel} · ${Math.round(diagnostic.confidence * 100)}%`,
-                'heard',
-                2200,
-              );
-            }
+            // Candidate scores are diagnostic-only. User-facing feedback is reserved
+            // for accepted wake/command events so model exploration cannot obscure the UI.
           }
         }
       } else await write(b, 3);
@@ -306,7 +301,7 @@
     }
   }
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice7',
+    revision: '1.0.0-chakshu-voice8',
     decode,
     decodeDiagnostic,
     label: commandLabel,
