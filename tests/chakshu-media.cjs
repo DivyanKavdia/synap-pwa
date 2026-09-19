@@ -489,3 +489,24 @@ test('video requests smaller frames while photo bytes, progress and cancellation
     'a cancelled video must not poison the next standalone photo',
   );
 });
+
+test('verified SD cleanup uses operation 17 and rejects paths outside the Synap capture namespace', async () => {
+  const writes=[];
+  let last;
+  const client=new Client({
+    queue:(action)=>action(),
+    service:{
+      getCharacteristic:async(uuid)=>uuid.includes('354-')?{
+        properties:{write:true},
+        writeValueWithResponse:async(bytes)=>{
+          const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+          last={op:bytes[1],id:view.getUint32(2,true),path:new TextDecoder().decode(bytes.slice(10))};
+          writes.push(last);
+        }
+      }:{readValue:async()=>response(last.id,0,0)}
+    }
+  });
+  await client.remove('/synap/abcdef01-00000001.mjpeg');
+  assert.deepEqual(writes,[{op:17,id:1,path:'/synap/abcdef01-00000001.mjpeg'}]);
+  await assert.rejects(client.remove('/photos/not-synap.jpg'),/Invalid SD path/);
+});
