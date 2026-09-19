@@ -119,6 +119,7 @@
       wifi = null;
       clearTimeout(wifiTimer);
       clearTimeout(offlineTimer);
+      clearTimeout(autoSyncTimer);
       owner = next;
       devices = [];
       store = next ? new Store(next) : null;
@@ -566,14 +567,29 @@
     } while (Date.now() < deadline);
     throw Error('Finishing the current download. Use Finish downloads on Chakshu’s download page.');
   }
-  let offlineTimer;
+  let offlineTimer, autoSyncTimer, autoSyncPromise;
+  function schedulePendingSync(delayMs = 1200) {
+    clearTimeout(autoSyncTimer);
+    autoSyncTimer = null;
+    if (!owner || !connected() || !ready()) return;
+    autoSyncTimer = setTimeout(() => {
+      autoSyncTimer = null;
+      syncPendingSD().catch((e) => {
+        if (owner) {
+          error = e.message;
+          notify();
+        }
+      });
+    }, delayMs);
+  }
   async function pollOffline() {
     clearTimeout(offlineTimer);
     const expected = owner;
     try {
       const response = await camera().request(9);
       check(expected);
-      const state = JSON.parse(new TextDecoder().decode(response.bytes));
+      const state = JSON.parse(new TextDecoder().decode(response.bytes)),
+        wasOffline = offline;
       offline = state.active;
       offlineStatus = state;
       if (state.error)
@@ -591,6 +607,7 @@
       notify();
     }
     if (offline && connected()) offlineTimer = setTimeout(pollOffline, 2000);
+    else if (connected()) schedulePendingSync(300);
   }
   async function catalogue() {
     return operation(async (signal) => {
@@ -780,6 +797,64 @@
       return importFilesNow(files, deviceId);
     });
   }
+  async function removeSyncedPath(path, optional = false) {
+    try {
+      await camera().request(17, 0, path);
+      return true;
+    } catch (e) {
+      if (optional) return false;
+      throw e;
+    }
+  }
+  async function deleteSyncedSet(path) {
+    // Delete companions first so a failed final delete cannot expose a video WAV as a new audio item.
+    if (/\.mjpeg$/i.test(path)) {
+      await removeSyncedPath(path.replace(/mjpeg$/i, 'json'), true);
+      await removeSyncedPath(path.replace(/mjpeg$/i, 'wav'), true);
+    }
+    await removeSyncedPath(path);
+  }
+  async function syncPendingSD() {
+    if (autoSyncPromise) return autoSyncPromise;
+    if (!owner || !connected() || !ready() || working || session || offline || wifi?.active) return 0;
+    const expected = owner,
+      device = connected(),
+      deviceId = device?.deviceId;
+    if (!deviceId) return 0;
+    autoSyncPromise = (async () => {
+      const files = await catalogue();
+      let count = 0;
+      for (const file of files) {
+        check(expected);
+        if (
+          connected()?.deviceId !== deviceId ||
+          working ||
+          session ||
+          offline ||
+          wifi?.active
+        )
+          break;
+        const sourceName = file.path.split('/').pop(),
+          rows = await store.list(),
+          alreadyImported = rows.some(
+            (row) =>
+              row.deviceId === deviceId &&
+              row.sourceName === sourceName &&
+              row.state === 'saved',
+          );
+        if (!alreadyImported) await importSD(file.path);
+        check(expected);
+        if (connected()?.deviceId !== deviceId) break;
+        await deleteSyncedSet(file.path);
+        count++;
+      }
+      if (count) root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
+      return count;
+    })().finally(() => {
+      autoSyncPromise = null;
+    });
+    return autoSyncPromise;
+  }
   const apiObject = {
     sync,
     photo,
@@ -794,6 +869,7 @@
     describe,
     catalogue,
     importSD,
+    syncPendingSD,
     importFiles: (files, deviceId) => operation(() => importFilesNow(files, deviceId)),
     pollOffline,
     get state() {
@@ -847,13 +923,20 @@
       sync();
     }
     if (next && wifi?.active && !working) pollWifi();
+    if (next && !wifi?.active) schedulePendingSync(1200);
     notify();
   });
   root.addEventListener('synap-gatt-disconnected', () => {
     context = null;
     transfer = null;
+    clearTimeout(autoSyncTimer);
+    autoSyncTimer = null;
     session?.controller.abort();
     notify();
+  });
+  root.addEventListener('synap-chakshu-media-pending', () => {
+    pollOffline();
+    schedulePendingSync(1200);
   });
   root.addEventListener('online', sync);
   root.SynapAuth?.onChange(sync);
