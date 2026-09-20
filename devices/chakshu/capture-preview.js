@@ -449,36 +449,15 @@
     }
   }
   async function startOffline(profile = 0, seconds = 10) {
-    if (![0, 1].includes(profile) || !Number.isInteger(seconds) || seconds < 1 || seconds > 600)
-      throw Error('Choose a clip length from 1 to 600 seconds.');
-    if (busy || api().state.busy) throw Error('Finish the current capture or transfer first.');
-    const connection = context();
-    if (!api().state.storageReady || !api().state.offlineReady)
-      throw Error('Camera, microphone or SD card is not ready for offline video.');
-    busy = true;
-    try {
-      await settleAudio();
-      await new root.SynapChakshuTransfer.Client(connection).request(5, profile | (seconds << 8));
-      await api().pollOffline();
-    } finally {
-      busy = false;
-    }
+    void profile; void seconds;
+    throw Error('Offline SD capture is device-owned and runs only while Chakshu is disconnected from the PWA.');
   }
+
   async function startOfflineAudio(seconds = 600) {
-    if (!Number.isInteger(seconds) || seconds < 1 || seconds > 600)
-      throw Error('Choose an audio length from 1 to 600 seconds.');
-    if (busy || api().state.busy) throw Error('Finish the current capture or transfer first.');
-    const connection = context();
-    if (!api().state.storageReady) throw Error('Insert an SD card and check it before offline audio.');
-    busy = true;
-    try {
-      await settleAudio();
-      await new root.SynapChakshuTransfer.Client(connection).request(10, seconds);
-      await api().pollOffline();
-    } finally {
-      busy = false;
-    }
+    void seconds;
+    throw Error('Offline SD capture is device-owned and runs only while Chakshu is disconnected from the PWA.');
   }
+
   async function describeNow() {
     if (busy || api().state.busy) throw Error('Finish the current capture or transfer first.');
     const connection = context(),
@@ -540,12 +519,12 @@
       row.className = 'visual-sd-row';
       label.textContent = type + ' · ' + name + ' · ' + Math.max(1, Math.round((file.bytes || 0) / 1024)) + ' KB';
       action.type = 'button';
-      action.textContent = 'Move to app';
+      action.textContent = 'Sync to app';
       action.addEventListener('click', async () => {
         action.disabled = true;
         try {
           await moveSD(file.path, (fraction) => status('Moving from SD · ' + Math.round(fraction * 100) + '%'));
-          status(type.replace(' on SD', '') + ' moved to the app and removed from SD.');
+          status(type.replace(' on SD', '') + ' synced to the app. Verified SD source removed.');
           await browseSD();
         } catch (error) {
           status(error.message);
@@ -556,6 +535,27 @@
       row.append(label, action);
       list.append(row);
     }
+  }
+  async function syncAll() {
+    if (busy) throw Error('Another Chakshu transfer is already running.');
+    const pending = api()?.state?.sdFiles?.slice?.() || [];
+    if (!pending.length) return { synced: 0, failed: 0 };
+    let synced = 0, failed = 0, lastError = '';
+    for (const file of pending) {
+      try {
+        await moveSD(file.path, (fraction) =>
+          status('Syncing offline captures · ' + (synced + failed + 1) + '/' + pending.length + ' · ' + Math.round(fraction * 100) + '%'),
+        );
+        synced++;
+      } catch (error) {
+        failed++;
+        lastError = error.message;
+      }
+    }
+    await api().syncPendingSD().catch(() => {});
+    if (failed)
+      throw Error(synced + ' synced; ' + failed + ' kept on SD because verification failed. ' + lastError);
+    return { synced, failed: 0 };
   }
   function upgradeUi() {
     const length = document.getElementById('visualSDLength');
@@ -576,15 +576,7 @@
       quality.options[1].textContent = 'HD motion';
     }
     const record = document.getElementById('visualRecordSD');
-    record?.addEventListener(
-      'click',
-      (event) => {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        startOffline(Number(document.getElementById('visualSDQuality')?.value || 0), Number(document.getElementById('visualSDLength')?.value || 10)).catch((error) => status(error.message));
-      },
-      true,
-    );
+    if (record) record.disabled = true;
     const browse = document.getElementById('visualSD');
     browse?.addEventListener(
       'click',
@@ -595,6 +587,18 @@
       },
       true,
     );
+    const sync = document.getElementById('visualSyncSD');
+    sync?.addEventListener('click', async () => {
+      sync.disabled = true;
+      try {
+        const result = await syncAll();
+        status(result.synced ? result.synced + ' offline capture' + (result.synced === 1 ? '' : 's') + ' synced.' : 'No offline captures waiting.');
+      } catch (error) {
+        status(error.message);
+      } finally {
+        sync.disabled = false;
+      }
+    });
     if (browse?.parentNode && !document.getElementById('visualClearSD')) {
       const clear = document.createElement('button');
       clear.id = 'visualClearSD';
@@ -616,7 +620,7 @@
       browse.parentNode.insertBefore(clear, browse.nextSibling);
     }
   }
-  const exposed = { moveSD, clearSD, startOffline, startOfflineAudio, describeNow, browseSD, get busy() { return busy; } };
+  const exposed = { moveSD, syncAll, clearSD, startOffline, startOfflineAudio, describeNow, browseSD, get busy() { return busy; } };
   root.SynapChakshuV2 = exposed;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', upgradeUi, { once: true });
   else upgradeUi();
