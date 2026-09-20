@@ -1,10 +1,24 @@
 # Chakshu — single-owner capture, offline SD and Hey Snap
 
 **Target contract:** PWA shell `1.0.0-shell152-sd-probe-backoff`, voice protocol **2**, media protocol **1**.  
-**Firmware field reference:** build **1351**; the companion firmware candidate contains additional SD boot/recovery and BLE-ownership fixes.  
+**Production PWA source:** `31803c596c8622388f512681bcaa05e89172018a`; GitHub Pages validation/deployment completed successfully.  
+**Production firmware:** Synap OS build **1365** (`synap-os1-build1365`), source `08c0bf603dc63ac089a6558b1fdb2acad5f4e9d4`; OTA feeds, digests, provenance and browser CORS were verified by the release workflow.  
 **Device:** `xiao-esp32s3-sense-8m`, module id `3`, OTA marker `SYNAP-CHAKSHU-OTA-ID-V3`, advertising name `synap-Chakshu`.
 
 This is the operational contract for Chakshu. Odyssey C3/S3 do not have a camera, SD card or local wake engine.
+
+## Current production state
+
+The single-owner architecture is now the production baseline, not a pending candidate:
+
+- BLE connected → PWA owns commands and direct-to-app capture.
+- BLE disconnected → firmware owns Hey Snap and writes standalone captures to SD.
+- Firmware re-arms Hey Snap on every BLE disconnect.
+- Firmware build 1365 contains the 10 → 4 → 1 MHz SD cold-detection ladder and sticky 1 MHz post-mount I/O recovery.
+- Shell152 suppresses repeated catalogue probes when firmware already reports no SD card: one automatic recovery probe is allowed per connection, while explicit **Check SD card**, a reconnect, or a different device permits a fresh probe.
+- Offline SD items remain non-destructive until a digest/byte-verified sync completes.
+
+Physical device acceptance is still required; CI/release success proves software/release integrity, not card/contact/power quality on a particular Chakshu unit.
 
 ---
 
@@ -100,7 +114,7 @@ Failed SD media responses can include `sdReady`, `sdClockHz`, `sdMountStage`, `s
 
 ### Catalogue probing
 
-While the readiness mask reports no card, the PWA catalogues **once per connection** and then stops.
+While the readiness mask reports no card, **shell152** catalogues **once per connection** and then stops.
 
 The single probe is kept because a catalogue is what makes firmware repeat detection. The repetition is not: an unmounted card answers `SD file unavailable` after about 4.6 seconds, and `synap-module-changed` re-arms the sweep roughly every 15, so a third of the shared media queue goes on re-asking a question the device already answered. That queue is also the audio transport.
 
@@ -242,7 +256,7 @@ Firmware BLE callbacks independently enforce the same state, so missing opcode `
 
 ## 7. Acceptance criteria
 
-Do not call the feature physically complete until one Chakshu passes all of these:
+Run these criteria on **firmware build 1365 + PWA shell152**. Do not call the feature physically complete until one Chakshu passes all of these:
 
 1. Cold power-on with card inserted reports SD ready without opening the PWA.
 2. Connect to PWA: Hey Snap produces no local command/action for the full connected period.
