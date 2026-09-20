@@ -317,7 +317,7 @@
       visualPhoto: state.cameraReady,
       visualPhotoAudio: state.cameraReady,
       visualOnline: state.videoReady,
-      visualRecordSD: state.offlineReady,
+      visualRecordSD: false,
       visualSD: state.storageReady,
     }))
       $(id).disabled = busy || !state.connected || !available;
@@ -329,16 +329,23 @@
     $('visualWifi').title = state.wifiSupported
       ? ''
       : 'Update Chakshu firmware for Wi-Fi downloads.';
+    const pendingSD = state.sdPendingCount ?? (state.sdFiles || []).length,
+      syncNotice = $('visualSDSyncNotice'),
+      syncText = $('visualSDSyncText'),
+      syncButton = $('visualSyncSD');
     $('visualStorageHint').textContent = state.storageReady
-      ? 'SD card ready. Record higher-quality video on the card, then import it here. Photos and phone video stay on this phone.'
-      : 'No SD card is needed. Photos, video and soundtracks save only to this phone.';
+      ? pendingSD
+        ? 'SD card ready · ' + pendingSD + ' offline capture' + (pendingSD === 1 ? '' : 's') + ' waiting to sync.'
+        : 'SD card ready. Offline Hey Snap captures will appear here after the next connection.'
+      : 'SD card unavailable. Offline Hey Snap capture requires the card; choose Check SD card.';
+    if (syncNotice) syncNotice.hidden = !state.connected || pendingSD === 0;
+    if (syncText) syncText.textContent = pendingSD
+      ? pendingSD + ' offline capture' + (pendingSD === 1 ? '' : 's') + ' not synced with this app.'
+      : '';
+    if (syncButton) syncButton.disabled = busy || !state.connected || !state.storageReady || pendingSD === 0;
     $('visualSDQuality').disabled = busy;
     $('visualSDLength').disabled = busy;
-    $('visualSDVideoHint').textContent = !state.sdProfilesSupported
-      ? 'Update Chakshu firmware to enable HD and smooth SD video.'
-      : !state.storageReady
-        ? 'Insert a card, then choose Check SD card.'
-        : 'HD favours detail; Smooth favours motion. Frame rate varies with light and card speed. Clips stop at the selected length or 32 MiB, whichever comes first.';
+    $('visualSDVideoHint').textContent = 'SD recording is available only while Chakshu is disconnected from this app.';
     $('visualWifiDetails').hidden = !state.wifi?.active;
     $('visualWifiName').textContent = state.wifi?.ssid || '';
     $('visualWifiPassword').textContent = state.wifi?.password || '';
@@ -437,14 +444,18 @@
       })),
       imported = new Set(rows.filter((row) => row.state === 'saved' && row.sourceName).map((row) => row.sourceName)),
       sd = (state.sdFiles || [])
-        .filter((file) => /\\.(jpg|mjpeg)$/i.test(file.path) && !imported.has(file.path.split('/').pop()))
+        .filter((file) => /\.(jpg|mjpeg|wav)$/i.test(file.path) && !imported.has(file.path.split('/').pop()))
         .map((file) => {
-          const sourceName = file.path.split('/').pop(), mediaId = 'sd:' + encodeURIComponent(file.path), video = /\.mjpeg$/i.test(file.path);
+          const sourceName = file.path.split('/').pop(),
+            mediaId = 'sd:' + encodeURIComponent(file.path),
+            audio = /\.wav$/i.test(file.path),
+            video = /\.mjpeg$/i.test(file.path),
+            kind = audio ? 'audio' : video ? 'video' : 'image';
           return {
             id: 'visual:' + mediaId,
             mediaId,
-            mediaKind: video ? 'video' : 'image',
-            kind: video ? 'video' : 'image',
+            mediaKind: kind,
+            kind,
             ownerUid: state.owner,
             deviceId: state.sdFilesDeviceId || null,
             name: sourceName,
@@ -469,13 +480,14 @@
   }
   function updateCard(card, row) {
     card.synapRecording = row;
-    const title = row.name || (row.mediaKind === 'video' ? 'Video' : 'Photo'),
+    const title = row.name || (row.mediaKind === 'audio' ? 'Audio' : row.mediaKind === 'video' ? 'Video' : 'Photo'),
       opener = card.querySelector('.library-media-open'), image = card.querySelector('img'), preview = card.querySelector('.recording-row-preview');
     card.querySelector('.recording-row-name').textContent = title;
     if (row.sdOnly) {
-      opener.setAttribute('aria-label', 'Move to app: ' + title);
-      card.querySelector('.recording-row-meta').textContent = (row.mediaKind === 'video' ? 'Video' : 'Photo') + ' · On Chakshu SD · ' + byteLabel(row.byteSize);
-      preview.textContent = 'Move to app';
+      const type = row.mediaKind === 'audio' ? 'Audio' : row.mediaKind === 'video' ? 'Video' : 'Photo';
+      opener.setAttribute('aria-label', 'Sync to app: ' + title);
+      card.querySelector('.recording-row-meta').textContent = type + ' · Not synced · On Chakshu SD · ' + byteLabel(row.byteSize);
+      preview.textContent = 'Sync to app';
       preview.hidden = false;
       disposeCard(card);
       image.removeAttribute('src');
@@ -548,9 +560,10 @@
     opener.addEventListener('click', () => action(async () => {
       const item = card.synapRecording;
       if (item?.sdOnly) {
-        await api().moveSD(item.sourcePath, (progress) => status('Moving from Chakshu SD · ' + Math.round(progress * 100) + '%'));
+        const move = root.SynapChakshuV2?.moveSD || api().moveSD;
+        await move(item.sourcePath, (progress) => status('Syncing from Chakshu SD · ' + Math.round(progress * 100) + '%'));
         await render();
-        return 'Moved to app.';
+        return 'Synced to app. Verified SD source removed.';
       }
       return open(item.mediaId);
     }));

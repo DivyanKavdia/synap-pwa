@@ -1,200 +1,263 @@
-# Chakshu — offline operations and Hey Snap
+# Chakshu — single-owner capture, offline SD and Hey Snap
 
-**Baseline:** PWA `main`, firmware build **1351**, voice protocol **2**, media protocol **1**.
-**Device:** `xiao-esp32s3-sense-8m` (XIAO ESP32-S3 Sense, 8 MB), module id `3`, OTA marker `SYNAP-CHAKSHU-OTA-ID-V3`, advertising name `synap-Chakshu`.
+**Target contract:** PWA shell `1.0.0-shell151-single-owner-sd-sync`, voice protocol **2**, media protocol **1**.  
+**Firmware field reference:** build **1351**; the companion firmware candidate contains additional SD boot/recovery and BLE-ownership fixes.  
+**Device:** `xiao-esp32s3-sense-8m`, module id `3`, OTA marker `SYNAP-CHAKSHU-OTA-ID-V3`, advertising name `synap-Chakshu`.
 
-This document covers what Chakshu does when nobody is holding its Bluetooth link, and how that hands over cleanly when the app connects. For the C3 and S3 pendants see `README.md`; neither has a camera, an SD card or a wake engine.
+This is the operational contract for Chakshu. Odyssey C3/S3 do not have a camera, SD card or local wake engine.
 
 ---
 
-## 1. The ownership rule
+## 1. One owner, always
 
-**Hey Snap runs only while Chakshu is *not* connected to the PWA over BLE.**
+Chakshu has exactly one command/capture owner at a time.
 
-At any moment exactly one side owns the pendant's commands and operations:
-
-| State | Owner | What issues commands | Where captures land |
+| BLE state | Owner | Command source | New capture destination |
 | --- | --- | --- | --- |
-| Disconnected from the app | Firmware | The Hey Snap wake engine | SD card |
-| Connected to the app | PWA | The app's media transport | SD card, or straight to the phone |
+| **Disconnected from PWA** | Firmware | Local **Hey Snap** runtime | Chakshu SD |
+| **Connected to PWA** | PWA | App controls | PWA/browser storage |
 
-On connect, the app writes the voice-disable opcode once, confirms the device reports itself disabled, and then stops touching the voice characteristics entirely. On disconnect the wake engine comes back and Chakshu is a standalone recorder again.
+There is no supported state in which Hey Snap and the PWA both issue capture commands.
 
-### Why
+### BLE connect
 
-Before this rule both sides were live at once. The app polled the voice control and diagnostics characteristics every 1.9 seconds through the same serialized media queue that carries audio, while the firmware kept listening for a wake word that could start an SD capture underneath it. Build 1351 logs show where that ends:
+Firmware treats the physical BLE link as the ownership boundary; it does not rely only on a later app write.
 
-```
-GATT operation failed  { operation: "Read Chakshu voice diagnostics", name: "TimeoutError" }
-Audio delivery stalled; retrying notifications and buffered audio
-GATT disconnected      { origin: "browser-or-peripheral" }
-```
+1. BLE connects.
+2. Firmware immediately stands the local wake engine down.
+3. The PWA writes voice opcode `0` as an idempotent ownership confirmation and reads status once.
+4. The PWA does not subscribe to voice command events or poll voice diagnostics.
+5. Audio, photo and video controls are app-owned and save directly into the PWA.
+6. BLE clients cannot start the firmware SD-audio or SD-video recording operations.
 
-with the SD card never mounting across the session (`sdMountAttempts` climbing 5 → 9) and the readiness mask dropping from `911` to `651`. That difference is exactly two bits — `sd` (4) and `sdAudio` (256) — which is why a spoken "Record a video" came back as **Could not start**: video records to SD, and SD was gone.
+The old voice `0/1` writes are now **session handoff signals**, not a persisted “voice enabled” preference.
 
-Two owners on one pendant is the root cause. One owner at a time is the fix.
+### BLE disconnect
 
-### Implementation
+Firmware re-arms standalone voice on **every** disconnect, including:
 
-`devices/chakshu/voice.js`:
+- user/app initiated disconnect,
+- browser/native BLE failure,
+- out-of-range disconnect,
+- an unexpected dropped GATT link.
 
-- **Control opcodes** (`0xcc`, protocol byte, opcode), a separate number space from command ids:
-  `0` disable wake engine · `1` enable wake engine.
-  (`2` and `3` were foreground/background leases. The app no longer takes either.)
-- `sync()` — writes `0`, reads the status characteristic once to confirm `enabled === false`, then stops. No notification subscription, no status poll, no diagnostics read. A stood-down device is never read again.
-- Retries — three attempts, five seconds apart, for a device that answers and stays enabled. A request deferred behind capture or recovery (`OPTIONAL_GATT_DEFERRED`) never reached the device, so it does not spend that budget; it re-checks every 15 seconds, and while the media queue is closed no GATT request is issued at all.
-- `release()` — writes `1` before an app-initiated disconnect, called from `disconnectGatt()` in `app.js`.
-- `diagnose()` — one-shot classifier read, on request only. Never on a timer.
-- `enabled(true)` is refused while connected. Enabling the wake engine over a live link is precisely the state this rule exists to prevent.
+The PWA still sends opcode `1` before a clean disconnect when it can, but correctness no longer depends on receiving it.
 
-### Firmware requirement
-
-`release()` is **best effort and cannot be otherwise.** An unexpected disconnect — out of range, flat battery, a dropped GATT link — gives the app no chance to write anything.
-
-> **Firmware must re-arm the wake engine whenever the BLE link drops.**
-
-Until it does, Hey Snap stays off after an unclean disconnect until the next connect/disconnect cycle. This is the one open item in the handover.
+If an SD capture was already in progress when BLE connects, it is allowed to close its files cleanly rather than being corrupted mid-write. No new local voice command is admitted after connection.
 
 ---
 
-## 2. Hey Snap
+## 2. SD is a required offline inbox
 
-### Protocol
+The SD card is not an optional “higher-quality recording mode” while connected. Its product role is persistent offline storage for standalone Chakshu.
 
-Service characteristics (`devices/chakshu/voice.js`):
+### Boot
 
-| Characteristic | UUID | Use |
-| --- | --- | --- |
-| Control | `4fa12356-…` | Write opcodes, read 22-byte status |
-| Events | `4fa12357-…` | Command notifications (no longer subscribed by the app) |
-| Diagnostics | `4fa12358-…` | 20-byte classifier/microphone frame, read on demand |
+Chakshu attempts SD initialization during media startup, before BLE is fully available.
 
-### Commands
+Cold boot and card re-detection use:
 
-| Id | Phrase | Effect |
-| --- | --- | --- |
-| 1 | **Hey Snap** | Wake; listen for a command |
-| 2 | Take a snap | Photo to SD |
-| 3 | Record a video | Video to SD |
-| 4 | Stop video | End the clip |
-| 5 | Start audio | Audio to SD |
-| 6 | Stop audio | End the take |
-| 7 | What do you see | Vision capture |
-| 8 | Stop | Cancel the current operation |
+```text
+SPI pins initialise once
+    ↓
+10 MHz
+    ↓ if no mount
+4 MHz
+    ↓ if no mount
+1 MHz
+```
 
-### Status frame — 22 bytes, `0xcd`
+A mount is not declared ready until firmware can also:
 
-| Offset | Field |
+- access/create `/synap`,
+- open it as a directory,
+- read non-zero card capacity.
+
+A card that never mounted is **not** pinned to the last failed clock. A later catalogue / **Check SD card** operation repeats the full detection sequence.
+
+After a card was mounted and then suffers a genuine I/O fault, recovery is deliberately different: firmware resets the SPI bus, retries at **1 MHz**, and keeps that conservative recovery clock for the rest of that boot.
+
+Recovery never formats the card.
+
+### PWA visibility
+
+When Chakshu is connected, the PWA always surfaces SD state:
+
+- **SD card ready** — offline inbox can be catalogued/synced.
+- **SD card unavailable** — offline Hey Snap capture is not considered available; the UI offers **Check SD card**.
+- When catalogue re-detection restores the card, firmware republishes the refreshed SD/SD-audio readiness so the next capability read can return the healthy mask.
+
+For current Chakshu capabilities:
+
+```text
+supported = 911
+healthy ready = 911
+SD + SD-audio missing = 651
+911 - 651 = 260 = sd(4) + sdAudio(256)
+```
+
+Failed SD media responses can include `sdReady`, `sdClockHz`, `sdMountStage`, `sdMountAttempts`, `sdRecoveryLocked` and `freeHeap`.
+
+---
+
+## 3. Capture behavior
+
+### Connected to the PWA
+
+All user capture is direct-to-app:
+
+- **Audio** — the normal PWA recording/journal path.
+- **Photo** — transferred from camera to the PWA and stored in the local visual library.
+- **Video** — camera frames plus the app-owned audio journal are stored in the PWA.
+
+The connected UI no longer offers **Record video on SD**. Firmware also rejects remote BLE requests for SD video/audio recording, protecting the contract from old cached clients.
+
+SD remains accessible while connected for:
+
+- health/capacity,
+- catalogue,
+- syncing offline captures,
+- verified source deletion after sync,
+- explicit Synap-capture cleanup,
+- optional bulk Wi-Fi offload.
+
+### Disconnected from the PWA
+
+Firmware owns local capture. Supported standalone captures are written under `/synap/` and protected by the SD FIFO rules.
+
+The current personalized TinyML model has learned classes for:
+
+| Learned phrase/class | Action |
 | --- | --- |
-| 0–1 | `0xcd`, protocol (`2`) |
-| 2 | status (0–5) |
-| 3 | wake engine enabled |
-| 4–7 | sequence (u32 LE) |
-| 8 | last command |
-| 9 | result (0–3; `1` = could not start, `3` = saved to SD) |
-| 10–13 | timestamp ms |
-| 14–17 | dropped frames |
-| 18 | offline capture active |
-| 20–21 | value |
+| **Hey Snap** | Arm the short command window |
+| **Take a snap / photo** | Photo → SD |
+| **Record a video** | Video + soundtrack → SD |
+| **Stop** | Stop/cancel current local operation |
 
-### Diagnostic frame — 20 bytes, `0xce`
+The media protocol and SD recorder also support standalone WAV audio, and standalone `.wav` files are fully supported by the reconnect/sync pipeline.
 
-Mean absolute level, peak, candidate command, confidence (per mille), candidate timestamp, candidate count, active flag. A healthy build 1351 device reports `candidateLabel: "Hey Snap", confidencePercent: 100`.
+> **Current model gap:** the deployed personalized TinyML weights do not yet contain a dedicated **Start audio** learned class. Therefore the data path for offline audio is complete, but a spoken “Hey Snap, start/record audio” command must not be claimed as production-ready until the personalized model is retrained with real Chakshu microphone examples for that class. Replacing the real-mic model with a synthetic-only model would regress the recognition work already completed.
 
-Read it with `SynapChakshuVoice.diagnose()`; the result is dispatched as `synap-voice-diagnostic` and appears in the app's diagnostic log as `Voice setup`.
-
-### What the app no longer does
-
-Wake feedback in the header (`Hey Snap · Listening…`, `Saved on Chakshu · Take a snap`) existed to narrate commands spoken over a live link. There are none now, so it stays hidden. Captures made offline surface in the Library through the SD sweep described below, not through a live event.
+Generic **Stop** already covers stopping an active local operation.
 
 ---
 
-## 3. Offline operations
+## 4. Reconnect and unsynced-media workflow
 
-Chakshu records to its SD card with no phone, no network and no app.
+Connection does **not** automatically delete or silently import SD data.
 
-### Capability gate
+### Discovery
 
-Every offline capture requires the readiness bits for its media type **and** for storage. From `devices/capabilities.js`:
+After module/connection identification:
 
-```js
-canCapture(info, kind, offline) =
-  hasMedia(info) && ready(info, 'camera') && ready(info, kind) &&
-  (kind !== 'video' || ready(info, 'audio')) &&
-  (!offline || (ready(info, 'sd') && (kind !== 'video' || ready(info, 'sdAudio'))))
+1. `syncPendingSD()` catalogues the SD card.
+2. Catalogue discovery is non-destructive.
+3. Standalone `.jpg`, `.mjpeg` and standalone `.wav` files become **Not synced · On Chakshu SD** items.
+4. The PWA shows the pending count and a **Sync offline captures** action.
+5. Individual items also expose **Sync to app**.
+
+A successful catalogue re-detection is followed by a capability refresh so SD status shown in the PWA follows firmware state.
+
+### Verified sync
+
+The current verified move path is intentionally transactional at the product level:
+
+1. Download the SD source.
+2. For video, also retrieve matching timeline JSON and WAV when present.
+3. Import into the account-owned PWA store/journal.
+4. Compute/compare the source digest and verify the durable app copy.
+5. Only after verification, issue SD delete operation `17`.
+6. Video companions are deleted before the primary MJPEG so an interrupted cleanup cannot expose the soundtrack as a new standalone item.
+7. Refresh the catalogue.
+
+If transfer or verification fails, the SD source is retained. **No failed sync loses the offline original.**
+
+**Sync offline captures** processes the pending catalogue sequentially. Successfully verified items are removed from SD; failed items remain and can be retried.
+
+### Audio after sync
+
+A standalone offline PCM WAV is imported through the normal recording journal. It then enters the same transcription and memory pipeline as an app-recorded audio take.
+
+---
+
+## 5. SD storage ownership and cleanup
+
+Only files matching Synap’s narrow generated capture pattern are managed:
+
+```text
+/synap/XXXXXXXX-XXXXXXXX.jpg
+/synap/XXXXXXXX-XXXXXXXX.mjpeg
+/synap/XXXXXXXX-XXXXXXXX.wav
+/synap/XXXXXXXX-XXXXXXXX.json
 ```
 
-Readiness bitmask (`devices/catalog.json`):
+Model files, user-copied files and unrelated card contents are outside FIFO / Clear SD ownership.
 
-| Bit | 1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 256 | 512 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Feature | audio | camera | sd | settings | touch | battery | standby | video | sdAudio | photo |
+When reserve space is required, FIFO can remove the oldest unprotected Synap capture bundle. An in-progress/protected capture is never selected for cleanup.
 
-A healthy Chakshu reports `supported: 911` = `photo | sdAudio | video | settings | sd | camera | audio`. It has no touch pad, battery sensor or standby.
-
-### Capture
-
-| Operation | Transport op | Notes |
-| --- | --- | --- |
-| Start offline video | `5`, arg `profile \| (seconds << 8)` | Clip length **15, 30 or 60 s** only; profile `0` = 1280×720 @10 fps, `1` = 640×480 @20 fps |
-| Stop | `6` | |
-| Offline status | `9` | JSON: `active`, `error`, progress; polled every 2 s while active |
-| Refresh SD status | `14` | Free/total MiB, mount state |
-| Delete a path | `17` | Used only after a verified import |
-| Wi-Fi transfer | `20` start · `21` status · `22` stop | Bulk offload over Wi-Fi instead of BLE |
-
-`error === 9` means the card could not keep up; the partial recording is kept rather than discarded.
-
-> **Known inconsistency.** `devices/chakshu/capture-preview.js` declares `startOffline(profile = 0, seconds = 10)`, but `media.js` rejects anything outside `[15, 30, 60]`. The default is unreachable in practice because the UI passes the `visualSDLength` selection, but a call with no arguments throws *"Choose an available SD quality and clip length."* Worth aligning.
-
-### Recovery back into the app
-
-When the app reconnects, `devices/chakshu/media.js` sweeps SD on every connection change (`schedulePendingSync(1200)` on `synap-module-changed`) and lists what it finds. Nothing is deleted implicitly:
-
-1. `syncPendingSD()` catalogues what is on the card. It never imports and never deletes.
-2. SD-only items appear in the shared Library marked `sdOnly` with a **Move to app** action.
-3. `moveSD(path)` imports, verifies, and only then calls `deleteSyncedSet(path)` — which removes the sidecar `.json` and `.wav` before the media file itself, so a half-deleted set is never left behind.
-4. If verification fails: *"The capture was not verified in the app. The SD original was kept."*
-
-Imported offline audio enters the normal transcription and memory pipeline like any other recording.
-
-### Self-tests
-
-Settings → Device runs firmware self-checks over a separate command channel (`devices/modules.js`, operations 1–4 — a different number space from the voice commands above):
-
-| Op | Check | Requires |
-| --- | --- | --- |
-| 1 | Hardware check | — |
-| 2 | Save photo | photo, camera, sd |
-| 3 | 10-second WAV to SD | sdAudio, audio, sd |
-| 4 | Silent camera clip | video, camera, sd |
+**Clear SD** removes Synap capture files only; it is not a format operation.
 
 ---
 
-## 4. Diagnosing the build 1351 failure signature
+## 6. Relevant operations and protocol surfaces
 
-If the symptoms return, read them in this order:
+### Media transport
 
-1. **`ready` vs `supported`.** A drop from `911` means readiness was lost mid-session. Subtract to find which bits: `911 - 651 = 260 = sd + sdAudio`.
-2. **`sdMountStage` / `sdMountAttempts`.** Repeated attempts at `mount` with `sdReady: false` mean the card never came up during the session — not that it is absent.
-3. **`GATT operation failed`.** The `operation` field names the request that timed out. Anything on the media queue that times out stalls audio behind it.
-4. **`Audio delivery stalled`** following a GATT timeout is the consequence, not the cause. Look at the operation above it.
-
-A spoken command answering **Could not start** is the readiness gate doing its job: the capture needed a bit that was no longer ready.
-
----
-
-## 5. Files
-
-| Path | Role |
+| Operation | Role under this contract |
 | --- | --- |
-| `devices/chakshu/voice.js` | Wake engine ownership, protocol decode, `diagnose()` |
-| `devices/chakshu/media.js` | Capture, SD catalogue, import, verified move, Wi-Fi transfer |
-| `devices/chakshu/transfer.js` | Versioned request/response transport on the app-owned queue |
-| `devices/chakshu/library.js` | SD-only Library entries and **Move to app** |
-| `devices/capabilities.js` | Capability and readiness gates |
-| `devices/catalog.json` | Device catalogue — the source of truth for flags and profiles |
-| `tests/chakshu-voice.cjs` | Ownership rule and protocol decode |
-| `tests/chakshu-media.cjs` | SD discovery, verified move, delete ordering |
+| `1/2` etc. | Connected camera snapshot/transfer into PWA |
+| `5` | Local-only SD video start; remote BLE client is rejected |
+| `10` | Local-only SD audio start; remote BLE client is rejected |
+| `6` | Stop current SD capture |
+| `7` | Catalogue offline inbox |
+| `14` | Re-check/remount SD and publish readiness |
+| `17` | Delete a verified synced capture |
+| `18` | Clear Synap-owned captures |
+| `20/21/22` | Private Wi-Fi bulk download lifecycle |
 
-Firmware lives in `DivyanKavdia/synap-firmware` and is not part of this repository.
+### Voice control characteristic
+
+`4fa12356-…` remains protocol v2:
+
+- opcode `0`: stand local voice down for the BLE session,
+- opcode `1`: release ownership back to standalone firmware.
+
+Firmware BLE callbacks independently enforce the same state, so missing opcode `1` on an unclean disconnect no longer leaves Hey Snap disabled.
+
+---
+
+## 7. Acceptance criteria
+
+Do not call the feature physically complete until one Chakshu passes all of these:
+
+1. Cold power-on with card inserted reports SD ready without opening the PWA.
+2. Connect to PWA: Hey Snap produces no local command/action for the full connected period.
+3. Connected PWA audio saves directly to the app; no new SD WAV is created.
+4. Connected PWA photo saves directly to the app; no offline SD photo is created.
+5. Connected PWA video saves directly to the app; no local SD-record command can be started over BLE.
+6. Disconnect unexpectedly: Hey Snap re-arms without another connect/disconnect cycle.
+7. Disconnected **Take a snap** creates a durable SD image.
+8. Disconnected **Record a video** creates a durable SD video/soundtrack bundle.
+9. Reconnect: all unsynced SD items are listed and pending count is correct.
+10. Sync one item: app copy verifies, then SD original disappears.
+11. Force a transfer/verification failure: original remains on SD.
+12. Sync all: successful items clear from SD; failed items remain.
+13. A standalone offline WAV appears as unsynced audio and, after sync, enters transcription/memory.
+14. Remove/reinsert or induce recoverable SD fault: **Check SD card** re-detects and PWA readiness updates.
+15. After real post-mount I/O failure, diagnostics show conservative recovery rather than repeated fast-clock retries.
+16. After retraining the personalized voice model, **Start audio** recognition must be physically accepted before that spoken command is enabled as a production claim.
+
+---
+
+## 8. Source files
+
+| Repository path | Responsibility |
+| --- | --- |
+| firmware: `firmware/xiao-sense/ble-server.cpp` | Physical BLE ownership handoff |
+| firmware: `firmware/xiao-sense/voice.cpp` | Disconnected-only TinyML runtime |
+| firmware: `firmware/xiao-sense/sd-storage.cpp` | Boot mount, recovery, FIFO, deletion |
+| firmware: `firmware/xiao-sense/media-transfer.cpp` | Local SD jobs, catalogue and transfer |
+| PWA: `devices/chakshu/voice.js` | Idempotent session stand-down/release |
+| PWA: `devices/chakshu/media.js` | Connected capture, catalogue discovery/state |
+| PWA: `devices/chakshu/capture-preview.js` | Digest-verified SD sync |
+| PWA: `devices/chakshu/library.js` | Unsynced inbox + shared Library surface |

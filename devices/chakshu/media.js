@@ -458,34 +458,8 @@
       } while (offline);
     }
   }
-  async function startOffline(profile = 0, seconds = 30) {
-    if (![0, 1].includes(profile) || ![15, 30, 60].includes(seconds))
-      throw Error('Choose an available SD quality and clip length.');
-    return operation(async (signal) => {
-      const expected = owner;
-      await prepareCamera();
-      if (!(moduleInfo()?.mediaFeatures & 16))
-        throw Error('Update Chakshu firmware for SD video quality controls.');
-      const client = camera('video', true);
-      const audio = root.SynapAppControls.recordingState();
-      if (audio.active) await saveAudio(audio.sessionId);
-      check(expected);
-      await client.request(5, profile | (seconds << 8), '', signal);
-      check(expected);
-      offline = true;
-      offlineStatus = {
-        active: true,
-        audioMs: 0,
-        frames: 0,
-        clipLimitMs: seconds * 1000,
-        width: profile === 0 ? 1280 : 640,
-        height: profile === 0 ? 720 : 480,
-        targetFps: profile === 0 ? 10 : 20,
-        videoProfile: profile,
-      };
-      notify();
-      await pollOffline();
-    });
+  async function startOffline() {
+    throw Error('SD capture is available only while Chakshu is disconnected. While connected, record directly to the app.');
   }
   async function startVideo() {
     return startLive();
@@ -845,17 +819,10 @@
     forgetSDPath(path);
   }
   async function moveSD(path, progress) {
-    const scope = requireAccess(), expected = scope.owner, deviceId = connected()?.deviceId;
-    if (!deviceId) throw Error('Connect Chakshu before moving an SD capture.');
-    if (!/^\/synap\/[a-f0-9]{8}-[a-f0-9]{8}\.(jpg|mjpeg)$/i.test(path)) throw Error('Only Chakshu photos and videos can be moved into this library.');
-    const sourceName = path.split('/').pop(), imported = async () => (await scope.store.list()).some((row) => row.deviceId === deviceId && row.sourceName === sourceName && row.state === 'saved');
-    if (!(await imported())) await importSD(path, progress);
-    check(expected);
-    if (connected()?.deviceId !== deviceId) throw Error('Chakshu connection changed before the SD original could be cleared.');
-    if (!(await imported())) throw Error('The capture was not verified in the app. The SD original was kept.');
-    await deleteSyncedSet(path);
-    root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
-    return sourceName;
+    const verified = root.SynapChakshuV2?.moveSD;
+    if (!verified)
+      throw Error('Verified SD sync is still loading. Retry in a moment.');
+    return verified(path, progress);
   }
   async function syncPendingSD() {
     if (autoSyncPromise) return autoSyncPromise;
@@ -870,6 +837,10 @@
       const files = await catalogue();
       check(expected);
       if (connected()?.deviceId !== deviceId) return 0;
+      await root.SynapModules?.refresh?.().catch(() => {});
+      root.dispatchEvent(new CustomEvent('synap-chakshu-sd-pending', {
+        detail: { deviceId, count: files.length, files: files.slice() },
+      }));
       return files.length;
     })().finally(() => {
       autoSyncPromise = null;
@@ -903,13 +874,14 @@
         connectionStatus: connectionStatus(),
         cameraReady: capabilities.canCapture(moduleInfo(), 'photo'),
         videoReady: capabilities.canCapture(moduleInfo(), 'video'),
-        offlineReady:
-          Boolean(moduleInfo()?.mediaFeatures & 16) &&
-          capabilities.canCapture(moduleInfo(), 'video', true),
+        // Connected capture never writes new media to SD. This flag is retained
+        // for cached callers but deliberately false while the app owns BLE.
+        offlineReady: false,
         sdProfilesSupported: Boolean(moduleInfo()?.mediaFeatures & 16),
         storageReady: capabilities.hasMedia(moduleInfo()) && capabilities.ready(moduleInfo(), 'sd'),
         sdFiles: sdFiles.slice(),
         sdFilesDeviceId,
+        sdPendingCount: sdFiles.length,
         mediaSupported: capabilities.hasMedia(moduleInfo()),
         voiceSupported: false,
         devices,

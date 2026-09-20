@@ -19,13 +19,13 @@
   <link rel="stylesheet" href="brand.css?v=1.0.0-glance1" data-synap-brand="brain1">
   <link rel="stylesheet" href="polish.css?v=1.0.0-glance1">
   <link rel="stylesheet" href="brain.css?v=1.0.0-actions1">
-  <link rel="stylesheet" href="compact.css?v=1.0.0-shell150-hey-snap-ble-gate" data-synap-compact="refresh1">
+  <link rel="stylesheet" href="compact.css?v=1.0.0-shell151-single-owner-sd-sync" data-synap-compact="refresh1">
   <link rel="stylesheet" href="settings.css?v=1.0.0-compact-workspace1">
   <link rel="stylesheet" href="library-tools.css?v=1.0.0-library-header1">
   <script src="theme.js?v=1.0.0-navigation1"></script>
 <link rel="stylesheet" href="meeting-tools.css?v=1.0.0-summary2"><link rel="stylesheet" href="devices/panel.css?v=1.0.0-devices1">
 <link rel="stylesheet" href="devices/chakshu/library.css?v=1.0.0-chakshu-core14">
-<link rel="stylesheet" href="workspace.css?v=1.0.0-shell150-hey-snap-ble-gate">
+<link rel="stylesheet" href="workspace.css?v=1.0.0-shell151-single-owner-sd-sync">
 </head>
 <body data-startup="loading" data-state="disconnected" class="synap-refresh">
   <a class="skip-link" href="#today">Skip to your day</a>
@@ -139,14 +139,15 @@
       <div id="visualMode-video" hidden>
         <div class="visual-actions"><button id="visualOnline" type="button">Record video on phone</button></div>
         <details class="visual-help"><summary>About phone video</summary><p>Camera frames and soundtrack stay in this browser on your phone. Bluetooth limits the frame rate; keep synap open and Chakshu nearby. Starting video saves any standalone audio take first. Clips hold up to 32 MiB of video. Export a copy to keep it outside the browser.</p></details>
-        <h4>Higher-quality video on SD</h4>
-        <div class="visual-actions"><label>Quality <select id="visualSDQuality"><option value="0">HD detail · 720p / 10 fps target</option><option value="1">Smooth · 480p / 20 fps target</option></select></label><label>Clip length <select id="visualSDLength"><option value="15">15 seconds</option><option value="30" selected>30 seconds</option><option value="60">60 seconds</option></select></label><button id="visualRecordSD" type="button">Record video on SD</button></div>
-        <p id="visualSDVideoHint"></p><p>Video and soundtrack stay on the card until you import them to this phone. No cloud upload. Recording stops automatically even if Bluetooth disconnects. Starting saves any standalone audio take first.</p>
+        <h4>Offline capture</h4>
+        <p>While Chakshu is disconnected from this app, Hey Snap owns capture and saves supported photos, video and audio to the SD card. While connected, all new captures use the app and save directly here.</p>
+        <div hidden aria-hidden="true"><label>Quality <select id="visualSDQuality"><option value="0">HD detail</option><option value="1">Smooth</option></select></label><label>Clip length <select id="visualSDLength"><option value="30" selected>30 seconds</option></select></label><button id="visualRecordSD" type="button" disabled>Offline only</button><p id="visualSDVideoHint"></p></div>
       </div>
       <figure id="visualLive" hidden><img id="visualLiveFrame" alt="Latest camera frame"><figcaption id="visualLiveDescription" aria-live="polite"></figcaption></figure>
       <div class="visual-actions"><button id="visualStop" type="button" hidden>Stop video</button></div>
       <p id="visualConnectionStatus" role="status"></p>
       <p id="visualStorageHint" role="status"></p>
+      <div id="visualSDSyncNotice" class="visual-sd-sync" role="status" hidden><strong id="visualSDSyncText"></strong><button id="visualSyncSD" type="button">Sync offline captures</button></div>
       <div class="visual-actions"><button id="visualCheckSD" type="button">Check SD card</button><button id="visualSD" type="button">Browse SD card</button><button id="visualWifi" type="button">Wi-Fi downloads</button><button id="visualImport" type="button">Import SD files</button></div>
       <section id="visualWifiDetails" class="visual-wifi" aria-label="Private Wi-Fi downloads" hidden>
         <h3>Chakshu Wi-Fi</h3>
@@ -317,7 +318,7 @@
 <script src="recording/timeline.js?v=1.0.0-recording-core1"></script>
 <script src="audio-store.js?v=1.0.0-chakshu-core14"></script>
 <script src="memory-ready-events.js?v=1.0.0-maintenance1"></script>
-<script src="processing-queue.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
+<script src="processing-queue.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
 <script src="recording/journal.js?v=1.0.0-source-audio1"></script>
 <script src="battery-popover-fix.js?v=1.0.0-devices1"></script>
 <script src="sleep-state-guard.js?v=1.0.0-actions1"></script>
@@ -328,7 +329,7 @@
 <script src="audio-enhancement.js?v=1.0.0-source-audio1"></script>
 <script src="audio-enhancement-ui.js?v=1.0.0-source-audio1"></script>
 <script src="settings-panel.js?v=1.0.0-compact-workspace1"></script>
-<script src="speaker-names.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
+<script src="speaker-names.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
 <div id="capture" hidden><div class="recording-stage compact-recorder"><div class="recorder-status-copy"><div id="timer" class="timer">00:00</div><h3 id="recorderTitle">Ready when you are</h3><p id="recorderSubtitle">Connect your pendant and let synap listen.</p><div id="levelText" role="status">Waiting for pendant</div></div><div class="canvas-wrap"><canvas id="waveformCanvas"></canvas></div><div class="recorder-controls"><button id="startButton" class="record-button" type="button" disabled><svg aria-hidden="true"><use href="#i-mic"/></svg><span class="record-label">Start listening</span></button><button id="stopButton" class="button stop-button" type="button" disabled><span class="stop-square" aria-hidden="true"></span><span>Stop recording</span></button></div></div></div>
 <script src="moments.js?v=1.0.0-transcripts2"></script>
 <script src="audio-quality.js?v=1.0.0-source-audio1"></script>
@@ -336,15 +337,15 @@
 <script src="disconnect-protection.js?v=1.0.0-drain1"></script>
 <script src="experience-recovery.js?v=1.0.0-chakshu-core14"></script>
 <script src="library-tools.js?v=1.0.0-library-header1"></script>
-<script src="memory-library.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
+<script src="memory-library.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
 <script src="google-auth.js?v=1.0.0-readiness1"></script>
 <script src="processing-recovery.js?v=1.0.0-maintenance1"></script>
 <script src="ai-providers.js?v=1.0.0-maintenance1"></script>
-<script src="synap-backend.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
+<script src="synap-backend.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
 <script src="first-memory.js?v=1.0.0-compact-workspace1"></script>
-<script src="app.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
+<script src="app.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
 <script src="recording-notifications.js?v=1.0.0-background1"></script>
-<script src="enhancements.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
+<script src="enhancements.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
 <script src="processing-pipeline-ui.js?v=1.0.0-chakshu-core14"></script>
 <script src="memory-ui-fix.js?v=1.0.0-moments1"></script>
 <script src="synap-account-ui.js?v=1.0.0-compact-workspace1"></script>
@@ -353,27 +354,27 @@
 <script src="memory-tools.js?v=1.0.0-settings1"></script>
 <script src="cost-ui.js?v=1.0.0-chakshu-core14"></script>
 <script src="transcript-repair.js?v=1.0.0-maintenance1"></script>
-<script src="voice-profile.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
-<script src="ask-synap.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
-<script src="brain-ui.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
-<link rel="stylesheet" href="action-editor.css?v=1.0.0-shell150-hey-snap-ble-gate">
-<script src="action-editor.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
-<script src="action-state.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
+<script src="voice-profile.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
+<script src="ask-synap.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
+<script src="brain-ui.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
+<link rel="stylesheet" href="action-editor.css?v=1.0.0-shell151-single-owner-sd-sync">
+<script src="action-editor.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
+<script src="action-state.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
 <script src="memory-workspace.js?v=1.0.0-navigation1"></script>
-<script src="my-actions.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
-<script src="dashboard-ui.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
-<script src="compact-layout.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
+<script src="my-actions.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
+<script src="dashboard-ui.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
+<script src="compact-layout.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
 <script src="runtime-ui.js?v=1.0.0-controls1"></script>
 <script src="capture-ui.js?v=1.0.0-chakshu-core14"></script>
 <script src="product-ui.js?v=1.0.0-actions1"></script>
 <script src="provenance-links.js?v=1.0.0-actions3"></script>
-<script src="productivity-tools.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
+<script src="productivity-tools.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
 <script src="desktop-capture.js?v=1.0.0-source-audio1"></script>
-<script src="interaction-surfaces.js?v=1.0.0-shell150-hey-snap-ble-gate"></script>
+<script src="interaction-surfaces.js?v=1.0.0-shell151-single-owner-sd-sync"></script>
 <script src="devices/chakshu/store.js?v=1.0.0-chakshu-core14"></script>
 <script src="devices/chakshu/transfer.js?v=1.0.0-chakshu-core14"></script>
-<script src="devices/chakshu/media.js?v=1.0.0-chakshu-core15"></script>
+<script src="devices/chakshu/media.js?v=1.0.0-chakshu-core16"></script>
 <script src="devices/chakshu/player.js?v=1.0.0-devices1"></script>
-<script src="devices/chakshu/library.js?v=1.0.0-chakshu-core15"></script>
-<script src="devices/chakshu/capture-preview.js?v=1.0.0-chakshu-core14"></script>
+<script src="devices/chakshu/library.js?v=1.0.0-chakshu-core16"></script>
+<script src="devices/chakshu/capture-preview.js?v=1.0.0-chakshu-core16"></script>
 </body></html>

@@ -510,47 +510,69 @@ test('video requests smaller frames while photo bytes, progress and cancellation
   );
 });
 
-test('device voice media sync discovers SD media and only explicit move deletes verified originals',()=>{
+test('device voice media sync discovers SD media and only explicit verified sync deletes originals',()=>{
   const fs=require('node:fs'),path=require('node:path');
   const media=fs.readFileSync(path.join(__dirname,'../devices/chakshu/media.js'),'utf8');
+  const lifecycle=fs.readFileSync(path.join(__dirname,'../devices/chakshu/capture-preview.js'),'utf8');
   const voice=fs.readFileSync(path.join(__dirname,'../devices/chakshu/voice.js'),'utf8');
   const sync=media.slice(media.indexOf('async function syncPendingSD()'),media.indexOf('const apiObject'));
   const move=media.slice(media.indexOf('async function moveSD('),media.indexOf('async function syncPendingSD()'));
   assert.match(sync,/const files = await catalogue\(\)/);
   assert.doesNotMatch(sync,/importSD\(|deleteSyncedSet\(/);
-  assert.match(move,/if \(!\(await imported\(\)\)\) await importSD\(path, progress\)/);
-  assert.match(move,/if \(!\(await imported\(\)\)\)[\s\S]*SD original was kept/);
-  assert.match(move,/await deleteSyncedSet\(path\)/);
-  assert.match(media,/camera\(\)\.request\(17, 0, path\)/);
-  const deletion=media.slice(media.indexOf('async function deleteSyncedSet'));
-  assert(deletion.indexOf("path.replace(/mjpeg$/i, 'json')") < deletion.indexOf('await removeSyncedPath(path);'));
-  assert(deletion.indexOf("path.replace(/mjpeg$/i, 'wav')") < deletion.indexOf('await removeSyncedPath(path);'));
+  assert.match(move,/SynapChakshuV2\?\.moveSD/);
+  assert.match(move,/return verified\(path, progress\)/);
+  assert.match(lifecycle,/async function verifyVisual/);
+  assert.match(lifecycle,/async function verifyAudio/);
+  assert.match(lifecycle,/SD original was kept/);
+  const deletion=lifecycle.slice(lifecycle.indexOf('async function deleteSyncedSet'),lifecycle.indexOf('async function moveSD'));
+  assert(deletion.indexOf("stem(path) + '.json'") < deletion.indexOf('return deleteSD(path)'));
+  assert(deletion.indexOf("stem(path) + '.wav'") < deletion.indexOf('return deleteSD(path)'));
+  const verifiedMove=lifecycle.slice(lifecycle.indexOf('async function moveSD'),lifecycle.indexOf('async function clearSD'));
+  assert.match(verifiedMove,/localStorage\.setItem\(key, JSON\.stringify\(receipt\)\)[\s\S]*await deleteSyncedSet\(path\)/);
   assert.match(voice,/Firmware owns capture/);
-  // Hey Snap only fires while the pendant is disconnected, so a voice capture is
-  // found by the reconnect sweep rather than announced over a live link. The
-  // sweep belongs to the media module, which is why voice.js no longer nudges it.
   assert.match(media,/if \(next && !wifi\?\.active\) schedulePendingSync\(1200\)/);
   assert.doesNotMatch(voice,/synap-chakshu-media-pending/);
   assert.doesNotMatch(voice,/startOffline\(0, 10\)|describeNow\(\)|highQualitySnap/);
 });
 
-test('SD-only Chakshu photo and video captures surface in the shared Library before transfer',()=> {
+test('unsynced Chakshu audio photo and video surface in the shared Library before transfer',()=> {
   const fs=require('node:fs'),path=require('node:path');
   const media=fs.readFileSync(path.join(__dirname,'../devices/chakshu/media.js'),'utf8');
   const library=fs.readFileSync(path.join(__dirname,'../devices/chakshu/library.js'),'utf8');
+  const lifecycle=fs.readFileSync(path.join(__dirname,'../devices/chakshu/capture-preview.js'),'utf8');
   const voice=fs.readFileSync(path.join(__dirname,'../devices/chakshu/voice.js'),'utf8');
   const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
   assert.match(media,/function rememberCatalogue\(files, deviceId\)/);
-  assert.match(media,/async function moveSD\(path, progress\)/);
-  assert.match(media,/The capture was not verified in the app\. The SD original was kept\./);
   assert.match(media,/sdFiles: sdFiles\.slice\(\)/);
+  assert.match(library,/\(jpg\|mjpeg\|wav\)/);
   assert.match(library,/sdOnly: true/);
-  assert.match(library,/Move to app/);
-  assert.match(library,/api\(\)\.moveSD\(item\.sourcePath/);
-  // One owner at a time: while the app holds the link the wake engine is stood
-  // down, so there is no live command stream for the app to interpret.
+  assert.match(library,/Not synced · On Chakshu SD/);
+  assert.match(library,/Sync to app/);
+  assert.match(library,/SynapChakshuV2\?\.moveSD/);
+  assert.match(lifecycle,/The imported visual could not be verified\. The SD original was kept\./);
+  assert.match(lifecycle,/The imported audio could not be verified\. The SD original was kept\./);
   assert.match(voice,/await write\(b, VOICE_OFF\)/);
   assert.doesNotMatch(voice,/startNotifications|characteristicvaluechanged/);
   const headerStart=html.indexOf('class="topbar"'),headerEnd=html.indexOf('</header>',headerStart),feedback=html.indexOf('id="heySynapFeedback"');
   assert(headerStart>=0&&feedback>headerStart&&feedback<headerEnd,'voice feedback must render inside the header, below device controls');
+});
+
+test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox', () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const media = fs.readFileSync(path.join(__dirname, '../devices/chakshu/media.js'), 'utf8');
+  const library = fs.readFileSync(path.join(__dirname, '../devices/chakshu/library.js'), 'utf8');
+  const lifecycle = fs.readFileSync(path.join(__dirname, '../devices/chakshu/capture-preview.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  assert.match(media, /async function startOffline\(\)[\s\S]*available only while Chakshu is disconnected/);
+  assert.match(media, /offlineReady: false/);
+  assert.match(media, /synap-chakshu-sd-pending/);
+  assert.match(library, /\(jpg\|mjpeg\|wav\)/);
+  assert.match(library, /Not synced · On Chakshu SD/);
+  assert.match(library, /SynapChakshuV2\?\.moveSD/);
+  assert.match(lifecycle, /async function syncAll\(\)/);
+  assert.match(lifecycle, /verification failed/);
+  assert.match(lifecycle, /Verified SD source removed/);
+  assert.match(html, /While Chakshu is disconnected from this app, Hey Snap owns capture/);
+  assert.match(html, /id="visualSDSyncNotice"/);
+  assert.match(html, /id="visualRecordSD"[^>]*disabled/);
 });

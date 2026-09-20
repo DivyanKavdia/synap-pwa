@@ -92,20 +92,22 @@ below about offline capture and Hey Snap applies to Chakshu alone.
 The current companion flow supports the production Chakshu voice/media protocol, including:
 
 - SD clear and Synap-owned FIFO space management.
-- Verified move-to-app semantics before deleting the source SD object.
-- Offline audio and video capture on SD, at 15, 30 or 60 seconds and two quality profiles.
+- SD is the disconnected/offline capture inbox; it is mounted at Chakshu boot and its readiness is always surfaced to the PWA.
+- **BLE connected:** PWA owns commands and all new audio/photo/video capture; media saves directly into the app.
+- **BLE disconnected:** firmware owns Hey Snap; supported standalone captures save to SD.
+- Reconnect automatically catalogues SD without deleting anything and flags unsynced audio, photos and video.
+- **Sync to app** verifies imported bytes before deleting each SD source; failed verification keeps the original.
 - Local `Hey Snap` command recognition in firmware.
-- Photo capture and explicit “what do you see” vision workflow.
-- Imported offline audio entering the normal transcription and memory pipeline.
+- Imported standalone SD audio enters the normal transcription and memory pipeline.
 
 #### One owner at a time
 
 **Hey Snap runs only while Chakshu is not connected to the PWA over BLE.** When the app holds the
-link it is the single source of commands and operations, so it stands the firmware wake engine down
-on connect and hands it back on disconnect. Running both at once put two command sources on one
-serialized Bluetooth queue and cost the SD mount and the audio transport; see
+link it is the single source of commands and operations. Firmware also enforces this boundary:
+connect stands local voice down and every disconnect re-arms it, including an unexpected link loss.
+Connected clients cannot start SD audio/video recording. See
 [`docs/CHAKSHU_OFFLINE_AND_HEY_SNAP.md`](docs/CHAKSHU_OFFLINE_AND_HEY_SNAP.md) for the protocol,
-the opcodes, the failure signature and the outstanding firmware requirement.
+offline inbox and verified-sync contract.
 
 ## Source-of-truth rules
 
@@ -172,10 +174,10 @@ Software CI verifies protocol, storage, recovery, browser workflows and backend 
 
 The immediate hardware baseline for that acceptance testing is **firmware build 1351**.
 
-Build 1351 additionally requires physical verification that the firmware **re-arms the Hey Snap
-wake engine whenever the BLE link drops**, including unexpected disconnects. The app re-enables it
-before a disconnect it initiates, but cannot write anything when the pendant goes out of range or
-the battery dies.
+The current companion firmware candidate additionally requires physical verification that Hey Snap
+is inactive for the entire BLE-connected period and automatically re-arms on every disconnect,
+including out-of-range/browser drops. SD boot/re-detection must report ready storage on connection
+and unsynced offline captures must survive failed transfers.
 
 ## Working convention from this baseline
 
