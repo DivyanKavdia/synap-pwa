@@ -1,8 +1,19 @@
-/* Device-side commands use an explicit short foreground lease and the app's media queue. */
+/*
+ * Hey Snap is device-owned and runs only while Chakshu is NOT connected to this app.
+ *
+ * Whenever the PWA holds the GATT link it is the single source of commands and
+ * operations, so the firmware wake engine is stood down on connect and handed
+ * back on disconnect. Two owners issuing capture commands at once is what put
+ * the SD card and the audio transport into contention: the old 1.9-second
+ * status + diagnostics poll timed out on the shared media queue, stalled audio
+ * delivery, and dropped the link with the SD card still unmounted.
+ *
+ * A stood-down device is never read again. Diagnostics are available on demand
+ * through diagnose(), not on a timer.
+ */
 (function (root) {
   'use strict';
   const CONTROL = '4fa12356-0000-1000-8000-00805f9b34fb',
-    EVENTS = '4fa12357-0000-1000-8000-00805f9b34fb',
     DIAGNOSTICS = '4fa12358-0000-1000-8000-00805f9b34fb',
     PROTOCOL = 2,
     WAKE = 1,
@@ -12,14 +23,22 @@
     AUDIO_ON = 5,
     AUDIO_OFF = 6,
     DESCRIBE = 7,
-    STOP = 8;
+    STOP = 8,
+    // Control-characteristic opcodes. A separate number space from the command
+    // ids above: 0/1 disable and enable the wake engine, 2/3 are the foreground
+    // and background leases the app no longer takes.
+    VOICE_OFF = 0,
+    VOICE_ON = 1,
+    STAND_DOWN_ATTEMPTS = 3,
+    STAND_DOWN_RETRY_MS = 5000,
+    // While the media queue is closed for capture or recovery no GATT request
+    // is issued at all, so re-checking is cheap and may wait as long as it must.
+    DEFERRED_RETRY_MS = 15000;
   let binding = null,
     pending = false,
     timer = null,
-    lastPoll = 0,
     message = '',
     state = null,
-    diagnostic = null,
     feedbackTimer = null;
   const api = () => root.SynapChakshu;
   const supported = () => root.SynapCapabilities?.hasVoice(root.SynapModules?.client?.module);
@@ -80,6 +99,8 @@
     if (incoming.command === STOP) return 'Stop';
     return 'Voice command';
   }
+  /* Wake feedback belongs to the disconnected device now. This only clears a
+   * banner an earlier build may have left on screen. */
   function feedback(text, tone = 'listening', ttl = 0) {
     const element = root.document?.getElementById?.('heySynapFeedback'),
       label = root.document?.getElementById?.('heySynapFeedbackText');
@@ -114,16 +135,19 @@
   }
   function notify() {
     root.dispatchEvent?.(
-      new CustomEvent('synap-chakshu-voice', { detail: { state, message, connected: Boolean(binding) } }),
+      new CustomEvent('synap-chakshu-voice', {
+        detail: {
+          state,
+          message,
+          connected: Boolean(binding),
+          standDown: Boolean(binding?.standDown),
+        },
+      }),
     );
   }
   function close() {
-    if (binding?.events && binding.handler)
-      binding.events.removeEventListener('characteristicvaluechanged', binding.handler);
     binding = null;
     state = null;
-    diagnostic = null;
-    lastPoll = 0;
     clearTimeout(timer);
     timer = null;
     clearTimeout(feedbackTimer);
@@ -131,193 +155,154 @@
     feedback('', 'listening', 0);
     notify();
   }
-  function localMediaCommand(command) {
-    return command === PHOTO || command === VIDEO_START || command === AUDIO_ON || command === DESCRIBE;
-  }
   function perform(incoming) {
     // Firmware owns capture. The app only observes the event and syncs durable SD media later.
     return Promise.resolve({ local: true, command: incoming.command });
   }
-  async function command(b, value) {
-    if (!current(b) || document.visibilityState !== 'visible') return;
-    const incoming = decode(value),
-      delta = (incoming.sequence - b.sequence) >>> 0;
-    if (delta >= 0x80000000) return; // stale poll after a newer notification
-    state = incoming;
-    if (!delta) {
-      notify();
-      return;
-    }
-    b.sequence = incoming.sequence;
-    if (incoming.status !== 1 || !incoming.command) {
-      notify();
-      return;
-    }
-    if (incoming.command === WAKE) {
-      message = 'Listening for command…';
-      feedback('Hey Snap · Listening for command…', 'listening', 5200);
-      notify();
-      return;
-    }
-    const label = commandLabel(incoming);
-    if (incoming.result === 1) {
-      message = `Could not start · ${label}`;
-      feedback(message, 'error', 5000);
-      notify();
-      return;
-    }
-    if (incoming.command === STOP) {
-      message = '';
-      feedback('Stopped on Chakshu', 'success', 2500);
-      notify();
-      return;
-    }
-    if (localMediaCommand(incoming.command) && incoming.result !== 3) {
-      message = `Queued on Chakshu · ${label}`;
-      feedback(message, 'heard', 2800);
-      notify();
-      return;
-    }
-    message = '';
-    feedback(`Saved on Chakshu · ${label}`, 'success', 3500);
-    if (localMediaCommand(incoming.command) && incoming.result === 3)
-      root.dispatchEvent?.(new CustomEvent('synap-chakshu-media-pending', { detail: incoming }));
-    notify();
-  }
+  /**
+   * Hand the microphone to whichever side owns it.
+   *
+   * Disconnected, this does nothing at all: the firmware is listening for Hey
+   * Snap and recording to SD on its own. Connected, it writes VOICE_OFF once,
+   * confirms the device reports itself disabled, and then stops touching GATT.
+   */
   async function sync() {
     const context = root.SynapDevices?.connection,
       owner = api()?.state.owner;
-    if (binding && (binding.context !== context || binding.owner !== owner || !api()?.state.available || !supported()))
+    if (
+      binding &&
+      (binding.context !== context ||
+        binding.owner !== owner ||
+        !api()?.state.available ||
+        !supported())
+    )
       close();
     if (pending) return;
-    if (binding?.started && Date.now() - lastPoll < 1900) return;
     clearTimeout(timer);
     timer = null;
     if (!context || !owner || !api()?.state.available || !supported()) {
       notify();
       return;
     }
+    if (binding?.standDown) return;
     pending = true;
+    let deferred = false;
     try {
-      if (!binding) {
-        const b = { context, owner, sequence: 0, queued: 0, actions: Promise.resolve(), started: false };
-        binding = b;
+      const b = binding || (binding = { context, owner, attempts: 0, standDown: false });
+      b.attempts += 1;
+      if (!b.control) {
         b.control = await context.mediaQueue(
           () => context.service.getCharacteristic(CONTROL),
           'Find Chakshu voice control',
         );
         if (!current(b)) return;
-        b.events = await context.mediaQueue(
-          () => context.service.getCharacteristic(EVENTS),
-          'Find Chakshu voice events',
-        );
-        if (!current(b)) return;
-        try {
-          b.diagnostics = await context.mediaQueue(
-            () => context.service.getCharacteristic(DIAGNOSTICS),
-            'Find Chakshu voice diagnostics',
-          );
-        } catch (error) {
-          b.diagnostics = null;
-          root.dispatchEvent?.(
-            new CustomEvent('synap-voice-diagnostic', {
-              detail: { available: false, message: error.message || String(error) },
-            }),
-          );
-        }
-        state = decode(await context.mediaQueue(() => b.control.readValue(), 'Read Chakshu voice status'));
-        b.sequence = state.sequence;
-        b.handler = (event) => command(b, event.target.value).catch((error) => {
-          if (current(b)) {
-            message = error.message;
-            notify();
-          }
-        });
-        b.events.addEventListener('characteristicvaluechanged', b.handler);
-        await context.mediaQueue(() => b.events.startNotifications(), 'Listen for Chakshu voice commands');
-        b.started = true;
       }
-      const b = binding;
+      await write(b, VOICE_OFF);
       if (!current(b)) return;
-      if (document.visibilityState === 'visible') {
-        await write(b, 2);
-        if (!current(b)) return;
-        const value = await b.context.mediaQueue(() => b.control.readValue(), 'Check Chakshu voice status');
-        if (current(b)) await command(b, value);
-        if (current(b) && b.diagnostics) {
-          const before = diagnostic?.candidateCount || 0,
-            raw = await b.context.mediaQueue(
-              () => b.diagnostics.readValue(),
-              'Read Chakshu voice diagnostics',
-            );
-          if (current(b)) {
-            diagnostic = decodeDiagnostic(raw);
-            const candidateLabel = diagnostic.candidate
-              ? commandLabel({ command: diagnostic.candidate })
-              : 'None';
-            root.dispatchEvent?.(
-              new CustomEvent('synap-voice-diagnostic', {
-                detail: {
-                  available: true,
-                  ...diagnostic,
-                  candidateLabel,
-                  confidencePercent: Math.round(diagnostic.confidence * 100),
-                },
-              }),
-            );
-            // Candidate scores are diagnostic-only. User-facing feedback is reserved
-            // for accepted wake/command events so model exploration cannot obscure the UI.
-          }
-        }
-      } else await write(b, 3);
-      lastPoll = Date.now();
-      message = '';
+      state = decode(
+        await context.mediaQueue(() => b.control.readValue(), 'Confirm Chakshu voice stood down'),
+      );
+      b.standDown = !state.enabled;
+      message = b.standDown ? '' : 'Chakshu is still listening for Hey Snap.';
+      feedback('', 'listening', 0);
     } catch (error) {
-      if (!binding?.started) close();
-      if (error.code !== 'OPTIONAL_GATT_DEFERRED') message = error.message;
+      deferred = error.code === 'OPTIONAL_GATT_DEFERRED';
+      // A deferred request never reached the device, so it must not spend the
+      // retry budget that exists for a device which answers and stays enabled.
+      if (deferred && binding) binding.attempts -= 1;
+      else message = error.message;
+      // The binding is kept even when discovery itself failed, so the bounded
+      // retry below applies to it rather than restarting from zero on the next
+      // connection event.
     } finally {
       pending = false;
       notify();
-      if (context === root.SynapDevices?.connection && api()?.state.available)
-        timer = setTimeout(sync, 2000);
+      const b = binding;
+      if (b && !b.standDown && current(b) && (deferred || b.attempts < STAND_DOWN_ATTEMPTS))
+        timer = setTimeout(sync, deferred ? DEFERRED_RETRY_MS : STAND_DOWN_RETRY_MS);
     }
   }
+  /**
+   * Give Hey Snap back before the app drops the link.
+   *
+   * Best effort only. An unexpected disconnect — out of range, flat battery, a
+   * dropped GATT link — gives the app no chance to write anything, so firmware
+   * must also re-arm the wake engine whenever the BLE link goes down. This only
+   * shortens the gap after a clean, app-initiated disconnect.
+   */
+  function release() {
+    const b = binding;
+    if (!b?.control || !b.standDown) return;
+    b.standDown = false;
+    b.attempts = 0;
+    write(b, VOICE_ON).catch(() => {});
+    // If the link survives the request after all, stand the device down again.
+    clearTimeout(timer);
+    timer = setTimeout(sync, 1500);
+  }
+  /** Manual override, kept for diagnostics. Enabling while connected would put
+   * two owners back on the same microphone, so it is refused. */
   async function enabled(value) {
     const b = binding;
     if (!b) throw Error('Connect Chakshu first.');
+    if (value) throw Error('Hey Snap runs only while Chakshu is disconnected from this app.');
     while (pending && current(b)) await new Promise((resolve) => setTimeout(resolve, 20));
     if (!current(b)) throw Error('Chakshu connection changed.');
     pending = true;
     try {
-      await write(b, value ? 1 : 0);
-      if (current(b)) state = decode(await b.context.mediaQueue(() => b.control.readValue(), 'Read voice setting'));
-      if (!value) feedback('', 'listening', 0);
+      await write(b, VOICE_OFF);
+      if (current(b))
+        state = decode(await b.context.mediaQueue(() => b.control.readValue(), 'Read voice setting'));
+      b.standDown = !state?.enabled;
+      feedback('', 'listening', 0);
       message = '';
       return state;
     } finally {
       pending = false;
-      lastPoll = 0;
       notify();
     }
   }
+  /** One-shot classifier read, on request. Never on a timer: polling this
+   * characteristic every 1.9 seconds is what stalled the audio transport. */
+  async function diagnose() {
+    const b = binding;
+    if (!b) throw Error('Connect Chakshu first.');
+    const characteristic = await b.context.mediaQueue(
+      () => b.context.service.getCharacteristic(DIAGNOSTICS),
+      'Find Chakshu voice diagnostics',
+    );
+    if (!current(b)) throw Error('Chakshu connection changed.');
+    const value = decodeDiagnostic(
+      await b.context.mediaQueue(() => characteristic.readValue(), 'Read Chakshu voice diagnostics'),
+    );
+    root.dispatchEvent?.(
+      new CustomEvent('synap-voice-diagnostic', {
+        detail: {
+          available: true,
+          ...value,
+          candidateLabel: value.candidate ? commandLabel({ command: value.candidate }) : 'None',
+          confidencePercent: Math.round(value.confidence * 100),
+        },
+      }),
+    );
+    return value;
+  }
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice8',
+    revision: '1.0.0-chakshu-voice9',
     decode,
     decodeDiagnostic,
     label: commandLabel,
     perform,
     sync,
+    release,
     enabled,
+    diagnose,
     get state() { return state; },
-    get diagnostic() { return diagnostic; },
     get message() { return message; },
+    get standDown() { return Boolean(binding?.standDown); },
   });
   for (const name of ['synap-chakshu-changed', 'synap-module-changed', 'synap-gatt-disconnected'])
     root.addEventListener?.(name, () => sync());
-  root.document?.addEventListener?.('visibilitychange', () => {
-    lastPoll = 0;
-    sync();
-  });
   if (root.document?.readyState === 'loading')
     root.document.addEventListener('DOMContentLoaded', sync, { once: true });
   else sync();

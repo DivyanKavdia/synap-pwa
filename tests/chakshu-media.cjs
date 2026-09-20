@@ -525,8 +525,12 @@ test('device voice media sync discovers SD media and only explicit move deletes 
   const deletion=media.slice(media.indexOf('async function deleteSyncedSet'));
   assert(deletion.indexOf("path.replace(/mjpeg$/i, 'json')") < deletion.indexOf('await removeSyncedPath(path);'));
   assert(deletion.indexOf("path.replace(/mjpeg$/i, 'wav')") < deletion.indexOf('await removeSyncedPath(path);'));
-  assert.match(voice,/Firmware owns capture\. The app only observes the event/);
-  assert.match(voice,/synap-chakshu-media-pending/);
+  assert.match(voice,/Firmware owns capture/);
+  // Hey Snap only fires while the pendant is disconnected, so a voice capture is
+  // found by the reconnect sweep rather than announced over a live link. The
+  // sweep belongs to the media module, which is why voice.js no longer nudges it.
+  assert.match(media,/if \(next && !wifi\?\.active\) schedulePendingSync\(1200\)/);
+  assert.doesNotMatch(voice,/synap-chakshu-media-pending/);
   assert.doesNotMatch(voice,/startOffline\(0, 10\)|describeNow\(\)|highQualitySnap/);
 });
 
@@ -543,8 +547,10 @@ test('SD-only Chakshu photo and video captures surface in the shared Library bef
   assert.match(library,/sdOnly: true/);
   assert.match(library,/Move to app/);
   assert.match(library,/api\(\)\.moveSD\(item\.sourcePath/);
-  assert.match(voice,/localMediaCommand\(incoming\.command\) && incoming\.result !== 3/);
-  assert.match(voice,/incoming\.result === 3/);
+  // One owner at a time: while the app holds the link the wake engine is stood
+  // down, so there is no live command stream for the app to interpret.
+  assert.match(voice,/await write\(b, VOICE_OFF\)/);
+  assert.doesNotMatch(voice,/startNotifications|characteristicvaluechanged/);
   const headerStart=html.indexOf('class="topbar"'),headerEnd=html.indexOf('</header>',headerStart),feedback=html.indexOf('id="heySynapFeedback"');
   assert(headerStart>=0&&feedback>headerStart&&feedback<headerEnd,'voice feedback must render inside the header, below device controls');
 });

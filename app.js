@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell149-sd-recovery-diagnostics";
+  const APP_SHELL_REVISION = "1.0.0-shell150-hey-snap-ble-gate";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -584,6 +584,9 @@
     lastGattDisconnectRequest = { device, reason, at: Date.now() };
     log("App requested GATT disconnect", { reason, state: appState,
       visibility: document.visibilityState });
+    // Hand Hey Snap back before the link goes. Best effort only: an unexpected
+    // disconnect never reaches this, so firmware re-arms on disconnect as well.
+    globalThis.SynapChakshuVoice?.release?.();
     device.gatt.disconnect();
   }
 
