@@ -28,6 +28,26 @@ test('gallery search combines titles, notes and descriptions with kind and favou
   assert.deepEqual(ids({}), ['photo', 'video', 'old']);
 });
 const { decode, Client } = require('../devices/chakshu/transfer.js');
+test('SD errors preserve optional firmware diagnostics and legacy error handling', () => {
+  const storage = { sdReady: false, sdClockHz: 1000000, sdMountStage: 'directory', sdMountAttempts: 3, freeHeap: 24000 };
+  const packet = response(7, 0, 0, new TextEncoder().encode(JSON.stringify(storage)), 2);
+  packet.setUint8(3, 3);
+  assert.throws(() => decode(packet, 7), (error) => {
+    assert.match(error.message, /SD file unavailable/);
+    assert.deepEqual(error.storage, storage);
+    return true;
+  });
+  assert.equal(decode(packet, 8), null); // stale errors cannot belong to a new request
+  for (const payload of [[], [123], new TextEncoder().encode('null')]) {
+    const legacy = response(7, 0, 0, payload, 2);
+    legacy.setUint8(3, 7);
+    assert.throws(() => decode(legacy, 7), (error) => {
+      assert.match(error.message, /SD write\/read failed/);
+      assert.equal(error.storage, undefined);
+      return true;
+    });
+  }
+});
 test('camera failure diagnostics identify discovery, command and response stages', async () => {
   const vm = require('node:vm'),
     fs = require('node:fs'),

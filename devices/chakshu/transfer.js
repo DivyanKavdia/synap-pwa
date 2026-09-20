@@ -21,8 +21,8 @@
     if (value.byteLength < 16 || value.getUint8(0) !== 0xcb || value.getUint8(1) !== 1)
       throw Error('Invalid camera transfer response.');
     if (value.getUint32(4, true) !== id || value.getUint8(2) === 0) return null;
-    if (value.getUint8(2) !== 1)
-      throw Error(
+    if (value.getUint8(2) !== 1) {
+      const error = Error(
         [
           '',
           'Chakshu is busy.',
@@ -37,6 +37,19 @@
           'Wi-Fi downloads could not start. Stop other activity and retry.',
         ][value.getUint8(3)] || 'Camera transfer failed.',
       );
+      // New firmware includes bounded SD recovery details in failed replies.
+      // Legacy 16-byte errors and malformed optional details remain readable.
+      if ([3, 7].includes(value.getUint8(3)) && value.byteLength > 16 && value.byteLength <= 496) {
+        try {
+          const details = JSON.parse(new TextDecoder().decode(
+            new Uint8Array(value.buffer, value.byteOffset + 16, value.byteLength - 16),
+          ));
+          if (details && typeof details === 'object' && !Array.isArray(details))
+            error.storage = details;
+        } catch (_) {}
+      }
+      throw error;
+    }
     return {
       total: value.getUint32(8, true),
       offset: value.getUint32(12, true),
@@ -266,7 +279,7 @@
         while (Date.now() < deadline) {
           signal?.throwIfAborted();
           const reply = decode(
-            await run(() => this.data.readValue(), 'Read Chakshu camera response', {
+            await run(() => this.data.readValue(), op === 7 ? 'Read Chakshu SD catalogue response' : 'Read Chakshu camera response', {
               timeoutMs: READ_TIMEOUT_MS,
             }),
             id,
@@ -293,6 +306,7 @@
                 offset,
                 elapsedMs: Date.now() - startedAt,
                 message: error.message,
+                ...(reason?.storage ? { storage: reason.storage } : {}),
               },
             }),
           );
