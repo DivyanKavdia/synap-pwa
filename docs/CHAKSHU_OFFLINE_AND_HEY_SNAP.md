@@ -2,7 +2,7 @@
 
 **Target contract:** PWA shell `1.0.0-shell152-sd-probe-backoff`, voice protocol **2**, media protocol **1**.  
 **Production PWA source:** `31803c596c8622388f512681bcaa05e89172018a`; GitHub Pages validation/deployment completed successfully.  
-**Production firmware:** Synap OS build **1366** (`synap-os1-build1366`), source `cb5857df5290a22494c6901b12d61f35e15c12e2`; OTA feeds, digests, provenance and browser CORS were verified by the release workflow.  
+**Production firmware:** Synap OS build **1368** (`synap-os1-build1368`), source `1dea4dbb50122d5e8b48d5ab5f792ae8d1ba1f4b`; OTA feeds, digests, provenance and browser CORS were verified by the release workflow.  
 **Device:** `xiao-esp32s3-sense-8m`, module id `3`, OTA marker `SYNAP-CHAKSHU-OTA-ID-V3`, advertising name `synap-Chakshu`.
 
 This is the operational contract for Chakshu. Odyssey C3/S3 do not have a camera, SD card or local wake engine.
@@ -256,7 +256,7 @@ Firmware BLE callbacks independently enforce the same state, so missing opcode `
 
 ## 7. Acceptance criteria
 
-Run these criteria on **firmware build 1366 + PWA shell152**. Do not call the feature physically complete until one Chakshu passes all of these:
+Run these criteria on **firmware build 1368 + PWA shell152**. Do not call the feature physically complete until one Chakshu passes all of these:
 
 1. Cold power-on with card inserted reports SD ready without opening the PWA.
 2. Connect to PWA: Hey Snap produces no local command/action for the full connected period.
