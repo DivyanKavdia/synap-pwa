@@ -467,6 +467,8 @@
   async function refreshSD() {
     if (root.SynapAppControls.recordingState().active)
       throw Error('Stop recording before checking the SD card.');
+    // An explicit Check SD card is the user telling us to look again.
+    forgetSDProbe();
     try {
       if (moduleInfo()?.mediaFeatures & 8)
         await operation(async (signal) => camera().request(14, 0, '', signal));
@@ -546,6 +548,32 @@
     throw Error('Finishing the current download. Use Finish downloads on Chakshu’s download page.');
   }
   let offlineTimer, autoSyncTimer, autoSyncPromise;
+  /*
+   * One catalogue probe per connection is allowed while the readiness mask says
+   * the card is missing, because a catalogue is what makes firmware re-detect
+   * it. Repeating it is not. An unmounted card answers "SD file unavailable"
+   * after about 4.6 seconds, and module-changed re-arms the sweep roughly every
+   * 15, so a third of the shared media queue goes on re-asking a question the
+   * device already answered. That is the contention that cost us the audio
+   * transport once already.
+   *
+   * The probe is forgotten whenever the card could plausibly have changed: a
+   * new connection, a different device, or an explicit Check SD card.
+   */
+  let sdProbe = { deviceId: '', attempted: false };
+  function forgetSDProbe() {
+    sdProbe = { deviceId: '', attempted: false };
+  }
+  /** False once firmware has told us, this connection, that there is no card. */
+  function sdWorthCataloguing(deviceId) {
+    if (capabilities.ready(moduleInfo(), 'sd')) {
+      forgetSDProbe();
+      return true;
+    }
+    if (sdProbe.attempted && sdProbe.deviceId === deviceId) return false;
+    sdProbe = { deviceId, attempted: true };
+    return true;
+  }
   function schedulePendingSync(delayMs = 1200) {
     clearTimeout(autoSyncTimer);
     autoSyncTimer = null;
@@ -830,6 +858,7 @@
     const expected = owner,
       deviceId = connected()?.deviceId;
     if (!deviceId) return 0;
+    if (!sdWorthCataloguing(deviceId)) return 0;
     // Background sync is discovery-only. SD media remains on Chakshu and is
     // represented in the shared Library until the user explicitly chooses
     // Move to app. moveSD() is the only path that may delete an SD original.
@@ -930,6 +959,8 @@
   root.addEventListener('synap-gatt-disconnected', () => {
     context = null;
     transfer = null;
+    // The card may be swapped, seated or simply mount cleanly on the next boot.
+    forgetSDProbe();
     clearTimeout(autoSyncTimer);
     autoSyncTimer = null;
     session?.controller.abort();

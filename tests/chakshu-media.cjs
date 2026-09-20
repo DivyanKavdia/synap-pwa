@@ -531,6 +531,19 @@ test('device voice media sync discovers SD media and only explicit verified sync
   assert.match(verifiedMove,/localStorage\.setItem\(key, JSON\.stringify\(receipt\)\)[\s\S]*await deleteSyncedSet\(path\)/);
   assert.match(voice,/Firmware owns capture/);
   assert.match(media,/if \(next && !wifi\?\.active\) schedulePendingSync\(1200\)/);
+  // An unmounted card answers "SD file unavailable" after ~4.6s on the shared
+  // media queue, and module-changed re-arms the sweep every ~15s. One probe per
+  // connection still lets a catalogue trigger firmware re-detection; a loop
+  // would spend a third of the queue re-asking an answered question.
+  assert.match(sync,/if \(!sdWorthCataloguing\(deviceId\)\) return 0;/);
+  const probe=media.slice(media.indexOf('function sdWorthCataloguing'),media.indexOf('function schedulePendingSync'));
+  assert.match(probe,/capabilities\.ready\(moduleInfo\(\), 'sd'\)/);
+  assert.match(probe,/sdProbe\.attempted && sdProbe\.deviceId === deviceId\) return false/);
+  // The probe must be forgotten wherever the card could have changed, or a
+  // reseated card would stay invisible for the rest of the session.
+  assert.match(media,/forgetSDProbe\(\);\s*\n\s*try \{/,'Check SD card clears the probe');
+  const dropped=media.slice(media.indexOf("addEventListener('synap-gatt-disconnected'"));
+  assert.match(dropped.slice(0,400),/forgetSDProbe\(\)/,'disconnect clears the probe');
   assert.doesNotMatch(voice,/synap-chakshu-media-pending/);
   assert.doesNotMatch(voice,/startOffline\(0, 10\)|describeNow\(\)|highQualitySnap/);
 });

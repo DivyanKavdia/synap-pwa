@@ -1,6 +1,6 @@
 # Chakshu — single-owner capture, offline SD and Hey Snap
 
-**Target contract:** PWA shell `1.0.0-shell151-single-owner-sd-sync`, voice protocol **2**, media protocol **1**.  
+**Target contract:** PWA shell `1.0.0-shell152-sd-probe-backoff`, voice protocol **2**, media protocol **1**.  
 **Firmware field reference:** build **1351**; the companion firmware candidate contains additional SD boot/recovery and BLE-ownership fixes.  
 **Device:** `xiao-esp32s3-sense-8m`, module id `3`, OTA marker `SYNAP-CHAKSHU-OTA-ID-V3`, advertising name `synap-Chakshu`.
 
@@ -97,6 +97,20 @@ SD + SD-audio missing = 651
 ```
 
 Failed SD media responses can include `sdReady`, `sdClockHz`, `sdMountStage`, `sdMountAttempts`, `sdRecoveryLocked` and `freeHeap`.
+
+### Catalogue probing
+
+While the readiness mask reports no card, the PWA catalogues **once per connection** and then stops.
+
+The single probe is kept because a catalogue is what makes firmware repeat detection. The repetition is not: an unmounted card answers `SD file unavailable` after about 4.6 seconds, and `synap-module-changed` re-arms the sweep roughly every 15, so a third of the shared media queue goes on re-asking a question the device already answered. That queue is also the audio transport.
+
+The probe is forgotten, and a fresh one allowed, on:
+
+- a GATT disconnect, since the card may be reseated or mount cleanly next boot,
+- a different `deviceId`,
+- an explicit **Check SD card**.
+
+A successful catalogue is followed by a capability refresh, so a card that firmware re-detects clears the state on its own.
 
 ---
 
