@@ -69,7 +69,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       await page.locator('nav a[href="#library"]').click();
       await clickLibraryAction(page, 'libraryAdd');
       assert(await page.locator('#visualWifi').isDisabled());
-      assert.match(await page.locator('#visualStorageHint').textContent(), /No SD card is needed/);
+      assert.match(await page.locator('#visualStorageHint').textContent(), /SD card unavailable.*Offline Hey Snap capture requires the card/);
       await page.locator('#visualCheckSD').click();
       await page.waitForFunction(() => SynapChakshu.state.storageReady && !SynapChakshu.busy);
       assert.equal(
@@ -128,31 +128,39 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       assert.deepEqual(privacy.jobs, []);
       await page.locator('#capturePreviewClose').click();
       await page.locator('#visualMode').selectOption('video');
-      await page.locator('#visualSDQuality').selectOption('1');
-      await page.locator('#visualSDLength').fill('15');
-      await page.locator('#visualRecordSD').click();
-      await page.waitForFunction(() => SynapChakshu.state.offline && !SynapChakshu.state.working);
-      assert.equal(await page.evaluate(() => bleFixture.sdVideoOptions), 1 | (15 << 8));
-      assert.match(
-        await page.locator('#visualConnectionStatus').textContent(),
-        /640×480.*9.0 fps captured.*2 dropped frames.*limit 15 s/,
+      assert(
+        await page.locator('#visualRecordSD').isDisabled(),
+        'connected PWA never offers SD recording',
       );
-      assert(await page.locator('#visualSDQuality').isDisabled());
-      assert(await page.locator('#headerPhoto').isDisabled());
-      await page.evaluate(() => SynapAppControls.toggleCapture());
-      assert.equal(await page.evaluate(() => SynapAppControls.recordingState().active), false);
-      await page.locator('#visualStop').click();
-      await page.waitForFunction(() => !SynapChakshu.busy);
-      assert.match(
-        await page.locator('#visualConnectionStatus').textContent(),
-        /SD recording saved/,
+      const offlineRefusal = await page.evaluate(async () => {
+        try {
+          await SynapChakshu.startOffline();
+          return '';
+        } catch (error) {
+          return error.message;
+        }
+      });
+      assert.match(offlineRefusal, /only while Chakshu is disconnected/);
+      assert.equal(
+        await page.evaluate(() => bleFixture.mediaCommands.includes(5)),
+        false,
+        'connected clients cannot start SD video',
       );
-      const afterSD = await page.evaluate(async () => {
+      assert.equal(
+        await page.evaluate(() => bleFixture.mediaCommands.includes(10)),
+        false,
+        'connected clients cannot start SD audio',
+      );
+      const afterConnectedCapture = await page.evaluate(async () => {
         const journal = new DKAudioStore();
         return { rows: await journal.all('recordings'), jobs: await journal.all('jobs') };
       });
-      assert.equal(afterSD.rows.length, 1, 'SD capture does not create a cloud audio journal');
-      assert.deepEqual(afterSD.jobs, [], 'no photo or video upload jobs');
+      assert.equal(
+        afterConnectedCapture.rows.length,
+        1,
+        'connected phone video keeps only its local soundtrack journal',
+      );
+      assert.deepEqual(afterConnectedCapture.jobs, [], 'connected photo/video creates no cloud jobs');
       await page.locator('#visualWifi').click();
       await page.waitForFunction(
         () => SynapChakshu.state.wifi?.active && !SynapChakshu.state.working,
@@ -199,7 +207,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
       await context.close();
     }
     console.log(
-      'PASS phone capture, explicit SD quality/clip selection, local soundtrack without cloud jobs, SD downloads and return to audio',
+      'PASS connected PWA capture, disconnected-only SD ownership, local soundtrack, SD downloads and return to audio',
     );
   } finally {
     await browser.close();
