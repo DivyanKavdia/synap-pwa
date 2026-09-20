@@ -55,6 +55,8 @@ Contiguous missing source windows are grouped into long-form provider batches. T
 
 Missing, incomplete or rate-limited model responses are handled through durable retry/cooldown logic rather than immediate duplicate audio submission.
 
+Batching is the primary defence against daily quota exhaustion: one request per twenty minutes instead of forty. When the dedicated ASR model is nonetheless blocked for hours, the batch is rescued **one 30-second window at a time on the fallback model**, which holds a separate quota. The long-form batch itself cannot use that model — it returns plain text, and word timestamps are the only thing that maps a twenty-minute response back onto the durable windows — but a single window is already its own boundary and needs no such map. Each rescued window is sealed and committed on its own, so a pass that runs out of request budget or meets a second cooldown keeps everything it finished and resumes from what is still missing.
+
 ## Product surface
 
 Synap currently exposes:

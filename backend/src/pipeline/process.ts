@@ -22,7 +22,7 @@ import {
 } from '../crypto/envelope.js';
 import { extractMemory } from '../gemini/memory.js';
 import { GeminiError, modelFailure } from '../gemini/client.js';
-import { formatMs, toSpeakerLines } from '../gemini/transcribe.js';
+import { formatMs, longAsrCooldownMs, toSpeakerLines } from '../gemini/transcribe.js';
 import { tagSelfSpeaker } from '../speaker/enrich.js';
 import { readVoiceProfile } from '../speaker/profile.js';
 import { RecordingSpeakers, labelWords } from '../speaker/diarization.js';
@@ -43,7 +43,11 @@ import { log } from '../util/log.js';
 import { rebuildDay } from './brief.js';
 import { indexMemory } from './index-memory.js';
 import { chooseTranscript } from './source-materialize.js';
-import { transcribeUploadedBatch, hasUsableTranscription } from './rolling-transcription.js';
+import {
+  transcribeUploadedBatch,
+  transcribeUploadedWindow,
+  hasUsableTranscription,
+} from './rolling-transcription.js';
 import { requireCompleteSegments, transcriptionBatches } from './recording-segments.js';
 
 const SEGMENT_MS = 30_000;
@@ -167,13 +171,159 @@ async function transcribeAll(
     ASR_BATCH_MS,
     segment => !hasUsableTranscription(uid, recordingId, dek, segment),
   );
+  // One budget for the whole call, not one per batch: an hour of audio is three
+  // batches, and three four-minute rescues would outlast the worker request.
+  const rescueDeadline = Date.now() + COOLDOWN_RESCUE_BUDGET_MS;
+  let rescued = 0;
   for (const batch of batches) {
-    const completed = await transcribeUploadedBatch(uid, recordingId, batch, dek);
+    let completed: SegmentDoc[];
+    try {
+      completed = await transcribeUploadedBatch(uid, recordingId, batch, dek);
+    } catch (cause) {
+      const cooldownMs = longAsrCooldownMs(cause);
+      if (!cooldownMs) throw cause;
+      const pass = await rescueBatchDuringCooldown(
+        uid,
+        recordingId,
+        batch,
+        dek,
+        cooldownMs,
+        rescueDeadline,
+        async (finished) => {
+          for (const segment of finished) ordered[segment.index] = segment;
+          await patch({ progress: 0.05 + 0.5 * ((done + finished.length) / ordered.length) });
+        },
+      );
+      completed = pass.completed;
+      rescued += completed.length;
+      for (const segment of completed) ordered[segment.index] = segment;
+      done += completed.length;
+      await patch({ progress: 0.05 + 0.5 * (done / ordered.length) });
+      if (completed.length === batch.length) continue;
+
+      const continuation = cooldownContinuation(rescued, pass.failure, cause);
+      log.warn('Cooldown rescue transcribed part of a recording', {
+        uid,
+        recordingId,
+        rescued,
+        windows: batch.length,
+        completed: completed.length,
+        retry_after_ms: retryAfterMs(continuation),
+        reason: pass.failure === undefined ? 'budget' : 'window_failed',
+        stage: 'transcription',
+      });
+      throw continuation;
+    }
     for (const segment of completed) ordered[segment.index] = segment;
     done += completed.length;
     await patch({ progress: 0.05 + 0.5 * (done / ordered.length) });
   }
   return ordered;
+}
+
+/** Windows transcribed at once while the dedicated model is blocked. Higher
+ * spends the fallback model's per-minute allowance faster than it recovers. */
+const COOLDOWN_WINDOW_CONCURRENCY = 3;
+/** Total rescue time for one worker delivery. Leaves the request room to finish
+ * understanding and indexing; windows past it are durable work for the next
+ * delivery, not loss. */
+const COOLDOWN_RESCUE_BUDGET_MS = 4 * 60_000;
+/** How soon to resume when a delivery ended with windows still outstanding. */
+const COOLDOWN_CONTINUE_MS = 15_000;
+
+/** The deadline an error carries, or 0 when it names none. */
+function retryAfterMs(error: unknown): number {
+  if (error instanceof GeminiError) return Number(error.rateLimit?.retryAfterMs || 0);
+  if (error instanceof db.TranscriptionBusyError) return error.retryAfterMs;
+  return 0;
+}
+
+/**
+ * What a rescue that did not finish means for the recording.
+ *
+ * With nothing salvaged anywhere in this call there is no progress to protect,
+ * so the real blockage is reported and its deadline inherited: a twelve-hour
+ * quota wait must not be replaced by a fifteen-second one that spends delivery
+ * after delivery rediscovering it.
+ *
+ * With windows already sealed and paid for, failing the recording would throw
+ * that work away. A prompt continuation is asked for instead, honouring
+ * whatever deadline ended the pass so the next delivery does not arrive early.
+ */
+export function cooldownContinuation(rescued: number, failure: unknown, cause: unknown): unknown {
+  if (!rescued) return failure ?? cause;
+  return new db.TranscriptionBusyError(Math.max(COOLDOWN_CONTINUE_MS, retryAfterMs(failure)));
+}
+
+/**
+ * Transcribe a blocked batch one 30-second window at a time.
+ *
+ * The long-form batch cannot use the fallback model: that model returns plain
+ * text, and word timestamps are the only thing that maps a twenty-minute
+ * response back onto Synap's durable 30-second windows. A single window needs
+ * no such map — it is already its own boundary — so the per-window path can use
+ * the fallback, and the two models hold separate quotas.
+ *
+ * Every window that completes is sealed and committed on its own. A pass that
+ * runs out of budget, or meets a second cooldown, therefore keeps everything it
+ * finished. Nothing is ever transcribed twice: the next delivery starts from the
+ * windows still missing a usable transcript.
+ *
+ * Returning rather than throwing is deliberate. What a partial rescue means for
+ * the recording depends on what the rest of the call already salvaged, and that
+ * is the caller's to decide.
+ */
+export async function rescueBatchDuringCooldown(
+  uid: string,
+  recordingId: string,
+  batch: SegmentDoc[],
+  dek: Buffer,
+  cooldownMs: number,
+  deadline: number,
+  report: (finished: SegmentDoc[]) => Promise<void>,
+): Promise<{ completed: SegmentDoc[]; failure?: unknown }> {
+  log.warn('Dedicated ASR is in a long cooldown; transcribing windows individually', {
+    uid,
+    recordingId,
+    windows: batch.length,
+    retry_after_ms: cooldownMs,
+    model: config.gemini.transcribeModel,
+    fallback_model: config.gemini.transcribeFallbackModel,
+    stage: 'transcription',
+  });
+
+  const queue = batch.slice();
+  const completed: SegmentDoc[] = [];
+  let failure: unknown;
+  let reporting: Promise<void> = Promise.resolve();
+  let reportedAt = 0;
+
+  const worker = async (): Promise<void> => {
+    for (let next = queue.shift(); next; next = queue.shift()) {
+      if (failure !== undefined || Date.now() >= deadline) return;
+      try {
+        completed.push(await transcribeUploadedWindow(uid, recordingId, next.index, dek));
+      } catch (windowCause) {
+        // One failure ends the pass. Whatever stopped this window is waiting for
+        // every remaining window too, and paying to rediscover it helps nobody.
+        if (failure === undefined) failure = windowCause;
+        return;
+      }
+      // Keep the processing lease warm and the progress bar moving. Serialized
+      // and throttled: forty windows must not become forty racing writes to one
+      // recording document.
+      if (Date.now() - reportedAt < 5_000) continue;
+      reportedAt = Date.now();
+      const finished = completed.slice();
+      reporting = reporting.then(() => report(finished)).catch(() => undefined);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(COOLDOWN_WINDOW_CONCURRENCY, queue.length) }, worker),
+  );
+  await reporting;
+  return { completed, failure };
 }
 
 // ---------------------------------------------------------------------------

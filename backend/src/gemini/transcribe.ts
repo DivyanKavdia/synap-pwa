@@ -64,6 +64,22 @@ export interface TranscribeOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * How long the dedicated ASR model is blocked for, when that is long enough to
+ * be worth reaching for the fallback model. Returns 0 for anything else.
+ *
+ * The two models hold separate per-model quotas, so one being exhausted says
+ * nothing about the other. What the fallback cannot do is word timestamps,
+ * which is why the caller, not this predicate, decides whether it is usable.
+ */
+export function longAsrCooldownMs(error: unknown): number {
+  if (!(error instanceof GeminiError)) return 0;
+  if (error.reason !== 'cooldown' && error.status !== 429) return 0;
+  if (config.gemini.transcribeFallbackModel === config.gemini.transcribeModel) return 0;
+  const retryAfterMs = Number(error.rateLimit?.retryAfterMs || 0);
+  return retryAfterMs >= config.gemini.transcribeFallbackAfterMs ? retryAfterMs : 0;
+}
+
 export async function transcribeSegment(
   audio: Buffer,
   mimeType: string,
@@ -221,11 +237,7 @@ export async function transcribeSegment(
   };
 
   const longAsrCooldown = (error: unknown) =>
-    !options.primaryWordTimestamps &&
-    error instanceof GeminiError &&
-    (error.reason === 'cooldown' || error.status === 429) &&
-    Number(error.rateLimit?.retryAfterMs || 0) >= config.gemini.transcribeFallbackAfterMs &&
-    config.gemini.transcribeFallbackModel !== config.gemini.transcribeModel;
+    !options.primaryWordTimestamps && longAsrCooldownMs(error) > 0;
 
   // Batch mode enables primary word timestamps only because they are the
   // deterministic map back to 30-second encrypted source windows. Ordinary
