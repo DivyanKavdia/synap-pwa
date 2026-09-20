@@ -10,7 +10,7 @@ Synap is the companion application and cloud memory platform for the Synap weara
 - **Backend:** Google Cloud Run, region `asia-south1`.
 - **PWA application baseline:** `31803c596c8622388f512681bcaa05e89172018a` (shell revision `1.0.0-shell152-sd-probe-backoff`).
 - **Backend application baseline:** `97ba01a`.
-- **Firmware baseline:** Synap OS build **1366** (`synap-os1-build1366`) from `DivyanKavdia/synap-firmware`, source `cb5857df5290a22494c6901b12d61f35e15c12e2`.
+- **Firmware baseline:** Synap OS build **1368** (`synap-os1-build1368`) from `DivyanKavdia/synap-firmware`, source `1dea4dbb50122d5e8b48d5ab5f792ae8d1ba1f4b`.
 - **Primary transcription:** `gemini-3.5-transcribe`.
 - **Memory / reasoning:** Gemini models behind the Synap backend.
 - **Storage and orchestration:** encrypted object storage, Firestore state, Cloud Tasks and the private speaker service.
@@ -97,7 +97,7 @@ The current companion flow supports the production Chakshu voice/media protocol,
 - **BLE disconnected:** firmware owns Hey Snap; supported standalone captures save to SD.
 - Reconnect catalogues SD without deleting anything and flags unsynced audio, photos and video.
 - When firmware reports SD unavailable, shell152 performs only one recovery catalogue probe per BLE connection instead of repeatedly occupying the shared media queue; an explicit **Check SD card**, a new device, or a reconnect permits a fresh probe.
-- Firmware build 1366 corrects SD diagnostics: `sdClockHz` is the clock attempted by the current mount try, and `sdMountStage` distinguishes `bus` from `no-card`, avoiding false conclusions from stale/default clock values.
+- Firmware build 1368 corrects SD diagnostics: `sdClockHz` is the clock attempted by the current mount try, and `sdMountStage` distinguishes `bus` from `no-card`, avoiding false conclusions from stale/default clock values.
 - **Sync to app** verifies imported bytes before deleting each SD source; failed verification keeps the original.
 - Local `Hey Snap` command recognition in firmware.
 - Imported standalone SD audio enters the normal transcription and memory pipeline.
@@ -174,10 +174,10 @@ Software CI verifies protocol, storage, recovery, browser workflows and backend 
 - move-to-app/delete behavior,
 - complete device → transcript → memory flow.
 
-The current hardware baseline for acceptance testing is **firmware build 1366** with PWA shell
+The current hardware baseline for acceptance testing is **firmware build 1368** with PWA shell
 `1.0.0-shell152-sd-probe-backoff`.
 
-Build 1366 already contains the BLE ownership and SD boot/re-detection implementation: Hey Snap is
+Build 1368 already contains the BLE ownership and SD boot/re-detection implementation: Hey Snap is
 stood down for the BLE-connected period and re-armed by firmware on every disconnect, including
 unexpected drops. Physical acceptance still needs to confirm that behavior on-device, that SD is
 ready after cold boot/re-detection, and that unsynced offline captures survive failed transfers.
