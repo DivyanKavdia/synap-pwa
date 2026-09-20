@@ -1,6 +1,6 @@
 # Synap
 
-**Current production baseline — 18 September 2026**
+**Current production baseline — 20 September 2026**
 
 Synap is the companion application and cloud memory platform for the Synap wearable family. This repository owns the browser/PWA experience and the production backend. Device firmware is maintained separately in `DivyanKavdia/synap-firmware`.
 
@@ -8,8 +8,9 @@ Synap is the companion application and cloud memory platform for the Synap weara
 
 - **PWA:** deployed from `main` through GitHub Pages.
 - **Backend:** Google Cloud Run, region `asia-south1`.
-- **Backend application baseline:** `b7fbcb7cb8df7ea69a802a666dc633ff8c900eeb`.
-- **Firmware baseline:** Synap OS build **1262** from the firmware repository.
+- **PWA application baseline:** `aa19647` (shell revision `1.0.0-shell150-hey-snap-ble-gate`).
+- **Backend application baseline:** `97ba01a`.
+- **Firmware baseline:** Synap OS build **1351** from the firmware repository.
 - **Primary transcription:** `gemini-3.5-transcribe`.
 - **Memory / reasoning:** Gemini models behind the Synap backend.
 - **Storage and orchestration:** encrypted object storage, Firestore state, Cloud Tasks and the private speaker service.
@@ -19,7 +20,7 @@ The production backend is promoted only after a synthetic end-to-end readiness c
 ## Current architecture
 
 ```text
-Synap / Chakshu device
+Synap Odyssey C3 / Synap Odyssey S3 / Chakshu
         |
         | BLE
         v
@@ -66,17 +67,43 @@ Synap currently exposes:
 - **Voice identity** — consented speaker profile and downstream speaker enrichment.
 - **Chakshu media** — photo/video controls, SD/offline media metadata and move-to-app workflows.
 
+## Device family
+
+Three devices share one catalogue (`devices/catalog.json`), which is the source of truth for every capability gate in the app. Display names changed in this baseline; identifiers did not.
+
+| Device | Board | Module | OTA marker | Capabilities |
+| --- | --- | --- | --- | --- |
+| **Synap Odyssey S3** | ESP32-S3 SuperMini (4 MB) | 1 | `SYNAP-ESP32S3-OTA-ID-V3` | audio, settings, touch, battery, standby |
+| **Synap Odyssey C3** | ESP32-C3 SuperMini (4 MB) | 2 | `SYNAP-ESP32C3-OTA-ID-V3` | audio, settings, touch, battery, standby |
+| **Chakshu** | XIAO ESP32-S3 Sense (8 MB) | 3 | `SYNAP-CHAKSHU-OTA-ID-V3` | audio, camera, SD, photo, video, SD audio, settings |
+
+The renaming of C3 and S3 to **Synap Odyssey** is a display change only. Catalogue ids
+(`esp32c3-supermini-4m`, `esp32s3-fh4r2-qspi-4m`), the BLE advertising name `synap`, OTA product
+markers and manifest paths are wire and update identifiers and are unchanged. Changing any of them
+would orphan devices already in the field.
+
+Odyssey C3 and Odyssey S3 are audio pendants: no camera, no SD card, no wake engine. Everything
+below about offline capture and Hey Snap applies to Chakshu alone.
+
 ### Chakshu baseline
 
 The current companion flow supports the production Chakshu voice/media protocol, including:
 
 - SD clear and Synap-owned FIFO space management.
 - Verified move-to-app semantics before deleting the source SD object.
-- Offline audio and video capture on SD.
-- Default 10-second video capture and explicit requested durations.
+- Offline audio and video capture on SD, at 15, 30 or 60 seconds and two quality profiles.
 - Local `Hey Snap` command recognition in firmware.
 - Photo capture and explicit “what do you see” vision workflow.
 - Imported offline audio entering the normal transcription and memory pipeline.
+
+#### One owner at a time
+
+**Hey Snap runs only while Chakshu is not connected to the PWA over BLE.** When the app holds the
+link it is the single source of commands and operations, so it stands the firmware wake engine down
+on connect and hands it back on disconnect. Running both at once put two command sources on one
+serialized Bluetooth queue and cost the SD mount and the audio transport; see
+[`docs/CHAKSHU_OFFLINE_AND_HEY_SNAP.md`](docs/CHAKSHU_OFFLINE_AND_HEY_SNAP.md) for the protocol,
+the opcodes, the failure signature and the outstanding firmware requirement.
 
 ## Source-of-truth rules
 
@@ -141,7 +168,12 @@ Software CI verifies protocol, storage, recovery, browser workflows and backend 
 - move-to-app/delete behavior,
 - complete device → transcript → memory flow.
 
-The immediate hardware baseline for that acceptance testing is **firmware build 1262**.
+The immediate hardware baseline for that acceptance testing is **firmware build 1351**.
+
+Build 1351 additionally requires physical verification that the firmware **re-arms the Hey Snap
+wake engine whenever the BLE link drops**, including unexpected disconnects. The app re-enables it
+before a disconnect it initiates, but cannot write anything when the pendant goes out of range or
+the battery dies.
 
 ## Working convention from this baseline
 

@@ -21,7 +21,7 @@ test('detects three modules from firmware IDs and rejects malformed or unknown d
   const bad=descriptor();bad.setUint8(1,2);assert.throws(()=>decode(bad),/Unsupported/);
   assert.throws(()=>decode(new DataView(new ArrayBuffer(19))),/Unsupported/);
   const readiness=descriptor();readiness.setUint16(6,0xffff,true);assert.throws(()=>decode(readiness),/readiness/);
-  assert.equal(legacy('SYNAP-FW:esp32c3-supermini-4m:synap-os1-build1200:1200').name,'synap C3');
+  assert.equal(legacy('SYNAP-FW:esp32c3-supermini-4m:synap-os1-build1200:1200').name,'Synap Odyssey C3');
   assert.equal(legacy('synap-Chakshu'),null);
   assert.equal(legacy('SYNAP-FW:xiao-esp32s3-sense-8m:synap-os1-build0:0'),null);
 });

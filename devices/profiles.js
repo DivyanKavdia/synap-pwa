@@ -19,7 +19,7 @@
     {
       "id": 1,
       "target": "esp32s3-fh4r2-qspi-4m",
-      "name": "synap S3",
+      "name": "Synap Odyssey S3",
       "board": "ESP32-S3 SuperMini",
       "adapter": "esp32s3",
       "chip": 9,
@@ -42,7 +42,7 @@
     {
       "id": 2,
       "target": "esp32c3-supermini-4m",
-      "name": "synap C3",
+      "name": "Synap Odyssey C3",
       "board": "ESP32-C3 SuperMini",
       "adapter": "esp32c3",
       "chip": 5,
