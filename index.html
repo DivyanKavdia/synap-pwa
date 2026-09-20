@@ -139,14 +139,15 @@
       <div id="visualMode-video" hidden>
         <div class="visual-actions"><button id="visualOnline" type="button">Record video on phone</button></div>
         <details class="visual-help"><summary>About phone video</summary><p>Camera frames and soundtrack stay in this browser on your phone. Bluetooth limits the frame rate; keep synap open and Chakshu nearby. Starting video saves any standalone audio take first. Clips hold up to 32 MiB of video. Export a copy to keep it outside the browser.</p></details>
-        <h4>Higher-quality video on SD</h4>
-        <div class="visual-actions"><label>Quality <select id="visualSDQuality"><option value="0">HD detail · 720p / 10 fps target</option><option value="1">Smooth · 480p / 20 fps target</option></select></label><label>Clip length <select id="visualSDLength"><option value="15">15 seconds</option><option value="30" selected>30 seconds</option><option value="60">60 seconds</option></select></label><button id="visualRecordSD" type="button">Record video on SD</button></div>
-        <p id="visualSDVideoHint"></p><p>Video and soundtrack stay on the card until you import them to this phone. No cloud upload. Recording stops automatically even if Bluetooth disconnects. Starting saves any standalone audio take first.</p>
+        <h4>Offline capture</h4>
+        <p>While Chakshu is disconnected from this app, Hey Snap owns capture and saves supported photos, video and audio to the SD card. While connected, all new captures use the app and save directly here.</p>
+        <div hidden aria-hidden="true"><label>Quality <select id="visualSDQuality"><option value="0">HD detail</option><option value="1">Smooth</option></select></label><label>Clip length <select id="visualSDLength"><option value="30" selected>30 seconds</option></select></label><button id="visualRecordSD" type="button" disabled>Offline only</button><p id="visualSDVideoHint"></p></div>
       </div>
       <figure id="visualLive" hidden><img id="visualLiveFrame" alt="Latest camera frame"><figcaption id="visualLiveDescription" aria-live="polite"></figcaption></figure>
       <div class="visual-actions"><button id="visualStop" type="button" hidden>Stop video</button></div>
       <p id="visualConnectionStatus" role="status"></p>
       <p id="visualStorageHint" role="status"></p>
+      <div id="visualSDSyncNotice" class="visual-sd-sync" role="status" hidden><strong id="visualSDSyncText"></strong><button id="visualSyncSD" type="button">Sync offline captures</button></div>
       <div class="visual-actions"><button id="visualCheckSD" type="button">Check SD card</button><button id="visualSD" type="button">Browse SD card</button><button id="visualWifi" type="button">Wi-Fi downloads</button><button id="visualImport" type="button">Import SD files</button></div>
       <section id="visualWifiDetails" class="visual-wifi" aria-label="Private Wi-Fi downloads" hidden>
         <h3>Chakshu Wi-Fi</h3>
