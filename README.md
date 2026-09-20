@@ -8,9 +8,9 @@ Synap is the companion application and cloud memory platform for the Synap weara
 
 - **PWA:** deployed from `main` through GitHub Pages.
 - **Backend:** Google Cloud Run, region `asia-south1`.
-- **PWA application baseline:** `aa19647` (shell revision `1.0.0-shell150-hey-snap-ble-gate`).
+- **PWA application baseline:** `31803c596c8622388f512681bcaa05e89172018a` (shell revision `1.0.0-shell152-sd-probe-backoff`).
 - **Backend application baseline:** `97ba01a`.
-- **Firmware baseline:** Synap OS build **1351** from the firmware repository.
+- **Firmware baseline:** Synap OS build **1365** (`synap-os1-build1365`) from `DivyanKavdia/synap-firmware`, source `08c0bf603dc63ac089a6558b1fdb2acad5f4e9d4`.
 - **Primary transcription:** `gemini-3.5-transcribe`.
 - **Memory / reasoning:** Gemini models behind the Synap backend.
 - **Storage and orchestration:** encrypted object storage, Firestore state, Cloud Tasks and the private speaker service.
@@ -67,7 +67,7 @@ Synap currently exposes:
 - **Ask** — grounded recall over stored Synap memories.
 - **Device controls** — connection, recording, battery/status and firmware management.
 - **Voice identity** — consented speaker profile and downstream speaker enrichment.
-- **Chakshu media** — photo/video controls, SD/offline media metadata and move-to-app workflows.
+- **Chakshu media** — connected photo/video controls, SD/offline media metadata and digest-verified sync-to-app workflows.
 
 ## Device family
 
@@ -95,7 +95,8 @@ The current companion flow supports the production Chakshu voice/media protocol,
 - SD is the disconnected/offline capture inbox; it is mounted at Chakshu boot and its readiness is always surfaced to the PWA.
 - **BLE connected:** PWA owns commands and all new audio/photo/video capture; media saves directly into the app.
 - **BLE disconnected:** firmware owns Hey Snap; supported standalone captures save to SD.
-- Reconnect automatically catalogues SD without deleting anything and flags unsynced audio, photos and video.
+- Reconnect catalogues SD without deleting anything and flags unsynced audio, photos and video.
+- When firmware reports SD unavailable, shell152 performs only one recovery catalogue probe per BLE connection instead of repeatedly occupying the shared media queue; an explicit **Check SD card**, a new device, or a reconnect permits a fresh probe.
 - **Sync to app** verifies imported bytes before deleting each SD source; failed verification keeps the original.
 - Local `Hey Snap` command recognition in firmware.
 - Imported standalone SD audio enters the normal transcription and memory pipeline.
@@ -172,12 +173,15 @@ Software CI verifies protocol, storage, recovery, browser workflows and backend 
 - move-to-app/delete behavior,
 - complete device → transcript → memory flow.
 
-The immediate hardware baseline for that acceptance testing is **firmware build 1351**.
+The current hardware baseline for acceptance testing is **firmware build 1365** with PWA shell
+`1.0.0-shell152-sd-probe-backoff`.
 
-The current companion firmware candidate additionally requires physical verification that Hey Snap
-is inactive for the entire BLE-connected period and automatically re-arms on every disconnect,
-including out-of-range/browser drops. SD boot/re-detection must report ready storage on connection
-and unsynced offline captures must survive failed transfers.
+Build 1365 already contains the BLE ownership and SD boot/re-detection implementation: Hey Snap is
+stood down for the BLE-connected period and re-armed by firmware on every disconnect, including
+unexpected drops. Physical acceptance still needs to confirm that behavior on-device, that SD is
+ready after cold boot/re-detection, and that unsynced offline captures survive failed transfers.
+The current personalized TinyML model does not yet contain a dedicated spoken **Start audio** class,
+so offline WAV transport/sync is supported but that spoken command is not a production claim yet.
 
 ## Working convention from this baseline
 
