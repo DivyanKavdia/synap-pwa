@@ -554,3 +554,23 @@ test('SD-only Chakshu photo and video captures surface in the shared Library bef
   const headerStart=html.indexOf('class="topbar"'),headerEnd=html.indexOf('</header>',headerStart),feedback=html.indexOf('id="heySynapFeedback"');
   assert(headerStart>=0&&feedback>headerStart&&feedback<headerEnd,'voice feedback must render inside the header, below device controls');
 });
+
+test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox', () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const media = fs.readFileSync(path.join(__dirname, '../devices/chakshu/media.js'), 'utf8');
+  const library = fs.readFileSync(path.join(__dirname, '../devices/chakshu/library.js'), 'utf8');
+  const lifecycle = fs.readFileSync(path.join(__dirname, '../devices/chakshu/capture-preview.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  assert.match(media, /async function startOffline\(\)[\s\S]*available only while Chakshu is disconnected/);
+  assert.match(media, /offlineReady: false/);
+  assert.match(media, /synap-chakshu-sd-pending/);
+  assert.match(library, /\(jpg\|mjpeg\|wav\)/);
+  assert.match(library, /Not synced · On Chakshu SD/);
+  assert.match(library, /SynapChakshuV2\?\.moveSD/);
+  assert.match(lifecycle, /async function syncAll\(\)/);
+  assert.match(lifecycle, /verification failed/);
+  assert.match(lifecycle, /Verified SD source removed/);
+  assert.match(html, /While Chakshu is disconnected from this app, Hey Snap owns capture/);
+  assert.match(html, /id="visualSDSyncNotice"/);
+  assert.match(html, /id="visualRecordSD"[^>]*disabled/);
+});
