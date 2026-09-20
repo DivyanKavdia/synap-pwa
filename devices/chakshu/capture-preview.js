@@ -348,9 +348,23 @@
       return false;
     }
   }
-  async function deleteSD(path) {
-    const reply = await client().request(17, 0, path);
-    return reply.total;
+  async function deleteSD(path, optional = false) {
+    try {
+      const reply = await client().request(17, 0, path);
+      return reply.total;
+    } catch (error) {
+      if (optional && /SD file unavailable/.test(error.message)) return 0;
+      throw error;
+    }
+  }
+  async function deleteSyncedSet(path) {
+    // Delete video companions first. If cleanup is interrupted, keeping the
+    // MJPEG primary prevents its soundtrack from surfacing as standalone audio.
+    if (path.endsWith('.mjpeg')) {
+      await deleteSD(stem(path) + '.json', true);
+      await deleteSD(stem(path) + '.wav', true);
+    }
+    return deleteSD(path);
   }
   async function moveSD(path, progress = () => {}) {
     if (busy) throw Error('Another Chakshu transfer is already running.');
@@ -361,7 +375,7 @@
     try {
       const cached = JSON.parse(localStorage.getItem(key) || 'null');
       if (await verifyReceipt(cached)) {
-        await deleteSD(path);
+        await deleteSyncedSet(path);
         localStorage.removeItem(key);
         root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
         return cached;
@@ -412,7 +426,7 @@
         savedAt: new Date().toISOString(),
       };
       localStorage.setItem(key, JSON.stringify(receipt));
-      await deleteSD(path);
+      await deleteSyncedSet(path);
       localStorage.removeItem(key);
       root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
       return receipt;
