@@ -33,7 +33,7 @@ test('SD errors preserve optional firmware diagnostics and legacy error handling
   const packet = response(7, 0, 0, new TextEncoder().encode(JSON.stringify(storage)), 2);
   packet.setUint8(3, 3);
   assert.throws(() => decode(packet, 7), (error) => {
-    assert.match(error.message, /SD file unavailable/);
+    assert.match(error.message, /SD card unavailable/);
     assert.deepEqual(error.storage, storage);
     return true;
   });
@@ -524,7 +524,8 @@ test('device voice media sync discovers SD media and only explicit verified sync
   const voice=fs.readFileSync(path.join(__dirname,'../devices/chakshu/voice.js'),'utf8');
   const sync=media.slice(media.indexOf('async function syncPendingSD()'),media.indexOf('const apiObject'));
   const move=media.slice(media.indexOf('async function moveSD('),media.indexOf('async function syncPendingSD()'));
-  assert.match(sync,/const files = await catalogue\(\)/);
+  assert.match(sync,/const files = await catalogueNow\(\)/);
+  assert.doesNotMatch(sync,/operation\(/,'background SD discovery must not claim foreground capture state');
   assert.doesNotMatch(sync,/importSD\(|deleteSyncedSet\(/);
   assert.match(move,/SynapChakshuV2\?\.moveSD/);
   assert.match(move,/return verified\(path, progress\)/);
@@ -538,7 +539,7 @@ test('device voice media sync discovers SD media and only explicit verified sync
   assert.match(verifiedMove,/localStorage\.setItem\(key, JSON\.stringify\(receipt\)\)[\s\S]*await deleteSyncedSet\(path\)/);
   assert.match(voice,/Firmware owns capture/);
   assert.match(media,/if \(next && !wifi\?\.active\) schedulePendingSync\(1200\)/);
-  // An unmounted card answers "SD file unavailable" after ~4.6s on the shared
+  // An unmounted card answers "SD card unavailable" after ~4.6s on the shared
   // media queue, and module-changed re-arms the sweep every ~15s. One probe per
   // connection still lets a catalogue trigger firmware re-detection; a loop
   // would spend a third of the queue re-asking an answered question.
@@ -564,6 +565,8 @@ test('unsynced Chakshu audio photo and video surface in the shared Library befor
   const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
   assert.match(media,/function rememberCatalogue\(files, deviceId\)/);
   assert.match(media,/sdFiles: sdFiles\.slice\(\)/);
+  assert.match(media,/videoStems = new Set/);
+  assert.match(media,/!\/\\\.wav\$\/i\.test\(file\.path\) \|\| !videoStems\.has/);
   assert.match(library,/\(jpg\|mjpeg\|wav\)/);
   assert.match(library,/sdOnly: true/);
   assert.match(library,/Not synced · On Chakshu SD/);
@@ -594,5 +597,14 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(lifecycle, /Verified SD source removed/);
   assert.match(html, /While Chakshu is disconnected from this app, Hey Snap owns capture/);
   assert.match(html, /id="visualSDSyncNotice"/);
+  assert.match(html, /id="librarySDInbox"/);
+  assert.match(html, /id="libraryCheckSD"/);
+  assert.match(html, /id="libraryBrowseSD"/);
+  assert.match(html, /id="librarySyncSD"/);
+  assert.match(lifecycle, /Sync copies each item to Memories, verifies it, then removes the SD original/);
+  assert.match(lifecycle, /Connect Chakshu to check or sync its SD card/);
+  assert.match(lifecycle, /SD card unavailable\. Choose Check SD/);
+  assert.match(lifecycle, /libraryCheck\?\.addEventListener\('click'/);
+  assert.match(lifecycle, /browseSD\('librarySDList'\)/);
   assert.match(html, /id="visualRecordSD"[^>]*disabled/);
 });

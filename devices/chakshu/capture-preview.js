@@ -236,8 +236,10 @@
   const RECEIPT_PREFIX = 'synap-chakshu-move-v2:';
   let busy = false;
   const status = (message) => {
-    const node = document.getElementById('visualConnectionStatus');
+    const node = document.getElementById('visualConnectionStatus'),
+      inbox = document.getElementById('librarySDInboxText');
     if (node) node.textContent = message || '';
+    if (inbox && message) inbox.textContent = message;
   };
   function context() {
     const state = api()?.state,
@@ -515,13 +517,11 @@
       busy = false;
     }
   }
-  async function browseSD() {
-    const list = document.getElementById('visualSDList');
+  function renderSDRows(list, files) {
     if (!list) return;
     list.replaceChildren();
-    const files = await api().catalogue();
     if (!files.length) {
-      list.textContent = 'No Synap photos, videos or audio recordings on the SD card.';
+      list.textContent = 'No unsynced Synap captures on the SD card.';
       return;
     }
     for (const file of files) {
@@ -533,26 +533,72 @@
       row.className = 'visual-sd-row';
       label.textContent = type + ' · ' + name + ' · ' + Math.max(1, Math.round((file.bytes || 0) / 1024)) + ' KB';
       action.type = 'button';
-      action.textContent = 'Sync to app';
+      action.textContent = 'Sync to Memories';
       action.addEventListener('click', async () => {
         action.disabled = true;
         try {
           await moveSD(file.path, (fraction) => status('Moving from SD · ' + Math.round(fraction * 100) + '%'));
-          status(type.replace(' on SD', '') + ' synced to the app. Verified SD source removed.');
-          await browseSD();
+          await api().syncPendingSD().catch(() => {});
+          status(type.replace(' on SD', '') + ' synced to Memories. Verified SD source removed.');
+          await browseSD(list.id);
         } catch (error) {
           status(error.message);
         } finally {
           action.disabled = false;
+          renderSDInbox();
         }
       });
       row.append(label, action);
       list.append(row);
     }
   }
+  async function browseSD(listId = 'visualSDList') {
+    const list = document.getElementById(listId);
+    if (!list) return [];
+    list.hidden = false;
+    list.replaceChildren();
+    list.textContent = 'Checking Chakshu SD…';
+    const files = await api().catalogue();
+    renderSDRows(list, files);
+    renderSDInbox();
+    return files;
+  }
+  function renderSDInbox() {
+    const state = api()?.state || {},
+      panel = document.getElementById('librarySDInbox'),
+      text = document.getElementById('librarySDInboxText'),
+      check = document.getElementById('libraryCheckSD'),
+      browse = document.getElementById('libraryBrowseSD'),
+      sync = document.getElementById('librarySyncSD'),
+      list = document.getElementById('librarySDList'),
+      count = state.sdPendingCount ?? state.sdFiles?.length ?? 0;
+    if (!panel) return;
+    panel.hidden = !state.available;
+    if (panel.hidden) return;
+    if (text) {
+      if (!state.connected)
+        text.textContent = 'Connect Chakshu to check or sync its SD card. Offline captures remain safely on the card.';
+      else if (!state.storageReady)
+        text.textContent = 'Chakshu connected · SD card unavailable. Choose Check SD after inserting or reseating the card.';
+      else
+        text.textContent = count
+          ? count + ' offline capture' + (count === 1 ? '' : 's') + ' waiting. Sync copies each item to Memories, verifies it, then removes the SD original.'
+          : 'SD card ready · no unsynced offline captures.';
+    }
+    const blocked = busy || state.working || state.offline || Boolean(state.session);
+    if (check) check.disabled = blocked || !state.connected || !state.mediaSupported;
+    if (browse) browse.disabled = blocked || !state.connected || !state.storageReady;
+    if (sync) sync.disabled = blocked || !state.connected || !state.storageReady || count === 0;
+    if (list && (!state.connected || !state.storageReady)) list.hidden = true;
+    else if (list && !list.hidden) renderSDRows(list, state.sdFiles || []);
+  }
   async function syncAll() {
     if (busy) throw Error('Another Chakshu transfer is already running.');
-    const pending = api()?.state?.sdFiles?.slice?.() || [];
+    let pending = api()?.state?.sdFiles?.slice?.() || [];
+    if (!pending.length) {
+      await api().syncPendingSD();
+      pending = api()?.state?.sdFiles?.slice?.() || [];
+    }
     if (!pending.length) return { synced: 0, failed: 0 };
     let synced = 0, failed = 0, lastError = '';
     for (const file of pending) {
@@ -611,6 +657,51 @@
         status(error.message);
       } finally {
         sync.disabled = false;
+        renderSDInbox();
+      }
+    });
+    const libraryCheck = document.getElementById('libraryCheckSD');
+    libraryCheck?.addEventListener('click', async () => {
+      libraryCheck.disabled = true;
+      try {
+        status('Checking Chakshu SD…');
+        await api().refreshSD();
+        await api().syncPendingSD().catch(() => {});
+      } catch (error) {
+        status(error.message);
+      } finally {
+        libraryCheck.disabled = false;
+        renderSDInbox();
+      }
+    });
+    const libraryBrowse = document.getElementById('libraryBrowseSD');
+    libraryBrowse?.addEventListener('click', async () => {
+      libraryBrowse.disabled = true;
+      try {
+        await browseSD('librarySDList');
+      } catch (error) {
+        status(error.message);
+      } finally {
+        libraryBrowse.disabled = false;
+        renderSDInbox();
+      }
+    });
+    const librarySync = document.getElementById('librarySyncSD');
+    librarySync?.addEventListener('click', async () => {
+      librarySync.disabled = true;
+      try {
+        const result = await syncAll();
+        status(
+          result.synced
+            ? result.synced + ' offline capture' + (result.synced === 1 ? '' : 's') + ' moved to Memories; verified SD originals removed.'
+            : 'No offline captures waiting.',
+        );
+        await browseSD('librarySDList');
+      } catch (error) {
+        status(error.message);
+      } finally {
+        librarySync.disabled = false;
+        renderSDInbox();
       }
     });
     if (browse?.parentNode && !document.getElementById('visualClearSD')) {
@@ -634,8 +725,11 @@
       browse.parentNode.insertBefore(clear, browse.nextSibling);
     }
   }
-  const exposed = { moveSD, syncAll, clearSD, startOffline, startOfflineAudio, describeNow, browseSD, get busy() { return busy; } };
+  const exposed = { moveSD, syncAll, clearSD, startOffline, startOfflineAudio, describeNow, browseSD, renderSDInbox, get busy() { return busy; } };
   root.SynapChakshuV2 = exposed;
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', upgradeUi, { once: true });
-  else upgradeUi();
+  for (const name of ['synap-chakshu-changed', 'synap-module-changed', 'synap-chakshu-sd-pending', 'synap-gatt-disconnected'])
+    root.addEventListener?.(name, renderSDInbox);
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', () => { upgradeUi(); renderSDInbox(); }, { once: true });
+  else { upgradeUi(); renderSDInbox(); }
 })(globalThis);

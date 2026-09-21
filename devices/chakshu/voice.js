@@ -33,7 +33,8 @@
     STAND_DOWN_RETRY_MS = 5000,
     // While the media queue is closed for capture or recovery no GATT request
     // is issued at all, so re-checking is cheap and may wait as long as it must.
-    DEFERRED_RETRY_MS = 15000;
+    DEFERRED_RETRY_MS = 15000,
+    SEEN_PREFIX = 'synap-chakshu-voice-seen-v1:';
   let binding = null,
     pending = false,
     timer = null,
@@ -117,6 +118,42 @@
     element.dataset.tone = tone;
     element.hidden = false;
     if (ttl > 0) feedbackTimer = setTimeout(() => feedback('', tone, 0), ttl);
+  }
+  function outcomeMessage(incoming) {
+    if (!incoming?.sequence || !incoming.command) return '';
+    if (incoming.command === WAKE)
+      return incoming.result === 0
+        ? 'Hey Snap heard while disconnected. No photo or video command completed.'
+        : '';
+    const noun = incoming.command === PHOTO ? 'photo' : incoming.command === VIDEO_START ? 'video' : '';
+    if (noun) {
+      if (incoming.result === 3) return 'Offline ' + noun + ' saved to Chakshu SD.';
+      if (incoming.result === 1)
+        return 'Offline ' + noun + ' failed on Chakshu (code ' + incoming.value + ').';
+      if (incoming.result === 0) return 'Offline ' + noun + ' command accepted by Chakshu.';
+      return '';
+    }
+    if (incoming.command === STOP && incoming.result === 0) return 'Offline capture stop command received.';
+    return '';
+  }
+  function surfaceOutcome(b, incoming) {
+    const text = outcomeMessage(incoming);
+    if (!text) return false;
+    const signature = [incoming.sequence, incoming.command, incoming.result, incoming.atMs, incoming.value].join(':'),
+      deviceId = String(b?.context?.deviceId || b?.context?.device?.id || 'unknown'),
+      key = SEEN_PREFIX + deviceId;
+    try {
+      if (root.localStorage?.getItem?.(key) === signature) return false;
+      root.localStorage?.setItem?.(key, signature);
+    } catch (_) {}
+    message = text;
+    feedback(text, incoming.result === 1 ? 'error' : incoming.result === 3 ? 'saved' : 'listening', 10000);
+    root.dispatchEvent?.(
+      new CustomEvent('synap-chakshu-voice-result', {
+        detail: { ...incoming, label: commandLabel(incoming), message: text, deviceId },
+      }),
+    );
+    return true;
   }
   function current(b) {
     return Boolean(
@@ -203,8 +240,11 @@
         await context.mediaQueue(() => b.control.readValue(), 'Confirm Chakshu voice stood down'),
       );
       b.standDown = !state.enabled;
-      message = b.standDown ? '' : 'Chakshu is still listening for Hey Snap.';
-      feedback('', 'listening', 0);
+      const surfaced = b.standDown && surfaceOutcome(b, state);
+      if (!surfaced) {
+        message = b.standDown ? '' : 'Chakshu is still listening for Hey Snap.';
+        feedback('', 'listening', 0);
+      }
     } catch (error) {
       deferred = error.code === 'OPTIONAL_GATT_DEFERRED';
       // A deferred request never reached the device, so it must not spend the
@@ -288,7 +328,7 @@
     return value;
   }
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice9',
+    revision: '1.0.0-chakshu-voice10',
     decode,
     decodeDiagnostic,
     label: commandLabel,

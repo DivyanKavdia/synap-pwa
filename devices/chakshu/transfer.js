@@ -27,7 +27,7 @@
           '',
           'Chakshu is busy.',
           'Unsupported media request.',
-          'SD file unavailable.',
+          'SD card unavailable.',
           'Camera unavailable.',
           'Microphone unavailable.',
           'SD card full.',
@@ -389,6 +389,6 @@
       });
     }
   }
-  root.SynapChakshuTransfer = { Client, MediaWindow, decode, revision: '1.0.0-chakshu-core15' };
+  root.SynapChakshuTransfer = { Client, MediaWindow, decode, revision: '1.0.0-chakshu-core16' };
   if (typeof module !== 'undefined') module.exports = root.SynapChakshuTransfer;
 })(globalThis);

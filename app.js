@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell153-sd-lifecycle";
+  const APP_SHELL_REVISION = "1.0.0-shell155-sd-inbox";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -298,6 +298,9 @@
 
   window.addEventListener("synap-voice-diagnostic", function (event) {
     log("Voice setup", event.detail);
+  });
+  window.addEventListener("synap-chakshu-voice-result", function (event) {
+    log("Offline voice result", event.detail);
   });
   window.addEventListener("synap-pendant-diagnostics", function (event) {
     log("Pendant diagnostics", event.detail);

@@ -618,11 +618,19 @@
   function rememberCatalogue(files, deviceId) {
     if (!Array.isArray(files)) throw Error('Invalid SD catalogue.');
     const previous = new Map(sdFiles.map((file) => [file.path, file])),
-      next = files.flatMap((file) => {
+      raw = files.flatMap((file) => {
         const path = String(file?.path || ''), bytes = Number(file?.bytes);
         if (!/^\/synap\/[a-f0-9]{8}-[a-f0-9]{8}\.(jpg|wav|mjpeg)$/i.test(path) || !Number.isSafeInteger(bytes) || bytes < 0) return [];
         return [{ path, bytes, seenAt: previous.get(path)?.seenAt || new Date().toISOString() }];
       }),
+      // A video is one logical capture. Its matching WAV is a soundtrack
+      // companion and must not appear as a second pending audio item.
+      videoStems = new Set(
+        raw.filter((file) => /\.mjpeg$/i.test(file.path)).map((file) => file.path.replace(/\.mjpeg$/i, '')),
+      ),
+      next = raw.filter(
+        (file) => !/\.wav$/i.test(file.path) || !videoStems.has(file.path.replace(/\.wav$/i, '')),
+      ),
       before = JSON.stringify([sdFilesDeviceId, sdFiles.map((file) => [file.path, file.bytes])]),
       after = JSON.stringify([deviceId || '', next.map((file) => [file.path, file.bytes])]);
     sdFiles = next;
@@ -641,11 +649,13 @@
       root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
     }
   }
+  async function catalogueNow(signal) {
+    const deviceId = connected()?.deviceId || '',
+      files = await camera().catalogue(signal);
+    return rememberCatalogue(files, deviceId);
+  }
   async function catalogue() {
-    return operation(async (signal) => {
-      const deviceId = connected()?.deviceId || '', files = await camera().catalogue(signal);
-      return rememberCatalogue(files, deviceId);
-    });
+    return operation((signal) => catalogueNow(signal));
   }
   async function importAudio(blob, deviceId, scope, onBegin, localOnly = false) {
     const bytes = new Uint8Array(await blob.arrayBuffer()),
@@ -863,7 +873,10 @@
     // represented in the shared Library until the user explicitly chooses
     // Move to app. moveSD() is the only path that may delete an SD original.
     autoSyncPromise = (async () => {
-      const files = await catalogue();
+      // Discovery is background work. Do not set the foreground
+      // 'working' flag or reject a photo/video just because the SD inbox is
+      // being refreshed; the transfer client still serializes BLE requests.
+      const files = await catalogueNow();
       check(expected);
       if (connected()?.deviceId !== deviceId) return 0;
       await root.SynapModules?.refresh?.().catch(() => {});
