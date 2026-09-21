@@ -135,3 +135,18 @@ test('reads voice diagnostics only when asked', async () => {
   assert.equal(reading.candidateCount, 7);
   assert.deepEqual(ops, ['find:4fa12358', 'diagnostics']);
 });
+
+
+test('last offline result is persisted for the SD inbox', async () => {
+  const voice = load();
+  global.localStorage = (() => { const map=new Map(); return {getItem:(k)=>map.get(k)||null,setItem:(k,v)=>map.set(k,String(v))}; })();
+  let event;
+  global.dispatchEvent = (value) => { if (value.type === 'synap-chakshu-voice-result') event = value.detail; };
+  connect({ incoming: {sequence: 12, command: 2, result: 3, value: 0} });
+  await voice.sync();
+  await settle();
+  const last=voice.lastOutcome(global.SynapDevices.connection.deviceId);
+  assert.equal(last?.message, 'Offline photo saved to Chakshu SD.');
+  assert.equal(last?.command, 2);
+  assert.equal(event?.message, last?.message);
+});
