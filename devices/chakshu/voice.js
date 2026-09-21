@@ -34,7 +34,8 @@
     // While the media queue is closed for capture or recovery no GATT request
     // is issued at all, so re-checking is cheap and may wait as long as it must.
     DEFERRED_RETRY_MS = 15000,
-    SEEN_PREFIX = 'synap-chakshu-voice-seen-v1:';
+    SEEN_PREFIX = 'synap-chakshu-voice-seen-v1:',
+    LAST_PREFIX = 'synap-chakshu-voice-last-v1:';
   let binding = null,
     pending = false,
     timer = null,
@@ -145,6 +146,10 @@
     try {
       if (root.localStorage?.getItem?.(key) === signature) return false;
       root.localStorage?.setItem?.(key, signature);
+      root.localStorage?.setItem?.(
+        LAST_PREFIX + deviceId,
+        JSON.stringify({ ...incoming, label: commandLabel(incoming), message: text, deviceId, seenAt: new Date().toISOString() }),
+      );
     } catch (_) {}
     message = text;
     feedback(text, incoming.result === 1 ? 'error' : incoming.result === 3 ? 'saved' : 'listening', 10000);
@@ -154,6 +159,16 @@
       }),
     );
     return true;
+  }
+  function lastOutcome(deviceId) {
+    const id = String(deviceId || root.SynapDevices?.connection?.deviceId || '');
+    if (!id) return null;
+    try {
+      const parsed = JSON.parse(root.localStorage?.getItem?.(LAST_PREFIX + id) || 'null');
+      return parsed && parsed.deviceId === id && parsed.message ? Object.freeze(parsed) : null;
+    } catch (_) {
+      return null;
+    }
   }
   function current(b) {
     return Boolean(
@@ -328,7 +343,7 @@
     return value;
   }
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice10',
+    revision: '1.0.0-chakshu-voice11',
     decode,
     decodeDiagnostic,
     label: commandLabel,
@@ -337,6 +352,7 @@
     release,
     enabled,
     diagnose,
+    lastOutcome,
     get state() { return state; },
     get message() { return message; },
     get standDown() { return Boolean(binding?.standDown); },
