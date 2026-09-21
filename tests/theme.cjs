@@ -8,7 +8,7 @@ function setup({saved=null,palette='olive',hour=12,blocked=false}={}){
   const buttons=['system','light','dark'].map(value=>({dataset:{themeChoice:value},attributes:{},setAttribute(k,v){this.attributes[k]=v;},addEventListener(t,f){this.click=f;}}));
   const paletteButtons=['olive','blue','pink','lavender'].map(value=>({dataset:{paletteChoice:value},attributes:{},setAttribute(k,v){this.attributes[k]=v;},addEventListener(t,f){this.click=f;}}));
   const html={dataset:{},style:{},attributes:{},setAttribute(k,v){this.attributes[k]=v;}},meta={setAttribute(k,v){this[k]=v;}};
-  const logos=[0,1].map(()=>({attributes:{src:'synap-logo-light.png?v=1.0.0-ui-fix1'},getAttribute(k){return this.attributes[k]},setAttribute(k,v){this.attributes[k]=v}}));
+  const logos=[0,1].map(()=>({attributes:{src:'synap-mark-olive-light.svg?v=1.0.0-mark1'},getAttribute(k){return this.attributes[k]},setAttribute(k,v){this.attributes[k]=v}}));
   const document={
     documentElement:html,readyState:'complete',hidden:false,
     querySelector(selector){if(selector.startsWith('meta['))return meta;return null;},
@@ -28,7 +28,7 @@ for(const palette of ['olive','blue','pink','lavender']){
   assert.equal(sample.html.dataset.palette,palette);assert.equal(sample.html.dataset.theme,'dark');
   click(sample.paletteButtons[2]);assert.equal(sample.html.dataset.palette,'pink');assert.equal(sample.html.dataset.theme,'dark');
   assert.equal(sample.storage.get('synap-appearance'),'dark');assert.equal(sample.storage.get('synap-palette'),'pink');
-  assert(sample.logos.every(img=>img.attributes.src==='synap-logo-pink-dark.png?v=1.0.0-ui-fix1'));
+  assert(sample.logos.every(img=>img.attributes.src==='synap-mark-pink-dark.svg?v=1.0.0-mark1'));
   click(sample.buttons[0]);sample.setHour(8);sample.intervals[0].f();assert.equal(sample.html.dataset.theme,'light');assert.equal(sample.html.dataset.palette,'pink');
   sample.events.storage({key:'synap-palette',newValue:'blue'});assert.equal(sample.html.dataset.palette,'blue');assert.equal(sample.html.dataset.theme,'light');
   sample.events.storage({key:null});assert.equal(sample.html.dataset.palette,'olive');assert.equal(sample.html.dataset.theme,'light');
@@ -37,9 +37,9 @@ assert.equal(setup({palette:'invalid'}).html.dataset.palette,'olive');
 {const sample=setup({blocked:true});click(sample.paletteButtons[3]);assert.equal(sample.html.dataset.palette,'lavender');}
 for(const saved of ['light','dark']){
   const sample=setup({saved});
-  assert(sample.logos.every(img=>img.attributes.src===`synap-logo-${saved}.png?v=1.0.0-ui-fix1`),'both logos follow explicit app appearance');
+  assert(sample.logos.every(img=>img.attributes.src===`synap-mark-olive-${saved}.svg?v=1.0.0-mark1`),'both logos follow explicit app appearance');
   const next=saved==='light'?'dark':'light';click(sample.buttons[next==='dark'?2:1]);
-  assert(sample.logos.every(img=>img.attributes.src===`synap-logo-${next}.png?v=1.0.0-ui-fix1`),'both logos update immediately on theme change');
+  assert(sample.logos.every(img=>img.attributes.src===`synap-mark-olive-${next}.svg?v=1.0.0-mark1`),'both logos update immediately on theme change');
 }
 for(const [hour,expected] of [[6,'dark'],[7,'light'],[18,'light'],[19,'dark'],[23,'dark']])assert.equal(setup({hour}).html.dataset.theme,expected,`Auto hour ${hour}`);
 let t=setup({hour:18});assert.equal(t.html.dataset.theme,'light');assert.equal(t.html.attributes['data-theme'],'light');assert.equal(t.meta.content,'#f4f7f5');
