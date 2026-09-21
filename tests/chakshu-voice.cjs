@@ -108,6 +108,25 @@ test('surfaces the last completed offline photo or video after reconnect', async
   await settle();
 });
 
+test('surfaces completed offline audio after reconnect', async () => {
+  const voice = load();
+  connect({ incoming: {sequence: 10, command: 5, result: 3, value: 0} });
+  await voice.sync();
+  await settle();
+  assert.equal(voice.message, 'Offline audio saved to Chakshu SD.');
+});
+
+test('surfaces describe capture honestly as pending visual description', async () => {
+  const voice = load();
+  connect({ incoming: {sequence: 11, command: 7, result: 3, value: 0} });
+  await voice.sync();
+  await settle();
+  assert.equal(
+    voice.message,
+    'Offline describe photo saved to Chakshu SD. Sync it to Memories for visual description.',
+  );
+});
+
 test('refuses to arm Hey Snap while the app is connected', async () => {
   const voice = load();
   connect();
