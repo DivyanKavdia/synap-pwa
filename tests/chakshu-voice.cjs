@@ -108,6 +108,24 @@ test('surfaces the last completed offline photo or video after reconnect', async
   await settle();
 });
 
+test('surfaces experimental offline audio and describe outcomes', async () => {
+  let event;
+  const voice = load();
+  global.localStorage = (() => { const map=new Map(); return {getItem:(k)=>map.get(k)||null,setItem:(k,v)=>map.set(k,String(v))}; })();
+  global.dispatchEvent = (value) => { if (value.type === 'synap-chakshu-voice-result') event = value.detail; };
+  connect({ incoming: {sequence: 20, command: 5, result: 3, value: 0} });
+  await voice.sync();
+  await settle();
+  assert.equal(voice.message, 'Offline audio saved to Chakshu SD.');
+  assert.equal(event?.command, 5);
+
+  // A fresh module instance should decode DESCRIBE distinctly from a normal photo.
+  global.SynapDevices.connection = null;
+  voice.release();
+  const describe = voice.decode(packet({sequence:21, command:7, result:3, value:0}));
+  assert.equal(voice.label(describe), 'Explain what you see');
+});
+
 test('refuses to arm Hey Snap while the app is connected', async () => {
   const voice = load();
   connect();

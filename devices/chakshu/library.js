@@ -462,6 +462,7 @@
             sourceName,
             sourcePath: file.path,
             byteSize: file.bytes,
+            describeRequested: Boolean(file.describe),
             createdAt: file.seenAt || new Date().toISOString(),
             localOnly: true,
             sealed: true,
@@ -484,10 +485,16 @@
       opener = card.querySelector('.library-media-open'), image = card.querySelector('img'), preview = card.querySelector('.recording-row-preview');
     card.querySelector('.recording-row-name').textContent = title;
     if (row.sdOnly) {
-      const type = row.mediaKind === 'audio' ? 'Audio' : row.mediaKind === 'video' ? 'Video' : 'Photo';
-      opener.setAttribute('aria-label', 'Sync to app: ' + title);
+      const type = row.describeRequested
+        ? 'Explain photo'
+        : row.mediaKind === 'audio'
+          ? 'Audio'
+          : row.mediaKind === 'video'
+            ? 'Video'
+            : 'Photo';
+      opener.setAttribute('aria-label', 'Sync to Memories: ' + title);
       card.querySelector('.recording-row-meta').textContent = type + ' · Not synced · On Chakshu SD · ' + byteLabel(row.byteSize);
-      preview.textContent = 'Sync to app';
+      preview.textContent = row.describeRequested ? 'Sync & describe' : 'Sync to Memories';
       preview.hidden = false;
       disposeCard(card);
       image.removeAttribute('src');
