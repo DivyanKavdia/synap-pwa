@@ -8,7 +8,7 @@ Synap is the companion application and cloud memory platform for the Synap weara
 
 - **PWA:** deployed from `main` through GitHub Pages.
 - **Backend:** Google Cloud Run, region `asia-south1`.
-- **PWA application baseline:** current `main` (shell revision `1.0.0-shell156-offline-cue`; Chakshu voice asset `1.0.0-chakshu-voice12`).
+- **PWA application baseline:** current `main` (shell revision `1.0.0-shell157-chakshu-voice8`; Chakshu voice asset `1.0.0-chakshu-voice12`).
 - **Backend application baseline:** `97ba01a`.
 - **Firmware baseline:** Synap OS build **1396** (`synap-os1-build1396`) from `DivyanKavdia/synap-firmware`, source `dc6a170ca12cb2491e38a43f0df8b15e3a6f568d`.
 - **Primary transcription:** `gemini-3.5-transcribe`.
@@ -175,7 +175,7 @@ Software CI verifies protocol, storage, recovery, browser workflows and backend 
 - complete device → transcript → memory flow.
 
 The current hardware baseline for acceptance testing is **firmware build 1396** with PWA shell
-`1.0.0-shell156-offline-cue` and Chakshu voice asset `1.0.0-chakshu-voice12`.
+`1.0.0-shell157-chakshu-voice8` and Chakshu voice asset `1.0.0-chakshu-voice12`.
 
 Build 1396 retains the BLE ownership and SD boot/re-detection implementation and adds the current
 experimental 8-class personalized TinyML field model. Hey Snap remains disconnected-only; photo,
