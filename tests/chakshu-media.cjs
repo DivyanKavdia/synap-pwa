@@ -524,7 +524,8 @@ test('device voice media sync discovers SD media and only explicit verified sync
   const voice=fs.readFileSync(path.join(__dirname,'../devices/chakshu/voice.js'),'utf8');
   const sync=media.slice(media.indexOf('async function syncPendingSD()'),media.indexOf('const apiObject'));
   const move=media.slice(media.indexOf('async function moveSD('),media.indexOf('async function syncPendingSD()'));
-  assert.match(sync,/const files = await catalogue\(\)/);
+  assert.match(sync,/const files = await catalogueNow\(\)/);
+  assert.doesNotMatch(sync,/operation\(/,'background SD discovery must not claim foreground capture state');
   assert.doesNotMatch(sync,/importSD\(|deleteSyncedSet\(/);
   assert.match(move,/SynapChakshuV2\?\.moveSD/);
   assert.match(move,/return verified\(path, progress\)/);
