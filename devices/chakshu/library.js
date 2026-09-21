@@ -562,8 +562,9 @@
       if (item?.sdOnly) {
         const move = root.SynapChakshuV2?.moveSD || api().moveSD;
         await move(item.sourcePath, (progress) => status('Syncing from Chakshu SD · ' + Math.round(progress * 100) + '%'));
+        await api().syncPendingSD().catch(() => {});
         await render();
-        return 'Synced to app. Verified SD source removed.';
+        return 'Synced to Memories. Verified SD source removed.';
       }
       return open(item.mediaId);
     }));
