@@ -368,10 +368,44 @@
     }
     return deleteSD(path);
   }
-  async function moveSD(path, progress = () => {}) {
+  async function describeVisual(visualId, blob, source = 'gemini-offline-voice') {
+    if (!visualId || !blob) throw Error('The photo is unavailable for visual inference.');
+    const owner = api().state.owner;
+    const response = await root.SynapAuth.authedFetch('/v1/chakshu/describe', {
+      method: 'POST',
+      expectedUid: owner,
+      headers: { 'Content-Type': 'image/jpeg' },
+      body: blob,
+    });
+    const data = await response.json();
+    if (!response.ok) throw Error(data.error?.message || 'The photo could not be described.');
+    const text = String(data.description || '').trim();
+    if (!text) throw Error('The image service returned no description.');
+    await api().store.addDescription(visualId, {
+      text: text.slice(0, 2000),
+      atMs: 0,
+      createdAt: new Date().toISOString(),
+      source,
+    });
+    await api().store.patch(visualId, { name: 'What I saw' });
+    root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
+    root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
+    return text;
+  }
+  async function describeSavedVisual(visualId) {
+    const row = await api().store.get(visualId);
+    if (!row || row.kind !== 'image' || row.state !== 'saved')
+      throw Error('The synced photo is unavailable for visual inference.');
+    const frames = await api().store.frames(visualId),
+      blob = new Blob(frames.map((frame) => frame.blob), { type: 'image/jpeg' });
+    if (!blob.size) throw Error('The synced photo has no image bytes.');
+    return describeVisual(visualId, blob);
+  }
+    async function moveSD(path, progress = () => {}) {
     if (busy) throw Error('Another Chakshu transfer is already running.');
     const connection = context(),
       owner = api().state.owner,
+      wantsDescribe = Boolean(api().state.sdFiles?.find((file) => file.path === path)?.describe),
       key = receiptKey(connection.deviceId, path);
     busy = true;
     try {
@@ -380,6 +414,13 @@
         await deleteSyncedSet(path);
         localStorage.removeItem(key);
         root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
+        if (wantsDescribe && cached.visualId) {
+          try {
+            cached.description = await describeSavedVisual(cached.visualId);
+          } catch (error) {
+            cached.descriptionError = error.message;
+          }
+        }
         return cached;
       }
       localStorage.removeItem(key);
@@ -425,12 +466,23 @@
           : path.endsWith('.wav')
             ? { audioBytes: source.main.size, audioSha256: mainSha }
             : {}),
+        describeRequested: wantsDescribe,
         savedAt: new Date().toISOString(),
       };
       localStorage.setItem(key, JSON.stringify(receipt));
       await deleteSyncedSet(path);
       localStorage.removeItem(key);
       root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
+      // Sync durability and SD deletion are complete before cloud inference.
+      // A Gemini failure must never make a verified transfer look failed or
+      // resurrect/delete the SD source incorrectly; the photo remains in Memories.
+      if (wantsDescribe && visualId) {
+        try {
+          receipt.description = await describeVisual(visualId, source.main);
+        } catch (error) {
+          receipt.descriptionError = error.message;
+        }
+      }
       return receipt;
     } finally {
       busy = false;
@@ -493,25 +545,7 @@
       })();
       if (!receipt.visualId) throw Error('The photo was not saved in Memory.');
       if (owner !== api().state.owner) throw Error('Account changed before visual inference.');
-      const response = await root.SynapAuth.authedFetch('/v1/chakshu/describe', {
-        method: 'POST',
-        expectedUid: owner,
-        headers: { 'Content-Type': 'image/jpeg' },
-        body: saved.blob,
-      });
-      const data = await response.json();
-      if (!response.ok) throw Error(data.error?.message || 'The photo could not be described.');
-      const text = String(data.description || '').trim();
-      if (!text) throw Error('The image service returned no description.');
-      await api().store.addDescription(receipt.visualId, {
-        text: text.slice(0, 2000),
-        atMs: 0,
-        createdAt: new Date().toISOString(),
-        source: 'gemini-explicit',
-      });
-      await api().store.patch(receipt.visualId, { name: 'What I saw' });
-      root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
-      root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
+      const text = await describeVisual(receipt.visualId, saved.blob, 'gemini-explicit');
       return { id: receipt.visualId, description: text };
     } finally {
       busy = false;
@@ -529,7 +563,13 @@
         label = document.createElement('span'),
         action = document.createElement('button'),
         name = basename(file.path),
-        type = file.path.endsWith('.wav') ? 'Audio on SD' : file.path.endsWith('.mjpeg') ? 'Video on SD' : 'Photo on SD';
+        type = file.describe
+          ? 'Explain photo on SD'
+          : file.path.endsWith('.wav')
+            ? 'Audio on SD'
+            : file.path.endsWith('.mjpeg')
+              ? 'Video on SD'
+              : 'Photo on SD';
       row.className = 'visual-sd-row';
       label.textContent = type + ' · ' + name + ' · ' + Math.max(1, Math.round((file.bytes || 0) / 1024)) + ' KB';
       action.type = 'button';
@@ -537,9 +577,15 @@
       action.addEventListener('click', async () => {
         action.disabled = true;
         try {
-          await moveSD(file.path, (fraction) => status('Moving from SD · ' + Math.round(fraction * 100) + '%'));
+          const receipt = await moveSD(file.path, (fraction) => status('Moving from SD · ' + Math.round(fraction * 100) + '%'));
           await api().syncPendingSD().catch(() => {});
-          status(type.replace(' on SD', '') + ' synced to Memories. Verified SD source removed.');
+          status(
+            receipt.description
+              ? 'Photo synced to Memories. Description ready; verified SD source removed.'
+              : receipt.descriptionError
+                ? 'Photo synced and SD source removed. Description needs retry: ' + receipt.descriptionError
+                : type.replace(' on SD', '') + ' synced to Memories. Verified SD source removed.',
+          );
           await browseSD(list.id);
         } catch (error) {
           status(error.message);
