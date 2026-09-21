@@ -587,7 +587,11 @@
   }
   async function syncAll() {
     if (busy) throw Error('Another Chakshu transfer is already running.');
-    const pending = api()?.state?.sdFiles?.slice?.() || [];
+    let pending = api()?.state?.sdFiles?.slice?.() || [];
+    if (!pending.length) {
+      await api().syncPendingSD();
+      pending = api()?.state?.sdFiles?.slice?.() || [];
+    }
     if (!pending.length) return { synced: 0, failed: 0 };
     let synced = 0, failed = 0, lastError = '';
     for (const file of pending) {
