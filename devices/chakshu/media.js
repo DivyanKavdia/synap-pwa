@@ -618,11 +618,19 @@
   function rememberCatalogue(files, deviceId) {
     if (!Array.isArray(files)) throw Error('Invalid SD catalogue.');
     const previous = new Map(sdFiles.map((file) => [file.path, file])),
-      next = files.flatMap((file) => {
+      raw = files.flatMap((file) => {
         const path = String(file?.path || ''), bytes = Number(file?.bytes);
         if (!/^\/synap\/[a-f0-9]{8}-[a-f0-9]{8}\.(jpg|wav|mjpeg)$/i.test(path) || !Number.isSafeInteger(bytes) || bytes < 0) return [];
         return [{ path, bytes, seenAt: previous.get(path)?.seenAt || new Date().toISOString() }];
       }),
+      // A video is one logical capture. Its matching WAV is a soundtrack
+      // companion and must not appear as a second pending audio item.
+      videoStems = new Set(
+        raw.filter((file) => /\.mjpeg$/i.test(file.path)).map((file) => file.path.replace(/\.mjpeg$/i, '')),
+      ),
+      next = raw.filter(
+        (file) => !/\.wav$/i.test(file.path) || !videoStems.has(file.path.replace(/\.wav$/i, '')),
+      ),
       before = JSON.stringify([sdFilesDeviceId, sdFiles.map((file) => [file.path, file.bytes])]),
       after = JSON.stringify([deviceId || '', next.map((file) => [file.path, file.bytes])]);
     sdFiles = next;
