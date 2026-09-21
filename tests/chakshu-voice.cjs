@@ -146,6 +146,7 @@ test('last offline result is persisted for the SD inbox', async () => {
   connect({ incoming: {sequence: 12, command: 2, result: 3, value: 0} });
   await voice.sync();
   await settle();
+  assert.equal(typeof voice.lastOutcome, 'function');
   const last=voice.lastOutcome(global.SynapDevices.connection.deviceId);
   assert.equal(last?.message, 'Offline photo saved to Chakshu SD.');
   assert.equal(last?.command, 2);
