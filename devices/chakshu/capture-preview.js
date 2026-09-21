@@ -567,23 +567,30 @@
     const state = api()?.state || {},
       panel = document.getElementById('librarySDInbox'),
       text = document.getElementById('librarySDInboxText'),
+      check = document.getElementById('libraryCheckSD'),
       browse = document.getElementById('libraryBrowseSD'),
       sync = document.getElementById('librarySyncSD'),
       list = document.getElementById('librarySDList'),
       count = state.sdPendingCount ?? state.sdFiles?.length ?? 0;
     if (!panel) return;
-    panel.hidden = !state.connected || !state.storageReady;
-    if (panel.hidden) {
-      if (list) list.hidden = true;
-      return;
+    panel.hidden = !state.available;
+    if (panel.hidden) return;
+    if (text) {
+      if (!state.connected)
+        text.textContent = 'Connect Chakshu to check or sync its SD card. Offline captures remain safely on the card.';
+      else if (!state.storageReady)
+        text.textContent = 'Chakshu connected · SD card unavailable. Choose Check SD after inserting or reseating the card.';
+      else
+        text.textContent = count
+          ? count + ' offline capture' + (count === 1 ? '' : 's') + ' waiting. Sync copies each item to Memories, verifies it, then removes the SD original.'
+          : 'SD card ready · no unsynced offline captures.';
     }
-    if (text)
-      text.textContent = count
-        ? count + ' offline capture' + (count === 1 ? '' : 's') + ' waiting. Sync copies each item to Memories, verifies it, then removes the SD original.'
-        : 'SD card ready · no unsynced offline captures.';
-    if (browse) browse.disabled = busy || state.working || state.offline || Boolean(state.session);
-    if (sync) sync.disabled = busy || state.working || state.offline || Boolean(state.session) || count === 0;
-    if (list && !list.hidden) renderSDRows(list, state.sdFiles || []);
+    const blocked = busy || state.working || state.offline || Boolean(state.session);
+    if (check) check.disabled = blocked || !state.connected || !state.mediaSupported;
+    if (browse) browse.disabled = blocked || !state.connected || !state.storageReady;
+    if (sync) sync.disabled = blocked || !state.connected || !state.storageReady || count === 0;
+    if (list && (!state.connected || !state.storageReady)) list.hidden = true;
+    else if (list && !list.hidden) renderSDRows(list, state.sdFiles || []);
   }
   async function syncAll() {
     if (busy) throw Error('Another Chakshu transfer is already running.');
@@ -650,6 +657,20 @@
         status(error.message);
       } finally {
         sync.disabled = false;
+        renderSDInbox();
+      }
+    });
+    const libraryCheck = document.getElementById('libraryCheckSD');
+    libraryCheck?.addEventListener('click', async () => {
+      libraryCheck.disabled = true;
+      try {
+        status('Checking Chakshu SD…');
+        await api().refreshSD();
+        await api().syncPendingSD().catch(() => {});
+      } catch (error) {
+        status(error.message);
+      } finally {
+        libraryCheck.disabled = false;
         renderSDInbox();
       }
     });
