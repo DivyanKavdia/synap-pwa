@@ -97,7 +97,7 @@
     if (incoming.command === VIDEO_STOP) return 'Stop video';
     if (incoming.command === AUDIO_ON) return 'Start audio';
     if (incoming.command === AUDIO_OFF) return 'Stop audio';
-    if (incoming.command === DESCRIBE) return 'What do you see';
+    if (incoming.command === DESCRIBE) return 'Explain what you see';
     if (incoming.command === STOP) return 'Stop';
     return 'Voice command';
   }
@@ -124,14 +124,29 @@
     if (!incoming?.sequence || !incoming.command) return '';
     if (incoming.command === WAKE)
       return incoming.result === 0
-        ? 'Hey Snap heard while disconnected. No photo or video command completed.'
+        ? 'Hey Snap heard while disconnected. No offline action completed.'
         : '';
-    const noun = incoming.command === PHOTO ? 'photo' : incoming.command === VIDEO_START ? 'video' : '';
+    const noun =
+      incoming.command === PHOTO ? 'photo' :
+      incoming.command === VIDEO_START ? 'video' :
+      incoming.command === AUDIO_ON ? 'audio' : '';
     if (noun) {
       if (incoming.result === 3) return 'Offline ' + noun + ' saved to Chakshu SD.';
       if (incoming.result === 1)
         return 'Offline ' + noun + ' failed on Chakshu (code ' + incoming.value + ').';
-      if (incoming.result === 0) return 'Offline ' + noun + ' command accepted by Chakshu.';
+      if (incoming.result === 0)
+        return incoming.command === AUDIO_ON
+          ? 'Offline audio recording accepted · up to ' + (incoming.value || 60) + ' seconds.'
+          : 'Offline ' + noun + ' command accepted by Chakshu.';
+      return '';
+    }
+    if (incoming.command === DESCRIBE) {
+      if (incoming.result === 3)
+        return 'Offline Explain what you see photo saved to Chakshu SD. Sync it to generate the description.';
+      if (incoming.result === 1)
+        return 'Offline Explain what you see failed on Chakshu (code ' + incoming.value + ').';
+      if (incoming.result === 0)
+        return 'Offline Explain what you see accepted. Chakshu is saving the photo to SD.';
       return '';
     }
     if (incoming.command === STOP && incoming.result === 0) return 'Offline capture stop command received.';
@@ -343,7 +358,7 @@
     return value;
   }
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice11',
+    revision: '1.0.0-chakshu-voice12',
     decode,
     decodeDiagnostic,
     label: commandLabel,
