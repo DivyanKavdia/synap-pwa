@@ -1,6 +1,6 @@
 # Chakshu — single-owner capture, offline SD and Hey Snap
 
-**Target contract:** PWA shell `1.0.0-shell156-offline-cue`, Chakshu voice asset `1.0.0-chakshu-voice12`, voice protocol **2**, media protocol **1**.  
+**Target contract:** PWA shell `1.0.0-shell157-chakshu-voice8`, Chakshu voice asset `1.0.0-chakshu-voice12`, voice protocol **2**, media protocol **1**.  
 **Production PWA:** deployed from current `main` through GitHub Pages.  
 **Production firmware:** Synap OS build **1396** (`synap-os1-build1396`), source `dc6a170ca12cb2491e38a43f0df8b15e3a6f568d`; OTA artifacts are target-bound and the release workflow verifies digests, GitHub provenance and browser CORS.  
 **Device:** `xiao-esp32s3-sense-8m`, module id `3`, OTA marker `SYNAP-CHAKSHU-OTA-ID-V3`, advertising name `synap-Chakshu`.
