@@ -1,8 +1,8 @@
 # Chakshu — single-owner capture, offline SD and Hey Snap
 
-**Target contract:** PWA shell `1.0.0-shell152-sd-probe-backoff`, voice protocol **2**, media protocol **1**.  
-**Production PWA source:** `31803c596c8622388f512681bcaa05e89172018a`; GitHub Pages validation/deployment completed successfully.  
-**Production firmware:** Synap OS build **1365** (`synap-os1-build1365`), source `08c0bf603dc63ac089a6558b1fdb2acad5f4e9d4`; OTA feeds, digests, provenance and browser CORS were verified by the release workflow.  
+**Target contract:** PWA shell `1.0.0-shell156-offline-cue`, Chakshu voice asset `1.0.0-chakshu-voice12`, voice protocol **2**, media protocol **1**.  
+**Production PWA:** deployed from current `main` through GitHub Pages.  
+**Production firmware:** Synap OS build **1396** (`synap-os1-build1396`), source `dc6a170ca12cb2491e38a43f0df8b15e3a6f568d`; OTA artifacts are target-bound and the release workflow verifies digests, GitHub provenance and browser CORS.  
 **Device:** `xiao-esp32s3-sense-8m`, module id `3`, OTA marker `SYNAP-CHAKSHU-OTA-ID-V3`, advertising name `synap-Chakshu`.
 
 This is the operational contract for Chakshu. Odyssey C3/S3 do not have a camera, SD card or local wake engine.
@@ -14,8 +14,8 @@ The single-owner architecture is now the production baseline, not a pending cand
 - BLE connected → PWA owns commands and direct-to-app capture.
 - BLE disconnected → firmware owns Hey Snap and writes standalone captures to SD.
 - Firmware re-arms Hey Snap on every BLE disconnect.
-- Firmware build 1365 contains the 10 → 4 → 1 MHz SD cold-detection ladder and sticky 1 MHz post-mount I/O recovery.
-- Shell152 suppresses repeated catalogue probes when firmware already reports no SD card: one automatic recovery probe is allowed per connection, while explicit **Check SD card**, a reconnect, or a different device permits a fresh probe.
+- Firmware build 1396 retains the 10 → 4 → 1 MHz SD cold-detection ladder, sticky 1 MHz post-mount I/O recovery and the SD ownership/invariant guards added before the voice-model rollout.
+- Shell156 keeps the offline-result cue visible in the SD inbox and suppresses repeated catalogue probes when firmware already reports no SD card; Chakshu voice asset voice12 adds explicit reconnect cues for offline audio and describe captures.
 - Offline SD items remain non-destructive until a digest/byte-verified sync completes.
 
 Physical device acceptance is still required; CI/release success proves software/release integrity, not card/contact/power quality on a particular Chakshu unit.
@@ -153,20 +153,20 @@ SD remains accessible while connected for:
 
 Firmware owns local capture. Supported standalone captures are written under `/synap/` and protected by the SD FIFO rules.
 
-The current personalized TinyML model has learned classes for:
+Build 1396 deploys the current **experimental 8-class personalized TinyML field model**:
 
-| Learned phrase/class | Action |
+| Learned phrase/class | Standalone action while BLE is disconnected |
 | --- | --- |
 | **Hey Snap** | Arm the short command window |
-| **Take a snap / photo** | Photo → SD |
-| **Record a video** | Video + soundtrack → SD |
-| **Stop** | Stop/cancel current local operation |
+| **Take a snap / photo** | Full-resolution photo → SD |
+| **Record a video** | 10-second default video + soundtrack → SD |
+| **Record / start audio** | Bounded 60-second WAV → SD |
+| **Explain / what do you see** | Capture a full-resolution photo → SD and mark the completion as Describe |
+| **Stop** | Stop/cancel the active local operation |
 
-The media protocol and SD recorder also support standalone WAV audio, and standalone `.wav` files are fully supported by the reconnect/sync pipeline.
+The PWA reconnect path understands Audio and Describe completion results. Audio is shown as an offline SD recording and can be synced into the normal transcription/memory pipeline. Describe is intentionally surfaced as a **captured SD photo awaiting visual description**; the firmware does not pretend that cloud inference happened while disconnected. After the photo is synced, visual description can use the normal connected Gemini-backed path.
 
-> **Current model gap:** the deployed personalized TinyML weights do not yet contain a dedicated **Start audio** learned class. Therefore the data path for offline audio is complete, but a spoken “Hey Snap, start/record audio” command must not be claimed as production-ready until the personalized model is retrained with real Chakshu microphone examples for that class. Replacing the real-mic model with a synthetic-only model would regress the recognition work already completed.
-
-Generic **Stop** already covers stopping an active local operation.
+> **Model-quality observation for continuity:** the build 1396 model uses synthetic English augmentation plus 22 supplied 16 kHz mono utterances for record-audio, record-video and explain-what-you-see. Quantized synthetic held-out accuracy was 94.0% and fit on the available real utterances was 95.5%, but the limited independent real holdout was weak at roughly 30%. This release is therefore a field baseline, not a claim of production-grade recognition accuracy. The next training iteration must use more independently recorded, separated real-device utterances (including negatives/noise and command confusions) before recognition thresholds or production-accuracy claims are tightened.
 
 ---
 
@@ -221,9 +221,9 @@ Only files matching Synap’s narrow generated capture pattern are managed:
 
 Model files, user-copied files and unrelated card contents are outside FIFO / Clear SD ownership.
 
-When reserve space is required, FIFO can remove the oldest unprotected Synap capture bundle. An in-progress/protected capture is never selected for cleanup.
+Unsynced SD captures are treated as user data and are **not automatically evicted** to make room for a new recording. If the required reserve cannot be met without deleting unsynced media, the new capture must fail safely and the existing SD inbox remains intact. An in-progress/protected capture is never selected for cleanup.
 
-**Clear SD** removes Synap capture files only; it is not a format operation.
+After a byte/digest-verified **Sync to app**, the corresponding SD source is deleted as part of the verified move. **Clear SD** remains an explicit user action that removes Synap capture files only; it is not a format operation.
 
 ---
 
@@ -256,7 +256,7 @@ Firmware BLE callbacks independently enforce the same state, so missing opcode `
 
 ## 7. Acceptance criteria
 
-Run these criteria on **firmware build 1365 + PWA shell152**. Do not call the feature physically complete until one Chakshu passes all of these:
+Run these criteria on **firmware build 1396 + PWA shell156 + Chakshu voice12**. Do not call the feature physically complete until one Chakshu passes all of these:
 
 1. Cold power-on with card inserted reports SD ready without opening the PWA.
 2. Connect to PWA: Hey Snap produces no local command/action for the full connected period.
@@ -270,10 +270,11 @@ Run these criteria on **firmware build 1365 + PWA shell152**. Do not call the fe
 10. Sync one item: app copy verifies, then SD original disappears.
 11. Force a transfer/verification failure: original remains on SD.
 12. Sync all: successful items clear from SD; failed items remain.
-13. A standalone offline WAV appears as unsynced audio and, after sync, enters transcription/memory.
-14. Remove/reinsert or induce recoverable SD fault: **Check SD card** re-detects and PWA readiness updates.
-15. After real post-mount I/O failure, diagnostics show conservative recovery rather than repeated fast-clock retries.
-16. After retraining the personalized voice model, **Start audio** recognition must be physically accepted before that spoken command is enabled as a production claim.
+13. Disconnected **Record audio** creates a durable WAV on SD; reconnect surfaces an offline-audio result and, after sync, the WAV enters transcription/memory.
+14. Disconnected **Explain / what do you see** creates a durable photo on SD; reconnect clearly says the photo still needs visual description rather than claiming offline Gemini inference.
+15. Remove/reinsert or induce recoverable SD fault: **Check SD card** re-detects and PWA readiness updates.
+16. After real post-mount I/O failure, diagnostics show conservative recovery rather than repeated fast-clock retries.
+17. Collect a larger independent real-device command/negative set and retrain before treating the experimental 8-class model as production-accurate.
 
 ---
 
