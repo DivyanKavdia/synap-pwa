@@ -1,6 +1,6 @@
 # Synap
 
-**Current production baseline — 20 September 2026**
+**Current production baseline — 21 September 2026**
 
 Synap is the companion application and cloud memory platform for the Synap wearable family. This repository owns the browser/PWA experience and the production backend. Device firmware is maintained separately in `DivyanKavdia/synap-firmware`.
 
@@ -8,9 +8,9 @@ Synap is the companion application and cloud memory platform for the Synap weara
 
 - **PWA:** deployed from `main` through GitHub Pages.
 - **Backend:** Google Cloud Run, region `asia-south1`.
-- **PWA application baseline:** `31803c596c8622388f512681bcaa05e89172018a` (shell revision `1.0.0-shell152-sd-probe-backoff`).
+- **PWA application baseline:** current `main` (shell revision `1.0.0-shell156-offline-cue`; Chakshu voice asset `1.0.0-chakshu-voice12`).
 - **Backend application baseline:** `97ba01a`.
-- **Firmware baseline:** Synap OS build **1365** (`synap-os1-build1365`) from `DivyanKavdia/synap-firmware`, source `08c0bf603dc63ac089a6558b1fdb2acad5f4e9d4`.
+- **Firmware baseline:** Synap OS build **1396** (`synap-os1-build1396`) from `DivyanKavdia/synap-firmware`, source `dc6a170ca12cb2491e38a43f0df8b15e3a6f568d`.
 - **Primary transcription:** `gemini-3.5-transcribe`.
 - **Memory / reasoning:** Gemini models behind the Synap backend.
 - **Storage and orchestration:** encrypted object storage, Firestore state, Cloud Tasks and the private speaker service.
@@ -96,9 +96,10 @@ The current companion flow supports the production Chakshu voice/media protocol,
 - **BLE connected:** PWA owns commands and all new audio/photo/video capture; media saves directly into the app.
 - **BLE disconnected:** firmware owns Hey Snap; supported standalone captures save to SD.
 - Reconnect catalogues SD without deleting anything and flags unsynced audio, photos and video.
-- When firmware reports SD unavailable, shell152 performs only one recovery catalogue probe per BLE connection instead of repeatedly occupying the shared media queue; an explicit **Check SD card**, a new device, or a reconnect permits a fresh probe.
-- **Sync to app** verifies imported bytes before deleting each SD source; failed verification keeps the original.
-- Local `Hey Snap` command recognition in firmware.
+- When firmware reports SD unavailable, shell156 performs only one recovery catalogue probe per BLE connection instead of repeatedly occupying the shared media queue; an explicit **Check SD card**, a new device, or a reconnect permits a fresh probe.
+- **Sync to app** verifies imported bytes before deleting each SD source; failed verification keeps the original and unsynced captures are never automatically evicted for space.
+- Local `Hey Snap` command recognition in firmware now includes photo, video, bounded offline audio, Describe-photo and Stop classes.
+- Reconnect cues explicitly surface saved offline audio and Describe-photo results.
 - Imported standalone SD audio enters the normal transcription and memory pipeline.
 
 #### One owner at a time
@@ -173,15 +174,17 @@ Software CI verifies protocol, storage, recovery, browser workflows and backend 
 - move-to-app/delete behavior,
 - complete device → transcript → memory flow.
 
-The current hardware baseline for acceptance testing is **firmware build 1365** with PWA shell
-`1.0.0-shell152-sd-probe-backoff`.
+The current hardware baseline for acceptance testing is **firmware build 1396** with PWA shell
+`1.0.0-shell156-offline-cue` and Chakshu voice asset `1.0.0-chakshu-voice12`.
 
-Build 1365 already contains the BLE ownership and SD boot/re-detection implementation: Hey Snap is
-stood down for the BLE-connected period and re-armed by firmware on every disconnect, including
-unexpected drops. Physical acceptance still needs to confirm that behavior on-device, that SD is
-ready after cold boot/re-detection, and that unsynced offline captures survive failed transfers.
-The current personalized TinyML model does not yet contain a dedicated spoken **Start audio** class,
-so offline WAV transport/sync is supported but that spoken command is not a production claim yet.
+Build 1396 retains the BLE ownership and SD boot/re-detection implementation and adds the current
+experimental 8-class personalized TinyML field model. Hey Snap remains disconnected-only; photo,
+video and bounded audio route to durable SD operations, while Describe captures a photo to SD and
+defers cloud visual description until the media is synced/connected. Physical acceptance still
+needs to confirm recognition and SD behavior on-device. The model is deliberately documented as
+experimental because its limited independent real holdout was weak (~30%); more independently
+recorded real-device positives, negatives and confusable commands are required before treating
+recognition as production-accurate.
 
 ## Working convention from this baseline
 
