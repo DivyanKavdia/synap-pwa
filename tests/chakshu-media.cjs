@@ -33,7 +33,7 @@ test('SD errors preserve optional firmware diagnostics and legacy error handling
   const packet = response(7, 0, 0, new TextEncoder().encode(JSON.stringify(storage)), 2);
   packet.setUint8(3, 3);
   assert.throws(() => decode(packet, 7), (error) => {
-    assert.match(error.message, /SD file unavailable/);
+    assert.match(error.message, /SD card unavailable/);
     assert.deepEqual(error.storage, storage);
     return true;
   });
@@ -538,7 +538,7 @@ test('device voice media sync discovers SD media and only explicit verified sync
   assert.match(verifiedMove,/localStorage\.setItem\(key, JSON\.stringify\(receipt\)\)[\s\S]*await deleteSyncedSet\(path\)/);
   assert.match(voice,/Firmware owns capture/);
   assert.match(media,/if \(next && !wifi\?\.active\) schedulePendingSync\(1200\)/);
-  // An unmounted card answers "SD file unavailable" after ~4.6s on the shared
+  // An unmounted card answers "SD card unavailable" after ~4.6s on the shared
   // media queue, and module-changed re-arms the sweep every ~15s. One probe per
   // connection still lets a catalogue trigger firmware re-detection; a loop
   // would spend a third of the queue re-asking an answered question.
