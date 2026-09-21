@@ -57,11 +57,11 @@ test('decodes Hey Snap classifier and microphone diagnostics',()=>{
 // stood down and the control characteristic is never read again. The 1.9-second
 // status + diagnostics poll this replaced was timing out on the shared media
 // queue, stalling audio delivery and dropping the link with SD unmounted.
-function connect({enabled = false} = {}) {
+function connect({enabled = false, incoming = {}} = {}) {
   const ops = [];
   const control = {
     writeValueWithResponse(value) { ops.push('write:' + value[2]); return Promise.resolve(); },
-    readValue() { ops.push('read'); return Promise.resolve(packet({enabled})); },
+    readValue() { ops.push('read'); return Promise.resolve(packet({enabled, ...incoming})); },
   };
   const diagnostics = { readValue() { ops.push('diagnostics'); return Promise.resolve(diagnosticPacket()); } };
   const context = {
@@ -87,6 +87,24 @@ test('stands the wake engine down while the app owns the connection', async () =
   await voice.sync();
   await settle();
   assert.deepEqual(ops, ['find:4fa12356', 'write:0', 'read']);
+});
+
+test('surfaces the last completed offline photo or video after reconnect', async () => {
+  let event;
+  const voice = load();
+  global.dispatchEvent = (value) => { if (value.type === 'synap-chakshu-voice-result') event = value.detail; };
+  connect({ incoming: {sequence: 9, command: 2, result: 3, value: 0} });
+  await voice.sync();
+  await settle();
+  assert.equal(voice.message, 'Offline photo saved to Chakshu SD.');
+  assert.equal(event?.command, 2);
+  assert.equal(event?.result, 3);
+  assert.equal(event?.message, 'Offline photo saved to Chakshu SD.');
+
+  // A bare wake word is explicit too: it never implies media capture.
+  voice.release();
+  global.SynapDevices.connection = null;
+  await settle();
 });
 
 test('refuses to arm Hey Snap while the app is connected', async () => {
