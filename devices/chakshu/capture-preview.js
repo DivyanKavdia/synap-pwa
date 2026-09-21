@@ -236,8 +236,10 @@
   const RECEIPT_PREFIX = 'synap-chakshu-move-v2:';
   let busy = false;
   const status = (message) => {
-    const node = document.getElementById('visualConnectionStatus');
+    const node = document.getElementById('visualConnectionStatus'),
+      inbox = document.getElementById('librarySDInboxText');
     if (node) node.textContent = message || '';
+    if (inbox && message) inbox.textContent = message;
   };
   function context() {
     const state = api()?.state,
