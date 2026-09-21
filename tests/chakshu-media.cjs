@@ -566,6 +566,13 @@ test('unsynced Chakshu audio photo and video surface in the shared Library befor
   assert.match(media,/function rememberCatalogue\(files, deviceId\)/);
   assert.match(media,/sdFiles: sdFiles\.slice\(\)/);
   assert.match(media,/videoStems = new Set/);
+  assert.match(media,/describe: Boolean\(file\?\.describe\)/);
+  assert.match(lifecycle,/async function describeVisual\(visualId, blob/);
+  assert.match(lifecycle,/wantsDescribe = Boolean\(api\(\)\.state\.sdFiles/);
+  assert.match(lifecycle,/receipt\.description = await describeVisual\(visualId, source\.main\)/);
+  assert.match(lifecycle,/Description ready; verified SD source removed/);
+  assert.match(library,/describeRequested: Boolean\(file\.describe\)/);
+  assert.match(library,/Sync & describe/);
   assert.match(media,/!\/\\\.wav\$\/i\.test\(file\.path\) \|\| !videoStems\.has/);
   assert.match(library,/\(jpg\|mjpeg\|wav\)/);
   assert.match(library,/sdOnly: true/);
