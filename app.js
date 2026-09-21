@@ -299,6 +299,9 @@
   window.addEventListener("synap-voice-diagnostic", function (event) {
     log("Voice setup", event.detail);
   });
+  window.addEventListener("synap-chakshu-voice-result", function (event) {
+    log("Offline voice result", event.detail);
+  });
   window.addEventListener("synap-pendant-diagnostics", function (event) {
     log("Pendant diagnostics", event.detail);
   });
