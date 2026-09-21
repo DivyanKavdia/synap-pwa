@@ -142,7 +142,7 @@ test('the shell loads auth and the backend provider, and caches them offline', (
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell155-sd-inbox'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell156-offline-cue'/);
   assert.match(sw, /\.\/devices\/chakshu\/voice\.js/, 'installed shell must precache the voice-v2 companion');
   assert.match(html, /data-synap-chakshu-voice="2" src="devices\/chakshu\/voice\.js\?v=1\.0\.0-chakshu-voice10"/,
     'voice-v2 companion must load deterministically before app startup');
