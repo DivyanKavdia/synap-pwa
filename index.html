@@ -162,6 +162,17 @@
     </div>
     <p id="visualStatus" role="status"></p>
   </section>
+  <section id="librarySDInbox" class="visual-sd-sync" aria-labelledby="librarySDInboxTitle" hidden>
+    <div>
+      <strong id="librarySDInboxTitle">Chakshu SD</strong>
+      <span id="librarySDInboxText">Checking offline captures…</span>
+    </div>
+    <div class="visual-actions">
+      <button id="libraryBrowseSD" type="button">View SD content</button>
+      <button id="librarySyncSD" type="button">Sync all to Memories</button>
+    </div>
+    <div id="librarySDList" class="visual-sd-list" hidden></div>
+  </section>
   <div class="library-controls">
   <div class="library-search"><svg aria-hidden="true"><use href="#i-search"/></svg><input id="librarySearch" type="search" aria-label="Search library" placeholder="Search memories, people, notes &amp; to-dos…" autocomplete="off"><button id="clearLibrarySearch" type="button" aria-label="Clear search" hidden>Clear</button></div>
   <div class="library-toolbar">
