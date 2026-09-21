@@ -649,11 +649,13 @@
       root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
     }
   }
+  async function catalogueNow(signal) {
+    const deviceId = connected()?.deviceId || '',
+      files = await camera().catalogue(signal);
+    return rememberCatalogue(files, deviceId);
+  }
   async function catalogue() {
-    return operation(async (signal) => {
-      const deviceId = connected()?.deviceId || '', files = await camera().catalogue(signal);
-      return rememberCatalogue(files, deviceId);
-    });
+    return operation((signal) => catalogueNow(signal));
   }
   async function importAudio(blob, deviceId, scope, onBegin, localOnly = false) {
     const bytes = new Uint8Array(await blob.arrayBuffer()),
@@ -871,7 +873,10 @@
     // represented in the shared Library until the user explicitly chooses
     // Move to app. moveSD() is the only path that may delete an SD original.
     autoSyncPromise = (async () => {
-      const files = await catalogue();
+      // Discovery is background work. Do not set the foreground
+      // 'working' flag or reject a photo/video just because the SD inbox is
+      // being refreshed; the transfer client still serializes BLE requests.
+      const files = await catalogueNow();
       check(expected);
       if (connected()?.deviceId !== deviceId) return 0;
       await root.SynapModules?.refresh?.().catch(() => {});
