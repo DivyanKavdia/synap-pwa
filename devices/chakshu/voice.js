@@ -126,9 +126,22 @@
       return incoming.result === 0
         ? 'Hey Snap heard while disconnected. No photo or video command completed.'
         : '';
-    const noun = incoming.command === PHOTO ? 'photo' : incoming.command === VIDEO_START ? 'video' : '';
+    const noun =
+      incoming.command === PHOTO
+        ? 'photo'
+        : incoming.command === VIDEO_START
+          ? 'video'
+          : incoming.command === AUDIO_ON
+            ? 'audio'
+            : incoming.command === DESCRIBE
+              ? 'describe photo'
+              : '';
     if (noun) {
-      if (incoming.result === 3) return 'Offline ' + noun + ' saved to Chakshu SD.';
+      if (incoming.result === 3) {
+        if (incoming.command === DESCRIBE)
+          return 'Offline describe photo saved to Chakshu SD. Sync it to Memories for visual description.';
+        return 'Offline ' + noun + ' saved to Chakshu SD.';
+      }
       if (incoming.result === 1)
         return 'Offline ' + noun + ' failed on Chakshu (code ' + incoming.value + ').';
       if (incoming.result === 0) return 'Offline ' + noun + ' command accepted by Chakshu.';
@@ -343,7 +356,7 @@
     return value;
   }
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice11',
+    revision: '1.0.0-chakshu-voice12',
     decode,
     decodeDiagnostic,
     label: commandLabel,
