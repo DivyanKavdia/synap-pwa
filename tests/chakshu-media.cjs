@@ -47,6 +47,13 @@ test('SD errors preserve optional firmware diagnostics and legacy error handling
       return true;
     });
   }
+  const missing = response(9, 0, 0, [], 2);
+  missing.setUint8(3, 11);
+  assert.throws(() => decode(missing, 9), (error) => {
+    assert.match(error.message, /SD file unavailable/);
+    assert.equal(error.storage, undefined, 'a stale file is not a whole-card fault');
+    return true;
+  });
 });
 test('camera failure diagnostics identify discovery, command and response stages', async () => {
   const vm = require('node:vm'),

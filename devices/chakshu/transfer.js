@@ -35,6 +35,7 @@
           'Capture failed.',
           'The SD card could not keep up. The partial recording was kept.',
           'Wi-Fi downloads could not start. Stop other activity and retry.',
+          'SD file unavailable.',
         ][value.getUint8(3)] || 'Camera transfer failed.',
       );
       // New firmware includes bounded SD recovery details in failed replies.
@@ -388,6 +389,6 @@
       });
     }
   }
-  root.SynapChakshuTransfer = { Client, MediaWindow, decode, revision: '1.0.0-chakshu-core14' };
+  root.SynapChakshuTransfer = { Client, MediaWindow, decode, revision: '1.0.0-chakshu-core15' };
   if (typeof module !== 'undefined') module.exports = root.SynapChakshuTransfer;
 })(globalThis);
