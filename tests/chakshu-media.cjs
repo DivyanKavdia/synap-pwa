@@ -577,7 +577,7 @@ test('unsynced Chakshu audio photo and video surface in the shared Library befor
   assert.match(library,/\(jpg\|mjpeg\|wav\)/);
   assert.match(library,/sdOnly: true/);
   assert.match(library,/Not synced · On Chakshu SD/);
-  assert.match(library,/Sync to app/);
+  assert.match(library,/Sync to Memories/);
   assert.match(library,/SynapChakshuV2\?\.moveSD/);
   assert.match(lifecycle,/The imported visual could not be verified\. The SD original was kept\./);
   assert.match(lifecycle,/The imported audio could not be verified\. The SD original was kept\./);
