@@ -22,7 +22,7 @@ function packet({sequence=1,command=2,result=2,status=1,value=0,enabled=true}={}
   return view;
 }
 afterEach(()=>{
-  for(const key of ['SynapCapabilities','SynapModules','SynapDevices','SynapChakshu','SynapChakshuVoice','dispatchEvent','CustomEvent'])delete global[key];
+  for(const key of ['SynapCapabilities','SynapModules','SynapDevices','SynapChakshu','SynapChakshuVoice','dispatchEvent','CustomEvent','localStorage'])delete global[key];
 });
 
 test('decodes the bounded single-model Chakshu voice protocol',()=>{
@@ -65,6 +65,7 @@ function connect({enabled = false, incoming = {}} = {}) {
   };
   const diagnostics = { readValue() { ops.push('diagnostics'); return Promise.resolve(diagnosticPacket()); } };
   const context = {
+    deviceId: 'chakshu-test-1',
     service: { getCharacteristic(uuid) { ops.push('find:' + uuid.slice(0, 8)); return Promise.resolve(uuid.endsWith('58-0000-1000-8000-00805f9b34fb') ? diagnostics : control); } },
     mediaQueue(action) { return Promise.resolve().then(action); },
   };
@@ -134,4 +135,20 @@ test('reads voice diagnostics only when asked', async () => {
   const reading = await voice.diagnose();
   assert.equal(reading.candidateCount, 7);
   assert.deepEqual(ops, ['find:4fa12358', 'diagnostics']);
+});
+
+
+test('last offline result is persisted for the SD inbox', async () => {
+  const voice = load();
+  global.localStorage = (() => { const map=new Map(); return {getItem:(k)=>map.get(k)||null,setItem:(k,v)=>map.set(k,String(v))}; })();
+  let event;
+  global.dispatchEvent = (value) => { if (value.type === 'synap-chakshu-voice-result') event = value.detail; };
+  connect({ incoming: {sequence: 12, command: 2, result: 3, value: 0} });
+  await voice.sync();
+  await settle();
+  assert.equal(typeof voice.lastOutcome, 'function');
+  const last=voice.lastOutcome(global.SynapDevices.connection.deviceId);
+  assert.equal(last?.message, 'Offline photo saved to Chakshu SD.');
+  assert.equal(last?.command, 2);
+  assert.equal(event?.message, last?.message);
 });
