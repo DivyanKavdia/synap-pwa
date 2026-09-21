@@ -564,6 +564,8 @@ test('unsynced Chakshu audio photo and video surface in the shared Library befor
   const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
   assert.match(media,/function rememberCatalogue\(files, deviceId\)/);
   assert.match(media,/sdFiles: sdFiles\.slice\(\)/);
+  assert.match(media,/videoStems = new Set/);
+  assert.match(media,/!\/\\\.wav\$\/i\.test\(file\.path\) \|\| !videoStems\.has/);
   assert.match(library,/\(jpg\|mjpeg\|wav\)/);
   assert.match(library,/sdOnly: true/);
   assert.match(library,/Not synced · On Chakshu SD/);
@@ -594,5 +596,10 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(lifecycle, /Verified SD source removed/);
   assert.match(html, /While Chakshu is disconnected from this app, Hey Snap owns capture/);
   assert.match(html, /id="visualSDSyncNotice"/);
+  assert.match(html, /id="librarySDInbox"/);
+  assert.match(html, /id="libraryBrowseSD"/);
+  assert.match(html, /id="librarySyncSD"/);
+  assert.match(lifecycle, /Sync copies each item to Memories, verifies it, then removes the SD original/);
+  assert.match(lifecycle, /browseSD\('librarySDList'\)/);
   assert.match(html, /id="visualRecordSD"[^>]*disabled/);
 });
