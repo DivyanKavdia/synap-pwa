@@ -22,7 +22,7 @@ function packet({sequence=1,command=2,result=2,status=1,value=0,enabled=true}={}
   return view;
 }
 afterEach(()=>{
-  for(const key of ['SynapCapabilities','SynapModules','SynapDevices','SynapChakshu','SynapChakshuVoice','dispatchEvent','CustomEvent'])delete global[key];
+  for(const key of ['SynapCapabilities','SynapModules','SynapDevices','SynapChakshu','SynapChakshuVoice','dispatchEvent','CustomEvent','localStorage'])delete global[key];
 });
 
 test('decodes the bounded single-model Chakshu voice protocol',()=>{
@@ -65,6 +65,7 @@ function connect({enabled = false, incoming = {}} = {}) {
   };
   const diagnostics = { readValue() { ops.push('diagnostics'); return Promise.resolve(diagnosticPacket()); } };
   const context = {
+    deviceId: 'chakshu-test-1',
     service: { getCharacteristic(uuid) { ops.push('find:' + uuid.slice(0, 8)); return Promise.resolve(uuid.endsWith('58-0000-1000-8000-00805f9b34fb') ? diagnostics : control); } },
     mediaQueue(action) { return Promise.resolve().then(action); },
   };
