@@ -117,7 +117,7 @@ Failed SD media responses can include `sdReady`, `sdClockHz`, `sdMountStage`, `s
 
 ### Catalogue probing
 
-While the readiness mask reports no card, **shell152** catalogues **once per connection** and then stops.
+While the readiness mask reports no card, **shell157** catalogues **once per connection** and then stops.
 
 The single probe is kept because a catalogue is what makes firmware repeat detection. The repetition is not: an unmounted card answers `SD file unavailable` after about 4.6 seconds, and `synap-module-changed` re-arms the sweep roughly every 15, so a third of the shared media queue goes on re-asking a question the device already answered. That queue is also the audio transport.
 
