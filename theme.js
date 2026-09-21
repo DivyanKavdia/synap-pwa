@@ -14,7 +14,7 @@
   let palette='olive';
   try{preference=valid(localStorage.getItem(key))}catch(_){}
   try{palette=validPalette(localStorage.getItem(paletteKey))}catch(_){}
-  function logoSource(){const mode=root.dataset.theme==='dark'?'dark':'light';return 'synap-logo-'+(palette==='olive'?'':palette+'-')+mode+'.png?v=1.0.0-ui-fix1'}
+  function logoSource(){const mode=root.dataset.theme==='dark'?'dark':'light';return 'synap-mark-'+palette+'-'+mode+'.svg?v=1.0.0-mark1'}
 
   function autoMode(){const hour=new Date().getHours();return hour>=7&&hour<19?'light':'dark'}
   function apply(){
