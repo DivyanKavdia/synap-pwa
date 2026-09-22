@@ -8,6 +8,30 @@
   const MAX_BUFFER_PACKETS = 1600;
   const FLUSH_PACKET_COUNT = 64;
   const ZERO_FRAME = new Uint8Array(PCM_BYTES_PER_FRAME);
+  const MAX_TRANSIENT_WRITE_RETRIES = 2;
+
+  function storageTransactionAbort(error, backgrounded) {
+    const source = error || null;
+    const generic =
+      !source ||
+      source.name === 'AbortError' ||
+      /storage transaction aborted|transaction aborted/i.test(String(source.message || ''));
+    if (!generic) return source;
+    return Object.assign(
+      new Error(
+        backgrounded
+          ? 'Storage write deferred while the app was backgrounded.'
+          : 'Storage transaction was interrupted and will be retried.',
+      ),
+      {
+        name: 'AbortError',
+        code: 'storage_transaction_aborted',
+        retryable: true,
+        backgrounded: Boolean(backgrounded),
+        ...(source ? { cause: source } : {}),
+      },
+    );
+  }
 
   function requestValue(request) {
     return new Promise((resolve, reject) => {
@@ -272,6 +296,7 @@
       this.failed = null;
       this.dbPromise = null;
       this.bufferedCount = 0;
+      this.transientWriteFailures = 0;
       this.recoveryFailures = new Map();
       this.timeline = options.timeline || null;
       this.metadata = options.metadata || (() => ({}));
@@ -352,6 +377,7 @@
     }
     async atomic(names, action) {
       const db = await this.open();
+      const startedHidden = root.document?.visibilityState === 'hidden';
       return new Promise((resolve, reject) => {
         let tx;
         try {
@@ -377,7 +403,13 @@
         tx.onerror = (event) => {
           failure ||= event.target?.error;
         };
-        tx.onabort = () => reject(failure || tx.error || new Error('Storage transaction aborted'));
+        tx.onabort = () =>
+          reject(
+            storageTransactionAbort(
+              failure || tx.error,
+              startedHidden || root.document?.visibilityState === 'hidden',
+            ),
+          );
         try {
           action(
             Object.fromEntries(names.map((n) => [n, tx.objectStore(n)])),
@@ -556,8 +588,37 @@
               }
             });
             this.bufferedCount -= batch.length;
+            this.transientWriteFailures = 0;
           } catch (e) {
             this.buffer.unshift(...batch);
+            if (e?.code === 'storage_transaction_aborted') {
+              // Bluefy/iOS can abort a transaction as the page is suspended.
+              // Keep every packet in memory and leave the write chain usable;
+              // foreground recovery will retry without poisoning the recording.
+              this.writing = Promise.resolve();
+              if (root.document?.visibilityState === 'hidden') throw e;
+              this.transientWriteFailures += 1;
+              if (this.transientWriteFailures <= MAX_TRANSIENT_WRITE_RETRIES) {
+                if (typeof root.setTimeout === 'function')
+                  await new Promise((resolve) =>
+                    root.setTimeout(resolve, 25 * this.transientWriteFailures),
+                  );
+                return this.flush();
+              }
+              const fatal = Object.assign(
+                new Error(
+                  'Local storage transactions were repeatedly aborted. Keep this recording and retry after reopening Synap.',
+                ),
+                {
+                  name: 'AbortError',
+                  code: 'storage_unavailable',
+                  retryable: true,
+                  cause: e,
+                },
+              );
+              this.failed = fatal;
+              throw fatal;
+            }
             this.failed = e;
             throw e;
           }
