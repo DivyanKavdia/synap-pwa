@@ -237,6 +237,98 @@ export async function createMemoryMerge(
   };
 }
 
+
+/**
+ * Rebuild an existing unified memory from its untouched source recordings.
+ * The merge identity and source membership stay stable; only the derived
+ * transcript/memory view is refreshed.
+ */
+export async function recreateMemoryMerge(
+  uid: string,
+  dek: Buffer,
+  mergeId: string,
+): Promise<MemoryMergeView> {
+  const ref = mergeCollection(uid).doc(mergeId);
+  const snapshot = await ref.get();
+  if (!snapshot.exists) {
+    throw new MemoryMergeError(404, 'memory_merge_not_found', 'Merged memory no longer exists.');
+  }
+  const current = snapshot.data() as MemoryMergeDoc;
+  const sourceDocs = await Promise.all(current.sourceRecordingIds.map((id) => db.getRecording(uid, id)));
+  if (sourceDocs.some((recording) => !recording)) {
+    throw new MemoryMergeError(409, 'merge_source_missing', 'One or more source memories no longer exist.');
+  }
+  const ordered = sourceDocs.filter((recording): recording is RecordingDoc => Boolean(recording));
+  if (ordered.some((recording) => recording.state !== 'ready' || !recording.sealedTranscript)) {
+    throw new MemoryMergeError(409, 'memory_not_ready', 'Every source memory must be ready before recreating the unified memory.');
+  }
+  const first = ordered[0];
+  if (!first) {
+    throw new MemoryMergeError(409, 'merge_source_missing', 'This merged memory has no source recordings.');
+  }
+
+  const firstStartedMs = Math.min(...ordered.map((recording) => Date.parse(recording.startedAt)));
+  const lastEndedMs = Math.max(...ordered.map(recordingEndMs));
+  const durationMs = Math.max(1, lastEndedMs - firstStartedMs);
+  const transcripts: string[] = [];
+  const highlightOffsetsMs: number[] = [];
+
+  for (const recording of ordered) {
+    if (!recording.sealedTranscript) {
+      throw new MemoryMergeError(409, 'memory_not_ready', 'Every source memory needs a complete transcript.');
+    }
+    const offset = Math.max(0, Date.parse(recording.startedAt) - firstStartedMs);
+    const transcript = openText(
+      dek,
+      recording.sealedTranscript,
+      { uid, scope: `recording/${recording.recordingId}`, field: 'transcript' },
+    );
+    transcripts.push(shiftTranscript(transcript, offset));
+    const highlights = await db.listHighlights(uid, recording.recordingId);
+    highlightOffsetsMs.push(...highlights.map((highlight) => offset + highlight.offsetMs));
+  }
+
+  const transcript = transcripts.filter(Boolean).join('\n\n');
+  if (!transcript.trim()) {
+    throw new MemoryMergeError(409, 'empty_transcript', 'The source memories do not contain transcript text.');
+  }
+
+  const languages = [...new Set(
+    ordered.map((recording) => recording.language).filter((language): language is string => Boolean(language)),
+  )];
+  const memory = await extractMemory({
+    transcript,
+    durationMs,
+    highlightOffsetsMs,
+    knownPeople: await knownPeople(uid, dek),
+    language: languages.length === 1 ? (languages[0] ?? 'auto') : 'auto',
+  });
+
+  const now = new Date().toISOString();
+  const updated: MemoryMergeDoc = {
+    ...current,
+    startedAt: new Date(firstStartedMs).toISOString(),
+    endedAt: new Date(lastEndedMs).toISOString(),
+    durationMs,
+    sealedMemory: sealJson(dek, memory, binding(uid, mergeId, 'memory')),
+    sealedTranscript: sealText(dek, transcript, binding(uid, mergeId, 'transcript')),
+    updatedAt: now,
+  };
+  await ref.set(updated);
+
+  return {
+    mergeId,
+    sourceRecordingIds: updated.sourceRecordingIds,
+    day: updated.day,
+    startedAt: updated.startedAt,
+    endedAt: updated.endedAt,
+    durationMs: updated.durationMs,
+    memory,
+    transcript,
+    createdAt: updated.createdAt,
+  };
+}
+
 export async function deleteMemoryMerge(uid: string, mergeId: string): Promise<boolean> {
   const ref = mergeCollection(uid).doc(mergeId);
   const snapshot = await ref.get();
