@@ -52,3 +52,13 @@ test('installed PWA caches the optional memory and sleep-state modules',()=>{
   assert.match(sw,/\.\/sleep-state-guard\.js/);
   assert.match(shell,/memory-tools\.js\?v=/);
 });
+
+
+test('merged memories expose recreate and sharing/export actions',()=>{
+  const src=fs.readFileSync(path.join(root,'memory-tools.js'),'utf8');
+  assert.match(src,/\/v1\/memory-merges\/.*\/recreate/);
+  assert.match(src,/WhatsApp/);
+  assert.match(src,/mail\.google\.com\/mail/);
+  assert.match(src,/application\/pdf/);
+  assert.match(src,/Shared from Synap/);
+});
