@@ -4,7 +4,8 @@
       !((v.getUint8(1) === 1 && v.byteLength === 32) ||
         (v.getUint8(1) === 2 && v.byteLength === 48) ||
         (v.getUint8(1) === 3 && v.byteLength === 72) ||
-        (v.getUint8(1) === 4 && v.byteLength === 84))) {
+        (v.getUint8(1) === 4 && v.byteLength === 84) ||
+        (v.getUint8(1) === 5 && v.byteLength === 112))) {
     throw new Error('Unsupported pendant diagnostics');
   }
   const flags = v.getUint8(2), reset = v.getUint8(3), u32 = o => v.getUint32(o, true);
@@ -46,7 +47,7 @@
       linkDurationMs: u32(68),
     });
   }
-  if (v.getUint8(1) === 4) {
+  if (v.getUint8(1) >= 4) {
     const code = offset => v.getUint16(offset, true) === 65535 ? null : v.getUint16(offset, true);
     Object.assign(data, {
       linkIntervalMs: v.getUint16(72, true) * 1.25,
@@ -55,6 +56,18 @@
       // Native return code zero confirms submission only. linkSupervisionMs is
       // the actual GAP observation, including central rejection/replacement.
       linkParamRequestCode: code(80), lastLinkParamRequestCode: code(82),
+    });
+  }
+  if (v.getUint8(1) === 5) {
+    Object.assign(data, {
+      touchRaw: Boolean(v.getUint8(84)), touchStable: Boolean(v.getUint8(85)),
+      batteryAvailable: Boolean(v.getUint8(86)), batteryPercent: v.getUint8(87),
+      batteryAdcMillivolts: v.getUint16(88, true), batteryAdcRaw: v.getUint16(90, true),
+      batteryMillivolts: v.getUint16(92, true),
+      ledRgb: [v.getUint8(94), v.getUint8(95), v.getUint8(96)],
+      touchGpio: v.getUint8(97), batteryGpio: v.getUint8(98), neopixelGpio: v.getUint8(99),
+      touchTransitions: u32(100), touchActions: u32(104), touchLastHoldMs: v.getUint16(108, true),
+      remoteStandby: Boolean(v.getUint8(110)), deviceState: v.getUint8(111)
     });
   }
   return data;

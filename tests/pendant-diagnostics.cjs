@@ -139,6 +139,26 @@ test('supervision diagnostics distinguish a submitted request from the actual ne
   }
 });
 
+test('v5 diagnostics expose corrected Chakshu GPIO1/GPIO2/GPIO5 hardware evidence',()=>{
+  const {api}=harness(),base=packet(),v=new DataView(new ArrayBuffer(112));
+  new Uint8Array(v.buffer).set(new Uint8Array(base.buffer,base.byteOffset,base.byteLength));
+  v.setUint8(1,5);v.setUint8(67,3);v.setUint16(76,600,true);
+  v.setUint8(84,1);v.setUint8(85,1);v.setUint8(86,1);v.setUint8(87,68);
+  v.setUint16(88,1180,true);v.setUint16(90,2475,true);v.setUint16(92,3694,true);
+  v.setUint8(94,0);v.setUint8(95,6);v.setUint8(96,0);
+  v.setUint8(97,1);v.setUint8(98,2);v.setUint8(99,5);
+  v.setUint32(100,9,true);v.setUint32(104,3,true);v.setUint16(108,126,true);
+  v.setUint8(110,0);v.setUint8(111,1);
+  const data=api.decodePendantDiagnostics(v);
+  assert.equal(data.touchGpio,1);assert.equal(data.batteryGpio,2);assert.equal(data.neopixelGpio,5);
+  assert.equal(data.touchRaw,true);assert.equal(data.touchStable,true);
+  assert.equal(data.touchTransitions,9);assert.equal(data.touchActions,3);assert.equal(data.touchLastHoldMs,126);
+  assert.equal(data.batteryAvailable,true);assert.equal(data.batteryPercent,68);
+  assert.equal(data.batteryAdcMillivolts,1180);assert.equal(data.batteryAdcRaw,2475);assert.equal(data.batteryMillivolts,3694);
+  assert.deepEqual(data.ledRgb,[0,6,0]);
+  for(const length of [84,111,113]){const bad=new DataView(new ArrayBuffer(length));bad.setUint8(0,0xd6);bad.setUint8(1,5);assert.throws(()=>api.decodePendantDiagnostics(bad),/Unsupported/);}
+});
+
 test('diagnostic reads cannot add GATT traffic while recording or updating',async()=>{
   for(const state of ['starting','recording','stopping','saving','updating','connecting','disconnected']){
     const h=harness(state);await h.api.readPendantDiagnostics();assert.equal(h.calls.length,0,state);

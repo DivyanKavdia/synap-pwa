@@ -1,7 +1,7 @@
 # Chakshu — single-owner capture, offline SD and Hey Snap
 
 **Target contract:** PWA shell `1.0.0-shell162-ask-processing-fix` or later, voice protocol **2**, media protocol **1**.  
-**Production firmware baseline:** Synap OS build **1406**. The OTA feed remains authoritative; build 1406 retains the current experimental 8-class personalized model and adds the Chakshu GPIO0 touch, GPIO1 battery ADC and GPIO4 NeoPixel profile.
+**Production firmware baseline:** Synap OS build **1406** remains the current OTA baseline while the corrected Chakshu GPIO1/D0 touch, GPIO2/D1 battery ADC and GPIO5/D4 NeoPixel mapping is under release validation. The OTA feed remains authoritative.
 **Device:** `xiao-esp32s3-sense-8m`, module id `3`, OTA marker `SYNAP-CHAKSHU-OTA-ID-V3`, advertising name `synap-Chakshu`.
 
 This is the operational contract for Chakshu. Odyssey C3/S3 do not have a camera, SD card or local wake engine.
@@ -19,7 +19,7 @@ This is the operational contract for Chakshu. Odyssey C3/S3 do not have a camera
 - Offline **Record audio** is intentionally bounded to 60 seconds in the current runtime because the recorder owns the microphone while active.
 - Offline **Explain what you see** saves a tagged JPG to SD. After explicit verified sync, the PWA invokes visual inference and attaches the description to that Memory.
 - GPIO21 remains SD chip-select; the onboard orange light must not be software-driven as a semantic status LED.
-- The current hardware revision adds TTP223 touch on GPIO0, battery ADC on GPIO1 through the S3-style 1 MΩ / 470 kΩ divider, and an external NeoPixel on GPIO4.
+- The current hardware revision adds TTP223 touch on GPIO1 / D0, battery ADC on GPIO2 / D1 through the S3-style 1 MΩ / 470 kΩ divider, and an external NeoPixel on GPIO5 / D4.
 
 > **Model-training continuity note:** the experimental 8-class weights include 22 supplied real 16 kHz mono utterances — Record audio (8), Record video (6), Explain what you see (8) — plus synthetic augmentation. Synthetic held-out accuracy was ~94% and available real-utterance fit ~95.5%, but the limited independent real holdout was only ~30%. Treat this as a field baseline, not a finished classifier. The next training pass should use more independently recorded, clearly separated utterances and a true speaker/session holdout.
 
@@ -69,13 +69,12 @@ If an SD capture was already in progress when BLE connects, it is allowed to clo
 
 Chakshu inherits the shared Odyssey control behavior on the new hardware:
 
-- **TTP223 / GPIO0:** active-high touch input. Double tap while connected starts recording; double tap while recording stops and enters power saver. A 4-second hold enters deep sleep, and a deliberate 4-second touch wake confirms power-on.
-- **Battery / GPIO1:** 1 MΩ high-side + 470 kΩ low-side divider, using the Odyssey S3 calibration (4130 mV cell ↔ 1320 mV ADC) and 6 dB attenuation. Battery percentage, raw diagnostics and critical-battery protection use the existing battery event.
-- **NeoPixel / GPIO4:** shared dim status patterns for disconnected, connected-idle, recording, OTA/error and low battery.
+- **TTP223 / GPIO1 / D0:** active-high touch input. Double tap while connected starts recording; double tap while recording stops and enters power saver. A 4-second hold enters deep sleep, and a deliberate 4-second touch wake confirms power-on.
+- **Battery / GPIO2 / D1:** 1 MΩ high-side + 470 kΩ low-side divider, using the Odyssey S3 calibration (4130 mV cell ↔ 1320 mV ADC) and 6 dB attenuation. Battery percentage, raw diagnostics and critical-battery protection use the existing battery event.
+- **NeoPixel / GPIO5 / D4:** shared dim status patterns for disconnected, connected-idle, recording, OTA/error and low battery.
 - **Offline voice continuity:** while Hey Snap is actively listening and Chakshu is disconnected, the ordinary disconnected idle timeout does not force deep sleep. An explicit long touch can still shut the device down.
 - **Media safety:** active SD/camera work blocks standby/deep sleep until the media operation finishes.
 
-GPIO0 is an ESP32-S3 boot-strapping pin. Firmware cannot alter its reset-time strap level, so physical acceptance must verify cold boot/reset with the TTP223 both released and touched.
 
 ---
 

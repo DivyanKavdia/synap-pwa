@@ -96,9 +96,9 @@ test('catalog keeps current product names and Chakshu control hardware metadata'
   assert.equal(byId['esp32c3-supermini-4m'].hardware.led,8);
   assert.equal(byId['esp32c3-supermini-4m'].hardware.ledDriver,'neopixel');
   const chakshu=byId['xiao-esp32s3-sense-8m'];
-  assert.equal(chakshu.hardware.touch,0);
-  assert.equal(chakshu.hardware.battery,1);
-  assert.equal(chakshu.hardware.led,4);
+  assert.equal(chakshu.hardware.touch,1);
+  assert.equal(chakshu.hardware.battery,2);
+  assert.equal(chakshu.hardware.led,5);
   assert.equal(chakshu.hardware.ledDriver,'neopixel');
   assert.equal(chakshu.hardware.batteryAdcMv,1320);
   assert.equal(chakshu.hardware.batteryCellMv,4130);
