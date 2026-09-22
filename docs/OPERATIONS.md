@@ -95,7 +95,8 @@ Rules:
 - cold detection tries 10 → 4 → 1 MHz;
 - post-mount I/O recovery locks to conservative 1 MHz for that boot;
 - failed sync retains the SD original;
-- Clear SD removes only Synap-owned capture patterns and never formats the card.
+- Clear SD removes only Synap-owned capture patterns and never formats the card;
+- verified source deletion is owned only by `devices/chakshu/capture-preview.js`; `devices/chakshu/media.js` must not issue media operation 17 directly.
 
 When SD fails during sync, separate:
 1. mount/readiness failure;
