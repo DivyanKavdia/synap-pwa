@@ -39,6 +39,12 @@ async function assertWordmarks(page, mode) {
     assert.equal(pixels.width, 180);
     assert.equal(pixels.height, 256);
     assert(pixels.count > 12000, 'S mark has actual visible pixels');
+    const box = await logo.boundingBox();
+    assert(box.width <= 26, 'header S mark stays compact: ' + box.width + 'px');
+    assert(box.height <= 36, 'header S mark stays compact: ' + box.height + 'px');
+    const word = page.locator('.brand-name');
+    assert.equal((await word.innerText()).trim(), 'synap');
+    assert(await word.isVisible(), 'synap word is visible beside the S mark');
   }
 }
 
