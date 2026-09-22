@@ -111,6 +111,10 @@ assert.match(html, /src="people-confirm-ui\.js/);
 // Renaming has to reach the backend, and has to be a PATCH on the person.
 assert.match(backendClient, /renamePerson:function\(personId,name\)/);
 assert.match(backendClient, /'\/v1\/people\/'\+encodeURIComponent\(personId\)/);
+assert.match(source,/refreshed_recording_ids/,'person rename response must drive affected transcript refresh');
+assert.match(source,/SynapCloudHistory\.restoreRecording\(id, true\)/,'affected recordings must be rehydrated from canonical cloud data');
+assert.match(source,/synap-transcript-updated/,'person rename must notify transcript surfaces');
+assert.match(source,/Saving name & refreshing transcripts/,'rename UI must describe the durable refresh');
 // Correcting a name is the whole mechanism. This control must never start
 // capturing a voice sample, which would turn a UI tweak into the collection of
 // biometric data — a decision that belongs to a spec review, not to this file.
