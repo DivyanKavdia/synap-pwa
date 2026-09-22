@@ -155,7 +155,7 @@ test('v5 diagnostics expose corrected Chakshu GPIO1/GPIO2/GPIO5 hardware evidenc
   assert.equal(data.touchTransitions,9);assert.equal(data.touchActions,3);assert.equal(data.touchLastHoldMs,126);
   assert.equal(data.batteryAvailable,true);assert.equal(data.batteryPercent,68);
   assert.equal(data.batteryAdcMillivolts,1180);assert.equal(data.batteryAdcRaw,2475);assert.equal(data.batteryMillivolts,3694);
-  assert.deepEqual(data.ledRgb,[0,6,0]);
+  assert.equal(data.ledRgb[0],0);assert.equal(data.ledRgb[1],6);assert.equal(data.ledRgb[2],0);
   for(const length of [84,111,113]){const bad=new DataView(new ArrayBuffer(length));bad.setUint8(0,0xd6);bad.setUint8(1,5);assert.throws(()=>api.decodePendantDiagnostics(bad),/Unsupported/);}
 });
 
