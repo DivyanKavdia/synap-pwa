@@ -506,16 +506,6 @@
       busy = false;
     }
   }
-  async function settleAudio() {
-    const current = root.SynapAppControls.recordingState();
-    if (!current.active) return;
-    await root.SynapAppControls.stopCapture(current.sessionId);
-    const deadline = Date.now() + 15000;
-    while (root.SynapAppControls.recordingState().active || root.SynapAppControls.recordingState().settling) {
-      if (Date.now() >= deadline) throw Error('Audio is still saving. Retry after it finishes.');
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-  }
   async function startOffline(profile = 0, seconds = 10) {
     void profile; void seconds;
     throw Error('Offline SD capture is device-owned and runs only while Chakshu is disconnected from the PWA.');
