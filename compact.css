@@ -1243,10 +1243,10 @@ body.synap-refresh #memoryWorkspace {
 /* Compact Synap brand lockup: S mark + word, without legacy wordmark sizing. */
 body.synap-refresh .topbar>.brand{display:inline-flex;align-items:center;gap:7px;width:max-content;max-width:none;min-width:0}
 body.synap-refresh .topbar .brand-logo.synap-brand-image{width:24px!important;height:34px!important;max-width:24px!important;object-fit:contain!important}
-body.synap-refresh .topbar .brand-copy{display:grid;gap:1px;align-items:start}body.synap-refresh .topbar .brand-name{display:block;font-size:26.4px;line-height:.92;font-weight:760;letter-spacing:-.72px;color:var(--ink)}body.synap-refresh .topbar .brand-tagline{display:block;font-size:8.5px;line-height:1;font-weight:650;letter-spacing:.045em;color:var(--muted);white-space:nowrap}
+body.synap-refresh .topbar .brand-copy{position:relative;display:inline-block;width:max-content;padding-bottom:9px}body.synap-refresh .topbar .brand-name{display:block;font-size:26.4px;line-height:.92;font-weight:760;letter-spacing:-.72px;color:var(--ink)}body.synap-refresh .topbar .brand-tagline{position:absolute;left:0;bottom:0;display:block;width:100%;font-size:8.5px;line-height:1;font-weight:650;letter-spacing:.02em;text-align:center;color:var(--muted);white-space:nowrap;transform:scaleX(.82);transform-origin:center}
 @media(max-width:640px){
  body.synap-refresh .topbar .brand-logo.synap-brand-image{width:22px!important;height:31px!important;max-width:22px!important}
- body.synap-refresh .topbar .brand-name{font-size:24px} body.synap-refresh .topbar .brand-tagline{font-size:8px}
+ body.synap-refresh .topbar .brand-name{font-size:24px} body.synap-refresh .topbar .brand-tagline{font-size:8px;transform:scaleX(.8)}
 }
 
 body.synap-refresh #libraryTitle{display:flex;align-items:center;gap:8px;flex-wrap:nowrap}
