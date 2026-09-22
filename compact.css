@@ -1243,8 +1243,19 @@ body.synap-refresh #memoryWorkspace {
 /* Compact Synap brand lockup: S mark + word, without legacy wordmark sizing. */
 body.synap-refresh .topbar>.brand{display:inline-flex;align-items:center;gap:7px;width:max-content;max-width:none;min-width:0}
 body.synap-refresh .topbar .brand-logo.synap-brand-image{width:24px!important;height:34px!important;max-width:24px!important;object-fit:contain!important}
-body.synap-refresh .topbar .brand-name{display:block;font-size:26.4px;line-height:1;font-weight:760;letter-spacing:-.72px;color:var(--ink)}
+body.synap-refresh .topbar .brand-copy{display:grid;gap:1px;align-items:start}body.synap-refresh .topbar .brand-name{display:block;font-size:26.4px;line-height:.92;font-weight:760;letter-spacing:-.72px;color:var(--ink)}body.synap-refresh .topbar .brand-tagline{display:block;font-size:8.5px;line-height:1;font-weight:650;letter-spacing:.045em;color:var(--muted);white-space:nowrap}
 @media(max-width:640px){
  body.synap-refresh .topbar .brand-logo.synap-brand-image{width:22px!important;height:31px!important;max-width:22px!important}
- body.synap-refresh .topbar .brand-name{font-size:24px}
+ body.synap-refresh .topbar .brand-name{font-size:24px} body.synap-refresh .topbar .brand-tagline{font-size:8px}
 }
+
+body.synap-refresh #libraryTitle{display:flex;align-items:center;gap:8px;flex-wrap:nowrap}
+body.synap-refresh .library-storage-info-toggle{display:inline-grid;place-items:center;width:24px;height:24px;min-width:24px;padding:0;border:1px solid var(--border);border-radius:50%;background:var(--surface-2);color:var(--muted);box-shadow:none}
+body.synap-refresh .library-storage-info-toggle[hidden]{display:none!important}
+body.synap-refresh .library-storage-info-toggle svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8}
+body.synap-refresh .library-storage-info-toggle[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent)}
+body.synap-refresh .library-storage-info-panel{margin:0 0 12px;padding:12px 13px;border-radius:14px}
+body.synap-refresh .library-storage-info-panel>div:first-child{display:grid;gap:5px}
+body.synap-refresh .library-storage-info-panel small{line-height:1.45}
+body.synap-refresh .library-storage-info-panel .visual-actions{margin-top:9px}
+@media(max-width:640px){body.synap-refresh .library-storage-info-toggle{width:23px;height:23px;min-width:23px}}

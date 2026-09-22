@@ -612,6 +612,7 @@
   function renderSDInbox() {
     const state = api()?.state || {},
       panel = document.getElementById('librarySDInbox'),
+      toggle = document.getElementById('libraryStorageInfoToggle'),
       text = document.getElementById('librarySDInboxText'),
       check = document.getElementById('libraryCheckSD'),
       browse = document.getElementById('libraryBrowseSD'),
@@ -623,7 +624,12 @@
       outcome = last?.message ? String(last.message).replace(/Chakshu SD/g, 'device storage').replace(/Chakshu/g, 'device') : '',
       suffix = outcome ? ' Last offline result: ' + outcome : '';
     if (!panel) return;
-    panel.hidden = !state.available;
+    if (toggle) {
+      toggle.hidden = !state.available;
+      if (!state.available) toggle.setAttribute('aria-expanded', 'false');
+    }
+    const open = Boolean(toggle && toggle.getAttribute('aria-expanded') === 'true');
+    panel.hidden = !state.available || !open;
     if (panel.hidden) return;
     if (text) {
       if (!state.connected)
@@ -709,6 +715,12 @@
         sync.disabled = false;
         renderSDInbox();
       }
+    });
+    const libraryInfoToggle = document.getElementById('libraryStorageInfoToggle');
+    libraryInfoToggle?.addEventListener('click', () => {
+      const open = libraryInfoToggle.getAttribute('aria-expanded') === 'true';
+      libraryInfoToggle.setAttribute('aria-expanded', String(!open));
+      renderSDInbox();
     });
     const libraryCheck = document.getElementById('libraryCheckSD');
     libraryCheck?.addEventListener('click', async () => {
