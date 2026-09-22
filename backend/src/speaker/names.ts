@@ -1,5 +1,6 @@
 import { openJson } from '../crypto/envelope.js';
 import type { RecordingDoc } from '../store/types.js';
+import { normalizeName } from '../util/ids.js';
 
 export type SpeakerNames = Record<string, string>;
 const LINE = /^([ \t]*(?:\[\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\][ \t]*)?)([^:\r\n\[\]]{1,80})(:[ \t]*)/gm;
@@ -32,6 +33,25 @@ export function validateSpeakerNames(value: unknown, transcript: string): Speake
 export function applySpeakerNames(transcript: string, names: SpeakerNames): string {
   return transcript.replace(LINE, (original, prefix: string, label: string, separator: string) =>
     Object.hasOwn(names, label.trim()) ? prefix + names[label.trim()] + separator : original);
+}
+
+/** Rename only speaker-identity values; source labels, words and timestamps never change. */
+export function renameSpeakerIdentity(
+  names: SpeakerNames,
+  previousName: string,
+  nextName: string,
+): { names: SpeakerNames; changed: boolean } {
+  const previous = normalizeName(previousName);
+  if (!previous || !normalizeName(nextName)) return { names: { ...names }, changed: false };
+  let changed = false;
+  const updated: SpeakerNames = Object.create(null);
+  for (const [label, name] of Object.entries(names)) {
+    if (normalizeName(name) === previous) {
+      updated[label] = nextName.trim();
+      changed = changed || updated[label] !== name;
+    } else updated[label] = name;
+  }
+  return { names: updated, changed };
 }
 
 export function readSpeakerNames(uid: string, recording: RecordingDoc, dek: Buffer): SpeakerNames {
