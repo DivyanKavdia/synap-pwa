@@ -4,6 +4,7 @@ import {
   createMemoryMerge,
   deleteMemoryMerge,
   listMemoryMerges,
+  recreateMemoryMerge,
   MemoryMergeError,
   type MemoryMergeView,
 } from '../../pipeline/merge.js';
@@ -68,6 +69,19 @@ export function memoryToolRoutes(): Router {
       try {
         const merge = await createMemoryMerge(req.uid, req.dek, body.data.recording_ids);
         res.status(201).json(view(merge));
+      } catch (error) {
+        translate(error);
+      }
+    }),
+  );
+
+  router.post(
+    '/memory-merges/:mergeId/recreate',
+    requireAuth(),
+    handler<AuthedRequest>(async (req, res) => {
+      try {
+        const merge = await recreateMemoryMerge(req.uid, req.dek, String(req.params.mergeId));
+        res.status(200).json(view(merge));
       } catch (error) {
         translate(error);
       }
