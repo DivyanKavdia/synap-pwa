@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import {
   createMemoryMerge,
+  rebuildMemoryMerge,
   deleteMemoryMerge,
   listMemoryMerges,
   MemoryMergeError,
@@ -26,6 +27,7 @@ function view(merge: MemoryMergeView) {
     memory: merge.memory,
     transcript: merge.transcript,
     created_at: merge.createdAt,
+    updated_at: merge.updatedAt,
   };
 }
 
@@ -68,6 +70,19 @@ export function memoryToolRoutes(): Router {
       try {
         const merge = await createMemoryMerge(req.uid, req.dek, body.data.recording_ids);
         res.status(201).json(view(merge));
+      } catch (error) {
+        translate(error);
+      }
+    }),
+  );
+
+  router.post(
+    '/memory-merges/:mergeId/rebuild',
+    requireAuth(),
+    handler<AuthedRequest>(async (req, res) => {
+      try {
+        const merge = await rebuildMemoryMerge(req.uid, req.dek, String(req.params.mergeId));
+        res.status(200).json({ ...view(merge), rebuilt: true, retranscribed_segments: 0 });
       } catch (error) {
         translate(error);
       }
