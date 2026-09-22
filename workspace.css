@@ -1212,3 +1212,49 @@ body.synap-refresh .topbar > .hey-synap-feedback {
   max-width: min(100%, 420px);
   margin: -2px auto 0;
 }
+
+
+/* Unified memory actions: regenerate locally-derived view, then share/export. */
+.synap-merged-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.synap-merged-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.synap-merged-actions button {
+  min-height: 40px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.synap-merged-actions .synap-recreate {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.synap-merged-actions .synap-unmerge {
+  color: var(--muted);
+}
+.synap-merged-actions button:disabled {
+  opacity: .55;
+  cursor: default;
+}
+@media (max-width: 520px) {
+  .synap-merged-footer,
+  .synap-merged-actions {
+    width: 100%;
+  }
+  .synap-merged-actions button {
+    flex: 1 1 calc(33.333% - 6px);
+  }
+}
