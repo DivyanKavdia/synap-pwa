@@ -24,11 +24,12 @@ test('all four palettes ship the same S geometry in day and night variants',()=>
 test('live branding follows palette and light-dark appearance everywhere',()=>{
   const html=read('index.html'),theme=read('theme.js'),capture=read('capture-ui.js'),sw=read('sw.js');
   assert.match(html,/synap-mark-olive-light\.svg\?v=1\.0\.0-mark1/);
+  assert.match(html,/<span class="brand-name">synap<\/span>/);
   assert(theme.includes("synap-mark-'+palette+'-'+mode+'.svg?v=1.0.0-mark1"));
   assert.match(capture,/dataset\.palette \|\| 'olive'/);
   for(const palette of palettes)for(const mode of modes)assert(sw.includes("'./synap-mark-"+palette+"-"+mode+".svg'"));
   for(const source of [html,theme,capture,sw])assert(!source.includes('synap-logo-light.png'));
-  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell157-experimental-voice'/);
+  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell158-brand-lockup'/);
 });
 
 test('favicon and installed launcher use the same S identity',()=>{
