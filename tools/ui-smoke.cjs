@@ -49,6 +49,9 @@ async function assertWordmarks(page, mode) {
     assert(wordSize >= 24, 'synap wordmark is 20% larger: ' + wordSize + 'px');
     const tagline = page.locator('.brand-tagline');
     assert.equal((await tagline.innerText()).trim(), 'infinite memories');
+    const tagBox = await tagline.boundingBox();
+    const wordBox = await word.boundingBox();
+    assert(tagBox.width <= wordBox.width + 0.5, 'tagline stays within synap width: ' + tagBox.width + ' <= ' + wordBox.width);
     assert(await tagline.isVisible(), 'brand tagline is visible below synap');
   }
 }
