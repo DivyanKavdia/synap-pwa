@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Firestore } from '@google-cloud/firestore';
 import { generateDek, sealJson } from '../src/crypto/envelope.js';
-import { applySpeakerNames, readSpeakerNames, transcriptSpeakers, validateSpeakerNames } from '../src/speaker/names.js';
+import { applySpeakerNames, readSpeakerNames, renameSpeakerIdentity, transcriptSpeakers, validateSpeakerNames } from '../src/speaker/names.js';
 import { saveSpeakerMemory, setFirestoreForTest } from '../src/store/firestore.js';
 import type { RecordingDoc } from '../src/store/types.js';
 import { extractMemory } from '../src/gemini/memory.js';
@@ -15,6 +15,19 @@ test('speaker tags replace only line labels and preserve source words and offset
   assert.equal(applySpeakerNames(transcript, validateSpeakerNames({ S1: '', S2: '  ' }, transcript)), transcript);
   assert.deepEqual(transcriptSpeakers('[00:01] Speech without labels.'), []);
 });
+test('person renames update speaker identity values without touching labels or source text', () => {
+  const renamed = renameSpeakerIdentity({ S1: 'Ankit', S2: 'Riya' }, '  ANKIT ', 'Ankit Sharma');
+  assert.equal(renamed.changed, true);
+  assert.deepEqual({ ...renamed.names }, { S1: 'Ankit Sharma', S2: 'Riya' });
+  assert.equal(
+    applySpeakerNames(transcript, renamed.names),
+    '[00:01] Ankit Sharma: I will send S2 the drawings.\n[00:04] Riya: Thank you.\n[01:00:02] Ankit Sharma: The price is 12:30, not a speaker label.',
+  );
+  const noMatch = renameSpeakerIdentity({ S1: 'Alex' }, 'Ankit', 'Ankit Sharma');
+  assert.equal(noMatch.changed, false);
+  assert.deepEqual({ ...noMatch.names }, { S1: 'Alex' });
+});
+
 test('unknown labels, oversized names and line injection are rejected', () => {
   for (const names of [null, [], { S3: 'Alex' }, { S1: 'A'.repeat(81) }, { S1: 'A\nS2: fake speech' }, { S1: 'Dr: A' }]) {
     assert.throws(() => validateSpeakerNames(names, transcript));
