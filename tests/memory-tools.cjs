@@ -52,7 +52,7 @@ test('merged memory rebuild is source-safe and does not alter source recordings'
   assert.match(route,/\/memory-merges\/:mergeId\/rebuild/);
   assert.match(route,/retranscribed_segments:\s*0/);
   assert.match(pipeline,/rebuildMemoryMerge/);
-  assert.match(pipeline,/sourceRecordingIds:\s*current\.sourceRecordingIds/);
+  assert.match(pipeline,/synthesizeMemoryMerge\([\s\S]*current\.sourceRecordingIds/);
   assert.match(pipeline,/live\.updatedAt !== current\.updatedAt/);
   assert.match(pipeline,/tx\.set\(ref, built\.doc\)/);
   assert.doesNotMatch(pipeline,/deleteRecordingAudio/);
