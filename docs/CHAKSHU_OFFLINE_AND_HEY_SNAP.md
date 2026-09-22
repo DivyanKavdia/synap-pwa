@@ -1,7 +1,7 @@
 # Chakshu — single-owner capture, offline SD and Hey Snap
 
 **Target contract:** PWA shell `1.0.0-shell162-ask-processing-fix` or later, voice protocol **2**, media protocol **1**.  
-**Production firmware baseline:** Synap OS build **1406** remains the current OTA baseline while the corrected Chakshu GPIO1/D0 touch, GPIO2/D1 battery ADC and GPIO5/D4 NeoPixel mapping is under release validation. The OTA feed remains authoritative.
+**Production firmware baseline:** Synap OS build **1409**. The OTA feed remains authoritative; build 1409 uses TTP223 GPIO1 / D0, battery ADC GPIO2 / D1 and NeoPixel GPIO5 / D4.
 **Device:** `xiao-esp32s3-sense-8m`, module id `3`, OTA marker `SYNAP-CHAKSHU-OTA-ID-V3`, advertising name `synap-Chakshu`.
 
 This is the operational contract for Chakshu. Odyssey C3/S3 do not have a camera, SD card or local wake engine.
@@ -276,7 +276,7 @@ Firmware BLE callbacks independently enforce the same state, so missing opcode `
 
 ## 7. Acceptance criteria
 
-Run these criteria on production firmware build 1406 or a later verified OTA build and PWA shell162 or later. Record the exact installed build in the test log.
+Run these criteria on production firmware build 1409 or a later verified OTA build and PWA shell162 or later. Record the exact installed build in the test log.
 
 1. Cold power-on with card inserted reports SD ready without opening the PWA.
 2. Connect to PWA: Hey Snap produces no local command/action for the full connected period.

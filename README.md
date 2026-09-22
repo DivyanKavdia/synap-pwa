@@ -9,7 +9,7 @@ Synap is the companion PWA and cloud memory platform for the Synap wearable fami
 - **PWA:** `main` → GitHub Pages.
 - **Current shell generation:** `1.0.0-shell162-ask-processing-fix`.
 - **Backend:** Google Cloud Run in `asia-south1`, promoted only after readiness validation.
-- **Firmware OTA baseline:** Synap OS build **1406** for Odyssey S3, Odyssey C3 and Chakshu. The OTA feed is authoritative; a newer firmware `main` commit is not a device release until published.
+- **Firmware OTA baseline:** Synap OS build **1409** for Odyssey S3, Odyssey C3 and Chakshu. The OTA feed is authoritative; a newer firmware `main` commit is not a device release until published.
 - **Runtime:** Node.js 22+ for local/CI tooling and the backend.
 
 Do not hard-code application commit SHAs into operational documentation. Git history and Actions identify the deployed source; architecture docs describe the stable contract.
