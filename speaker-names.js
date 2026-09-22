@@ -104,8 +104,11 @@
         await root.SynapTranscriptRepair.saveMemory(state.record.id,memory);
         state.data.revision=memory.revision;state.data.speaker_names=memory.speaker_names;state.data.names_confirmed=memory.names_confirmed;state.data.self_label=memory.self_label;
         transcript.value=memory.transcript;
-        for(const name of ['synap-memory-ready','synap-cloud-history-updated'])root.dispatchEvent(new CustomEvent(name,{detail:{recordingId:state.record.id,source:'speaker-names'}}));
-        status.textContent=memory.day_updated===false?'Names and summaries saved. The daily review refresh is pending.':'Names and summaries updated.';
+        for(const name of ['synap-transcript-updated','synap-memory-ready','synap-cloud-history-updated'])
+          root.dispatchEvent(new CustomEvent(name,{detail:{recordingId:state.record.id,source:'speaker-names'}}));
+        status.textContent=memory.day_updated===false
+          ? 'Speaker identity saved and transcript refreshed. The daily review refresh is pending.'
+          : 'Speaker identity, transcript and summaries updated.';
       }catch(error){status.textContent=error.message+' Your entries are kept; retry saving, or reload speakers if this recording changed.'}
       finally{pending(false)}
     });
