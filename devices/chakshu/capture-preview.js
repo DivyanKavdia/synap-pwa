@@ -555,7 +555,7 @@
     if (!list) return;
     list.replaceChildren();
     if (!files.length) {
-      list.textContent = 'No unsynced Synap captures on the SD card.';
+      list.textContent = 'No unsynced captures in device storage.';
       return;
     }
     for (const file of files) {
@@ -603,7 +603,7 @@
     if (!list) return [];
     list.hidden = false;
     list.replaceChildren();
-    list.textContent = 'Checking Chakshu SD…';
+    list.textContent = 'Checking device storage…';
     const files = await api().catalogue();
     renderSDRows(list, files);
     renderSDInbox();
@@ -620,19 +620,27 @@
       count = state.sdPendingCount ?? state.sdFiles?.length ?? 0,
       deviceId = root.SynapDevices?.connection?.deviceId || state.sdFilesDeviceId || state.devices?.[0]?.deviceId || '',
       last = root.SynapChakshuVoice?.lastOutcome?.(deviceId),
-      suffix = last?.message ? ' Last offline result: ' + last.message : '';
+      lastLabel = String(last?.label || '').toLowerCase(),
+      lastItem = lastLabel.includes('video') ? 'Video' : lastLabel.includes('audio') ? 'Audio' : lastLabel.includes('photo') || lastLabel.includes('snap') || lastLabel.includes('explain') ? 'Photo' : 'Content',
+      suffix = !last ? '' : last.result === 3
+        ? ' Last offline result: ' + lastItem + ' saved to device storage.'
+        : last.result === 1
+          ? ' Last offline result: Offline action failed; reconnect to review the device.'
+          : last.result === 0
+            ? ' Last offline result: Offline action accepted by the device.'
+            : '';
     if (!panel) return;
     panel.hidden = !state.available;
     if (panel.hidden) return;
     if (text) {
       if (!state.connected)
-        text.textContent = 'Connect Chakshu to check or sync its SD card. Offline captures remain safely on the card.' + suffix;
+        text.textContent = 'Connect your device to check or sync offline content. Captures remain safely stored on the device until synced.' + suffix;
       else if (!state.storageReady)
-        text.textContent = 'Chakshu connected · SD card unavailable. Choose Check SD after inserting or reseating the card.' + suffix;
+        text.textContent = 'Device connected · offline storage unavailable. Check the device storage and try again.' + suffix;
       else
         text.textContent = (count
-          ? count + ' offline capture' + (count === 1 ? '' : 's') + ' waiting. Sync copies each item to Memories, verifies it, then removes the SD original.'
-          : 'SD card ready · no unsynced offline captures.') + suffix;
+          ? count + ' offline capture' + (count === 1 ? '' : 's') + ' waiting. Sync copies each item to Memories, verifies it, then removes the device original.'
+          : 'Offline storage ready · no unsynced captures.') + suffix;
     }
     const blocked = busy || state.working || state.offline || Boolean(state.session);
     if (check) check.disabled = blocked || !state.connected || !state.mediaSupported;
@@ -713,7 +721,7 @@
     libraryCheck?.addEventListener('click', async () => {
       libraryCheck.disabled = true;
       try {
-        status('Checking Chakshu SD…');
+        status('Checking device storage…');
         await api().refreshSD();
         await api().syncPendingSD().catch(() => {});
       } catch (error) {

@@ -25,6 +25,8 @@ test('live branding follows palette and light-dark appearance everywhere',()=>{
   const html=read('index.html'),theme=read('theme.js'),capture=read('capture-ui.js'),sw=read('sw.js');
   assert.match(html,/synap-mark-olive-light\.svg\?v=1\.0\.0-mark1/);
   assert.match(html,/<span class="brand-name">synap<\/span>/);
+  assert.match(read('brand.css'),/\.brand-name\{[^}]*font-size:26\.4px/);
+  assert.match(read('compact.css'),/@media\(max-width:640px\)[\s\S]*\.brand-name\{font-size:24px\}/);
   assert(theme.includes("synap-mark-'+palette+'-'+mode+'.svg?v=1.0.0-mark1"));
   assert.match(capture,/dataset\.palette \|\| 'olive'/);
   for(const palette of palettes)for(const mode of modes)assert(sw.includes("'./synap-mark-"+palette+"-"+mode+".svg'"));
@@ -47,4 +49,17 @@ test('favicon and installed launcher use the same S identity',()=>{
     assert.equal(bytes.readUInt32BE(16),size);
     assert.equal(bytes.readUInt32BE(20),size);
   }
+});
+
+test('Memories offline storage copy is device-agnostic',()=>{
+  const html=read('index.html'),preview=read('devices/chakshu/capture-preview.js');
+  assert.match(html,/Offline device storage/);
+  assert.match(html,/Checking offline device storage/);
+  assert.match(html,/Activity indicators vary by device/);
+  assert.match(html,/Check storage/);
+  assert.match(html,/View offline content/);
+  assert.match(preview,/Connect your device to check or sync offline content/);
+  assert.match(preview,/saved to device storage/);
+  assert.match(preview,/Offline storage ready/);
+  assert.doesNotMatch(preview,/Connect Chakshu to check or sync its SD card/);
 });

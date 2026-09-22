@@ -45,6 +45,9 @@ async function assertWordmarks(page, mode) {
     const word = page.locator('.brand-name');
     assert.equal((await word.innerText()).trim(), 'synap');
     assert(await word.isVisible(), 'synap word is visible beside the S mark');
+    const wordSize = await word.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+    const expectedWordSize = await page.evaluate(() => innerWidth <= 640 ? 24 : 26.4);
+    assert(Math.abs(wordSize - expectedWordSize) < 0.6, 'synap word is 20% larger: ' + wordSize + 'px');
   }
 }
 
