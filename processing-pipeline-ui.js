@@ -76,7 +76,21 @@
     var failedJob = jobs.find(function (job) { return job.state === 'failed'; });
     var stage = String(recording.processingStage || '').toLowerCase();
     var failedStage = String(recording.processingFailedStage || '').toLowerCase();
-    var ready = recording.processingState === 'done' || stage === 'ready';
+    var hasTranscript = Boolean(String(recording.transcript || '').trim());
+    var hasMemory = Boolean(
+      String(recording.summary || '').trim() ||
+      (recording.meeting && (
+        String(recording.meeting.executive_summary || '').trim() ||
+        String(recording.meeting.title || '').trim() ||
+        (Array.isArray(recording.meeting.conversations) && recording.meeting.conversations.length)
+      ))
+    );
+    // Local derived content is stronger evidence than a stale progress marker.
+    // A completed memory must never continue to display "Processing".
+    var ready = recording.processingState === 'done' || stage === 'ready' || hasMemory;
+    // A transcript can arrive before the final local processing patch. Once it
+    // exists, transcription is complete even if the persisted stage is stale.
+    if (hasTranscript && (stage === 'uploaded' || stage === 'transcribing')) stage = 'understanding';
     var sealed = recording.sealed !== false && recording.status !== 'recording';
 
     var steps = [
