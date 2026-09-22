@@ -134,9 +134,11 @@ function load(source, overrides) {
 test('the shell loads auth and the backend provider, and caches them offline', () => {
   assert.match(html, /src="google-auth\.js/);
   assert.match(html, /src="synap-backend\.js/);
+  assert.match(html, /src="memory-actions\.js/);
   assert.match(html, /src="synap-account-ui\.js/);
   assert.match(sw, /\.\/google-auth\.js/);
   assert.match(sw, /\.\/synap-backend\.js/);
+  assert.match(sw, /\.\/memory-actions\.js/);
   assert.match(sw, /\.\/synap-account-ui\.js/);
   assert.match(html, /src="people-confirm-ui\.js/);
   assert.match(sw, /\.\/people-confirm-ui\.js/);
@@ -515,6 +517,32 @@ test('other terminal pairing failures still reject', () => {
     authSource,
     /error\.status === 404 \|\| error\.status === 409 \|\| error\.status === 410 \|\| error\.status === 401/,
   );
+});
+
+test('memory recreation uses the authenticated force rebuild with the long processing budget', async () => {
+  let request;
+  const context = load(backendSource, {
+    SynapAuth: {
+      isSignedIn: () => true,
+      session: () => ({ profile: { uid: 'fixture-owner' } }),
+      config: () => ({ backendUrl: 'https://api.example.test' }),
+      authedFetch: async (path, init) => {
+        request = { path, init };
+        return new Response(JSON.stringify({
+          recording_id: 'take',
+          state: 'ready',
+          rebuilt: true,
+          reused_transcript_segments: 3,
+          retranscribed_segments: 0,
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      },
+    },
+  });
+  const result = await context.SynapBackend.rebuildMemory('take');
+  assert.equal(result.rebuilt, true);
+  assert.equal(request.path, '/v1/recordings/take/process-now?force=true');
+  assert.equal(request.init.method, 'POST');
+  assert.match(backendSource, /process-now\?force=true'\) !== -1\) return PROCESSING_TIMEOUT_MS/);
 });
 
 test('consolidate is given a longer budget than an upload', () => {
