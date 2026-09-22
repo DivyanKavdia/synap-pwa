@@ -15,6 +15,7 @@ import { HttpError, handler } from '../errors.js';
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_RECENT_RECORDINGS = 80;
+const TRANSCRIPT_SCAN_CONCURRENCY = 6;
 const MAX_EXCERPT = 6_000;
 
 const askBody = z.object({
@@ -150,45 +151,61 @@ async function transcriptEvidence(
   intent: string,
   limit: number,
 ): Promise<Evidence[]> {
-  const recordings = await db.listRecentRecordings(uid, MAX_RECENT_RECORDINGS);
+  // Transcript recall is the safety net when vector indexing is missing or
+  // incomplete. Keep it bounded and isolate damaged recordings so one old
+  // capture can never take Ask Synap down.
+  const scanLimit = Math.min(MAX_RECENT_RECORDINGS, Math.max(24, limit * 4));
+  const recordings = (await db.listRecentRecordings(uid, scanLimit))
+    .filter((recording) => inDayScope(recording.day, from, to));
   const candidates: { rank: number; evidence: Evidence }[] = [];
   const broadIntent = ['summary', 'decisions', 'commitments', 'people'].includes(intent);
 
-  for (const recording of recordings) {
-    if (!inDayScope(recording.day, from, to)) continue;
-    const materialized = await materializeTranscript(uid, recording, dek);
-    if (!materialized.text.trim()) continue;
-
-    let memory: StructuredMemory | null = null;
-    if (recording.sealedMemory) {
+  for (let offset = 0; offset < recordings.length; offset += TRANSCRIPT_SCAN_CONCURRENCY) {
+    const batch = recordings.slice(offset, offset + TRANSCRIPT_SCAN_CONCURRENCY);
+    const resolved = await Promise.all(batch.map(async (recording) => {
       try {
-        memory = openJson<StructuredMemory>(
-          dek, recording.sealedMemory, binding(uid, `recording/${recording.recordingId}`, 'memory'),
-        );
-      } catch { memory = null; }
-    }
-    if (!memoryScopeMatches(memory, people, topics, materialized.text)) continue;
+        const materialized = await materializeTranscript(uid, recording, dek);
+        if (!materialized.text.trim()) return null;
 
-    const memoryText = [memory?.title, memory?.executive_summary, ...(memory?.key_points || [])].filter(Boolean).join('\n');
-    const lexical = score(`${memoryText}\n${materialized.text}`, queryTerms);
-    const scopedRecall = broadIntent && Boolean(from || to || people.length || topics.length);
-    if (lexical <= 0 && !scopedRecall) continue;
+        let memory: StructuredMemory | null = null;
+        if (recording.sealedMemory) {
+          try {
+            memory = openJson<StructuredMemory>(
+              dek, recording.sealedMemory, binding(uid, `recording/${recording.recordingId}`, 'memory'),
+            );
+          } catch { memory = null; }
+        }
+        if (!memoryScopeMatches(memory, people, topics, materialized.text)) return null;
 
-    candidates.push({
-      rank: lexical + (materialized.complete ? 2 : 0) + (recording.state === 'ready' ? 1 : 0),
-      evidence: {
-        recordingId: recording.recordingId,
-        conversationId: `recording-${recording.recordingId}`,
-        startMs: 0,
-        endMs: Math.max(0, recording.durationMs),
-        day: recording.day,
-        title: memory?.title?.trim() || 'Recorded conversation',
-        summary: [
-          memory?.executive_summary?.trim() || '',
-          `Transcript evidence${materialized.complete ? '' : ' (processing may still be incomplete)'}:\n${excerpt(materialized.text, queryTerms)}`,
-        ].filter(Boolean).join('\n\n'),
-      },
-    });
+        const memoryText = [memory?.title, memory?.executive_summary, ...(memory?.key_points || [])]
+          .filter(Boolean).join('\n');
+        const lexical = score(`${memoryText}\n${materialized.text}`, queryTerms);
+        const scopedRecall = broadIntent && Boolean(from || to || people.length || topics.length);
+        if (lexical <= 0 && !scopedRecall) return null;
+
+        return {
+          rank: lexical + (materialized.complete ? 2 : 0) + (recording.state === 'ready' ? 1 : 0),
+          evidence: {
+            recordingId: recording.recordingId,
+            conversationId: `recording-${recording.recordingId}`,
+            startMs: 0,
+            endMs: Math.max(0, recording.durationMs),
+            day: recording.day,
+            title: memory?.title?.trim() || 'Recorded conversation',
+            summary: [
+              memory?.executive_summary?.trim() || '',
+              `Transcript evidence${materialized.complete ? '' : ' (processing may still be incomplete)'}:\n${excerpt(materialized.text, queryTerms)}`,
+            ].filter(Boolean).join('\n\n'),
+          },
+        };
+      } catch {
+        return null;
+      }
+    }));
+    candidates.push(...resolved.filter((value): value is { rank: number; evidence: Evidence } => Boolean(value)));
+    // For targeted lexical questions, enough strong candidates means there is
+    // no reason to keep opening older recordings.
+    if (!broadIntent && candidates.length >= Math.max(12, limit * 3)) break;
   }
 
   return candidates.sort((a, b) => b.rank - a.rank)
@@ -260,13 +277,13 @@ export function askV3Routes(): Router {
     }
 
     const queryTerms = terms(query);
-    const [semantic, transcript] = await Promise.all([
-      conversationEvidence(req.uid, req.dek, conversations, queryTerms),
-      transcriptEvidence(
-        req.uid, req.dek, queryTerms, retrieval.from, retrieval.to,
-        peopleNames, topics, parsed.intent, limit,
-      ),
-    ]);
+    const semantic = await conversationEvidence(req.uid, req.dek, conversations, queryTerms);
+    const transcript = semantic.length >= limit
+      ? []
+      : await transcriptEvidence(
+          req.uid, req.dek, queryTerms, retrieval.from, retrieval.to,
+          peopleNames, topics, parsed.intent, limit,
+        );
     const evidence = dedupe([...semantic, ...transcript], Math.max(12, limit * 2));
 
     let answer;
