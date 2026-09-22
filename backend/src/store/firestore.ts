@@ -201,6 +201,14 @@ export async function listRecentRecordings(uid: string, limit: number): Promise<
   return snapshot.docs.map((doc) => doc.data() as RecordingDoc);
 }
 
+/** Recordings whose published memory resolved to one canonical person. */
+export async function listRecordingsForPerson(uid: string, personId: string): Promise<RecordingDoc[]> {
+  const snapshot = await paths.recordings(uid)
+    .where('indexedPersonIds', 'array-contains', personId)
+    .get();
+  return snapshot.docs.map((doc) => doc.data() as RecordingDoc);
+}
+
 export class SegmentWriteError extends Error {
   constructor(readonly status: 404 | 409, message: string, readonly retryable = false) { super(message); }
 }
