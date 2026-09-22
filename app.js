@@ -2197,6 +2197,7 @@
   }
 
   function resetCollector() {
+    backgroundStorageDeferred = false;
     openingPackets = [];
     clearRecordingStopWatch();
     foregroundRecoveryAttempted = false;
