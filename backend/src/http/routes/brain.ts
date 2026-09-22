@@ -9,6 +9,7 @@ import { openJson, sealJson } from '../../crypto/envelope.js';
 import { prepareMeeting } from '../../pipeline/meeting-preparation.js';
 import { readDay, rebuildDay } from '../../pipeline/brief.js';
 import { binding } from '../../pipeline/process.js';
+import { renameSpeakerIdentity, type SpeakerNames } from '../../speaker/names.js';
 import * as db from '../../store/firestore.js';
 import { mergeAliasKeys, nameKey, normalizeName } from '../../util/ids.js';
 import { editAction, ActionEditConflict } from '../../store/action-edits.js';
@@ -104,6 +105,54 @@ const patchPersonBody = z.object({
   confirmed: z.boolean().optional(),
   name: z.string().trim().min(1).max(120).optional(),
 });
+
+const PERSON_RENAME_SCAN_LIMIT = 1000;
+const PERSON_RENAME_CONCURRENCY = 8;
+
+async function refreshSpeakerNamesForPerson(
+  uid: string,
+  dek: Buffer,
+  previousName: string,
+  nextName: string,
+): Promise<string[]> {
+  const recordings = await db.listRecentRecordings(uid, PERSON_RENAME_SCAN_LIMIT);
+  const refreshed: string[] = [];
+
+  for (let offset = 0; offset < recordings.length; offset += PERSON_RENAME_CONCURRENCY) {
+    const batch = recordings.slice(offset, offset + PERSON_RENAME_CONCURRENCY);
+    const changed = await Promise.all(batch.map(async recording => {
+      if (recording.state !== 'ready') return '';
+      const confirmed = recording.sealedSpeakerNames;
+      const identified = !confirmed ? recording.sealedIdentifiedSpeakers : null;
+      const sealed = confirmed || identified;
+      if (!sealed) return '';
+      const field = confirmed ? 'speaker-names' : 'identified-speakers';
+      try {
+        const current = openJson<SpeakerNames>(
+          dek,
+          sealed,
+          binding(uid, `recording/${recording.recordingId}`, field),
+        );
+        const renamed = renameSpeakerIdentity(current, previousName, nextName);
+        if (!renamed.changed) return '';
+        const patch = confirmed
+          ? { sealedSpeakerNames: sealJson(dek, renamed.names, binding(uid, `recording/${recording.recordingId}`, 'speaker-names')) }
+          : { sealedIdentifiedSpeakers: sealJson(dek, renamed.names, binding(uid, `recording/${recording.recordingId}`, 'identified-speakers')) };
+        const revision = await db.saveSpeakerMemory(uid, recording.recordingId, recording.updatedAt, patch);
+        return revision ? recording.recordingId : '';
+      } catch (cause) {
+        log.warn('Could not refresh one transcript after person rename', {
+          uid,
+          recordingId: recording.recordingId,
+          error: (cause as Error).message,
+        });
+        return '';
+      }
+    }));
+    refreshed.push(...changed.filter(Boolean));
+  }
+  return refreshed;
+}
 
 export function brainRoutes(): Router {
   const router = Router();
@@ -270,10 +319,19 @@ export function brainRoutes(): Router {
         confirmedByUser: body.data.confirmed ?? (renamed ? true : person.confirmedByUser),
       });
 
+      // A confirmed People rename is also a speaker-identity correction. Update
+      // only the encrypted label->name maps; raw transcript words/timestamps
+      // stay immutable and no audio is re-transcribed.
+      const refreshedRecordingIds = renamed
+        ? await refreshSpeakerNamesForPerson(req.uid, req.dek, profile.name, name)
+        : [];
+
       res.status(200).json({
         person_id: personId,
         name,
         confirmed_by_user: body.data.confirmed ?? (renamed ? true : person.confirmedByUser),
+        refreshed_recording_ids: refreshedRecordingIds,
+        transcript_refresh_count: refreshedRecordingIds.length,
       });
     }),
   );
