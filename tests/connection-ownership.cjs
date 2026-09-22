@@ -214,7 +214,7 @@ test('a queued resume rechecks the recording before writing START',async()=>{
   assert.match(app,/writeCommand\(CMD_START, assertConnection\)/);
 });
 
-for (const [id, supportsStandby] of [[1,true],[2,true],[3,false]]) {
+for (const [id, supportsStandby] of [[1,true],[2,true],[3,true]]) {
   test(`module ${id} follows its advertised standby policy`, async()=>{
     const h=harness(), profile=h.c.SynapDeviceProfiles.BY_MODULE[id];
     h.publish();
