@@ -64,6 +64,19 @@ function cloud(recording,jobs,extra={}){
   assert.equal(model.status,'Ready');
   assert(model.steps.every(item=>item.state==='done'));
 }
+{
+  const model=cloud({sealed:true,processingStage:'transcribing',processingProgress:.62,transcript:'[00:01] S1: already transcribed'},[]);
+  assert.match(model.status,/^Summarizing/);
+  assert.equal(model.steps[2].state,'done','saved transcript outranks a stale transcribing stage');
+  assert.equal(model.steps[3].state,'active');
+}
+
+{
+  const model=cloud({sealed:true,processingStage:'transcribing',processingState:'pending',
+    transcript:'complete transcript',summary:'Final memory summary'},[]);
+  assert.equal(model.status,'Ready');
+  assert(model.steps.every(item=>item.state==='done'),'saved memory outranks stale processing metadata');
+}
 
 {
   const model=cloud({sealed:true,processingStage:'failed',processingFailedStage:'understanding',processingError:'Gemini failed'},[
