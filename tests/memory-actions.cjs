@@ -10,6 +10,7 @@ const source = fs.readFileSync(path.join(root, 'memory-actions.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 const library = fs.readFileSync(path.join(root, 'memory-library.js'), 'utf8');
+const memoryTools = fs.readFileSync(path.join(root, 'memory-tools.js'), 'utf8');
 const workspace = fs.readFileSync(path.join(root, 'workspace.css'), 'utf8');
 
 function load(overrides = {}) {
@@ -80,10 +81,23 @@ function sample() {
   };
 }
 
+function sampleMerge() {
+  return {
+    merge_id: 'merge-123',
+    source_recording_ids: ['source-a', 'source-b', 'source-c'],
+    started_at: '2026-09-22T08:00:00.000Z',
+    created_at: '2026-09-22T08:15:00.000Z',
+    updated_at: '2026-09-22T08:20:00.000Z',
+    transcript: '[00:00] S1: merged transcript',
+    memory: sample().meeting,
+  };
+}
+
 test('memory actions are loaded, cached offline and hooked into memory cards', () => {
   assert.match(html, /src="memory-actions\.js\?v=1\.0\.0-memory-actions1"/);
   assert.match(sw, /'\.\/memory-actions\.js'/);
   assert.match(library, /SynapMemoryActions\?\.decorate\(card, row\)/);
+  assert.match(memoryTools, /SynapMemoryActions\?\.decorateMerged\?\.\(card, merge\)/);
   assert.match(workspace, /\.memory-actions-panel/);
   assert.match(workspace, /grid-template-columns:\s*repeat\(4,/);
 });
@@ -139,6 +153,43 @@ test('PDF builder emits a real PDF envelope around rendered pages', () => {
   assert.match(api.safeFilename(sample()), /^synap-memory-2026-09-22-product-unification\.pdf$/);
 });
 
+test('merged memory recreation rebuilds all source transcripts and refreshes the same merge', async () => {
+  const calls = [];
+  const { api, events } = load({
+    SynapBackend: {
+      rebuildMemoryMerge: async (id) => {
+        calls.push(['rebuild-merge', id]);
+        return {
+          merge_id: id,
+          rebuilt: true,
+          source_recording_ids: ['source-a', 'source-b', 'source-c'],
+          retranscribed_segments: 0,
+        };
+      },
+    },
+    SynapMemoryTools: {
+      refresh: async () => {
+        calls.push(['refresh-merges']);
+      },
+    },
+  });
+  const record = api.fromMerge(sampleMerge());
+  assert.equal(record.mergeId, 'merge-123');
+  assert.equal(record.mergedSourceCount, 3);
+  assert.equal(api.canRebuild(record), true);
+  const status = { textContent: '' };
+  const result = await api.recreate(record, status);
+  assert.equal(result.retranscribed_segments, 0);
+  assert.deepEqual(calls, [
+    ['rebuild-merge', 'merge-123'],
+    ['refresh-merges'],
+  ]);
+  assert.match(status.textContent, /3 source memories without retranscribing audio/);
+  assert.equal(events.at(-1).type, 'synap-memory-rebuilt');
+  assert.equal(events.at(-1).detail.mergeId, 'merge-123');
+  assert.deepEqual(events.at(-1).detail.sourceRecordingIds, ['source-a', 'source-b', 'source-c']);
+});
+
 test('recreate uses cloud transcript-only rebuild then refreshes the same local memory', async () => {
   const calls = [];
   const { api, events } = load({
@@ -166,7 +217,7 @@ test('recreate uses cloud transcript-only rebuild then refreshes the same local 
     ['rebuild', sample().id],
     ['restore', sample().id, true],
   ]);
-  assert.match(status.textContent, /4 merged transcript segments/);
+  assert.match(status.textContent, /4 transcript segments without retranscribing audio/);
   assert.equal(events.at(-1).type, 'synap-memory-rebuilt');
   assert.equal(events.at(-1).detail.recordingId, sample().id);
 });
