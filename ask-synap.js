@@ -4,7 +4,7 @@
 
   const ASK_ENDPOINT = '/v1/ask';
   const MAX_SOURCES = 8;
-  const SEARCH_TIMEOUT_MS = 20000;
+  const SEARCH_TIMEOUT_MS = 35000;
   let requestGeneration = 0;
   let activeRequest = null;
   let displayedAccount = null;
@@ -96,7 +96,7 @@
     out.append(retry, local);
   }
 
-  async function searchLocal(query) {
+  async function searchLocal(query, fallbackMessage) {
     cancelSearch();
     const generation = requestGeneration;
     try {
@@ -107,7 +107,7 @@
       addAnswerTools(query);
       const scope = document.createElement('p');
       scope.className = 'ask-search-meta';
-      scope.textContent = 'Local recall · ' + scopeLabel() + '. Matches from saved memories on this device.';
+      scope.textContent = fallbackMessage || ('Local recall · ' + scopeLabel() + '. Matches from saved memories on this device.');
       answerBox()?.prepend(scope);
     } catch (error) { if (generation === requestGeneration) showError(error, query); }
   }
@@ -226,6 +226,11 @@
       addAnswerTools(clean);
     } catch (error) {
       if (generation !== requestGeneration || account !== accountKey()) return;
+      // Ask must stay useful when Cloud Run, auth refresh, retrieval or Gemini
+      // is temporarily unavailable. The local journal remains a safe fallback.
+      if (!error || error.status !== 400) {
+        return searchLocal(clean, 'Synap Cloud is temporarily unavailable · showing local recall from this device.');
+      }
       showError(error, clean);
     } finally {
       clearTimeout(timer);
