@@ -328,6 +328,29 @@
     cache.set(normalize(person.name), person);
     cache.byId?.set(String(person.person_id), person);
   }
+  async function refreshAffectedRecordings(result) {
+    var ids = Array.isArray(result?.refreshed_recording_ids)
+      ? [...new Set(result.refreshed_recording_ids.map(String).filter(Boolean))]
+      : [];
+    if (!ids.length) return 0;
+    var done = 0;
+    for (var offset = 0; offset < ids.length; offset += 4) {
+      var batch = ids.slice(offset, offset + 4);
+      var values = await Promise.all(batch.map(async function (id) {
+        try {
+          if (root.SynapCloudHistory?.restoreRecording)
+            await root.SynapCloudHistory.restoreRecording(id, true);
+          root.dispatchEvent?.(new CustomEvent('synap-transcript-updated', {
+            detail: { recordingId: id, source: 'person-rename' },
+          }));
+          return 1;
+        } catch (_) { return 0; }
+      }));
+      done += values.reduce((sum, value) => sum + value, 0);
+    }
+    return done;
+  }
+
   function apply(host, promise, pendingLabel) {
     var key = accountKey(),
       before = personFor(host),
@@ -338,7 +361,7 @@
     });
     note(host, pendingLabel);
     return promise
-      .then(function (result) {
+      .then(async function (result) {
         if (key !== accountKey()) return;
         var person = personFor(host) || before;
         if (person) {
@@ -350,10 +373,18 @@
           var card = host.closest('.person-entry')?.querySelector('.person-card');
           canonicalizeCard(card, person);
         }
-        note(host, '');
+        var refreshed = await refreshAffectedRecordings(result);
+        note(host, refreshed
+          ? 'Name saved · ' + refreshed + ' transcript' + (refreshed === 1 ? '' : 's') + ' refreshed.'
+          : '');
         root.dispatchEvent?.(
           new CustomEvent('synap-person-updated', {
-            detail: { personId: person?.person_id || '', name: person?.name || '' },
+            detail: {
+              personId: person?.person_id || '',
+              name: person?.name || '',
+              previousName: oldName || '',
+              refreshedRecordings: refreshed,
+            },
           }),
         );
       })
@@ -416,7 +447,7 @@
     }
     var api = backend();
     if (!api || !api.renamePerson) return;
-    apply(host, api.renamePerson(person.person_id, name), 'Saving…');
+    apply(host, api.renamePerson(person.person_id, name), 'Saving name & refreshing transcripts…');
   }
   function watch() {
     var list = doc() && doc().querySelector(LIST_SELECTOR);
