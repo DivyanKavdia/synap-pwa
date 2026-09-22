@@ -61,9 +61,11 @@ Removed:
 - obsolete `synap-logo*.png` wordmarks;
 - obsolete `synap-logo.svg` and original `logo.webp` source;
 - the stale rasterizer that generated those retired wordmarks;
-- an old compact-layout browser smoke script that asserted the retired PNG system and was not called by the canonical browser suite.
+- an old compact-layout browser smoke script that asserted the retired PNG system and was not called by the canonical browser suite;
+- unused Chakshu `settleAudio()` code left behind after connected/offline capture ownership was separated;
+- the superseded `media.js` SD-delete helper chain. Verified SD deletion now has one owner: `devices/chakshu/capture-preview.js`.
 
-The launcher icons `icon.svg`, `icon-192.png` and `icon-512.png` remain live.
+The launcher icons `icon.svg`, `icon-192.png` and `icon-512.png` remain live. The SD cleanup is guarded by a source contract that rejects direct operation-17 deletion from `devices/chakshu/media.js`.
 
 ## Versioning
 
