@@ -701,6 +701,64 @@ body.synap-refresh .recording-content {
   font-size: 12px;
   cursor: pointer;
 }
+.memory-actions-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.memory-actions-heading {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 9px;
+}
+.memory-actions-heading strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+.memory-actions-heading span {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.memory-actions-controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.memory-action-button {
+  min-width: 0;
+  min-height: 44px;
+  padding: 7px 6px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.memory-action-button:first-child {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.memory-action-button:disabled {
+  opacity: .48;
+  cursor: not-allowed;
+}
+.memory-action-status {
+  min-height: 16px;
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+@media (max-width: 420px) {
+  .memory-actions-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 /* Ask is a destination with scope, useful starting points, and verifiable answers. */
 body.synap-refresh #ask .ask-head {
   gap: 12px;
