@@ -15,6 +15,18 @@ test('timeline can preserve outages spanning an entire 30-second segment',()=>{
   const source=fs.readFileSync(path.join(root,'audio-store.js'),'utf8');assert.match(source,/lastIndex\s*=\s*Math\.floor\(lastSequence\s*\/\s*SEGMENT_FRAMES\)/);assert.match(source,/for\s*\(let index\s*=\s*0;\s*index\s*<=\s*lastIndex;\s*index\+\+\)/);
 });
 
+test('background IndexedDB abort defers writes without poisoning the active recording',()=>{
+  const store=fs.readFileSync(path.join(root,'audio-store.js'),'utf8');
+  const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
+  assert.match(store,/code: 'storage_transaction_aborted'/);
+  assert.match(store,/this\.writing = Promise\.resolve\(\)/);
+  assert.match(store,/root\.document\?\.visibilityState === 'hidden'/);
+  assert.match(store,/code: 'storage_unavailable'/);
+  assert.match(app,/Chunk storage deferred until foreground/);
+  assert.match(app,/resumeDeferredStorage/);
+  assert.match(app,/document\.visibilityState==="visible"/);
+});
+
 test('duplicate chunks do not falsely make a complete frame',()=>{
   const packets=fullFrame(5);packets.push(packet(5,0,10,160));const result=codec.assemble(packets);assert.equal(result.completeFrames,1);assert.equal(result.incomplete,0);
   const broken=codec.assemble(packets.filter(p=>p.chunk!==9));assert.equal(broken.completeFrames,0);assert.equal(broken.incomplete,1);
@@ -32,7 +44,7 @@ test('PWA receives explicit app-owned GATT service for dedicated EVENT telemetry
   const identity=fs.readFileSync(path.join(root,'devices/identity.js'),'utf8');
   const memoryFix=fs.readFileSync(path.join(root,'memory-ui-fix.js'),'utf8');
   const compat=fs.readFileSync(path.join(root,'runtime-compat.js'),'utf8');
-  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell159-memory-info'/);
+  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell160-background-storage'/);
   assert.match(sw,/\.\/runtime-compat\.js/);
   assert.match(sw,/\.\/processing-recovery\.js/);
   assert.match(sw,/\.\/ask-synap\.js/);
