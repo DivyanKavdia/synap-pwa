@@ -64,9 +64,18 @@ body.synap-refresh .topbar {
 body.synap-refresh .topbar > :is(#recordingSessionBar, .header-media-notice, .hey-synap-feedback) {
   grid-column: 1 / -1;
 }
+body.synap-refresh .topbar .brand {
+  min-width: 0;
+  max-width: 100%;
+  width: max-content;
+  overflow: hidden;
+  justify-self: start;
+}
 body.synap-refresh .brand-logo.synap-brand-image {
-  width: 102px !important;
-  height: 28px !important;
+  width: 24px !important;
+  min-width: 24px;
+  max-width: 24px !important;
+  height: 34px !important;
 }
 .workspace-eyebrow {
   margin: 0 0 4px;
@@ -949,12 +958,16 @@ body.synap-refresh .brain-empty {
     padding: 8px 0;
   }
   body.synap-refresh .topbar .brand {
-    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    width: max-content;
+    overflow: hidden;
   }
   body.synap-refresh .topbar .brand-logo.synap-brand-image {
-    width: clamp(60px, calc(100vw - 310px), 102px) !important;
-    max-width: 100%;
-    height: auto !important;
+    width: 24px !important;
+    min-width: 24px;
+    max-width: 24px !important;
+    height: 34px !important;
   }
   body.synap-refresh .topbar > .top-actions {
     width: auto;
@@ -968,17 +981,17 @@ body.synap-refresh .brain-empty {
   body.synap-refresh
     .topbar
     :is(#headerBatteryStatus, #headerCaptureToggle, #headerPhoto, #headerVideo, #settingsButton) {
-    width: 36px;
-    min-width: 36px;
+    width: 34px;
+    min-width: 34px;
     height: 44px;
-    flex: 0 0 36px;
+    flex: 0 0 34px;
     padding-inline: 0;
   }
   body.synap-refresh .topbar .header-pendant-status {
-    width: 70px;
-    min-width: 70px;
-    max-width: 70px !important;
-    flex-basis: 70px;
+    width: 60px;
+    min-width: 60px;
+    max-width: 60px !important;
+    flex-basis: 60px;
     justify-content: center;
     gap: 3px;
     padding-inline: 3px;
@@ -1001,6 +1014,16 @@ body.synap-refresh .brain-empty {
   }
 }
 @media (max-width: 359px) {
+  body.synap-refresh .topbar > .top-actions {
+    gap: 2px;
+  }
+  body.synap-refresh
+    .topbar
+    :is(#headerBatteryStatus, #headerCaptureToggle, #headerPhoto, #headerVideo, #settingsButton) {
+    width: 30px;
+    min-width: 30px;
+    flex: 0 0 30px;
+  }
   body.synap-refresh .topbar .header-pendant-status {
     width: 34px;
     min-width: 34px;
