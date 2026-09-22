@@ -31,7 +31,13 @@
       "name": "Synap Odyssey S3",
       "adapter": "esp32s3",
       "advertisingName": "synap",
-      "features": ["audio", "settings", "touch", "battery", "standby"],
+      "features": [
+        "audio",
+        "settings",
+        "touch",
+        "battery",
+        "standby"
+      ],
       "hardware": {
         "microphone": "i2s",
         "bclk": 4,
@@ -67,7 +73,13 @@
       "name": "Synap Odyssey C3",
       "adapter": "esp32c3",
       "advertisingName": "synap",
-      "features": ["audio", "settings", "touch", "battery", "standby"],
+      "features": [
+        "audio",
+        "settings",
+        "touch",
+        "battery",
+        "standby"
+      ],
       "hardware": {
         "microphone": "i2s",
         "bclk": 4,
@@ -76,7 +88,7 @@
         "touch": 3,
         "battery": 1,
         "led": 8,
-        "ledDriver": "gpio",
+        "ledDriver": "neopixel",
         "idleMHz": 80,
         "activeMHz": 160,
         "batteryAdcMv": 1,
@@ -104,7 +116,15 @@
       "name": "Chakshu",
       "adapter": "xiao-sense",
       "advertisingName": "synap-Chakshu",
-      "features": ["audio", "camera", "sd", "settings", "video", "sdAudio", "photo"],
+      "features": [
+        "audio",
+        "camera",
+        "sd",
+        "settings",
+        "video",
+        "sdAudio",
+        "photo"
+      ],
       "hardware": {
         "microphone": "pdm",
         "clock": 42,

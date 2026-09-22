@@ -1,137 +1,87 @@
 # Synap
 
-**Current production baseline — 20 September 2026**
+**Repository reviewed: 22 September 2026**
 
-Synap is the companion application and cloud memory platform for the Synap wearable family. This repository owns the browser/PWA experience and the production backend. Device firmware is maintained separately in `DivyanKavdia/synap-firmware`.
+Synap is the companion PWA and cloud memory platform for the Synap wearable family. Device firmware lives in `DivyanKavdia/synap-firmware`; this repository owns the browser experience, local durable journal, cloud API, processing pipeline, retrieval, memory surfaces and production deployment.
 
-## Production baseline
+## Production truth
 
-- **PWA:** deployed from `main` through GitHub Pages.
-- **Backend:** Google Cloud Run, region `asia-south1`.
-- **PWA application baseline:** `31803c596c8622388f512681bcaa05e89172018a` (shell revision `1.0.0-shell152-sd-probe-backoff`).
-- **Backend application baseline:** `97ba01a`.
-- **Firmware baseline:** Synap OS build **1365** (`synap-os1-build1365`) from `DivyanKavdia/synap-firmware`, source `08c0bf603dc63ac089a6558b1fdb2acad5f4e9d4`.
-- **Primary transcription:** `gemini-3.5-transcribe`.
-- **Memory / reasoning:** Gemini models behind the Synap backend.
-- **Storage and orchestration:** encrypted object storage, Firestore state, Cloud Tasks and the private speaker service.
+- **PWA:** `main` → GitHub Pages.
+- **Current shell generation:** `1.0.0-shell162-ask-processing-fix`.
+- **Backend:** Google Cloud Run in `asia-south1`, promoted only after readiness validation.
+- **Firmware OTA baseline:** Synap OS build **1402** for Odyssey S3, Odyssey C3 and Chakshu. The OTA feed is authoritative; a newer firmware `main` commit is not a device release until published.
+- **Runtime:** Node.js 22+ for local/CI tooling and the backend.
 
-The production backend is promoted only after a synthetic end-to-end readiness check validates session/key handling, audio storage, transcription, Cloud Tasks, memory creation, summaries, retrieval indexes, Ask Synap, voice profiles and cleanup.
-
-## Current architecture
-
-```text
-Synap Odyssey C3 / Synap Odyssey S3 / Chakshu
-        |
-        | BLE
-        v
-Browser / PWA
-        |
-        | durable 30-second local recovery windows
-        v
-Synap Cloud API
-        |
-        +--> encrypted source audio / media metadata
-        +--> Firestore processing state
-        +--> Cloud Tasks
-        |
-        v
-Gemini transcription
-        |
-        | bounded long-form file batches
-        v
-Transcript + memory extraction + retrieval
-        |
-        +--> Memories
-        +--> Brief
-        +--> Actions
-        +--> Ask Synap
-```
-
-### Transcription invariant
-
-The **30-second segment is a durability and recovery boundary, not the Gemini request boundary**.
-
-Contiguous missing source windows are grouped into long-form provider batches. The current default is **20 minutes**, with a code hard cap of **25 minutes**. Word timestamps are projected back to the immutable source windows so existing recovery, playback and deletion semantics remain intact.
-
-Missing, incomplete or rate-limited model responses are handled through durable retry/cooldown logic rather than immediate duplicate audio submission.
-
-Batching is the primary defence against daily quota exhaustion: one request per twenty minutes instead of forty. When the dedicated ASR model is nonetheless blocked for hours, the batch is rescued **one 30-second window at a time on the fallback model**, which holds a separate quota. The long-form batch itself cannot use that model — it returns plain text, and word timestamps are the only thing that maps a twenty-minute response back onto the durable windows — but a single window is already its own boundary and needs no such map. Each rescued window is sealed and committed on its own, so a pass that runs out of request budget or meets a second cooldown keeps everything it finished and resumes from what is still missing.
+Do not hard-code application commit SHAs into operational documentation. Git history and Actions identify the deployed source; architecture docs describe the stable contract.
 
 ## Product surface
 
-Synap currently exposes:
-
-- **Brief** — daily/weekly memory and priority view.
-- **Memories** — source recordings, transcripts, summaries and evidence.
-- **Actions** — commitments and follow-ups extracted from memory.
-- **Ask** — grounded recall over stored Synap memories.
-- **Device controls** — connection, recording, battery/status and firmware management.
-- **Voice identity** — consented speaker profile and downstream speaker enrichment.
-- **Chakshu media** — connected photo/video controls, SD/offline media metadata and digest-verified sync-to-app workflows.
+- **Memory** — daily/weekly views, source recordings, transcript, summary and provenance.
+- **Actions** — commitments, waiting items and follow-ups projected from memories.
+- **Ask Synap** — grounded recall over cloud memories with on-device/local recall fallback when cloud retrieval is unavailable.
+- **People & speaker identity** — user-confirmed person names, remembered voices and recording-level speaker identity correction.
+- **Unified memories** — merge consecutive memories, recreate the unified memory, unmerge without touching source recordings, share via WhatsApp/Gmail and export a PDF.
+- **Devices** — connection, recording, battery/status, OTA and capability-aware controls.
+- **Chakshu media** — connected photo/video capture plus disconnected Hey Snap + SD capture and verified sync-to-app.
 
 ## Device family
 
-Three devices share one catalogue (`devices/catalog.json`), which is the source of truth for every capability gate in the app. Display names changed in this baseline; identifiers did not.
+`devices/catalog.json` is the PWA mirror of the firmware device catalogue. IDs, OTA markers and BLE advertising identities are compatibility contracts; product display names are not wire identifiers.
 
-| Device | Board | Module | OTA marker | Capabilities |
-| --- | --- | --- | --- | --- |
-| **Synap Odyssey S3** | ESP32-S3 SuperMini (4 MB) | 1 | `SYNAP-ESP32S3-OTA-ID-V3` | audio, settings, touch, battery, standby |
-| **Synap Odyssey C3** | ESP32-C3 SuperMini (4 MB) | 2 | `SYNAP-ESP32C3-OTA-ID-V3` | audio, settings, touch, battery, standby |
-| **Chakshu** | XIAO ESP32-S3 Sense (8 MB) | 3 | `SYNAP-CHAKSHU-OTA-ID-V3` | audio, camera, SD, photo, video, SD audio, settings |
+| Product | Target | Module | Core capabilities |
+| --- | --- | ---: | --- |
+| **Synap Odyssey S3** | `esp32s3-fh4r2-qspi-4m` | 1 | audio, settings, touch, battery, standby |
+| **Synap Odyssey C3** | `esp32c3-supermini-4m` | 2 | audio, settings, touch, battery, standby |
+| **Chakshu** | `xiao-esp32s3-sense-8m` | 3 | audio, camera, SD, photo, video, SD audio, settings |
 
-The renaming of C3 and S3 to **Synap Odyssey** is a display change only. Catalogue ids
-(`esp32c3-supermini-4m`, `esp32s3-fh4r2-qspi-4m`), the BLE advertising name `synap`, OTA product
-markers and manifest paths are wire and update identifiers and are unchanged. Changing any of them
-would orphan devices already in the field.
+Chakshu alone has camera, SD and the local Hey Snap runtime. When BLE is connected the PWA owns capture; when disconnected firmware owns Hey Snap and offline capture.
 
-Odyssey C3 and Odyssey S3 are audio pendants: no camera, no SD card, no wake engine. Everything
-below about offline capture and Hey Snap applies to Chakshu alone.
+## End-to-end path
 
-### Chakshu baseline
+```text
+Wearable
+  ├─ BLE connected ───────────────> PWA capture
+  └─ Chakshu disconnected ───────> SD offline capture
+                                      │ verified sync
+                                      v
+PWA durable journal / local source
+              │
+              v
+Synap Cloud API → encrypted storage + Firestore + Cloud Tasks
+              │
+              v
+transcription → speaker attribution → memory extraction → retrieval/index
+              │
+              ├─ Memory / Brief / Actions / People
+              └─ Ask Synap
+```
 
-The current companion flow supports the production Chakshu voice/media protocol, including:
+The 30-second browser/cloud segment is a **durability and recovery boundary**, not necessarily one provider request. Long contiguous missing windows may be processed in bounded batches while retaining source-window provenance.
 
-- SD clear and Synap-owned FIFO space management.
-- SD is the disconnected/offline capture inbox; it is mounted at Chakshu boot and its readiness is always surfaced to the PWA.
-- **BLE connected:** PWA owns commands and all new audio/photo/video capture; media saves directly into the app.
-- **BLE disconnected:** firmware owns Hey Snap; supported standalone captures save to SD.
-- Reconnect catalogues SD without deleting anything and flags unsynced audio, photos and video.
-- When firmware reports SD unavailable, shell152 performs only one recovery catalogue probe per BLE connection instead of repeatedly occupying the shared media queue; an explicit **Check SD card**, a new device, or a reconnect permits a fresh probe.
-- **Sync to app** verifies imported bytes before deleting each SD source; failed verification keeps the original.
-- Local `Hey Snap` command recognition in firmware.
-- Imported standalone SD audio enters the normal transcription and memory pipeline.
+## Documentation
 
-#### One owner at a time
+- [Architecture](docs/ARCHITECTURE.md) — end-to-end components, data flow and invariants.
+- [Operations](docs/OPERATIONS.md) — CI/CD, production checks, recovery and troubleshooting.
+- [Development and codebase](docs/DEVELOPMENT.md) — repo map, tests, catalog/version rules and cleanup policy.
+- [Chakshu offline + Hey Snap](docs/CHAKSHU_OFFLINE_AND_HEY_SNAP.md) — single-owner BLE/offline contract, SD recovery and verified sync.
+- [Automatic speech processing](docs/AUTOMATIC_SPEECH.md) — local enhancement, source preservation and resource limits.
+- [RNNoise provenance](vendor/audio-enhancement/README.md) — bundled model/runtime provenance and licensing.
 
-**Hey Snap runs only while Chakshu is not connected to the PWA over BLE.** When the app holds the
-link it is the single source of commands and operations. Firmware also enforces this boundary:
-connect stands local voice down and every disconnect re-arms it, including an unexpected link loss.
-Connected clients cannot start SD audio/video recording. See
-[`docs/CHAKSHU_OFFLINE_AND_HEY_SNAP.md`](docs/CHAKSHU_OFFLINE_AND_HEY_SNAP.md) for the protocol,
-offline inbox and verified-sync contract.
+Firmware architecture, hardware pins, source materialization, voice training and OTA publication belong to the firmware repository.
 
-## Source-of-truth rules
-
-1. `main` is the only current development baseline.
-2. Historical architecture decisions live in Git history, merged PRs and releases—not in parallel design documents.
-3. Device capability truth comes from the synchronized device catalog and firmware capability protocol.
-4. Original source media is not replaced by an enhanced or accelerated inference copy.
-5. A successful software build does not replace physical device acceptance testing.
-
-## Development
-
-Node.js 22 or later is required.
+## Local development
 
 ```sh
 npm ci
 npm ci --prefix backend
 npx playwright install chromium
+
 npm run dev
 ```
 
 Open `http://localhost:4173`.
 
-Before merging application changes:
+Before merging:
 
 ```sh
 npm test
@@ -140,49 +90,16 @@ npm run test:backend
 npm run test:browser
 ```
 
-The backend has its own unit/integration validation under `backend/`.
+The production workflow also runs backend, Firestore, WebKit audio, browser workflow and infrastructure contract checks.
 
-## Deployment
+## Source-of-truth rules
 
-### PWA
+1. `main` is the current application development baseline.
+2. The firmware OTA feed, not a source commit, defines installable device firmware.
+3. Firmware `devices/catalog.json` is the hardware/catalogue authority; this repo mirrors it.
+4. Raw media, transcript source words and timestamps are never silently replaced by a derived enhancement, summary or corrected display name.
+5. User speaker/name corrections update derived identity views; they do not re-transcribe audio.
+6. A source memory remains intact when a unified memory is created, recreated or deleted.
+7. A passing software pipeline does not replace physical-device acceptance testing.
 
-Changes reaching `main` are validated and GitHub Pages publishes the browser application.
-
-### Backend
-
-Backend-affecting changes on `main` trigger the production deployment workflow. The workflow:
-
-1. runs backend type checks and tests,
-2. builds and pushes the container,
-3. deploys a zero-traffic Cloud Run candidate,
-4. executes production-dependency readiness checks,
-5. promotes the verified revision to 100% traffic,
-6. leaves rollback instructions if promotion fails.
-
-Terraform remains reviewed infrastructure-as-code and is not implicitly applied by ordinary application pushes.
-
-## Physical acceptance boundary
-
-Software CI verifies protocol, storage, recovery, browser workflows and backend processing. Physical acceptance is still required for:
-
-- sustained BLE microphone delivery,
-- reconnect behavior under real radio conditions,
-- local `Hey Snap` recognition,
-- camera quality,
-- long SD recording and FIFO behavior,
-- move-to-app/delete behavior,
-- complete device → transcript → memory flow.
-
-The current hardware baseline for acceptance testing is **firmware build 1365** with PWA shell
-`1.0.0-shell152-sd-probe-backoff`.
-
-Build 1365 already contains the BLE ownership and SD boot/re-detection implementation: Hey Snap is
-stood down for the BLE-connected period and re-armed by firmware on every disconnect, including
-unexpected drops. Physical acceptance still needs to confirm that behavior on-device, that SD is
-ready after cold boot/re-detection, and that unsynced offline captures survive failed transfers.
-The current personalized TinyML model does not yet contain a dedicated spoken **Start audio** class,
-so offline WAV transport/sync is supported but that spoken command is not a production claim yet.
-
-## Working convention from this baseline
-
-New work starts from current `main`. Do not revive superseded feature branches or old design PRs. Keep documentation in this README current and concise; use code, tests, releases and Git history as the detailed audit trail.
+Historical implementation detail belongs in Git history and release artifacts rather than parallel legacy code paths.

@@ -48,3 +48,13 @@ test('favicon and installed launcher use the same S identity',()=>{
     assert.equal(bytes.readUInt32BE(20),size);
   }
 });
+
+test('retired wordmark assets stay removed',()=>{
+  for(const file of [
+    'logo.webp','synap-logo.svg','synap-logo-light.png','synap-logo-dark.png',
+    'synap-logo-blue-light.png','synap-logo-blue-dark.png',
+    'synap-logo-pink-light.png','synap-logo-pink-dark.png',
+    'synap-logo-lavender-light.png','synap-logo-lavender-dark.png',
+    'tools/rasterize-brand.cjs','tools/compact-layout-smoke.cjs'
+  ]) assert.equal(fs.existsSync(path.join(root,file)),false,file+' is retired; Git is the rollback store');
+});

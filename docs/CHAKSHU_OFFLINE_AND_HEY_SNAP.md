@@ -1,7 +1,7 @@
 # Chakshu — single-owner capture, offline SD and Hey Snap
 
-**Target contract:** PWA shell `1.0.0-shell157-experimental-voice`, voice protocol **2**, media protocol **1**.  
-**Experimental voice baseline:** the 8-class model first shipped in Synap OS build **1396**; the OTA feed remains authoritative for the latest installable build.  
+**Target contract:** PWA shell `1.0.0-shell162-ask-processing-fix` or later, voice protocol **2**, media protocol **1**.  
+**Production firmware baseline:** Synap OS build **1402**. The OTA feed remains authoritative; build 1402 retains the current experimental 8-class personalized model.
 **Device:** `xiao-esp32s3-sense-8m`, module id `3`, OTA marker `SYNAP-CHAKSHU-OTA-ID-V3`, advertising name `synap-Chakshu`.
 
 This is the operational contract for Chakshu. Odyssey C3/S3 do not have a camera, SD card or local wake engine.
@@ -117,7 +117,7 @@ Failed SD media responses can include `sdReady`, `sdClockHz`, `sdMountStage`, `s
 
 ### Catalogue probing
 
-While the readiness mask reports no card, **shell157** catalogues **once per connection** and then stops.
+While the readiness mask reports no card, **shell162** catalogues **once per connection** and then stops.
 
 The single probe is kept because a catalogue is what makes firmware repeat detection. The repetition is not: an unmounted card answers `SD file unavailable` after about 4.6 seconds, and `synap-module-changed` re-arms the sweep roughly every 15, so a third of the shared media queue goes on re-asking a question the device already answered. That queue is also the audio transport.
 
@@ -260,7 +260,7 @@ Firmware BLE callbacks independently enforce the same state, so missing opcode `
 
 ## 7. Acceptance criteria
 
-Run these criteria on the latest OTA build containing the experimental 8-class model and PWA shell157 or later. Record the exact installed build in the test log.
+Run these criteria on production firmware build 1402 or a later verified OTA build and PWA shell162 or later. Record the exact installed build in the test log.
 
 1. Cold power-on with card inserted reports SD ready without opening the PWA.
 2. Connect to PWA: Hey Snap produces no local command/action for the full connected period.

@@ -86,3 +86,12 @@ test('camera gating distinguishes detecting, failed, other hardware and stale co
   delete connection.deviceId;
   assert.equal(caps.cameraConnection(connection, client).state, 'unavailable');
 });
+
+test('catalog keeps current product names and C3 NeoPixel metadata',()=>{
+  const catalog=JSON.parse(fs.readFileSync('devices/catalog.json','utf8'));
+  const byId=Object.fromEntries(catalog.devices.map(device=>[device.id,device]));
+  assert.equal(byId['esp32s3-fh4r2-qspi-4m'].name,'Synap Odyssey S3');
+  assert.equal(byId['esp32c3-supermini-4m'].name,'Synap Odyssey C3');
+  assert.equal(byId['esp32c3-supermini-4m'].hardware.led,8);
+  assert.equal(byId['esp32c3-supermini-4m'].hardware.ledDriver,'neopixel');
+});
