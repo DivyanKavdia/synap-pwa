@@ -529,6 +529,8 @@ test('device voice media sync discovers SD media and only explicit verified sync
   assert.doesNotMatch(sync,/importSD\(|deleteSyncedSet\(/);
   assert.match(move,/SynapChakshuV2\?\.moveSD/);
   assert.match(move,/return verified\(path, progress\)/);
+  assert.doesNotMatch(media,/camera\(\)\.request\(17/,'SD deletion must have one verified owner');
+  assert.doesNotMatch(media,/deleteSyncedSet/,'superseded unverified SD delete helpers must not return');
   assert.match(lifecycle,/async function verifyVisual/);
   assert.match(lifecycle,/async function verifyAudio/);
   assert.match(lifecycle,/SD original was kept/);
