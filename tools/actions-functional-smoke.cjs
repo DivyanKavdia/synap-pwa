@@ -359,7 +359,7 @@ async function run() {
       // A failed rename preserves the user's edit and the native Save submit works.
       const person = page.locator('#peopleList .person-entry').first();
       await person.locator('.person-management summary').tap();
-      await person.getByRole('button', { name: 'Wrong name', exact: true }).tap();
+      await person.getByRole('button', { name: 'Correct name', exact: true }).tap();
       const nameInput = person.getByRole('textbox', {
         name: 'Correct this person’s name',
         exact: true,
