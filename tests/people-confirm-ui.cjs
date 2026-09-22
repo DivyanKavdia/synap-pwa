@@ -15,6 +15,7 @@ const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'people-confirm-ui.js'), 'utf8');
 assert.match(source,/if\s*\(!button\s*\|\|\s*button\.type\s*===\s*'submit'\)\s*return;\s*event\.preventDefault\(\)/,'Save clicks must reach the native rename form submit event');
 const backendClient = fs.readFileSync(path.join(root, 'synap-backend.js'), 'utf8');
+const speakerNamesClient = fs.readFileSync(path.join(root, 'speaker-names.js'), 'utf8');
 const backendIds = fs.readFileSync(path.join(root, 'backend/src/util/ids.ts'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 
@@ -108,6 +109,10 @@ assert.equal(api.normalize(undefined), '');
 // ---------------------------------------------------------------------------
 
 assert.match(html, /src="people-confirm-ui\.js/);
+assert.match(html,/people-confirm-ui\.js\?v=1\.0\.0-identity-refresh1/);
+assert.match(html,/speaker-names\.js\?v=1\.0\.0-identity-refresh1/);
+assert.match(speakerNamesClient,/Edit speaker identity/);
+assert.match(speakerNamesClient,/synap-transcript-updated/,'recording-level identity edits must notify transcript surfaces');
 // Renaming has to reach the backend, and has to be a PATCH on the person.
 assert.match(backendClient, /renamePerson:function\(personId,name\)/);
 assert.match(backendClient, /'\/v1\/people\/'\+encodeURIComponent\(personId\)/);
