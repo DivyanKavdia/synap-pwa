@@ -27,6 +27,8 @@ Stable identifiers:
 
 Display names may change without changing those compatibility identifiers.
 
+Chakshu's current hardware profile also exposes the shared touch (GPIO0), battery (GPIO1 with the S3 divider calibration), standby and status-NeoPixel (GPIO4) controls, while camera, SD and local Hey Snap remain Chakshu-specific capabilities.
+
 ## 3. Capture and local durability
 
 ### Connected audio

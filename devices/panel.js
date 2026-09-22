@@ -49,7 +49,7 @@
       experience.textContent = !info
         ? ''
         : chakshu
-          ? 'Audio builds transcripts and memories. Photos, video and soundtracks stay local. Use SD video for higher quality, then import it to your phone. Bluetooth preview has a limited frame rate. Hey Snap runs on the pendant only while it is disconnected from this app, so commands always have one owner.'
+          ? 'Audio builds transcripts and memories. Photos, video and soundtracks stay local. Touch control, battery telemetry and standby follow the same device controls as Odyssey when the connected firmware reports them ready. Hey Snap runs on the pendant only while it is disconnected from this app, so commands always have one owner.'
           : caps.profile(info)
             ? 'Audio recording, transcripts and memories.' +
               (caps.ready(info, 'touch') ? ' Touch control is available.' : '') +

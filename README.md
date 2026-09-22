@@ -32,7 +32,7 @@ Do not hard-code application commit SHAs into operational documentation. Git his
 | --- | --- | ---: | --- |
 | **Synap Odyssey S3** | `esp32s3-fh4r2-qspi-4m` | 1 | audio, settings, touch, battery, standby |
 | **Synap Odyssey C3** | `esp32c3-supermini-4m` | 2 | audio, settings, touch, battery, standby |
-| **Chakshu** | `xiao-esp32s3-sense-8m` | 3 | audio, camera, SD, photo, video, SD audio, settings |
+| **Chakshu** | `xiao-esp32s3-sense-8m` | 3 | audio, camera, SD, photo, video, SD audio, settings, touch, battery, standby |
 
 Chakshu alone has camera, SD and the local Hey Snap runtime. When BLE is connected the PWA owns capture; when disconnected firmware owns Hey Snap and offline capture.
 

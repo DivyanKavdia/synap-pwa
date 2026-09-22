@@ -45,7 +45,8 @@ test('a protocol version or spoofed extra flags never gives C3/S3 Chakshu functi
     assert.equal(caps.hasVoice(info), false);
     assert.equal(caps.hardwareCheck(info, 1), false);
   }
-  const wrong = { ...descriptor(3, 911, 911), target: profiles.BY_MODULE[1].target };
+  const chakshuMask = mask(profiles.BY_MODULE[3].features);
+  const wrong = { ...descriptor(3, chakshuMask, chakshuMask), target: profiles.BY_MODULE[1].target };
   assert.equal(caps.isChakshu(wrong), false);
 });
 test('Chakshu live capture needs a ready camera, and offline video additionally needs SD', () => {
@@ -80,18 +81,26 @@ test('camera gating distinguishes detecting, failed, other hardware and stale co
     const state = caps.cameraConnection(connection, client);
     assert.equal(state.state, 'unsupported');assert.match(state.message, /is connected/);
   }
-  client.module = descriptor(3, 911, 911);
+  client.module = descriptor(3, mask(profiles.BY_MODULE[3].features), mask(profiles.BY_MODULE[3].features));
   assert.equal(caps.cameraConnection(connection, client).state, 'connected');
   assert.equal(caps.cameraConnection({ ...connection }, client).state, 'detecting', 'old descriptor cannot unlock another physical link');
   delete connection.deviceId;
   assert.equal(caps.cameraConnection(connection, client).state, 'unavailable');
 });
 
-test('catalog keeps current product names and C3 NeoPixel metadata',()=>{
+test('catalog keeps current product names and Chakshu control hardware metadata',()=>{
   const catalog=JSON.parse(fs.readFileSync('devices/catalog.json','utf8'));
   const byId=Object.fromEntries(catalog.devices.map(device=>[device.id,device]));
   assert.equal(byId['esp32s3-fh4r2-qspi-4m'].name,'Synap Odyssey S3');
   assert.equal(byId['esp32c3-supermini-4m'].name,'Synap Odyssey C3');
   assert.equal(byId['esp32c3-supermini-4m'].hardware.led,8);
   assert.equal(byId['esp32c3-supermini-4m'].hardware.ledDriver,'neopixel');
+  const chakshu=byId['xiao-esp32s3-sense-8m'];
+  assert.equal(chakshu.hardware.touch,0);
+  assert.equal(chakshu.hardware.battery,1);
+  assert.equal(chakshu.hardware.led,4);
+  assert.equal(chakshu.hardware.ledDriver,'neopixel');
+  assert.equal(chakshu.hardware.batteryAdcMv,1320);
+  assert.equal(chakshu.hardware.batteryCellMv,4130);
+  for(const feature of ['touch','battery','standby'])assert(chakshu.features.includes(feature));
 });

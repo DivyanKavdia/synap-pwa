@@ -137,6 +137,10 @@ Record exact PWA shell + installed firmware build and verify:
 - background/lock recovery;
 - reconnect;
 - Chakshu owner handoff;
+- TTP223 GPIO0 double-tap and 4-second deep-sleep/wake behavior;
+- GPIO1 battery percentage/raw telemetry with the 1 MΩ / 470 kΩ divider;
+- GPIO4 NeoPixel status behavior without any writes to SD CS GPIO21;
+- cold boot/reset with TTP223 released and touched, because GPIO0 is a reset-time strapping pin;
 - SD cold boot and re-detection;
 - offline photo/video/audio creation;
 - verified sync and source deletion;

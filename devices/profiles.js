@@ -81,6 +81,9 @@
         "camera",
         "sd",
         "settings",
+        "touch",
+        "battery",
+        "standby",
         "video",
         "sdAudio",
         "photo"

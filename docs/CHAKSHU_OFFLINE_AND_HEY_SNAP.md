@@ -19,6 +19,7 @@ This is the operational contract for Chakshu. Odyssey C3/S3 do not have a camera
 - Offline **Record audio** is intentionally bounded to 60 seconds in the current runtime because the recorder owns the microphone while active.
 - Offline **Explain what you see** saves a tagged JPG to SD. After explicit verified sync, the PWA invokes visual inference and attaches the description to that Memory.
 - GPIO21 remains SD chip-select; the onboard orange light must not be software-driven as a semantic status LED.
+- The current hardware revision adds TTP223 touch on GPIO0, battery ADC on GPIO1 through the S3-style 1 MΩ / 470 kΩ divider, and an external NeoPixel on GPIO4.
 
 > **Model-training continuity note:** the experimental 8-class weights include 22 supplied real 16 kHz mono utterances — Record audio (8), Record video (6), Explain what you see (8) — plus synthetic augmentation. Synthetic held-out accuracy was ~94% and available real-utterance fit ~95.5%, but the limited independent real holdout was only ~30%. Treat this as a field baseline, not a finished classifier. The next training pass should use more independently recorded, clearly separated utterances and a true speaker/session holdout.
 
@@ -64,6 +65,20 @@ If an SD capture was already in progress when BLE connects, it is allowed to clo
 
 ---
 
+## Touch, battery and power controls
+
+Chakshu inherits the shared Odyssey control behavior on the new hardware:
+
+- **TTP223 / GPIO0:** active-high touch input. Double tap while connected starts recording; double tap while recording stops and enters power saver. A 4-second hold enters deep sleep, and a deliberate 4-second touch wake confirms power-on.
+- **Battery / GPIO1:** 1 MΩ high-side + 470 kΩ low-side divider, using the Odyssey S3 calibration (4130 mV cell ↔ 1320 mV ADC) and 6 dB attenuation. Battery percentage, raw diagnostics and critical-battery protection use the existing battery event.
+- **NeoPixel / GPIO4:** shared dim status patterns for disconnected, connected-idle, recording, OTA/error and low battery.
+- **Offline voice continuity:** while Hey Snap is actively listening and Chakshu is disconnected, the ordinary disconnected idle timeout does not force deep sleep. An explicit long touch can still shut the device down.
+- **Media safety:** active SD/camera work blocks standby/deep sleep until the media operation finishes.
+
+GPIO0 is an ESP32-S3 boot-strapping pin. Firmware cannot alter its reset-time strap level, so physical acceptance must verify cold boot/reset with the TTP223 both released and touched.
+
+---
+
 ## 2. SD is a required offline inbox
 
 The SD card is not an optional “higher-quality recording mode” while connected. Its product role is persistent offline storage for standalone Chakshu.
@@ -104,14 +119,16 @@ When Chakshu is connected, the PWA always surfaces SD state:
 - **SD card unavailable** — offline Hey Snap capture is not considered available; the UI offers **Check SD card**.
 - When catalogue re-detection restores the card, firmware republishes the refreshed SD/SD-audio readiness so the next capability read can return the healthy mask.
 
-For current Chakshu capabilities:
+For the touch/battery/NeoPixel Chakshu hardware revision:
 
 ```text
-supported = 911
-healthy ready = 911
-SD + SD-audio missing = 651
-911 - 651 = 260 = sd(4) + sdAudio(256)
+supported = 1023
+healthy ready = 1023
+SD + SD-audio missing = 763
+1023 - 763 = 260 = sd(4) + sdAudio(256)
 ```
+
+Battery readiness is published only after a valid ADC sample. Touch and standby are always-ready hardware controls once the supporting firmware is installed.
 
 Failed SD media responses can include `sdReady`, `sdClockHz`, `sdMountStage`, `sdMountAttempts`, `sdRecoveryLocked` and `freeHeap`.
 
