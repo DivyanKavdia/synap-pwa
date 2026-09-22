@@ -135,6 +135,101 @@
       button.disabled = busy;
     }
   }
+  function shareText(merge) {
+    const memory = merge?.memory || {};
+    const title = String(memory.title || 'Synap memory').trim();
+    const sections = [title];
+    const summary = String(memory.executive_summary || '').trim();
+    if (summary) sections.push(summary);
+    const points = Array.isArray(memory.key_points) ? memory.key_points.filter(Boolean) : [];
+    if (points.length) sections.push('Key points\n' + points.map(item => '• ' + String(item).trim()).join('\n'));
+    const conversations = Array.isArray(memory.conversations) ? memory.conversations : [];
+    const decisions = conversations.flatMap(item => Array.isArray(item?.decisions) ? item.decisions : [])
+      .map(item => typeof item === 'string' ? item : item?.text).filter(Boolean);
+    if (decisions.length) sections.push('Decisions\n' + decisions.map(item => '• ' + item).join('\n'));
+    const actions = conversations.flatMap(item => Array.isArray(item?.action_items) ? item.action_items : [])
+      .map(item => {
+        if (typeof item === 'string') return item;
+        return [item?.task, item?.owner ? 'Owner: ' + item.owner : '', item?.due_date ? 'Due: ' + item.due_date : ''].filter(Boolean).join(' · ');
+      }).filter(Boolean);
+    if (actions.length) sections.push('Actions\n' + actions.map(item => '• ' + item).join('\n'));
+    sections.push('Shared from Synap · infinite memories');
+    return sections.join('\n\n');
+  }
+  function openShare(url) {
+    const popup = root.open(url, '_blank', 'noopener,noreferrer');
+    if (!popup) root.location.href = url;
+  }
+  function shareWhatsApp(merge) {
+    openShare('https://wa.me/?text=' + encodeURIComponent(shareText(merge).slice(0, 7000)));
+  }
+  function shareGmail(merge) {
+    const title = String(merge?.memory?.title || 'Synap memory').trim();
+    const body = shareText(merge).slice(0, 12000);
+    openShare('https://mail.google.com/mail/?view=cm&fs=1&su=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body));
+  }
+  function asciiPdf(value) {
+    return String(value || '')
+      .replace(/[–—]/g, '-').replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
+      .replace(/•/g, '-').normalize('NFKD').replace(/[^\x20-\x7E\n]/g, '');
+  }
+  function wrapPdf(text, width = 86) {
+    const lines = [];
+    for (const paragraph of asciiPdf(text).split(/\n/)) {
+      if (!paragraph) { lines.push(''); continue; }
+      const words = paragraph.split(/\s+/);
+      let line = '';
+      for (const word of words) {
+        const next = line ? line + ' ' + word : word;
+        if (next.length > width && line) { lines.push(line); line = word; }
+        else line = next;
+      }
+      lines.push(line);
+    }
+    return lines;
+  }
+  function pdfEscape(value) {
+    return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  }
+  function buildPdf(merge) {
+    const lines = wrapPdf(shareText(merge));
+    const perPage = 48;
+    const pages = [];
+    for (let i = 0; i < lines.length; i += perPage) pages.push(lines.slice(i, i + perPage));
+    if (!pages.length) pages.push(['Synap memory']);
+    const fontNum = 3 + pages.length * 2;
+    const objects = [];
+    objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+    const kids = pages.map((_, i) => (3 + i * 2) + ' 0 R').join(' ');
+    objects[2] = '<< /Type /Pages /Kids [' + kids + '] /Count ' + pages.length + ' >>';
+    pages.forEach((pageLines, i) => {
+      const pageNum = 3 + i * 2, contentNum = pageNum + 1;
+      const stream = 'BT /F1 11 Tf 48 790 Td 15 TL ' +
+        pageLines.map(line => '(' + pdfEscape(line) + ') Tj T*').join(' ') + ' ET';
+      objects[pageNum] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ' + fontNum + ' 0 R >> >> /Contents ' + contentNum + ' 0 R >>';
+      objects[contentNum] = '<< /Length ' + stream.length + ' >>\nstream\n' + stream + '\nendstream';
+    });
+    objects[fontNum] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
+    let pdf = '%PDF-1.4\n', offsets = [0];
+    for (let i = 1; i < objects.length; i++) {
+      offsets[i] = pdf.length;
+      pdf += i + ' 0 obj\n' + objects[i] + '\nendobj\n';
+    }
+    const xref = pdf.length;
+    pdf += 'xref\n0 ' + objects.length + '\n0000000000 65535 f \n';
+    for (let i = 1; i < objects.length; i++) pdf += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
+    pdf += 'trailer\n<< /Size ' + objects.length + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF';
+    return new Blob([pdf], { type: 'application/pdf' });
+  }
+  function downloadPdf(merge) {
+    const title = String(merge?.memory?.title || 'Synap memory').trim()
+      .replace(/[^a-z0-9 _-]+/gi, '').replace(/\s+/g, ' ').slice(0, 60) || 'Synap memory';
+    const url = URL.createObjectURL(buildPdf(merge));
+    const link = document.createElement('a');
+    link.href = url; link.download = title + '.pdf'; link.hidden = true;
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
   function mergedCard(merge) {
     const card = document.createElement('details'); card.className = 'insight-card synap-merged-card';
     card.dataset.mergeId = merge.merge_id;
@@ -155,9 +250,20 @@
     }
     const foot = document.createElement('div'); foot.className = 'synap-merged-footer';
     const note = document.createElement('small'); note.textContent = 'Source audio stays unchanged in Library.';
+    const actions = document.createElement('div'); actions.className = 'synap-merged-actions';
+    const recreateButton = document.createElement('button'); recreateButton.type = 'button'; recreateButton.className = 'synap-recreate';
+    recreateButton.textContent = 'Recreate'; recreateButton.title = 'Rebuild one unified memory from the source recordings';
+    recreateButton.addEventListener('click', () => recreate(merge.merge_id));
+    const whatsapp = document.createElement('button'); whatsapp.type = 'button'; whatsapp.textContent = 'WhatsApp';
+    whatsapp.addEventListener('click', () => shareWhatsApp(merge));
+    const gmail = document.createElement('button'); gmail.type = 'button'; gmail.textContent = 'Gmail';
+    gmail.addEventListener('click', () => shareGmail(merge));
+    const pdf = document.createElement('button'); pdf.type = 'button'; pdf.textContent = 'PDF';
+    pdf.addEventListener('click', () => downloadPdf(merge));
     const undo = document.createElement('button'); undo.type = 'button'; undo.className = 'synap-unmerge'; undo.textContent = 'Unmerge';
     undo.addEventListener('click', () => unmerge(merge.merge_id));
-    foot.append(note, undo); card.append(sources, foot); return card;
+    actions.append(recreateButton, whatsapp, gmail, pdf, undo);
+    foot.append(note, actions); card.append(sources, foot); return card;
   }
   function render() {
     const list = $('#insightsList'); if (!list) return;
@@ -171,7 +277,7 @@
       if (!source) continue;
       const card = existing.get(merge.merge_id) || mergedCard(merge);
       if (card.nextElementSibling !== source) source.before(card);
-      card.querySelector('.synap-unmerge').disabled = busy;
+      card.querySelectorAll('.synap-unmerge, .synap-recreate').forEach(button => { button.disabled = busy; });
       existing.delete(merge.merge_id);
     }
     existing.forEach(card => card.remove());
@@ -222,6 +328,23 @@
     } catch (error) {
       if (scope().key === current.key) errorText = error.name === 'AbortError'
         ? 'The merge timed out. Refresh Memories to check its result before retrying.' : error.message || 'Could not merge memories. Please retry.';
+    } finally { busy = false; render(); }
+  }
+  async function recreate(id) {
+    if (busy) return;
+    const current = scope(); busy = true; errorText = ''; ++refreshEpoch; render();
+    try {
+      const merge = await request('/v1/memory-merges/' + encodeURIComponent(id) + '/recreate', { method: 'POST' });
+      if (scope().key !== current.key) return;
+      if (!merge?.merge_id || !Array.isArray(merge.source_recording_ids)) throw new Error('Could not confirm the recreated memory.');
+      merges = [...merges.filter(item => item.merge_id !== id), merge];
+      render();
+      const card = [...document.querySelectorAll('.synap-merged-card')].find(item => item.dataset.mergeId === id);
+      if (card) { card.open = true; card.scrollIntoView({ block: 'center' }); }
+    } catch (error) {
+      if (scope().key === current.key) errorText = error.name === 'AbortError'
+        ? 'Recreating the memory timed out. Refresh Memories to check the result.'
+        : error.message || 'Could not recreate the unified memory. Please retry.';
     } finally { busy = false; render(); }
   }
   async function unmerge(id) {
