@@ -51,10 +51,10 @@ test('production PWA contract matches firmware transport and lifecycle', () => {
   assert.match(sw, /\.\/sleep-state-guard\.js/);
   assert.match(sw, /\.\/runtime-compat\.js/);
   assert.match(sw, /\.\/processing-recovery\.js/);
-  assert.match(html, /dashboard-ui\.js\?v=1\.0\.0-shell158-brand-lockup/);
+  assert.match(html, /dashboard-ui\.js\?v=1\.0\.0-shell157-experimental-voice/);
   assert.match(sw, /\.\/my-actions\.js/);
-  assert.match(html, /my-actions\.js\?v=1\.0\.0-shell158-brand-lockup/);
-  assert.match(html, /ask-synap\.js\?v=1\.0\.0-shell158-brand-lockup/);
+  assert.match(html, /my-actions\.js\?v=1\.0\.0-shell157-experimental-voice/);
+  assert.match(html, /ask-synap\.js\?v=1\.0\.0-shell157-experimental-voice/);
   assert.match(html, /sleep-state-guard\.js\?v=/);
   assert.match(html, /recording-bridge\.js\?v=/);
   assert.match(ask, /SynapAuth\.authedFetch\(ASK_ENDPOINT/);
