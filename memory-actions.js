@@ -35,8 +35,25 @@
         !record.localOnly &&
         (record.processingStage === 'ready' || record.processingState === 'done') &&
         root.SynapAuth?.isSignedIn?.() &&
-        record?.id,
+        (record?.mergeId || record?.id),
     );
+  }
+
+  function fromMerge(merge) {
+    if (!merge || !merge.merge_id || !merge.memory) return null;
+    return {
+      id: 'merge:' + String(merge.merge_id),
+      mergeId: String(merge.merge_id),
+      mergedSourceCount: list(merge.source_recording_ids).length,
+      sourceRecordingIds: list(merge.source_recording_ids).map(String),
+      createdAt: merge.started_at || merge.created_at || new Date().toISOString(),
+      processedAt: merge.updated_at || merge.created_at || '',
+      processingState: 'done',
+      processingStage: 'ready',
+      name: clean(merge.memory?.title) || 'Merged memory',
+      meeting: merge.memory,
+      transcript: clean(merge.transcript),
+    };
   }
 
   function when(record) {
@@ -390,28 +407,61 @@
       throw new Error('Sign in and open a ready cloud memory before recreating it.');
     }
     const api = root.SynapBackend;
-    if (!api?.rebuildMemory) throw new Error('Memory recreation is unavailable in this app version.');
     if (status) status.textContent = 'Recreating unified memory…';
+
+    if (record.mergeId) {
+      if (!api?.rebuildMemoryMerge) {
+        throw new Error('Merged memory recreation is unavailable in this app version.');
+      }
+      const result = await api.rebuildMemoryMerge(String(record.mergeId));
+      if (!result?.rebuilt) throw new Error('The merged memory was not rebuilt.');
+      await root.SynapMemoryTools?.refresh?.();
+      if (typeof root.dispatchEvent === 'function' && typeof root.CustomEvent === 'function') {
+        root.dispatchEvent(
+          new root.CustomEvent('synap-memory-rebuilt', {
+            detail: {
+              mergeId: String(record.mergeId),
+              sourceRecordingIds: list(result.source_recording_ids).map(String),
+              retranscribedSegments: Number(result.retranscribed_segments || 0),
+            },
+          }),
+        );
+      }
+      if (status) {
+        const count = list(result.source_recording_ids).length || Number(record.mergedSourceCount || 0);
+        status.textContent =
+          'Unified memory recreated from ' +
+          count +
+          ' source memor' +
+          (count === 1 ? 'y' : 'ies') +
+          ' without retranscribing audio.';
+      }
+      return result;
+    }
+
+    if (!api?.rebuildMemory) throw new Error('Memory recreation is unavailable in this app version.');
     const result = await api.rebuildMemory(String(record.id));
     if (!result?.rebuilt) throw new Error('The memory was not rebuilt.');
     const restored = await root.SynapCloudHistory?.restoreRecording?.(String(record.id), true);
     if (restored?.error) throw restored.error;
-    if (typeof root.dispatchEvent === 'function' && typeof root.CustomEvent === 'function')
+    if (typeof root.dispatchEvent === 'function' && typeof root.CustomEvent === 'function') {
       root.dispatchEvent(
-      new root.CustomEvent('synap-memory-rebuilt', {
-        detail: {
-          recordingId: String(record.id),
-          reusedTranscriptSegments: Number(result.reused_transcript_segments || 0),
-        },
-      }),
-    );
+        new root.CustomEvent('synap-memory-rebuilt', {
+          detail: {
+            recordingId: String(record.id),
+            reusedTranscriptSegments: Number(result.reused_transcript_segments || 0),
+            retranscribedSegments: Number(result.retranscribed_segments || 0),
+          },
+        }),
+      );
+    }
     if (status) {
       status.textContent =
         'Memory recreated from ' +
         Number(result.reused_transcript_segments || 0) +
-        ' merged transcript segment' +
+        ' transcript segment' +
         (Number(result.reused_transcript_segments || 0) === 1 ? '' : 's') +
-        '.';
+        ' without retranscribing audio.';
     }
     return result;
   }
@@ -425,10 +475,8 @@
     return button;
   }
 
-  function decorate(card, record) {
-    if (!card || !record || !ready(record)) return;
-    const content = card.querySelector('.recording-content');
-    if (!content) return;
+  function decorateInto(card, content, record) {
+    if (!card || !content || !record || !ready(record)) return;
     let panel = content.querySelector('.memory-actions-panel');
     if (!panel) {
       panel = root.document.createElement('section');
@@ -436,7 +484,13 @@
       panel.setAttribute('aria-label', 'Memory actions');
       const heading = root.document.createElement('div');
       heading.className = 'memory-actions-heading';
-      heading.innerHTML = '<strong>Memory actions</strong><span>Recreate from the complete transcript or share this memory.</span>';
+      const strong = root.document.createElement('strong');
+      strong.textContent = record.mergeId ? 'Unified memory actions' : 'Memory actions';
+      const hint = root.document.createElement('span');
+      hint.textContent = record.mergeId
+        ? 'Recreate from all merged source transcripts or share this unified memory.'
+        : 'Recreate from the complete transcript or share this memory.';
+      heading.append(strong, hint);
       const controls = root.document.createElement('div');
       controls.className = 'memory-actions-controls';
       const status = root.document.createElement('p');
@@ -449,7 +503,11 @@
 
     const controls = panel.querySelector('.memory-actions-controls');
     const status = panel.querySelector('.memory-action-status');
-    const signature = [String(record.id || ''), String(record.processedAt || ''), String(root.SynapAuth?.isSignedIn?.())].join('|');
+    const signature = [
+      String(record.mergeId || record.id || ''),
+      String(record.processedAt || ''),
+      String(root.SynapAuth?.isSignedIn?.()),
+    ].join('|');
     if (panel.dataset.signature === signature) return;
     panel.dataset.signature = signature;
     controls.replaceChildren();
@@ -475,9 +533,14 @@
       });
     };
 
-    const rebuild = actionButton('Recreate memory', !canRebuild(record));
+    const rebuild = actionButton(
+      record.mergeId ? 'Recreate unified memory' : 'Recreate memory',
+      !canRebuild(record),
+    );
     rebuild.dataset.rebuild = 'true';
-    rebuild.title = 'Rebuild from the complete merged transcript without retranscribing audio.';
+    rebuild.title = record.mergeId
+      ? 'Rebuild this memory from every merged source transcript without retranscribing audio.'
+      : 'Rebuild from the complete transcript without retranscribing audio.';
     wrap(rebuild, () => recreate(record, status), 'Recreating unified memory…');
 
     const whatsapp = actionButton('WhatsApp', false);
@@ -492,10 +555,24 @@
     controls.append(rebuild, whatsapp, gmail, pdf);
   }
 
+  function decorate(card, record) {
+    if (!card || !record) return;
+    const content = card.querySelector('.recording-content');
+    if (!content) return;
+    decorateInto(card, content, record);
+  }
+
+  function decorateMerged(card, merge) {
+    const record = fromMerge(merge);
+    if (!record || !card) return;
+    decorateInto(card, card, record);
+  }
+
   root.SynapMemoryActions = Object.freeze({
     hasMemory,
     ready,
     canRebuild,
+    fromMerge,
     title,
     memorySections,
     shareText,
@@ -506,6 +583,7 @@
     downloadPdf,
     recreate,
     decorate,
+    decorateMerged,
     buildPdfBinary,
   });
 
