@@ -6,9 +6,11 @@
   const PUBLIC_VERSION = '1.0.0';
   const logoSource = () =>
     window.SynapAppearance?.logoSource() ||
-    'synap-logo-' +
+    'synap-mark-' +
+      (document.documentElement.dataset.palette || 'olive') +
+      '-' +
       (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light') +
-      '.png?v=1.0.0-ui-fix1';
+      '.svg?v=1.0.0-mark1';
   const ACTIVE_STATES = new Set(['idle', 'recording', 'starting', 'stopping', 'saving']);
   const RECORDING_STATES = new Set(['recording', 'starting']);
   const BUSY_STATES = new Set(['stopping', 'saving', 'updating', 'connecting']);

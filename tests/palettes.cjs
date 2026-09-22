@@ -19,11 +19,12 @@ test('all palettes preserve readable text in light and dark, including both hero
     }
   }
 });
-test('each palette wordmark is an explicit light/dark PNG and available offline',()=>{
-  const sw=fs.readFileSync(path.join(root,'sw.js'),'utf8');
-  for(const palette of['blue','pink','lavender'])for(const mode of['light','dark']){
-    const file=`synap-logo-${palette}-${mode}.png`,bytes=fs.readFileSync(path.join(root,file));
-    assert.equal(bytes.readUInt32BE(16),800);assert.equal(bytes.readUInt32BE(20),216);assert(sw.includes(`'./${file}'`));
+test('each palette S mark has an explicit light/dark SVG and is available offline',()=>{
+  const sw=fs.readFileSync(path.join(root,'sw.js'),'utf8');let geometry='';
+  for(const palette of['olive','blue','pink','lavender'])for(const mode of['light','dark']){
+    const file=`synap-mark-${palette}-${mode}.svg`,svg=fs.readFileSync(path.join(root,file),'utf8');
+    assert.match(svg,/viewBox="0 0 180 256"/);assert(sw.includes(`'./${file}'`));
+    const d=svg.match(/<path d="([^"]+)"/)[1];if(!geometry)geometry=d;else assert.equal(d,geometry);
   }
   assert(sw.includes("'./compact-layout.js'"));
 });
