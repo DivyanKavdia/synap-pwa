@@ -78,6 +78,7 @@
 
   function requestBudget(path, init) {
     if (/^\/v1\/(people|follow-ups)(\/|\?|$)/.test(String(path))) return 15000;
+    if (String(path).indexOf('/process-now?force=true') !== -1) return PROCESSING_TIMEOUT_MS;
     if (String(path).indexOf('/processing') !== -1) return STATUS_REQUEST_TIMEOUT_MS;
     if (String(init && init.method || '').toUpperCase() === 'PUT' && String(path).indexOf('/segments/') !== -1) {
       return UPLOAD_TIMEOUT_MS;
@@ -623,6 +624,7 @@
     isManagedEndpoint:isManagedEndpoint,
     toRecordingFields:toRecordingFields,
     recordingMemory:function(id){return request('/v1/recordings/'+encodeURIComponent(id)+'/source');},
+    rebuildMemory:function(id){var recordingId=String(id||'');if(!recordingId)return Promise.reject(permanent('Recording id is required.'));return request('/v1/recordings/'+encodeURIComponent(recordingId)+'/process-now?force=true',{method:'POST'});},
     segmentBounds:segmentBounds,
     transcriptionAudio:transcriptionAudio,
     requestBudget:requestBudget,
