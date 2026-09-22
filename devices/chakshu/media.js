@@ -646,14 +646,6 @@
     }
     return sdFiles.slice();
   }
-  function forgetSDPath(path) {
-    const before = sdFiles.length;
-    sdFiles = sdFiles.filter((file) => file.path !== path);
-    if (sdFiles.length !== before) {
-      notify();
-      root.dispatchEvent(new CustomEvent('synap-visual-library-updated'));
-    }
-  }
   async function catalogueNow(signal) {
     const deviceId = connected()?.deviceId || '',
       files = await camera().catalogue(signal);
@@ -842,24 +834,6 @@
       check(scope.owner);
       return importFilesNow(files, deviceId);
     });
-  }
-  async function removeSyncedPath(path, optional = false) {
-    try {
-      await camera().request(17, 0, path);
-      return true;
-    } catch (e) {
-      if (optional) return false;
-      throw e;
-    }
-  }
-  async function deleteSyncedSet(path) {
-    // Delete companions first so a failed final delete cannot expose a video WAV as a new audio item.
-    if (/\.mjpeg$/i.test(path)) {
-      await removeSyncedPath(path.replace(/mjpeg$/i, 'json'), true);
-      await removeSyncedPath(path.replace(/mjpeg$/i, 'wav'), true);
-    }
-    await removeSyncedPath(path);
-    forgetSDPath(path);
   }
   async function moveSD(path, progress) {
     const verified = root.SynapChakshuV2?.moveSD;
