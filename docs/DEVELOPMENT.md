@@ -67,6 +67,8 @@ Removed:
 
 The launcher icons `icon.svg`, `icon-192.png` and `icon-512.png` remain live. The SD cleanup is guarded by a source contract that rejects direct operation-17 deletion from `devices/chakshu/media.js`.
 
+`tests/code-hygiene.cjs` now also enforces that every top-level browser JS/CSS file is reachable from the production shell/cache graph and every browser `*-smoke.cjs` belongs to the canonical browser suite. This turns the audit rule into a CI contract instead of a one-time cleanup.
+
 ## Versioning
 
 Keep these concepts separate:
