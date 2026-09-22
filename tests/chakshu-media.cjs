@@ -605,6 +605,8 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(html, /While Chakshu is disconnected from this app, Hey Snap owns capture/);
   assert.match(html, /id="visualSDSyncNotice"/);
   assert.match(html, /id="librarySDInbox"/);
+  assert.match(html, /id="libraryStorageInfoToggle"/);
+  assert.match(html, /aria-controls="librarySDInbox"/);
   assert.match(html, /id="libraryCheckSD"/);
   assert.match(html, /id="libraryBrowseSD"/);
   assert.match(html, /id="librarySyncSD"/);
@@ -615,6 +617,8 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(lifecycle, /browseSD\('librarySDList'\)/);
   assert.match(lifecycle, /SynapChakshuVoice\?\.lastOutcome\?\.\(deviceId\)/);
   assert.match(lifecycle, /Last offline result:/);
+  assert.match(lifecycle, /libraryStorageInfoToggle/);
+  assert.match(lifecycle, /aria-expanded/);
   assert.match(html, /Offline device storage/);
   assert.match(html, /Check storage/);
   assert.match(html, /View device content/);
