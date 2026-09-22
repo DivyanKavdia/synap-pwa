@@ -154,7 +154,7 @@
     var rename = doc().createElement('button');
     rename.type = 'button';
     rename.dataset.action = 'rename';
-    rename.textContent = person.confirmed_by_user ? 'Rename' : 'Wrong name';
+    rename.textContent = person.confirmed_by_user ? 'Edit name' : 'Correct name';
     if (person.person_id) host.appendChild(rename);
     const remove = doc().createElement('button');
     remove.type = 'button';
