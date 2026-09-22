@@ -12,6 +12,8 @@ test('memory tools keep source recordings untouched and expose reversible merge'
   assert.match(src,/source_recording_ids/);
   assert.match(src,/Unmerge/);
   assert.match(src,/Source audio stays unchanged in Library/);
+  assert.match(src,/SynapMemoryActions\?\.decorateMerged/);
+  assert.match(src,/mergeRevision/);
   assert.doesNotMatch(src,/objectStore\(['"]recordings['"]\)\.delete/);
   assert.doesNotMatch(src,/journal\.(?:remove|clear)\(/);
   assert.doesNotMatch(src,/deleteRecording\(/);
@@ -42,6 +44,18 @@ test('one canonical memory view renders summaries, notes and transcripts',()=>{
   const memory=fs.readFileSync(path.join(root,'memory-tools.js'),'utf8');
   assert.match(memory,/SynapProvenance\.buildMemoryView/);
   assert.doesNotMatch(memory,/new MutationObserver/,'merge does not observe its own DOM edits');
+});
+
+test('merged memory rebuild is source-safe and does not alter source recordings',()=>{
+  const route=fs.readFileSync(path.join(root,'backend/src/http/routes/memory-tools.ts'),'utf8');
+  const pipeline=fs.readFileSync(path.join(root,'backend/src/pipeline/merge.ts'),'utf8');
+  assert.match(route,/\/memory-merges\/:mergeId\/rebuild/);
+  assert.match(route,/retranscribed_segments:\s*0/);
+  assert.match(pipeline,/rebuildMemoryMerge/);
+  assert.match(pipeline,/sourceRecordingIds:\s*current\.sourceRecordingIds/);
+  assert.match(pipeline,/live\.updatedAt !== current\.updatedAt/);
+  assert.match(pipeline,/tx\.set\(ref, built\.doc\)/);
+  assert.doesNotMatch(pipeline,/deleteRecordingAudio/);
 });
 
 test('installed PWA caches the optional memory and sleep-state modules',()=>{
