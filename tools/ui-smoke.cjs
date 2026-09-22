@@ -19,37 +19,26 @@ const server = createStaticServer(root);
 async function assertWordmarks(page, mode) {
   for (const selector of ['.brand-logo']) {
     const logo = page.locator(selector);
+    const palette = await page.evaluate(() => document.documentElement.dataset.palette || 'olive');
     assert.match(
       await logo.getAttribute('src'),
-      new RegExp('synap-logo-' + mode + '\\.png\\?v=1\\.0\\.0-ui-fix1$'),
+      new RegExp('synap-mark-' + palette + '-' + mode + '\\.svg\\?v=1\\.0\\.0-mark1$'),
     );
     const pixels = await logo.evaluate(async (img) => {
       await img.decode();
       const canvas = document.createElement('canvas');
-      canvas.width = 800;
-      canvas.height = 216;
+      canvas.width = 180;
+      canvas.height = 256;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, 800, 216);
-      const data = ctx.getImageData(208, 0, 592, 216).data;
-      let count = 0,
-        r = 0,
-        g = 0,
-        b = 0;
-      for (let i = 0; i < data.length; i += 4)
-        if (data[i + 3] > 220) {
-          count++;
-          r += data[i];
-          g += data[i + 1];
-          b += data[i + 2];
-        }
-      return { width: img.naturalWidth, count, r: r / count, g: g / count, b: b / count };
+      ctx.drawImage(img, 0, 0, 180, 256);
+      const data = ctx.getImageData(0, 0, 180, 256).data;
+      let count = 0;
+      for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 220) count++;
+      return { width: img.naturalWidth, height: img.naturalHeight, count };
     });
-    assert.equal(pixels.width, 800);
-    assert(pixels.count > 5000, 'wordmark has actual visible pixels');
-    const expected = mode === 'dark' ? [237, 245, 239] : [24, 60, 52];
-    ['r', 'g', 'b'].forEach((c, i) =>
-      assert(Math.abs(pixels[c] - expected[i]) < 2, `${mode} wordmark color ${c}`),
-    );
+    assert.equal(pixels.width, 180);
+    assert.equal(pixels.height, 256);
+    assert(pixels.count > 12000, 'S mark has actual visible pixels');
   }
 }
 
