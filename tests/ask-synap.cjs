@@ -23,6 +23,12 @@ test('Ask Synap uses authenticated grounded backend retrieval when signed in', (
   assert.match(client, /source\.recording_id/);
   assert.match(client, /source\.quote/);
   assert.match(client, /result\.confidence/);
+  assert.match(client, /SEARCH_TIMEOUT_MS = 35000/);
+  assert.match(client, /Synap Cloud is temporarily unavailable.*showing local recall/);
+  assert.match(client, /return searchLocal\(clean/);
+  assert.match(route, /TRANSCRIPT_SCAN_CONCURRENCY = 6/);
+  assert.match(route, /catch \{\s*return null;\s*\}/s,
+    'one unreadable historical recording must not break Ask Synap');
 
   assert.match(route, /router\.post\(\s*'\/ask'/s);
   assert.match(route, /embedContent\(query, 'RETRIEVAL_QUERY'\)/);
