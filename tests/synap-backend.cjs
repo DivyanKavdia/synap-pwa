@@ -134,15 +134,17 @@ function load(source, overrides) {
 test('the shell loads auth and the backend provider, and caches them offline', () => {
   assert.match(html, /src="google-auth\.js/);
   assert.match(html, /src="synap-backend\.js/);
+  assert.match(html, /src="memory-actions\.js/);
   assert.match(html, /src="synap-account-ui\.js/);
   assert.match(sw, /\.\/google-auth\.js/);
   assert.match(sw, /\.\/synap-backend\.js/);
+  assert.match(sw, /\.\/memory-actions\.js/);
   assert.match(sw, /\.\/synap-account-ui\.js/);
   assert.match(html, /src="people-confirm-ui\.js/);
   assert.match(sw, /\.\/people-confirm-ui\.js/);
   // Bumping the shell revision is what actually ships the new files to
   // installed clients; forgetting it is the classic silent no-op deploy.
-  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell160-background-storage'/);
+  assert.match(sw, /CACHE_REVISION='1\.0\.0-shell161-memory-actions'/);
   assert.match(sw, /\.\/devices\/chakshu\/voice\.js/, 'installed shell must precache the voice-v2 companion');
   assert.match(html, /data-synap-chakshu-voice="2" src="devices\/chakshu\/voice\.js\?v=1\.0\.0-chakshu-voice12"/,
     'voice-v2 companion must load deterministically before app startup');
@@ -515,6 +517,59 @@ test('other terminal pairing failures still reject', () => {
     authSource,
     /error\.status === 404 \|\| error\.status === 409 \|\| error\.status === 410 \|\| error\.status === 401/,
   );
+});
+
+test('memory recreation uses the authenticated force rebuild with the long processing budget', async () => {
+  let request;
+  const context = load(backendSource, {
+    SynapAuth: {
+      isSignedIn: () => true,
+      session: () => ({ profile: { uid: 'fixture-owner' } }),
+      config: () => ({ backendUrl: 'https://api.example.test' }),
+      authedFetch: async (path, init) => {
+        request = { path, init };
+        return new Response(JSON.stringify({
+          recording_id: 'take',
+          state: 'ready',
+          rebuilt: true,
+          reused_transcript_segments: 3,
+          retranscribed_segments: 0,
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      },
+    },
+  });
+  const result = await context.SynapBackend.rebuildMemory('take');
+  assert.equal(result.rebuilt, true);
+  assert.equal(request.path, '/v1/recordings/take/process-now?force=true');
+  assert.equal(request.init.method, 'POST');
+  assert.match(backendSource, /process-now\?force=true/);
+  assert.match(backendSource, /memory-merges\\\/\[\^\/\]\+\\\/rebuild/);
+  assert.match(backendSource, /return PROCESSING_TIMEOUT_MS/);
+});
+
+test('merged memory recreation uses the authenticated rebuild endpoint', async () => {
+  let request;
+  const context = load(backendSource, {
+    SynapAuth: {
+      isSignedIn: () => true,
+      session: () => ({ profile: { uid: 'fixture-owner' } }),
+      config: () => ({ backendUrl: 'https://api.example.test' }),
+      authedFetch: async (path, init) => {
+        request = { path, init };
+        return new Response(JSON.stringify({
+          merge_id: 'merge-123',
+          rebuilt: true,
+          source_recording_ids: ['a', 'b'],
+          retranscribed_segments: 0,
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      },
+    },
+  });
+  const result = await context.SynapBackend.rebuildMemoryMerge('merge-123');
+  assert.equal(result.rebuilt, true);
+  assert.equal(result.retranscribed_segments, 0);
+  assert.equal(request.path, '/v1/memory-merges/merge-123/rebuild');
+  assert.equal(request.init.method, 'POST');
 });
 
 test('consolidate is given a longer budget than an upload', () => {

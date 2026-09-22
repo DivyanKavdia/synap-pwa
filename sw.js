@@ -3,8 +3,8 @@ const APP_VERSION='1.0.0';
 /* app.js owns the client compatibility revision used for update signalling. */
 const CLIENT_REVISION='1.0.0-audio6';
 /* Refresh the installed shell without changing audio protocol compatibility. */
-const UI_RECOVERY_REVISION='1.0.0-shell160-background-storage';
-const CACHE_REVISION='1.0.0-shell160-background-storage';
+const UI_RECOVERY_REVISION='1.0.0-shell161-memory-actions';
+const CACHE_REVISION='1.0.0-shell161-memory-actions';
 const CACHE_NAME=`synap-pwa-${CACHE_REVISION}`;
 const APP_SHELL=[
   './devices/chakshu/player.js','./devices/chakshu/capture-preview.js',
@@ -12,7 +12,7 @@ const APP_SHELL=[
   './devices/profiles.js','./devices/capabilities.js',
   './devices/modules.js','./devices/power.js','./devices/panel.js','./devices/panel.css',
   './recording/screen-wake-lock.js',
-  './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./workspace.css','./brain.css','./polish.css','./settings.css','./library-tools.js','./library-tools.css','./memory-library.js',
+  './','./index.html','./theme.js','./styles.css','./brand.css','./compact.css','./workspace.css','./brain.css','./polish.css','./settings.css','./library-tools.js','./library-tools.css','./memory-actions.js','./memory-library.js',
   './touch-event-bridge.js','./battery-v2-ui.js','./event-channel.js','./audio-codec-v3.js','./battery-popover-fix.js','./memory-ui-fix.js','./memory-tools.js','./voice-profile.js','./devices/identity.js','./runtime-compat.js','./audio-store.js','./processing-queue.js','./recording/journal.js','./recording/timeline.js','./recording/bluetooth-session.js','./ota.js','./releases.js',
   './disconnect-protection.js','./audio-quality.js','./meeting-tools.js','./meeting-tools.css','./app.js','./recording-notifications.js','./moments.js','./speaker-names.js','./settings-panel.js','./enhancements.js','./capture-ui.js','./brain-ui.js','./ask-synap.js','./product-ui.js','./runtime-ui.js','./dashboard-ui.js','./provenance-links.js','./productivity-tools.js','./desktop-capture.js','./interaction-surfaces.js','./memory-ready-events.js','./experience-recovery.js',
   './memory-workspace.js','./action-editor.js','./action-editor.css','./action-state.js','./my-actions.js','./compact-layout.js','./audio-enhancement.js','./audio-enhancement-ui.js','./audio-enhancement-worker.js','./vendor/audio-enhancement/rnnoise-sync.js',

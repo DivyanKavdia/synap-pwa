@@ -138,6 +138,7 @@
   function mergedCard(merge) {
     const card = document.createElement('details'); card.className = 'insight-card synap-merged-card';
     card.dataset.mergeId = merge.merge_id;
+    card.dataset.mergeRevision = merge.updated_at || merge.created_at || '';
     const top = document.createElement('summary'); top.className = 'insight-top';
     const title = document.createElement('h3'); title.textContent = merge.memory?.title || 'Merged memory';
     const badge = document.createElement('span'); badge.className = 'synap-merged-badge';
@@ -147,6 +148,7 @@
     title.appendChild(badge); top.append(title, time); card.appendChild(top);
     const summary = [merge.memory?.executive_summary || '', ...(merge.memory?.key_points || []).map(x => '• ' + x)].filter(Boolean).join('\n');
     card.appendChild(root.SynapProvenance.buildMemoryView({ summary, transcript: merge.transcript || '' }));
+    root.SynapMemoryActions?.decorateMerged?.(card, merge);
     const sources = document.createElement('div'); sources.className = 'synap-merged-sources';
     for (const id of merge.source_recording_ids) {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'synap-source-link';
@@ -169,7 +171,10 @@
     for (const merge of merges) {
       const source = cards.find(card => merge.source_recording_ids.includes(card.dataset.recordingId));
       if (!source) continue;
-      const card = existing.get(merge.merge_id) || mergedCard(merge);
+      const previous = existing.get(merge.merge_id);
+      const revision = merge.updated_at || merge.created_at || '';
+      const card = previous && previous.dataset.mergeRevision === revision ? previous : mergedCard(merge);
+      if (previous && previous !== card) previous.replaceWith(card);
       if (card.nextElementSibling !== source) source.before(card);
       card.querySelector('.synap-unmerge').disabled = busy;
       existing.delete(merge.merge_id);

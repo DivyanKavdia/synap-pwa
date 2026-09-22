@@ -134,6 +134,7 @@
     }
     const content = card.querySelector('.recording-content');
     if (!content) return;
+    root.SynapMemoryActions?.decorate(card, row);
     if (preview(row) && !content.querySelector('.memory-explore')) {
       const explore = document.createElement('button');
       explore.type = 'button';

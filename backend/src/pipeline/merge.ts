@@ -28,6 +28,7 @@ export interface MemoryMergeView {
   memory: StructuredMemory;
   transcript: string;
   createdAt: string;
+  updatedAt: string;
 }
 
 export class MemoryMergeError extends Error {
@@ -132,7 +133,109 @@ export async function listMemoryMerges(uid: string, dek: Buffer, day?: string): 
       memory: openJson<StructuredMemory>(dek, doc.sealedMemory, binding(uid, doc.mergeId, 'memory')),
       transcript: openText(dek, doc.sealedTranscript, binding(uid, doc.mergeId, 'transcript')),
       createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt,
     }));
+}
+
+async function synthesizeMemoryMerge(
+  uid: string,
+  dek: Buffer,
+  ordered: RecordingDoc[],
+  sourceRecordingIds: string[],
+  mergeId: string,
+  createdAt: string,
+): Promise<{ doc: MemoryMergeDoc; view: MemoryMergeView }> {
+  const firstOrdered = ordered[0];
+  if (!firstOrdered || ordered.length < 2 || ordered.length > 5) {
+    throw new MemoryMergeError(409, 'memory_not_ready', 'Merged memory sources are unavailable.');
+  }
+  const mergeDay = firstOrdered.day;
+  if (
+    ordered.some(
+      (recording) =>
+        recording.day !== mergeDay ||
+        recording.state !== 'ready' ||
+        !recording.sealedTranscript ||
+        !recording.sealedMemory,
+    )
+  ) {
+    throw new MemoryMergeError(
+      409,
+      'memory_not_ready',
+      'Every source memory must remain ready with a complete transcript before it can be recreated.',
+    );
+  }
+
+  const firstStartedMs = Date.parse(firstOrdered.startedAt);
+  const lastEndedMs = Math.max(...ordered.map(recordingEndMs));
+  if (!Number.isFinite(firstStartedMs) || !Number.isFinite(lastEndedMs)) {
+    throw new MemoryMergeError(409, 'invalid_source_time', 'One of the source memories has an invalid recording time.');
+  }
+  const durationMs = Math.max(1, lastEndedMs - firstStartedMs);
+  const transcripts: string[] = [];
+  const highlightOffsetsMs: number[] = [];
+
+  for (const recording of ordered) {
+    const offset = Math.max(0, Date.parse(recording.startedAt) - firstStartedMs);
+    const transcript = openText(
+      dek,
+      recording.sealedTranscript!,
+      { uid, scope: `recording/${recording.recordingId}`, field: 'transcript' },
+    );
+    transcripts.push(shiftTranscript(transcript, offset));
+    const highlights = await db.listHighlights(uid, recording.recordingId);
+    highlightOffsetsMs.push(...highlights.map((highlight) => offset + highlight.offsetMs));
+  }
+
+  const transcript = transcripts.filter(Boolean).join('\n\n');
+  if (!transcript.trim()) {
+    throw new MemoryMergeError(409, 'empty_transcript', 'The selected memories do not contain transcript text.');
+  }
+
+  const languages = [
+    ...new Set(
+      ordered
+        .map((recording) => recording.language)
+        .filter((language): language is string => Boolean(language)),
+    ),
+  ];
+  const language = languages.length === 1 ? (languages[0] ?? 'auto') : 'auto';
+  const memory = await extractMemory({
+    transcript,
+    durationMs,
+    highlightOffsetsMs,
+    knownPeople: await knownPeople(uid, dek),
+    language,
+  });
+
+  const updatedAt = new Date().toISOString();
+  const doc: MemoryMergeDoc = {
+    mergeId,
+    sourceRecordingIds,
+    day: mergeDay,
+    startedAt: new Date(firstStartedMs).toISOString(),
+    endedAt: new Date(lastEndedMs).toISOString(),
+    durationMs,
+    sealedMemory: sealJson(dek, memory, binding(uid, mergeId, 'memory')),
+    sealedTranscript: sealText(dek, transcript, binding(uid, mergeId, 'transcript')),
+    createdAt,
+    updatedAt,
+  };
+  return {
+    doc,
+    view: {
+      mergeId,
+      sourceRecordingIds,
+      day: mergeDay,
+      startedAt: doc.startedAt,
+      endedAt: doc.endedAt,
+      durationMs,
+      memory,
+      transcript,
+      createdAt,
+      updatedAt,
+    },
+  };
 }
 
 export async function createMemoryMerge(
@@ -162,79 +265,91 @@ export async function createMemoryMerge(
   );
   const canonicalIds = consecutiveSourceIds(ready.map((recording) => recording.recordingId), unique);
   const byId = new Map(recordings.map((recording) => [recording.recordingId, recording]));
-  const ordered = canonicalIds.map((id) => byId.get(id)).filter((item): item is RecordingDoc => Boolean(item));
-  const firstOrdered = ordered[0];
-  if (!firstOrdered) throw new MemoryMergeError(409, 'memory_not_ready', 'Selected memories are not ready to merge.');
+  const ordered = canonicalIds
+    .map((id) => byId.get(id))
+    .filter((item): item is RecordingDoc => Boolean(item));
 
   const existing = await listMemoryMerges(uid, dek, mergeDay);
   const occupied = new Set(existing.flatMap((merge) => merge.sourceRecordingIds));
   if (canonicalIds.some((id) => occupied.has(id))) {
-    throw new MemoryMergeError(409, 'already_merged', 'One of these memories is already part of another merge. Unmerge it first.');
-  }
-
-  const firstStartedMs = Date.parse(firstOrdered.startedAt);
-  const lastEndedMs = Math.max(...ordered.map(recordingEndMs));
-  const durationMs = Math.max(1, lastEndedMs - firstStartedMs);
-  const transcripts: string[] = [];
-  const highlightOffsetsMs: number[] = [];
-
-  for (const recording of ordered) {
-    if (!recording.sealedTranscript) {
-      throw new MemoryMergeError(409, 'memory_not_ready', 'Every selected memory needs a complete transcript before it can be merged.');
-    }
-    const offset = Math.max(0, Date.parse(recording.startedAt) - firstStartedMs);
-    const transcript = openText(
-      dek,
-      recording.sealedTranscript,
-      { uid, scope: `recording/${recording.recordingId}`, field: 'transcript' },
+    throw new MemoryMergeError(
+      409,
+      'already_merged',
+      'One of these memories is already part of another merge. Unmerge it first.',
     );
-    transcripts.push(shiftTranscript(transcript, offset));
-    const highlights = await db.listHighlights(uid, recording.recordingId);
-    highlightOffsetsMs.push(...highlights.map((highlight) => offset + highlight.offsetMs));
   }
-
-  const transcript = transcripts.filter(Boolean).join('\n\n');
-  if (!transcript.trim()) {
-    throw new MemoryMergeError(409, 'empty_transcript', 'The selected memories do not contain transcript text.');
-  }
-
-  const languages = [...new Set(ordered.map((recording) => recording.language).filter((language): language is string => Boolean(language)))];
-  const language = languages.length === 1 ? (languages[0] ?? 'auto') : 'auto';
-  const memory = await extractMemory({
-    transcript,
-    durationMs,
-    highlightOffsetsMs,
-    knownPeople: await knownPeople(uid, dek),
-    language,
-  });
 
   const mergeId = newId();
-  const now = new Date().toISOString();
-  const doc: MemoryMergeDoc = {
-    mergeId,
-    sourceRecordingIds: canonicalIds,
-    day: mergeDay,
-    startedAt: new Date(firstStartedMs).toISOString(),
-    endedAt: new Date(lastEndedMs).toISOString(),
-    durationMs,
-    sealedMemory: sealJson(dek, memory, binding(uid, mergeId, 'memory')),
-    sealedTranscript: sealText(dek, transcript, binding(uid, mergeId, 'transcript')),
-    createdAt: now,
-    updatedAt: now,
-  };
-  await mergeCollection(uid).doc(mergeId).set(doc);
+  const createdAt = new Date().toISOString();
+  const built = await synthesizeMemoryMerge(uid, dek, ordered, canonicalIds, mergeId, createdAt);
+  await mergeCollection(uid).doc(mergeId).set(built.doc);
+  return built.view;
+}
 
-  return {
-    mergeId,
-    sourceRecordingIds: canonicalIds,
-    day: mergeDay,
-    startedAt: doc.startedAt,
-    endedAt: doc.endedAt,
-    durationMs,
-    memory,
-    transcript,
-    createdAt: now,
-  };
+/**
+ * Recreate a merged memory from its unchanged source recordings.
+ *
+ * This is a semantic refresh only: it never transcribes audio and never mutates
+ * source memories. The merge keeps the same id and source set so links and
+ * reversible Unmerge behavior remain stable.
+ */
+export async function rebuildMemoryMerge(
+  uid: string,
+  dek: Buffer,
+  mergeId: string,
+): Promise<MemoryMergeView> {
+  const ref = mergeCollection(uid).doc(mergeId);
+  const snapshot = await ref.get();
+  if (!snapshot.exists) {
+    throw new MemoryMergeError(404, 'merge_not_found', 'Unknown merged memory.');
+  }
+  const current = snapshot.data() as MemoryMergeDoc;
+  const sourceDocs = await Promise.all(
+    current.sourceRecordingIds.map((id) => db.getRecording(uid, id)),
+  );
+  if (sourceDocs.some((recording) => !recording)) {
+    throw new MemoryMergeError(
+      409,
+      'merge_source_missing',
+      'One or more source memories no longer exist. The current merged memory was kept unchanged.',
+    );
+  }
+  const ordered = sourceDocs.filter((recording): recording is RecordingDoc => Boolean(recording));
+  const built = await synthesizeMemoryMerge(
+    uid,
+    dek,
+    ordered,
+    current.sourceRecordingIds,
+    current.mergeId,
+    current.createdAt,
+  );
+
+  // A long model call must never resurrect a merge that was Unmerged in
+  // another tab, or overwrite a merge whose source set changed.
+  await db.firestore().runTransaction(async (tx) => {
+    const liveSnapshot = await tx.get(ref);
+    const live = liveSnapshot.data() as MemoryMergeDoc | undefined;
+    if (!live) {
+      throw new MemoryMergeError(
+        409,
+        'merge_changed',
+        'This merged memory changed while it was being recreated. Refresh Memories before retrying.',
+      );
+    }
+    if (
+      live.updatedAt !== current.updatedAt ||
+      JSON.stringify(live.sourceRecordingIds) !== JSON.stringify(current.sourceRecordingIds)
+    ) {
+      throw new MemoryMergeError(
+        409,
+        'merge_changed',
+        'This merged memory changed while it was being recreated. Refresh Memories before retrying.',
+      );
+    }
+    tx.set(ref, built.doc);
+  });
+
+  return built.view;
 }
 
 export async function deleteMemoryMerge(uid: string, mergeId: string): Promise<boolean> {
