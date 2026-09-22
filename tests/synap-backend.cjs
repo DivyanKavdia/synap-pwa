@@ -542,7 +542,34 @@ test('memory recreation uses the authenticated force rebuild with the long proce
   assert.equal(result.rebuilt, true);
   assert.equal(request.path, '/v1/recordings/take/process-now?force=true');
   assert.equal(request.init.method, 'POST');
-  assert.match(backendSource, /process-now\?force=true'\) !== -1\) return PROCESSING_TIMEOUT_MS/);
+  assert.match(backendSource, /process-now\?force=true/);
+  assert.match(backendSource, /memory-merges\\\/\[\^\/\]\+\\\/rebuild/);
+  assert.match(backendSource, /return PROCESSING_TIMEOUT_MS/);
+});
+
+test('merged memory recreation uses the authenticated rebuild endpoint', async () => {
+  let request;
+  const context = load(backendSource, {
+    SynapAuth: {
+      isSignedIn: () => true,
+      session: () => ({ profile: { uid: 'fixture-owner' } }),
+      config: () => ({ backendUrl: 'https://api.example.test' }),
+      authedFetch: async (path, init) => {
+        request = { path, init };
+        return new Response(JSON.stringify({
+          merge_id: 'merge-123',
+          rebuilt: true,
+          source_recording_ids: ['a', 'b'],
+          retranscribed_segments: 0,
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      },
+    },
+  });
+  const result = await context.SynapBackend.rebuildMemoryMerge('merge-123');
+  assert.equal(result.rebuilt, true);
+  assert.equal(result.retranscribed_segments, 0);
+  assert.equal(request.path, '/v1/memory-merges/merge-123/rebuild');
+  assert.equal(request.init.method, 'POST');
 });
 
 test('consolidate is given a longer budget than an upload', () => {
