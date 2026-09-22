@@ -148,7 +148,9 @@
 
   function shareWhatsApp(record) {
     const text = trimShare(shareText(record), 12000);
-    openExternal('https://wa.me/?text=' + encodeURIComponent(text));
+    if (!openExternal('https://wa.me/?text=' + encodeURIComponent(text))) {
+      throw new Error('WhatsApp could not be opened. Allow pop-ups and try again.');
+    }
   }
 
   function shareGmail(record) {
@@ -159,7 +161,10 @@
       encodeURIComponent(subject) +
       '&body=' +
       encodeURIComponent(body);
-    if (!openExternal(url)) root.location.href = 'mailto:?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+    if (!openExternal(url)) {
+      root.location.href =
+        'mailto:?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+    }
   }
 
   function splitWords(ctx, text, maxWidth) {
