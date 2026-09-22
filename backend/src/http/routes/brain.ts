@@ -112,10 +112,21 @@ const PERSON_RENAME_CONCURRENCY = 8;
 async function refreshSpeakerNamesForPerson(
   uid: string,
   dek: Buffer,
+  personId: string,
   previousName: string,
   nextName: string,
 ): Promise<string[]> {
-  const recordings = await db.listRecentRecordings(uid, PERSON_RENAME_SCAN_LIMIT);
+  const [linked, recent] = await Promise.all([
+    db.listRecordingsForPerson(uid, personId),
+    db.listRecentRecordings(uid, PERSON_RENAME_SCAN_LIMIT),
+  ]);
+  const byId = new Map(linked.map(recording => [recording.recordingId, recording]));
+  // Older records can predate indexedPersonIds. Scan a bounded legacy window by
+  // encrypted speaker value, but never name-match a modern record tied to a
+  // different canonical person.
+  for (const recording of recent)
+    if (!Array.isArray(recording.indexedPersonIds)) byId.set(recording.recordingId, recording);
+  const recordings = [...byId.values()];
   const refreshed: string[] = [];
 
   for (let offset = 0; offset < recordings.length; offset += PERSON_RENAME_CONCURRENCY) {
@@ -323,7 +334,7 @@ export function brainRoutes(): Router {
       // only the encrypted label->name maps; raw transcript words/timestamps
       // stay immutable and no audio is re-transcribed.
       const refreshedRecordingIds = renamed
-        ? await refreshSpeakerNamesForPerson(req.uid, req.dek, profile.name, name)
+        ? await refreshSpeakerNamesForPerson(req.uid, req.dek, personId, profile.name, name)
         : [];
 
       res.status(200).json({
