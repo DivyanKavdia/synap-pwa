@@ -244,7 +244,7 @@ async function run() {
       await page.waitForFunction(
         () =>
           document.querySelector('.speaker-names-status').textContent ===
-          'Names and summaries updated.',
+          'Speaker identity, transcript and summaries updated.',
       );
       assert.match(
         await card.locator('.recording-transcript').inputValue(),
@@ -338,7 +338,7 @@ async function run() {
       await page.waitForFunction(
         () =>
           document.querySelector('.speaker-names-status').textContent ===
-          'Names and summaries updated.',
+          'Speaker identity, transcript and summaries updated.',
       );
       assert.equal(
         await reloaded.locator('.recording-transcript').inputValue(),
