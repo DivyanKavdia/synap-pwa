@@ -19,16 +19,24 @@
     );
   }
 
+  function hasMemory(record) {
+    return Boolean(record && (record.meeting || clean(record.summary)));
+  }
+
   function ready(record) {
-    if (!record || record.localOnly) return false;
-    return Boolean(
-      (record.processingStage === 'ready' || record.processingState === 'done') &&
-        (record.meeting || clean(record.summary)),
-    );
+    if (!hasMemory(record)) return false;
+    if (record.localOnly) return true;
+    return record.processingStage === 'ready' || record.processingState === 'done';
   }
 
   function canRebuild(record) {
-    return ready(record) && Boolean(root.SynapAuth?.isSignedIn?.()) && Boolean(record?.id);
+    return Boolean(
+      ready(record) &&
+        !record.localOnly &&
+        (record.processingStage === 'ready' || record.processingState === 'done') &&
+        root.SynapAuth?.isSignedIn?.() &&
+        record?.id,
+    );
   }
 
   function when(record) {
@@ -358,7 +366,7 @@
 
   async function downloadPdf(record) {
     const blob = await pdfBlob(record);
-    const url = URL.createObjectURL(blob);
+    const url = root.URL.createObjectURL(blob);
     try {
       const link = root.document.createElement('a');
       link.href = url;
@@ -368,7 +376,7 @@
       link.click();
       link.remove();
     } finally {
-      root.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      root.setTimeout(() => root.URL.revokeObjectURL(url), 1000);
     }
   }
 
@@ -383,8 +391,9 @@
     if (!result?.rebuilt) throw new Error('The memory was not rebuilt.');
     const restored = await root.SynapCloudHistory?.restoreRecording?.(String(record.id), true);
     if (restored?.error) throw restored.error;
-    root.dispatchEvent?.(
-      new CustomEvent('synap-memory-rebuilt', {
+    if (typeof root.dispatchEvent === 'function' && typeof root.CustomEvent === 'function')
+      root.dispatchEvent(
+      new root.CustomEvent('synap-memory-rebuilt', {
         detail: {
           recordingId: String(record.id),
           reusedTranscriptSegments: Number(result.reused_transcript_segments || 0),
@@ -402,13 +411,12 @@
     return result;
   }
 
-  function actionButton(label, action, disabled) {
+  function actionButton(label, disabled) {
     const button = root.document.createElement('button');
     button.type = 'button';
     button.className = 'memory-action-button';
     button.textContent = label;
     button.disabled = Boolean(disabled);
-    button.addEventListener('click', action);
     return button;
   }
 
@@ -441,48 +449,46 @@
     panel.dataset.signature = signature;
     controls.replaceChildren();
 
-    const wrap = (button, run, pending) => {
-      button.addEventListener(
-        'click',
-        async (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          if (button.disabled) return;
-          const buttons = [...controls.querySelectorAll('button')];
-          buttons.forEach((node) => (node.disabled = true));
-          status.textContent = pending || '';
-          try {
-            await run();
-          } catch (error) {
-            status.textContent = error?.message || 'Memory action failed.';
-          } finally {
-            buttons.forEach((node) => {
-              node.disabled = node.dataset.rebuild === 'true' ? !canRebuild(record) : false;
-            });
-          }
-        },
-        { once: false },
-      );
+    const wrap = (button, run, pending, success) => {
+      button.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (button.disabled) return;
+        const buttons = [...controls.querySelectorAll('button')];
+        buttons.forEach((node) => (node.disabled = true));
+        status.textContent = pending || '';
+        try {
+          await run();
+          if (success) status.textContent = success;
+        } catch (error) {
+          status.textContent = error?.message || 'Memory action failed.';
+        } finally {
+          buttons.forEach((node) => {
+            node.disabled = node.dataset.rebuild === 'true' ? !canRebuild(record) : false;
+          });
+        }
+      });
     };
 
-    const rebuild = actionButton('Recreate memory', () => {}, !canRebuild(record));
+    const rebuild = actionButton('Recreate memory', !canRebuild(record));
     rebuild.dataset.rebuild = 'true';
     rebuild.title = 'Rebuild from the complete merged transcript without retranscribing audio.';
     wrap(rebuild, () => recreate(record, status), 'Recreating unified memory…');
 
-    const whatsapp = actionButton('WhatsApp', () => {}, false);
-    wrap(whatsapp, () => shareWhatsApp(record), 'Opening WhatsApp…');
+    const whatsapp = actionButton('WhatsApp', false);
+    wrap(whatsapp, () => shareWhatsApp(record), 'Opening WhatsApp…', 'Opened WhatsApp.');
 
-    const gmail = actionButton('Gmail', () => {}, false);
-    wrap(gmail, () => shareGmail(record), 'Opening Gmail…');
+    const gmail = actionButton('Gmail', false);
+    wrap(gmail, () => shareGmail(record), 'Opening Gmail…', 'Opened Gmail.');
 
-    const pdf = actionButton('PDF', () => {}, false);
-    wrap(pdf, () => downloadPdf(record), 'Creating PDF…');
+    const pdf = actionButton('PDF', false);
+    wrap(pdf, () => downloadPdf(record), 'Creating PDF…', 'PDF downloaded.');
 
     controls.append(rebuild, whatsapp, gmail, pdf);
   }
 
   root.SynapMemoryActions = Object.freeze({
+    hasMemory,
     ready,
     canRebuild,
     title,
