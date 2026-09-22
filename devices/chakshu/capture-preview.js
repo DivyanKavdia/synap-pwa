@@ -620,19 +620,20 @@
       count = state.sdPendingCount ?? state.sdFiles?.length ?? 0,
       deviceId = root.SynapDevices?.connection?.deviceId || state.sdFilesDeviceId || state.devices?.[0]?.deviceId || '',
       last = root.SynapChakshuVoice?.lastOutcome?.(deviceId),
-      suffix = last?.message ? ' Last offline result: ' + last.message : '';
+      outcome = last?.message ? String(last.message).replace(/Chakshu SD/g, 'device storage').replace(/Chakshu/g, 'device') : '',
+      suffix = outcome ? ' Last offline result: ' + outcome : '';
     if (!panel) return;
     panel.hidden = !state.available;
     if (panel.hidden) return;
     if (text) {
       if (!state.connected)
-        text.textContent = 'Connect Chakshu to check or sync its SD card. Offline captures remain safely on the card.' + suffix;
+        text.textContent = 'Connect a device to review or sync content saved offline. Photos, videos and audio remain safely stored locally until sync.' + suffix;
       else if (!state.storageReady)
-        text.textContent = 'Chakshu connected · SD card unavailable. Choose Check SD after inserting or reseating the card.' + suffix;
+        text.textContent = 'Device connected · local storage unavailable. Check the device storage and try again.' + suffix;
       else
         text.textContent = (count
-          ? count + ' offline capture' + (count === 1 ? '' : 's') + ' waiting. Sync copies each item to Memories, verifies it, then removes the SD original.'
-          : 'SD card ready · no unsynced offline captures.') + suffix;
+          ? count + ' offline item' + (count === 1 ? '' : 's') + ' waiting. Sync copies each item to Memories, verifies it, then removes the local original.'
+          : 'Device storage ready · no unsynced offline content.') + suffix;
     }
     const blocked = busy || state.working || state.offline || Boolean(state.session);
     if (check) check.disabled = blocked || !state.connected || !state.mediaSupported;

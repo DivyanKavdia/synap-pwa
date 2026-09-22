@@ -608,12 +608,15 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(html, /id="libraryCheckSD"/);
   assert.match(html, /id="libraryBrowseSD"/);
   assert.match(html, /id="librarySyncSD"/);
-  assert.match(lifecycle, /Sync copies each item to Memories, verifies it, then removes the SD original/);
-  assert.match(lifecycle, /Connect Chakshu to check or sync its SD card/);
-  assert.match(lifecycle, /SD card unavailable\. Choose Check SD/);
+  assert.match(lifecycle, /Sync copies each item to Memories, verifies it, then removes the local original/);
+  assert.match(lifecycle, /Connect a device to review or sync content saved offline/);
+  assert.match(lifecycle, /Device connected · local storage unavailable/);
   assert.match(lifecycle, /libraryCheck\?\.addEventListener\('click'/);
   assert.match(lifecycle, /browseSD\('librarySDList'\)/);
   assert.match(lifecycle, /SynapChakshuVoice\?\.lastOutcome\?\.\(deviceId\)/);
   assert.match(lifecycle, /Last offline result:/);
+  assert.match(html, /Offline device storage/);
+  assert.match(html, /Check storage/);
+  assert.match(html, /View device content/);
   assert.match(html, /id="visualRecordSD"[^>]*disabled/);
 });

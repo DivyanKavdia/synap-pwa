@@ -1243,8 +1243,8 @@ body.synap-refresh #memoryWorkspace {
 /* Compact Synap brand lockup: S mark + word, without legacy wordmark sizing. */
 body.synap-refresh .topbar>.brand{display:inline-flex;align-items:center;gap:7px;width:max-content;max-width:none;min-width:0}
 body.synap-refresh .topbar .brand-logo.synap-brand-image{width:24px!important;height:34px!important;max-width:24px!important;object-fit:contain!important}
-body.synap-refresh .topbar .brand-name{display:block;font-size:22px;line-height:1;font-weight:760;letter-spacing:-.65px;color:var(--ink)}
+body.synap-refresh .topbar .brand-name{display:block;font-size:26.4px;line-height:1;font-weight:760;letter-spacing:-.72px;color:var(--ink)}
 @media(max-width:640px){
  body.synap-refresh .topbar .brand-logo.synap-brand-image{width:22px!important;height:31px!important;max-width:22px!important}
- body.synap-refresh .topbar .brand-name{font-size:20px}
+ body.synap-refresh .topbar .brand-name{font-size:24px}
 }
