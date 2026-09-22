@@ -119,9 +119,13 @@ async function run() {
           'no save bar for unchanged preferences',
         );
         const firstCard = await page.locator('.settings-device-card').boundingBox();
-        assert(firstCard.y < 220, `device controls start near the header: ${firstCard.y}px`);
-        const notification = await page.locator('#recordingNotificationInput').boundingBox();
         const settingsViewport = await page.locator('#settingsDialog').boundingBox();
+        const firstCardGap = firstCard.y - settingsViewport.y;
+        assert(
+          firstCardGap < 140,
+          `device controls stay near the Settings header: ${firstCardGap}px gap`,
+        );
+        const notification = await page.locator('#recordingNotificationInput').boundingBox();
         assert(
           notification.y + notification.height < settingsViewport.y + settingsViewport.height,
           'all listening preferences fit without scrolling',
