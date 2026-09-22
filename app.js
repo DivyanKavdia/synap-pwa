@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell159-memory-info";
+  const APP_SHELL_REVISION = "1.0.0-shell160-background-storage";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -239,6 +239,7 @@
   let waveformPalette = null;
   let databasePromise = null;
   let currentRecordingId = null;
+  let backgroundStorageDeferred = false;
   let openingCapture = null;
   let openingPackets = [];
   let persistenceRequested = false;
@@ -344,10 +345,32 @@
   }
 
   function handleStorageError(error) {
+    if (error?.code === "storage_transaction_aborted") {
+      if (!backgroundStorageDeferred) {
+        log("Chunk storage deferred until foreground", {
+          recordingId: currentRecordingId,
+          visibility: document.visibilityState,
+          message: error.message
+        });
+      }
+      backgroundStorageDeferred = true;
+      return;
+    }
     log("Chunk storage failed", friendlyError(error, "IndexedDB"));
     unsavedAudio = true;
     toast("Chunk storage failed. Stopping; use Settings to retry saving or export recovery audio.", "error");
     if (appState === "recording" || appState === "starting") stopRecording();
+  }
+
+  async function resumeDeferredStorage() {
+    if (!backgroundStorageDeferred || !journal || !currentRecordingId) return;
+    try {
+      await journal.flush();
+      backgroundStorageDeferred = false;
+      log("Chunk storage resumed after foreground", { recordingId: currentRecordingId });
+    } catch (error) {
+      handleStorageError(error);
+    }
   }
 
   // Application state and UI
@@ -871,6 +894,9 @@
       syncRememberedMonitoring();
       foregroundAt = performance.now();
       window.dispatchEvent(new CustomEvent('synap-recording-foreground'));
+      void resumeDeferredStorage().finally(function () {
+        if (settings.autoProcess) void processor?.resume();
+      });
       restoreBackgroundRecording();
       recoverRememberedConnection("foreground", true);
     });
@@ -4553,7 +4579,7 @@
     globalThis.SynapMoments?.configure({store:journal,context:()=>({active:recordingConfirmed&&appState==='recording'&&!recordingReconnectPending,recordingId:currentRecordingId,offsetMs:journal.timelineOffsetMs(currentRecordingId)})});
     const recovered = await journal.recover();
     ui.appVersion.textContent = APP_VERSION;
-    processor = new globalThis.DKFIFOProcessor(journal, {settings:()=>settings,canRun:()=>!firmwareBusy&&!libraryMutationActive,onDiagnostic:log,onChange:function (message) {
+    processor = new globalThis.DKFIFOProcessor(journal, {settings:()=>settings,canRun:()=>!firmwareBusy&&!libraryMutationActive&&document.visibilityState==="visible",onDiagnostic:log,onChange:function (message) {
       ui.queueStatus.textContent=message;log("FIFO",message);
       if (message === "Queue complete") renderRecordings();
     }});
