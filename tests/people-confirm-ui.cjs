@@ -17,6 +17,7 @@ assert.match(source,/if\s*\(!button\s*\|\|\s*button\.type\s*===\s*'submit'\)\s*r
 const backendClient = fs.readFileSync(path.join(root, 'synap-backend.js'), 'utf8');
 const speakerNamesClient = fs.readFileSync(path.join(root, 'speaker-names.js'), 'utf8');
 const backendIds = fs.readFileSync(path.join(root, 'backend/src/util/ids.ts'), 'utf8');
+const brainRoute = fs.readFileSync(path.join(root, 'backend/src/http/routes/brain.ts'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 
 const context = {
@@ -120,6 +121,9 @@ assert.match(source,/refreshed_recording_ids/,'person rename response must drive
 assert.match(source,/SynapCloudHistory\.restoreRecording\(id, true\)/,'affected recordings must be rehydrated from canonical cloud data');
 assert.match(source,/synap-transcript-updated/,'person rename must notify transcript surfaces');
 assert.match(source,/Saving name & refreshing transcripts/,'rename UI must describe the durable refresh');
+assert.match(brainRoute,/listRecordingsForPerson\(uid, personId\)/,'modern transcript refresh must scope by canonical person identity');
+assert.match(brainRoute,/renameSpeakerIdentity\(current, previousName, nextName\)/,'person rename must update stored speaker mappings');
+assert.match(brainRoute,/refreshed_recording_ids: refreshedRecordingIds/,'backend must return the recordings the client should rehydrate');
 // Correcting a name is the whole mechanism. This control must never start
 // capturing a voice sample, which would turn a UI tweak into the collection of
 // biometric data — a decision that belongs to a spec review, not to this file.
