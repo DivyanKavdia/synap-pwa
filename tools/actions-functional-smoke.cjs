@@ -493,7 +493,7 @@ async function run() {
         qa.hold = 'ask';
       });
       await page.locator('#askForm button[type="submit"]').tap();
-      await page.clock.runFor(20001);
+      await page.clock.runFor(35001);
       await page.getByRole('button', { name: 'Retry search', exact: true }).waitFor();
       assert(
         await page.locator('#askInput').isEnabled(),
