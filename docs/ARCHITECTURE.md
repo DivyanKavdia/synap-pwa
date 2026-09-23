@@ -160,3 +160,7 @@ CI can prove protocol contracts, source generation, browser workflows, cloud sta
 - battery/power behavior on a physical unit.
 
 Those remain explicit device acceptance tests.
+
+### Chakshu low-power indicator ownership
+
+Only the external D4 / GPIO5 NeoPixel is a Synap status indicator. GPIO21 belongs to the Sense SD path; because the board's active-low orange USER_LED is electrically tied to that line, visible orange flashes are treated as SD bus activity, not product status. Background SD discovery is bounded to one automatic catalogue read per BLE connection to reduce both SPI traffic and incidental orange LED activity.

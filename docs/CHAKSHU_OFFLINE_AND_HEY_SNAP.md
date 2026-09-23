@@ -311,3 +311,9 @@ Run these criteria on production firmware build 1409 or a later verified OTA bui
 | PWA: `devices/chakshu/media.js` | Connected capture, catalogue discovery/state |
 | PWA: `devices/chakshu/capture-preview.js` | Digest-verified SD sync |
 | PWA: `devices/chakshu/library.js` | Unsynced inbox + shared Library surface |
+
+### LED and SD power behavior
+
+Chakshu intentionally uses only the external NeoPixel on D4 / GPIO5 for semantic status. The NeoPixel is dark while disconnected and connected-idle and uses only very short, dim pulses for active capture, OTA/error and low-battery cues.
+
+The XIAO ESP32-S3 orange USER_LED is electrically shared with GPIO21, which is also the Sense microSD chip-select. SD access can therefore flash the orange LED even though Synap never drives it as a status indicator. The PWA limits automatic SD catalogue discovery to one read per BLE connection; reconnecting or choosing **Check storage** explicitly allows another read.

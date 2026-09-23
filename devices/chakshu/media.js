@@ -549,12 +549,11 @@
   }
   let offlineTimer, autoSyncTimer, autoSyncPromise;
   /*
-   * One catalogue probe per connection is allowed while the readiness mask says
-   * the card is missing, because a catalogue is what makes firmware re-detect
-   * it. Repeating it is not. An unmounted card answers "SD file unavailable"
-   * after about 4.6 seconds, and module-changed re-arms the sweep roughly every
-   * 15, so a third of the shared media queue goes on re-asking a question the
-   * device already answered. That is the contention that cost us the audio
+   * Exactly one automatic catalogue probe is allowed per connection, whether
+   * storage is ready or missing. GPIO21 is both SD chip-select and the XIAO's
+   * active-low orange USER_LED, so redundant catalogues cause visible LED
+   * flicker and unnecessary SPI power. A reconnect or explicit Check SD card
+   * re-arms discovery. That is the contention that cost us the audio
    * transport once already.
    *
    * The probe is forgotten whenever the card could plausibly have changed: a
@@ -564,12 +563,8 @@
   function forgetSDProbe() {
     sdProbe = { deviceId: '', attempted: false };
   }
-  /** False once firmware has told us, this connection, that there is no card. */
+  /** One automatic catalogue per BLE connection. Explicit Check SD can re-arm it. */
   function sdWorthCataloguing(deviceId) {
-    if (capabilities.ready(moduleInfo(), 'sd')) {
-      forgetSDProbe();
-      return true;
-    }
     if (sdProbe.attempted && sdProbe.deviceId === deviceId) return false;
     sdProbe = { deviceId, attempted: true };
     return true;

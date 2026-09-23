@@ -541,14 +541,13 @@ test('device voice media sync discovers SD media and only explicit verified sync
   assert.match(verifiedMove,/localStorage\.setItem\(key, JSON\.stringify\(receipt\)\)[\s\S]*await deleteSyncedSet\(path\)/);
   assert.match(voice,/Firmware owns capture/);
   assert.match(media,/if \(next && !wifi\?\.active\) schedulePendingSync\(1200\)/);
-  // An unmounted card answers "SD card unavailable" after ~4.6s on the shared
-  // media queue, and module-changed re-arms the sweep every ~15s. One probe per
-  // connection still lets a catalogue trigger firmware re-detection; a loop
-  // would spend a third of the queue re-asking an answered question.
+  // GPIO21 is both SD CS and the active-low orange USER_LED. One automatic
+  // catalogue per connection still discovers offline captures while preventing
+  // module refreshes from repeatedly flashing the board LED and waking SPI.
   assert.match(sync,/if \(!sdWorthCataloguing\(deviceId\)\) return 0;/);
   const probe=media.slice(media.indexOf('function sdWorthCataloguing'),media.indexOf('function schedulePendingSync'));
-  assert.match(probe,/capabilities\.ready\(moduleInfo\(\), 'sd'\)/);
   assert.match(probe,/sdProbe\.attempted && sdProbe\.deviceId === deviceId\) return false/);
+  assert.doesNotMatch(probe,/capabilities\.ready/,'ready storage must not re-arm repeated automatic catalogues');
   // The probe must be forgotten wherever the card could have changed, or a
   // reseated card would stay invisible for the rest of the session.
   assert.match(media,/forgetSDProbe\(\);\s*\n\s*try \{/,'Check SD card clears the probe');
