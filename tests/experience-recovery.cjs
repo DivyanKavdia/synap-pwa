@@ -31,6 +31,8 @@ assert.match(runtime, /cloudFallback\(audio, id\)/);
 // Opening a recording must hydrate from the authoritative source, not treat any
 // non-empty local transcript as proof that the transcript is complete.
 assert.match(runtime, /\/source/);
+assert.match(runtime, /\/memory/);
+assert.match(runtime, /completed-memory fallback/);
 assert.match(runtime, /transcriptComplete/);
 assert.match(materialize, /coversEveryWindow/);
 assert.match(materialize, /source: 'segments'/);
