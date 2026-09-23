@@ -53,6 +53,13 @@ test('missing background callbacks replay from the last complete frame on the sa
   t.frame(42);assert.equal(t.c.document.body.dataset.audioDelivery,'receiving');
 });
 
+test('foreground audio stall replays without rewriting the existing notification subscription',async()=>{
+  const t=activity();t.advance(5000);t.c.updateTimer();await t.done();
+  assert.deepEqual(t.calls.replay,[41]);
+  assert.equal(t.calls.subscribe,0,'foreground recovery must not rewrite the live CCCD');
+  assert.equal(t.calls.stop,0);
+});
+
 test('a new live packet before the visibility event cannot move the recovery boundary past the gap',async()=>{
   const t=activity();t.hide();t.advance(3000);t.frame(101);t.frame(102);t.show();await t.done();
   assert.deepEqual(t.calls.replay,[41]);

@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell162-ask-processing-fix";
+  const APP_SHELL_REVISION = "1.0.0-shell163-bluefy-recovery";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -142,6 +142,7 @@
   let needsDeviceSelection = false;
   let reconnectSelectionRequired = false;
   let rapidNativeLinkFailures = 0;
+  let rememberedHandleRefreshAttempted = false;
   // Session-local fallback for a pendant whose optional discovery broke setup.
   // Reloading retries full discovery; changing devices never inherits this mode.
   const audioOnlyConnections = new Set();
@@ -1011,12 +1012,17 @@
       try {
         await journal?.flush();
         if (!ownsRecovery()) return;
-        // Reattach only after missing-audio evidence, never on a healthy app switch.
-        await queueGattOperation(() => {
-          if (!ownsRecovery()) throw new DOMException("Recording changed.", "AbortError");
-          return target.startNotifications();
-        }, "Restore background audio notifications");
-        if (!ownsRecovery()) return;
+        // A visible foreground stall already owns a live CCCD subscription.
+        // Re-subscribing there adds a native GATT write exactly when Bluefy is
+        // congested. Background recovery may genuinely need the subscription
+        // restored after iOS suspended callback delivery.
+        if (!checkpoint.foreground) {
+          await queueGattOperation(() => {
+            if (!ownsRecovery()) throw new DOMException("Recording changed.", "AbortError");
+            return target.startNotifications();
+          }, "Restore background audio notifications");
+          if (!ownsRecovery()) return;
+        }
         const replayed = await globalThis.SynapDisconnectProtection?.replay?.(checkpoint.lastSequence ?? 0xffff, ownsRecovery);
         log(checkpoint.foreground ? "Foreground audio recovery" : "Background audio recovery", { replayed: Boolean(replayed), sequence: checkpoint.lastSequence,
           capacityMs: globalThis.SynapDisconnectProtection?.capacityMs() || 0 });
@@ -1119,7 +1125,11 @@
 
     if (connectInProgress || finalizing) return;
     if (autoReconnect && reconnectSelectionRequired) return;
-    if (!autoReconnect) { reconnectSelectionRequired = false; rapidNativeLinkFailures = 0; }
+    if (!autoReconnect) {
+      reconnectSelectionRequired = false;
+      rapidNativeLinkFailures = 0;
+      rememberedHandleRefreshAttempted = false;
+    }
     if (autoReconnect && !bluetoothDevice) {
       setAppState("disconnected", "Select a pendant once to grant Bluetooth permission.");
       return; // Never invoke a permission chooser from a lifecycle event or timer.
@@ -1413,6 +1423,7 @@
       }
       setupSucceeded = true;
       rapidNativeLinkFailures = 0;
+      rememberedHandleRefreshAttempted = false;
     } catch (error) {
       const message = friendlyError(error);
       if (probingExtras && setupDevice && !resumingRecording &&
@@ -1425,19 +1436,41 @@
         nativeReason: error?.nativeReason ?? (typeof error === "number" ? error : undefined), audioOnly });
       log("Connection failed", message);
       needsDeviceSelection = Boolean(bluetoothDevice) || needsDeviceSelection;
-      // Bluefy can repeatedly reject a remembered handle with numeric code 2
-      // before GATT discovery. Do not infer its native cause or loop indefinitely.
-      // Active recording recovery keeps its existing grace period and backoff.
-      const immediateNativeRejection = autoReconnect && !resumingRecording && setupStage === "Bluetooth link" &&
-        (error === 2 || error?.code === 2) && performance.now() - setupStartedAt < 1000;
+      // Bluefy exposes native failures either as code or nativeReason. Two rapid
+      // code-2 failures mean the permitted BluetoothDevice wrapper is stale.
+      // Refresh it once through getDevices() without a chooser; if that fresh
+      // wrapper also fails, stop the retry loop and ask for explicit reselection.
+      const nativeCode =
+        typeof error === "number" ? error :
+        typeof error?.nativeReason === "number" ? error.nativeReason :
+        typeof error?.nativeReason?.value === "number" ? error.nativeReason.value :
+        typeof error?.code === "number" ? error.code : null;
+      const immediateNativeRejection = autoReconnect && setupStage === "Bluetooth link" &&
+        nativeCode === 2 && performance.now() - setupStartedAt < 1500;
       rapidNativeLinkFailures = immediateNativeRejection ? rapidNativeLinkFailures + 1 : 0;
-      if (rapidNativeLinkFailures >= 2) {
+      const refreshRememberedHandle = rapidNativeLinkFailures >= 2 &&
+        !rememberedHandleRefreshAttempted &&
+        typeof navigator.bluetooth?.getDevices === "function";
+      if (refreshRememberedHandle) {
+        rememberedHandleRefreshAttempted = true;
+        rapidNativeLinkFailures = 0;
+        clearReconnectTimer(false);
+        stopRememberedMonitoring();
+        log("Refreshing stale remembered Bluetooth handle", {
+          recordingResume: resumingRecording,
+          nativeReason: nativeCode
+        });
+      } else if (rapidNativeLinkFailures >= 2) {
         reconnectSelectionRequired = true;
         clearReconnectTimer(false);
         stopRememberedMonitoring();
       }
       if (isGattConnected()) disconnectGatt("Connection setup failed: " + message);
       cleanupCharacteristics();
+      if (refreshRememberedHandle) {
+        attachBluetoothDevice(null);
+        window.setTimeout(() => recoverRememberedConnection("stale-native-handle", true), 250);
+      }
       setAppState("disconnected", recordingReconnectPending
         ? "Connection is still unavailable. The current recording remains preserved for reconnect."
         : "Could not connect at " + setupStage + ": " + message);

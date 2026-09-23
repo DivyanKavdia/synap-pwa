@@ -145,3 +145,8 @@ Record exact PWA shell + installed firmware build and verify:
 - verified sync and source deletion;
 - transcript → memory → Ask provenance;
 - OTA target validation.
+
+
+### Bluefy/iOS recording recovery
+
+Foreground audio-stall recovery reuses the existing audio notification subscription and requests buffered replay directly. It does not rewrite the CCCD while the live Bluefy link is congested. After repeated immediate native Bluetooth reason-2 failures, Synap recognizes the permitted device wrapper as stale, refreshes it once through `navigator.bluetooth.getDevices()` without opening a chooser, and only then falls back to explicit device reselection if the refreshed handle also fails. The recording journal remains preserved throughout the reconnect grace period.
