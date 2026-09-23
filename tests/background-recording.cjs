@@ -211,8 +211,8 @@ test('pendant Stop freezes the clock once while repeated drain acknowledgements 
 
 test('foreground audio loss gets one bounded replay attempt without restarting capture',async()=>{
   const t=activity();t.advance(4100);t.c.updateTimer();await t.done();
-  assert.deepEqual(t.calls.replay,[41]);assert.equal(t.calls.subscribe,1);assert.equal(t.calls.stop,0);
-  t.advance(4000);t.c.updateTimer();await t.done();assert.equal(t.calls.subscribe,1);
+  assert.deepEqual(t.calls.replay,[41]);assert.equal(t.calls.subscribe,0);assert.equal(t.calls.stop,0);
+  t.advance(4000);t.c.updateTimer();await t.done();assert.equal(t.calls.subscribe,0);
   t.advance(4000);t.c.updateTimer();assert.equal(t.calls.stop,1);
 });
 
@@ -229,10 +229,16 @@ test('a pending replay cannot suppress the foreground missing-audio deadline',as
   assert.equal(t.calls.stop,1);
 });
 
-test('Stop cancels a queued foreground repair before it can touch the new recording',async()=>{
-  const t=activity(),jobs=[];
-  t.c.queueGattOperation=fn=>new Promise((resolve,reject)=>jobs.push(()=>Promise.resolve().then(fn).then(resolve,reject)));
+test('Stop invalidates a pending foreground replay before its result can touch recording state',async()=>{
+  const t=activity();let finish;
+  t.c.SynapDisconnectProtection.replay=(sequence,valid)=>{
+    t.calls.replay.push(sequence);
+    return new Promise(resolve=>{finish=()=>resolve(valid());});
+  };
   t.advance(4100);t.c.updateTimer();await settle();
-  t.c.recordingStopRequested=true;t.c.appState='stopping';await jobs.shift()();await t.done();
-  assert.equal(t.calls.subscribe,0);assert.deepEqual(t.calls.replay,[]);
+  assert.deepEqual(t.calls.replay,[41]);assert.equal(t.calls.subscribe,0);
+  t.c.recordingStopRequested=true;t.c.appState='stopping';
+  finish();await t.done();
+  assert.equal(t.c.appState,'stopping');assert.equal(t.calls.subscribe,0);
+  assert.equal(t.c.currentRecordingId,'same-take');
 });
