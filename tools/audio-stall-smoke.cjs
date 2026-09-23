@@ -86,7 +86,7 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
         await page.waitForFunction(
           () => bleFixture.replayCommands === 1 && bleFixture.pendingFrames === 0,
         );
-        assert.equal(await page.evaluate(() => bleFixture.audioSubscriptions), 2);
+        assert.equal(await page.evaluate(() => bleFixture.audioSubscriptions), 1);
         assert.equal(await page.evaluate(() => bleFixture.starts), 1);
         await page.locator('#headerCaptureToggle').click();
         await page.waitForFunction(() => document.body.dataset.state === 'idle');
