@@ -175,11 +175,25 @@
         // deployment which predates the authoritative /source route. The
         // completed-memory route already carries the sealed transcript, so use
         // it without restarting transcription or processing.
-        const memory = await json('/v1/recordings/' + encodeURIComponent(id) + '/memory');
-        source = Object.assign({ state: 'ready', transcript_complete: true }, memory);
-        if (root.console && root.console.info) root.console.info('[synap source] used completed-memory fallback', {
-          recordingId: id, sourceStatus: sourceError && sourceError.status || null
-        });
+        try {
+          const memory = await json('/v1/recordings/' + encodeURIComponent(id) + '/memory');
+          source = Object.assign({ state: 'ready', transcript_complete: true }, memory);
+          if (root.console && root.console.info) root.console.info('[synap source] used completed-memory fallback', {
+            recordingId: id, sourceStatus: sourceError && sourceError.status || null
+          });
+        } catch (memoryError) {
+          // A transient network/auth refresh failure must not hide words that
+          // are already durable in the local recording journal.
+          if (String(recording?.transcript || '').trim()) {
+            if (root.console && root.console.info) root.console.info('[synap source] showing saved local transcript', {
+              recordingId: id,
+              sourceStatus: sourceError && sourceError.status || null,
+              memoryStatus: memoryError && memoryError.status || null
+            });
+            return [null, recording];
+          }
+          throw memoryError;
+        }
       }
       return [source, await saveSource(id, source)];
     })
