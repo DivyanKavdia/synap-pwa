@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell163-bluefy-recovery";
+  const APP_SHELL_REVISION = "1.0.0-shell164-source-recovery";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -1436,10 +1436,10 @@
         nativeReason: error?.nativeReason ?? (typeof error === "number" ? error : undefined), audioOnly });
       log("Connection failed", message);
       needsDeviceSelection = Boolean(bluetoothDevice) || needsDeviceSelection;
-      // Bluefy exposes native failures either as code or nativeReason. Two rapid
-      // code-2 failures mean the permitted BluetoothDevice wrapper is stale.
-      // Refresh it once through getDevices() without a chooser; if that fresh
-      // wrapper also fails, stop the retry loop and ask for explicit reselection.
+      // Bluefy can keep returning the same invalid permitted wrapper from
+      // getDevices(). After two immediate native reason-2 failures, stop the
+      // automatic loop and require one explicit chooser-backed reselection.
+      // Recording recovery remains journaled while the user reselects.
       const nativeCode =
         typeof error === "number" ? error :
         typeof error?.nativeReason === "number" ? error.nativeReason :
@@ -1448,29 +1448,18 @@
       const immediateNativeRejection = autoReconnect && setupStage === "Bluetooth link" &&
         nativeCode === 2 && performance.now() - setupStartedAt < 1500;
       rapidNativeLinkFailures = immediateNativeRejection ? rapidNativeLinkFailures + 1 : 0;
-      const refreshRememberedHandle = rapidNativeLinkFailures >= 2 &&
-        !rememberedHandleRefreshAttempted &&
-        typeof navigator.bluetooth?.getDevices === "function";
-      if (refreshRememberedHandle) {
+      if (rapidNativeLinkFailures >= 2) {
+        reconnectSelectionRequired = true;
         rememberedHandleRefreshAttempted = true;
-        rapidNativeLinkFailures = 0;
         clearReconnectTimer(false);
         stopRememberedMonitoring();
-        log("Refreshing stale remembered Bluetooth handle", {
+        log("Saved Bluefy handle rejected; explicit reselection required", {
           recordingResume: resumingRecording,
           nativeReason: nativeCode
         });
-      } else if (rapidNativeLinkFailures >= 2) {
-        reconnectSelectionRequired = true;
-        clearReconnectTimer(false);
-        stopRememberedMonitoring();
       }
       if (isGattConnected()) disconnectGatt("Connection setup failed: " + message);
       cleanupCharacteristics();
-      if (refreshRememberedHandle) {
-        attachBluetoothDevice(null);
-        window.setTimeout(() => recoverRememberedConnection("stale-native-handle", true), 250);
-      }
       setAppState("disconnected", recordingReconnectPending
         ? "Connection is still unavailable. The current recording remains preserved for reconnect."
         : "Could not connect at " + setupStage + ": " + message);
