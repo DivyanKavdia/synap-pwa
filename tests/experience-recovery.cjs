@@ -33,6 +33,7 @@ assert.match(runtime, /cloudFallback\(audio, id\)/);
 assert.match(runtime, /\/source/);
 assert.match(runtime, /\/memory/);
 assert.match(runtime, /completed-memory fallback/);
+assert.match(runtime, /showing saved local transcript/);
 assert.match(runtime, /transcriptComplete/);
 assert.match(materialize, /coversEveryWindow/);
 assert.match(materialize, /source: 'segments'/);
