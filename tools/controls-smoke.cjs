@@ -258,6 +258,9 @@ const waitState = (page, state) =>
       assert.deepEqual(legacy.audio, [1, 2, 3]);
       await page.locator('#headerCaptureToggle').tap();
       await waitState(page, 'recording');
+      await page.waitForFunction(
+        () => bleFixture.captured >= 4 && SynapAppControls.recordingState().receivedMs >= 100,
+      );
       await page.locator('#headerCaptureToggle').tap();
       await waitState(page, 'idle');
       assert.deepEqual(t.errors, []);
