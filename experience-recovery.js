@@ -167,7 +167,20 @@
 
     var task = openJournal().then(journal => journal.get('recordings', id)).then(async recording => {
       if (recording?.localOnly) return [null, recording];
-      const source = await json('/v1/recordings/' + encodeURIComponent(id) + '/source');
+      let source;
+      try {
+        source = await json('/v1/recordings/' + encodeURIComponent(id) + '/source');
+      } catch (sourceError) {
+        // Compatibility fallback for a PWA that reaches an older Synap Cloud
+        // deployment which predates the authoritative /source route. The
+        // completed-memory route already carries the sealed transcript, so use
+        // it without restarting transcription or processing.
+        const memory = await json('/v1/recordings/' + encodeURIComponent(id) + '/memory');
+        source = Object.assign({ state: 'ready', transcript_complete: true }, memory);
+        if (root.console && root.console.info) root.console.info('[synap source] used completed-memory fallback', {
+          recordingId: id, sourceStatus: sourceError && sourceError.status || null
+        });
+      }
       return [source, await saveSource(id, source)];
     })
       .then(function (values) {
