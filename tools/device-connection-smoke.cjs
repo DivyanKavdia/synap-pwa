@@ -17,11 +17,15 @@ const server = createStaticServer(process.env.SYNAP_UI_ROOT || path.resolve(__di
       page.on('pageerror', error => errors.push(error.message));
       await page.goto(origin + '/?native-link-reject&inventory&ota');
       await page.waitForFunction(() => document.querySelector('#reconnectStatus')?.textContent.includes('tap Reselect pendant'));
-      assert.equal(await page.evaluate(() => Number(sessionStorage.getItem('qa-connects'))), 2);
+      assert.equal(
+        await page.evaluate(() => Number(sessionStorage.getItem('qa-connects'))),
+        4,
+        'two stale-wrapper attempts plus two chooser-free refreshed-wrapper attempts stay bounded',
+      );
       assert.equal(await page.evaluate(() => bleFixture.appDisconnects), 0, 'settled native rejection does not need another disconnect');
       await page.evaluate(() => { bleFixture.hide(); bleFixture.show(); });
       await page.waitForTimeout(3200);
-      assert.equal(await page.evaluate(() => Number(sessionStorage.getItem('qa-connects'))), 2, 'foreground cannot restart the unusable-handle loop');
+      assert.equal(await page.evaluate(() => Number(sessionStorage.getItem('qa-connects'))), 4, 'foreground cannot restart the unusable-handle loop');
       assert.equal(await page.evaluate(() => Number(sessionStorage.getItem('qa-pickers'))), 0, 'automatic recovery never opens a chooser');
       await page.locator('#headerPendantStatus').click();
       await page.waitForFunction(() => document.body.dataset.state === 'idle');

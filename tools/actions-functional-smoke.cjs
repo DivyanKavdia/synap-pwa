@@ -493,16 +493,20 @@ async function run() {
         qa.hold = 'ask';
       });
       await page.locator('#askForm button[type="submit"]').tap();
-      await page.clock.runFor(20001);
-      await page.getByRole('button', { name: 'Retry search', exact: true }).waitFor();
+      await page.clock.runFor(35001);
+      await page.waitForFunction(() =>
+        document.querySelector('.ask-search-meta')?.textContent.includes(
+          'Synap Cloud is temporarily unavailable',
+        ),
+      );
       assert(
         await page.locator('#askInput').isEnabled(),
-        'a stalled Ask request cannot lock the form',
+        'a stalled Ask request falls back locally and cannot lock the form',
       );
       await page.evaluate(() => {
         qa.hold = '';
       });
-      await page.getByRole('button', { name: 'Retry search', exact: true }).tap();
+      await page.locator('#askForm button[type="submit"]').tap();
       await page.locator('.ask-source').waitFor();
       assert.match(await page.locator('.ask-answer-text').innerText(), /budget was reviewed/);
       const scoped = await page.evaluate(() => ({ request: JSON.parse(qa.calls.filter(x => x.url === '/v1/ask').at(-1).body), day: document.getElementById('datePicker').value }));
@@ -536,8 +540,11 @@ async function run() {
         qa.fail = 'ask';
       });
       await page.locator('#askForm button[type="submit"]').tap();
-      await page.getByRole('button', { name: 'Search this device', exact: true }).tap();
-      await page.getByText(/Local recall.*Matches from saved memories/).waitFor();
+      await page.waitForFunction(() =>
+        document.querySelector('.ask-search-meta')?.textContent.includes(
+          'Synap Cloud is temporarily unavailable',
+        ),
+      );
       assert.match(await page.locator('#askAnswer').innerText(), /Budget reviewed/);
       // A cloud-only source must either open or offer a visible retry.
       await page.evaluate(() => {
