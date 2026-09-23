@@ -45,7 +45,7 @@ async function connectionTest({fail=false,native2=false,reselect=false,auto=fals
   const calls=[],characteristic=name=>({addEventListener(){},async startNotifications(){calls.push(name+' notify');}}),audio=characteristic('audio'),control=characteristic('control');
   const device={id:'known',name:'synap-Chakshu',gatt:{connected:false,async connect(){calls.push('connect');if(native2)throw Object.assign(new Error('Operation failed (code 2).'),{nativeReason:2});if(fail)throw new Error('timeout');this.connected=true;return this;},disconnect(){this.connected=false;},async getPrimaryService(){return{async getCharacteristic(id){return id==='audio'?audio:control;}};}}};
   const c={stopRememberedMonitoring(){},syncRememberedMonitoring(){},rememberDeviceAssociation(){},console,Boolean,Error,checkFirmwareRelease:null,connectInProgress:false,finalizing:false,audioOnlyConnections:new Set(),needsDeviceSelection:reselect,bluetoothDevice:missing?null:device,manualDisconnect:false,reconnectSelectionRequired:false,rapidNativeLinkFailures:0,rememberedHandleRefreshAttempted:false,connectionEpoch:0,gattServer:null,recordingReconnectPending:false,
-    navigator:{bluetooth:{getDevices:async()=>[device],requestDevice(){calls.push('chooser');return cancel?Promise.reject(Object.assign(new Error('cancel'),{name:'NotFoundError'})):Promise.resolve(device);}}},SERVICE_UUID:'service',AUDIO_CHAR_UUID:'audio',CONTROL_CHAR_UUID:'control',CMD_STOP:0,CMD_GET_STATUS:2,DEVICE_STATE:{CONNECTED_IDLE:1,STREAMING:2,ERROR:3},deviceStatus:{state:orphan?2:1,error:0},clearReconnectTimer(){},setReconnectCapability(){},setAppState(s){c.state=s;},log(label,detail){if(label==='Refreshing stale remembered Bluetooth handle')calls.push('refresh-handle');},toast(){},cleanupCharacteristics(){c.connectionEpoch++;},attachBluetoothDevice(d){c.bluetoothDevice=d;},withTimeout:p=>p,isGattConnected:()=>Boolean(c.bluetoothDevice?.gatt.connected),queueGattOperation:f=>f(),handleAudioNotification(){},handleStatusNotification(){},delay:async()=>{},writeCommand:async cmd=>{calls.push('command '+cmd);if(cmd===0)c.deviceStatus.state=1;},readControlStatus:async()=>true,reconnectAttempts:0,localStorage:{setItem(){}},friendlyError:e=>e.message,scheduleAutoReconnect(){calls.push('retry');},recoverRememberedConnection:async()=>calls.push('refresh-connect')};
+    navigator:{bluetooth:{getDevices:async()=>[device],requestDevice(){calls.push('chooser');return cancel?Promise.reject(Object.assign(new Error('cancel'),{name:'NotFoundError'})):Promise.resolve(device);}}},SERVICE_UUID:'service',AUDIO_CHAR_UUID:'audio',CONTROL_CHAR_UUID:'control',CMD_STOP:0,CMD_GET_STATUS:2,DEVICE_STATE:{CONNECTED_IDLE:1,STREAMING:2,ERROR:3},deviceStatus:{state:orphan?2:1,error:0},clearReconnectTimer(){},setReconnectCapability(){},setAppState(s){c.state=s;},log(label,detail){if(label==='Saved Bluefy handle rejected; explicit reselection required')calls.push('reselect-required');},toast(){},cleanupCharacteristics(){c.connectionEpoch++;},attachBluetoothDevice(d){c.bluetoothDevice=d;},withTimeout:p=>p,isGattConnected:()=>Boolean(c.bluetoothDevice?.gatt.connected),queueGattOperation:f=>f(),handleAudioNotification(){},handleStatusNotification(){},delay:async()=>{},writeCommand:async cmd=>{calls.push('command '+cmd);if(cmd===0)c.deviceStatus.state=1;},readControlStatus:async()=>true,reconnectAttempts:0,localStorage:{setItem(){}},friendlyError:e=>e.message,scheduleAutoReconnect(){calls.push('retry');},recoverRememberedConnection:async()=>calls.push('refresh-connect')};
   c.document={body:{dataset:{}},visibilityState:'visible'};c.window={setTimeout(fn){calls.push('refresh-timer');fn();return 1;}};c.reconnectRequested=()=>true;c.reconnectPageHidden=false;
   c.ui={settingsDialog:{open:false}};
   c.disconnectGatt=(reason,d=c.bluetoothDevice)=>d?.gatt.disconnect();
@@ -68,7 +68,7 @@ async function workerTests(){
   async function fetch(url,mode='navigate',method='GET'){let result;handlers.fetch({request:{url,mode,method},respondWith:p=>result=p});return result;}
   assert.equal(await fetch(scope+'?from=home'),'./index.html');
   let reply;handlers.message({data:{type:'GET_VERSION'},source:{postMessage:d=>reply=d}});
-  assert.equal(reply.type,'APP_VERSION');assert.equal(reply.version,'1.0.0');assert.equal(reply.release,'1.0.0');assert.equal(reply.revision,'1.0.0-audio6');assert.equal(reply.shellRevision,'1.0.0-shell163-bluefy-recovery');
+  assert.equal(reply.type,'APP_VERSION');assert.equal(reply.version,'1.0.0');assert.equal(reply.release,'1.0.0');assert.equal(reply.revision,'1.0.0-audio6');assert.equal(reply.shellRevision,'1.0.0-shell164-source-recovery');
 }
 
 (async()=>{
@@ -78,8 +78,9 @@ async function workerTests(){
   for(const options of [{},{reselect:true},{auto:true},{auto:true,hidden:true},{orphan:true},{fail:true,auto:true},{reselect:true,cancel:true},{fail:true},{auto:true,missing:true}])await connectionTest(options);
   const native=await connectionTest({native2:true,auto:true});
   await native.c.connectPendant({autoReconnect:true,silent:true,recoveryAttempt:true});
-  assert(native.calls.includes('refresh-handle'),'nativeReason 2 must be recognized as a stale Bluefy handle');
-  assert(native.calls.includes('refresh-connect'),'stale permitted handle gets one chooser-free refresh');
+  assert(native.calls.includes('reselect-required'),'nativeReason 2 must stop automatic Bluefy retries after the second rapid failure');
+  assert.equal(native.c.reconnectSelectionRequired,true,'stale Bluefy handle must require explicit reselection');
+  assert(!native.calls.includes('refresh-connect'),'stale permitted handle must not be recycled through getDevices');
   await workerTests();
   console.log('PASS: reconnect, DOM and Synap 1.0.0 worker checks.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
