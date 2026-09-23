@@ -540,8 +540,11 @@ async function run() {
         qa.fail = 'ask';
       });
       await page.locator('#askForm button[type="submit"]').tap();
-      await page.getByRole('button', { name: 'Search this device', exact: true }).tap();
-      await page.getByText(/Local recall.*Matches from saved memories/).waitFor();
+      await page.waitForFunction(() =>
+        document.querySelector('.ask-search-meta')?.textContent.includes(
+          'Synap Cloud is temporarily unavailable',
+        ),
+      );
       assert.match(await page.locator('#askAnswer').innerText(), /Budget reviewed/);
       // A cloud-only source must either open or offer a visible retry.
       await page.evaluate(() => {
