@@ -177,6 +177,11 @@
         // it without restarting transcription or processing.
         try {
           const memory = await json('/v1/recordings/' + encodeURIComponent(id) + '/memory');
+          if (String(memory?.recording_id || '') !== id || typeof memory?.transcript !== 'string') {
+            const invalid = new Error('Completed memory did not include this recording transcript.');
+            invalid.status = 502;
+            throw invalid;
+          }
           source = Object.assign({ state: 'ready', transcript_complete: true }, memory);
           if (root.console && root.console.info) root.console.info('[synap source] used completed-memory fallback', {
             recordingId: id, sourceStatus: sourceError && sourceError.status || null
