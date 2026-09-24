@@ -64,7 +64,7 @@ function connect({enabled=true,incoming={}}={}){
     addEventListener(name,fn){if(name==='characteristicvaluechanged')listeners.add(fn);},
     removeEventListener(name,fn){if(name==='characteristicvaluechanged')listeners.delete(fn);},
     startNotifications(){ops.push('voice-notify');return Promise.resolve();},
-    emit(value){for(const fn of listeners)fn({target:{...events,value}});},
+    emit(value){events.value=value;for(const fn of listeners)fn({target:events});},
   };
   const diagnostics={readValue(){ops.push('diagnostics');return Promise.resolve(diagnosticPacket());}};
   const context={
