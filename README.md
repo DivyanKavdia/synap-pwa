@@ -1,15 +1,15 @@
 # Synap
 
-**Repository reviewed: 22 September 2026**
+**Repository reviewed: 24 September 2026**
 
 Synap is the companion PWA and cloud memory platform for the Synap wearable family. Device firmware lives in `DivyanKavdia/synap-firmware`; this repository owns the browser experience, local durable journal, cloud API, processing pipeline, retrieval, memory surfaces and production deployment.
 
 ## Production truth
 
 - **PWA:** `main` → GitHub Pages.
-- **Current shell generation:** `1.0.0-shell162-ask-processing-fix`.
+- **Current shell generation:** `1.0.0-shell165-parallel-voice`.
 - **Backend:** Google Cloud Run in `asia-south1`, promoted only after readiness validation.
-- **Firmware OTA baseline:** Synap OS build **1411** for Odyssey S3, Odyssey C3 and Chakshu. The OTA feed is authoritative; a newer firmware `main` commit is not a device release until published.
+- **Firmware OTA:** the release feed is authoritative for the installable Odyssey S3, Odyssey C3 and Chakshu build. A newer firmware `main` commit is not device behavior until the OTA workflow publishes it.
 - **Runtime:** Node.js 22+ for local/CI tooling and the backend.
 
 Do not hard-code application commit SHAs into operational documentation. Git history and Actions identify the deployed source; architecture docs describe the stable contract.
@@ -22,7 +22,7 @@ Do not hard-code application commit SHAs into operational documentation. Git his
 - **People & speaker identity** — user-confirmed person names, remembered voices and recording-level speaker identity correction.
 - **Unified memories** — merge consecutive memories, recreate the unified memory, unmerge without touching source recordings, share via WhatsApp/Gmail and export a PDF.
 - **Devices** — connection, recording, battery/status, OTA and capability-aware controls.
-- **Chakshu media** — connected photo/video capture plus disconnected Hey Snap + SD capture and verified sync-to-app.
+- **Chakshu media** — parallel Hey Snap-to-SD plus PWA/TTP phone capture and verified SD sync-to-app.
 
 ## Device family
 
@@ -34,16 +34,17 @@ Do not hard-code application commit SHAs into operational documentation. Git his
 | **Synap Odyssey C3** | `esp32c3-supermini-4m` | 2 | audio, settings, touch, battery, standby |
 | **Chakshu** | `xiao-esp32s3-sense-8m` | 3 | audio, camera, SD, photo, video, SD audio, settings, touch, battery, standby |
 
-Chakshu alone has camera, SD and the local Hey Snap runtime. When BLE is connected the PWA owns capture; when disconnected firmware owns Hey Snap and offline capture.
+Chakshu alone has camera, SD and the local Hey Snap runtime. Hey Snap remains armed with or without BLE and always targets SD; PWA-started media and connected TTP audio remain phone-owned, while disconnected TTP audio falls back to SD.
 
 ## End-to-end path
 
 ```text
-Wearable
-  ├─ BLE connected ───────────────> PWA capture
-  └─ Chakshu disconnected ───────> SD offline capture
-                                      │ verified sync
-                                      v
+Wearable / Chakshu
+  ├─ PWA controls or connected TTP ─> BLE → PWA/phone capture
+  ├─ Hey Snap (BLE on or off) ─────> SD capture
+  └─ disconnected TTP ─────────────> SD audio
+                                       │ verified sync
+                                       v
 PWA durable journal / local source
               │
               v
@@ -63,7 +64,7 @@ The 30-second browser/cloud segment is a **durability and recovery boundary**, n
 - [Architecture](docs/ARCHITECTURE.md) — end-to-end components, data flow and invariants.
 - [Operations](docs/OPERATIONS.md) — CI/CD, production checks, recovery and troubleshooting.
 - [Development and codebase](docs/DEVELOPMENT.md) — repo map, tests, catalog/version rules and cleanup policy.
-- [Chakshu offline + Hey Snap](docs/CHAKSHU_OFFLINE_AND_HEY_SNAP.md) — single-owner BLE/offline contract, SD recovery and verified sync.
+- [Chakshu parallel capture + Hey Snap](docs/CHAKSHU_OFFLINE_AND_HEY_SNAP.md) — initiator-based routing, SD recovery and verified sync.
 - [Automatic speech processing](docs/AUTOMATIC_SPEECH.md) — local enhancement, source preservation and resource limits.
 - [RNNoise provenance](vendor/audio-enhancement/README.md) — bundled model/runtime provenance and licensing.
 
