@@ -582,8 +582,10 @@ test('unsynced Chakshu audio photo and video surface in the shared Library befor
   assert.match(library,/SynapChakshuV2\?\.moveSD/);
   assert.match(lifecycle,/The imported visual could not be verified\. The SD original was kept\./);
   assert.match(lifecycle,/The imported audio could not be verified\. The SD original was kept\./);
-  assert.match(voice,/getCharacteristic\(EVENTS\)/);\n  assert.match(voice,/startNotifications\(\)/);\n  assert.doesNotMatch(voice,/await write\(b, VOICE_OFF\)/);
-  assert.doesNotMatch(voice,/startNotifications|characteristicvaluechanged/);
+  assert.match(voice,/getCharacteristic\(EVENTS\)/);
+  assert.match(voice,/startNotifications\(\)/);
+  assert.match(voice,/characteristicvaluechanged/);
+  assert.doesNotMatch(voice,/await write\(b, VOICE_OFF\)/);
   const headerStart=html.indexOf('class="topbar"'),headerEnd=html.indexOf('</header>',headerStart),feedback=html.indexOf('id="heySynapFeedback"');
   assert(headerStart>=0&&feedback>headerStart&&feedback<headerEnd,'voice feedback must render inside the header, below device controls');
 });
