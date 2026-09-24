@@ -111,9 +111,11 @@ Do not conflate an API transcription failure with an SD capture/transfer failure
 A browser/peripheral disconnect is not an app-requested disconnect unless diagnostics say so. Reconnect must establish a fresh connection/session generation before module/media state is trusted.
 
 For Chakshu:
-- connect immediately stands Hey Snap down;
-- disconnect re-arms Hey Snap in firmware;
-- PWA voice writes are idempotent session handoff signals.
+- connect/disconnect does **not** stand Hey Snap down; the wake engine remains available in both BLE states;
+- the PWA subscribes once to voice-result notifications and uses idempotent voice-on for compatibility;
+- Hey Snap media remains SD-owned while PWA/TTP live capture remains phone-owned;
+- a BLE transition must not invalidate queued local voice work merely because ownership changed;
+- conflicting media still respects the shared resource-admission gates and returns busy rather than overlapping writers.
 
 ## 8. Deployment rollback
 
