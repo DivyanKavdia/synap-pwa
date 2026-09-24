@@ -1,19 +1,16 @@
 /*
- * Hey Snap is device-owned and runs only while Chakshu is NOT connected to this app.
+ * Hey Snap is device-owned and remains armed whether or not Chakshu is linked
+ * to the PWA. Voice-initiated media is always durable SD media. PWA/TTP live
+ * capture remains a separate BLE-to-phone path and resource admission prevents
+ * either path from overlapping camera/microphone/OTA work.
  *
- * Whenever the PWA holds the GATT link it is the single source of commands and
- * operations, so the firmware wake engine is stood down on connect and handed
- * back on disconnect. Two owners issuing capture commands at once is what put
- * the SD card and the audio transport into contention: the old 1.9-second
- * status + diagnostics poll timed out on the shared media queue, stalled audio
- * delivery, and dropped the link with the SD card still unmounted.
- *
- * A stood-down device is never read again. Diagnostics are available on demand
- * through diagnose(), not on a timer.
+ * The PWA subscribes to voice-result notifications once per connection. There
+ * is no background status/diagnostics polling on the shared GATT queue.
  */
 (function (root) {
   'use strict';
   const CONTROL = '4fa12356-0000-1000-8000-00805f9b34fb',
+    EVENTS = '4fa12357-0000-1000-8000-00805f9b34fb',
     DIAGNOSTICS = '4fa12358-0000-1000-8000-00805f9b34fb',
     PROTOCOL = 2,
     WAKE = 1,
@@ -24,15 +21,9 @@
     AUDIO_OFF = 6,
     DESCRIBE = 7,
     STOP = 8,
-    // Control-characteristic opcodes. A separate number space from the command
-    // ids above: 0/1 disable and enable the wake engine, 2/3 are the foreground
-    // and background leases the app no longer takes.
-    VOICE_OFF = 0,
     VOICE_ON = 1,
-    STAND_DOWN_ATTEMPTS = 3,
-    STAND_DOWN_RETRY_MS = 5000,
-    // While the media queue is closed for capture or recovery no GATT request
-    // is issued at all, so re-checking is cheap and may wait as long as it must.
+    ENABLE_ATTEMPTS = 3,
+    ENABLE_RETRY_MS = 5000,
     DEFERRED_RETRY_MS = 15000,
     SEEN_PREFIX = 'synap-chakshu-voice-seen-v1:',
     LAST_PREFIX = 'synap-chakshu-voice-last-v1:';
@@ -101,8 +92,6 @@
     if (incoming.command === STOP) return 'Stop';
     return 'Voice command';
   }
-  /* Wake feedback belongs to the disconnected device now. This only clears a
-   * banner an earlier build may have left on screen. */
   function feedback(text, tone = 'listening', ttl = 0) {
     const element = root.document?.getElementById?.('heySynapFeedback'),
       label = root.document?.getElementById?.('heySynapFeedbackText');
@@ -123,33 +112,32 @@
   function outcomeMessage(incoming) {
     if (!incoming?.sequence || !incoming.command) return '';
     if (incoming.command === WAKE)
-      return incoming.result === 0
-        ? 'Hey Snap heard while disconnected. No offline action completed.'
-        : '';
+      return incoming.result === 1 ? 'Hey Snap wake failed.' : 'Hey Snap heard. Listening for command.';
     const noun =
       incoming.command === PHOTO ? 'photo' :
       incoming.command === VIDEO_START ? 'video' :
       incoming.command === AUDIO_ON ? 'audio' : '';
     if (noun) {
-      if (incoming.result === 3) return 'Offline ' + noun + ' saved to Chakshu SD.';
+      if (incoming.result === 3) return 'Voice ' + noun + ' saved to Chakshu SD.';
       if (incoming.result === 1)
-        return 'Offline ' + noun + ' failed on Chakshu (code ' + incoming.value + ').';
-      if (incoming.result === 0)
+        return 'Voice ' + noun + ' failed on Chakshu (code ' + incoming.value + ').';
+      if (incoming.result === 0 || incoming.result === 2)
         return incoming.command === AUDIO_ON
-          ? 'Offline audio recording accepted · up to ' + (incoming.value || 60) + ' seconds.'
-          : 'Offline ' + noun + ' command accepted by Chakshu.';
+          ? 'Voice audio accepted · saving to Chakshu SD for up to ' + (incoming.value || 60) + ' seconds.'
+          : 'Voice ' + noun + ' accepted · saving to Chakshu SD.';
       return '';
     }
     if (incoming.command === DESCRIBE) {
       if (incoming.result === 3)
-        return 'Offline Explain what you see photo saved to Chakshu SD. Sync it to generate the description.';
+        return 'Voice Explain what you see photo saved to Chakshu SD. Sync it to generate the description.';
       if (incoming.result === 1)
-        return 'Offline Explain what you see failed on Chakshu (code ' + incoming.value + ').';
-      if (incoming.result === 0)
-        return 'Offline Explain what you see accepted. Chakshu is saving the photo to SD.';
+        return 'Voice Explain what you see failed on Chakshu (code ' + incoming.value + ').';
+      if (incoming.result === 0 || incoming.result === 2)
+        return 'Voice Explain what you see accepted · saving the photo to Chakshu SD.';
       return '';
     }
-    if (incoming.command === STOP && incoming.result === 0) return 'Offline capture stop command received.';
+    if (incoming.command === STOP && (incoming.result === 0 || incoming.result === 2))
+      return 'Voice SD capture stop command received.';
     return '';
   }
   function surfaceOutcome(b, incoming) {
@@ -161,13 +149,14 @@
     try {
       if (root.localStorage?.getItem?.(key) === signature) return false;
       root.localStorage?.setItem?.(key, signature);
-      root.localStorage?.setItem?.(
-        LAST_PREFIX + deviceId,
-        JSON.stringify({ ...incoming, label: commandLabel(incoming), message: text, deviceId, seenAt: new Date().toISOString() }),
-      );
+      if (incoming.command !== WAKE)
+        root.localStorage?.setItem?.(
+          LAST_PREFIX + deviceId,
+          JSON.stringify({ ...incoming, label: commandLabel(incoming), message: text, deviceId, seenAt: new Date().toISOString() }),
+        );
     } catch (_) {}
     message = text;
-    feedback(text, incoming.result === 1 ? 'error' : incoming.result === 3 ? 'saved' : 'listening', 10000);
+    feedback(text, incoming.result === 1 ? 'error' : incoming.result === 3 ? 'saved' : 'listening', incoming.command === WAKE ? 3500 : 10000);
     root.dispatchEvent?.(
       new CustomEvent('synap-chakshu-voice-result', {
         detail: { ...incoming, label: commandLabel(incoming), message: text, deviceId },
@@ -207,13 +196,20 @@
           state,
           message,
           connected: Boolean(binding),
-          standDown: Boolean(binding?.standDown),
+          standDown: Boolean(binding && !binding.ready),
         },
       }),
     );
   }
+  function detach(b) {
+    try {
+      if (b?.events && b?.handler) b.events.removeEventListener('characteristicvaluechanged', b.handler);
+    } catch (_) {}
+  }
   function close() {
+    const b = binding;
     binding = null;
+    detach(b);
     state = null;
     clearTimeout(timer);
     timer = null;
@@ -223,16 +219,21 @@
     notify();
   }
   function perform(incoming) {
-    // Firmware owns capture. The app only observes the event and syncs durable SD media later.
+    // Firmware owns voice capture and persists it to SD. The PWA only observes
+    // the result and later syncs the durable file into Memories.
     return Promise.resolve({ local: true, command: incoming.command });
   }
-  /**
-   * Hand the microphone to whichever side owns it.
-   *
-   * Disconnected, this does nothing at all: the firmware is listening for Hey
-   * Snap and recording to SD on its own. Connected, it writes VOICE_OFF once,
-   * confirms the device reports itself disabled, and then stops touching GATT.
-   */
+  function onVoiceEvent(b, event) {
+    if (!current(b) || event?.target !== b.events) return;
+    try {
+      state = decode(event.target.value);
+      surfaceOutcome(b, state);
+      notify();
+    } catch (error) {
+      message = error.message;
+      notify();
+    }
+  }
   async function sync() {
     const context = root.SynapDevices?.connection,
       owner = api()?.state.owner;
@@ -251,89 +252,72 @@
       notify();
       return;
     }
-    if (binding?.standDown) return;
+    if (binding?.ready) return;
     pending = true;
     let deferred = false;
     try {
-      const b = binding || (binding = { context, owner, attempts: 0, standDown: false });
+      const b = binding || (binding = { context, owner, attempts: 0, ready: false });
       b.attempts += 1;
-      if (!b.control) {
+      if (!b.control)
         b.control = await context.mediaQueue(
           () => context.service.getCharacteristic(CONTROL),
           'Find Chakshu voice control',
         );
+      if (!current(b)) return;
+      if (!b.events) {
+        b.events = await context.mediaQueue(
+          () => context.service.getCharacteristic(EVENTS),
+          'Find Chakshu voice events',
+        );
+        if (!current(b)) return;
+        b.handler = (event) => onVoiceEvent(b, event);
+        b.events.addEventListener('characteristicvaluechanged', b.handler);
+        await context.mediaQueue(() => b.events.startNotifications(), 'Subscribe Chakshu voice events');
         if (!current(b)) return;
       }
-      await write(b, VOICE_OFF);
+      // VOICE_ON is idempotent on the new firmware and explicitly reverses the
+      // old shell's connect-time stand-down if an upgrade happens mid-session.
+      await write(b, VOICE_ON);
       if (!current(b)) return;
-      state = decode(
-        await context.mediaQueue(() => b.control.readValue(), 'Confirm Chakshu voice stood down'),
-      );
-      b.standDown = !state.enabled;
-      const surfaced = b.standDown && surfaceOutcome(b, state);
-      if (!surfaced) {
-        message = b.standDown ? '' : 'Chakshu is still listening for Hey Snap.';
-        feedback('', 'listening', 0);
-      }
+      state = decode(await context.mediaQueue(() => b.control.readValue(), 'Read Chakshu voice status'));
+      b.ready = Boolean(state.enabled);
+      surfaceOutcome(b, state);
+      message = b.ready ? message : 'Hey Snap is waiting for the Chakshu always-on voice firmware.';
     } catch (error) {
       deferred = error.code === 'OPTIONAL_GATT_DEFERRED';
-      // A deferred request never reached the device, so it must not spend the
-      // retry budget that exists for a device which answers and stays enabled.
       if (deferred && binding) binding.attempts -= 1;
       else message = error.message;
-      // The binding is kept even when discovery itself failed, so the bounded
-      // retry below applies to it rather than restarting from zero on the next
-      // connection event.
     } finally {
       pending = false;
       notify();
       const b = binding;
-      if (b && !b.standDown && current(b) && (deferred || b.attempts < STAND_DOWN_ATTEMPTS))
-        timer = setTimeout(sync, deferred ? DEFERRED_RETRY_MS : STAND_DOWN_RETRY_MS);
+      if (b && !b.ready && current(b) && (deferred || b.attempts < ENABLE_ATTEMPTS))
+        timer = setTimeout(sync, deferred ? DEFERRED_RETRY_MS : ENABLE_RETRY_MS);
     }
   }
-  /**
-   * Give Hey Snap back before the app drops the link.
-   *
-   * Best effort only. An unexpected disconnect — out of range, flat battery, a
-   * dropped GATT link — gives the app no chance to write anything, so firmware
-   * must also re-arm the wake engine whenever the BLE link goes down. This only
-   * shortens the gap after a clean, app-initiated disconnect.
-   */
+  // Called immediately before an app-requested disconnect. Voice itself needs
+  // no ownership handoff; only detach the browser listener from the dying link.
   function release() {
-    const b = binding;
-    if (!b?.control || !b.standDown) return;
-    b.standDown = false;
-    b.attempts = 0;
-    write(b, VOICE_ON).catch(() => {});
-    // If the link survives the request after all, stand the device down again.
-    clearTimeout(timer);
-    timer = setTimeout(sync, 1500);
+    close();
   }
-  /** Manual override, kept for diagnostics. Enabling while connected would put
-   * two owners back on the same microphone, so it is refused. */
   async function enabled(value) {
+    if (!value) throw Error('Hey Snap is always enabled on Chakshu.');
     const b = binding;
     if (!b) throw Error('Connect Chakshu first.');
-    if (value) throw Error('Hey Snap runs only while Chakshu is disconnected from this app.');
     while (pending && current(b)) await new Promise((resolve) => setTimeout(resolve, 20));
     if (!current(b)) throw Error('Chakshu connection changed.');
     pending = true;
     try {
-      await write(b, VOICE_OFF);
+      await write(b, VOICE_ON);
       if (current(b))
         state = decode(await b.context.mediaQueue(() => b.control.readValue(), 'Read voice setting'));
-      b.standDown = !state?.enabled;
-      feedback('', 'listening', 0);
-      message = '';
+      b.ready = Boolean(state?.enabled);
       return state;
     } finally {
       pending = false;
       notify();
     }
   }
-  /** One-shot classifier read, on request. Never on a timer: polling this
-   * characteristic every 1.9 seconds is what stalled the audio transport. */
   async function diagnose() {
     const b = binding;
     if (!b) throw Error('Connect Chakshu first.');
@@ -358,7 +342,7 @@
     return value;
   }
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice12',
+    revision: '1.0.0-chakshu-voice13',
     decode,
     decodeDiagnostic,
     label: commandLabel,
@@ -370,7 +354,7 @@
     lastOutcome,
     get state() { return state; },
     get message() { return message; },
-    get standDown() { return Boolean(binding?.standDown); },
+    get standDown() { return Boolean(binding && !binding.ready); },
   });
   for (const name of ['synap-chakshu-changed', 'synap-module-changed', 'synap-gatt-disconnected'])
     root.addEventListener?.(name, () => sync());
