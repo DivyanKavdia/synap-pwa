@@ -584,12 +584,14 @@ test('unsynced Chakshu audio photo and video surface in the shared Library befor
   assert.match(lifecycle,/The imported audio could not be verified\. The SD original was kept\./);
   assert.match(voice,/await write\(b, VOICE_ON\)/);
   assert.doesNotMatch(voice,/await write\(b, VOICE_OFF\)/,'connected PWA must not stand Hey Snap down');
-  assert.doesNotMatch(voice,/startNotifications|characteristicvaluechanged/);
+  assert.match(voice,/startNotifications\(\)/,'connected Hey Snap completions use one event subscription');
+  assert.match(voice,/characteristicvaluechanged/);
+  assert.doesNotMatch(voice,/setInterval|pollVoice|pollStatus/,'voice events must not add a GATT polling loop');
   const headerStart=html.indexOf('class="topbar"'),headerEnd=html.indexOf('</header>',headerStart),feedback=html.indexOf('id="heySynapFeedback"');
   assert(headerStart>=0&&feedback>headerStart&&feedback<headerEnd,'voice feedback must render inside the header, below device controls');
 });
 
-test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox', () => {
+test('connected PWA capture stays phone-owned while Hey Snap SD media remains syncable', () => {
   const fs = require('node:fs'), path = require('node:path');
   const media = fs.readFileSync(path.join(__dirname, '../devices/chakshu/media.js'), 'utf8');
   const library = fs.readFileSync(path.join(__dirname, '../devices/chakshu/library.js'), 'utf8');
@@ -604,7 +606,8 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(lifecycle, /async function syncAll\(\)/);
   assert.match(lifecycle, /verification failed/);
   assert.match(lifecycle, /Verified SD source removed/);
-  assert.match(html, /While Chakshu is disconnected from this app, Hey Snap owns capture/);
+  assert.match(html, /Hey Snap stays available whether Chakshu is connected or disconnected/);
+  assert.match(html, /Captures started from this app stay separate:[\s\S]*save directly on this phone/);
   assert.match(html, /id="visualSDSyncNotice"/);
   assert.match(html, /id="librarySDInbox"/);
   assert.match(html, /id="libraryStorageInfoToggle"/);
