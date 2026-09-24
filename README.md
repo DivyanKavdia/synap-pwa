@@ -1,15 +1,15 @@
 # Synap
 
-**Repository reviewed: 22 September 2026**
+**Repository reviewed: 24 September 2026**
 
 Synap is the companion PWA and cloud memory platform for the Synap wearable family. Device firmware lives in `DivyanKavdia/synap-firmware`; this repository owns the browser experience, local durable journal, cloud API, processing pipeline, retrieval, memory surfaces and production deployment.
 
 ## Production truth
 
 - **PWA:** `main` → GitHub Pages.
-- **Current shell generation:** `1.0.0-shell162-ask-processing-fix`.
+- **Current shell generation:** `1.0.0-shell165-unified-hey-snap`.
 - **Backend:** Google Cloud Run in `asia-south1`, promoted only after readiness validation.
-- **Firmware OTA baseline:** Synap OS build **1411** for Odyssey S3, Odyssey C3 and Chakshu. The OTA feed is authoritative; a newer firmware `main` commit is not a device release until published.
+- **Firmware OTA baseline:** Synap OS build **1412** for Odyssey S3, Odyssey C3 and Chakshu. The OTA feed is authoritative; a newer firmware `main` commit is not a device release until published.
 - **Runtime:** Node.js 22+ for local/CI tooling and the backend.
 
 Do not hard-code application commit SHAs into operational documentation. Git history and Actions identify the deployed source; architecture docs describe the stable contract.
@@ -22,7 +22,7 @@ Do not hard-code application commit SHAs into operational documentation. Git his
 - **People & speaker identity** — user-confirmed person names, remembered voices and recording-level speaker identity correction.
 - **Unified memories** — merge consecutive memories, recreate the unified memory, unmerge without touching source recordings, share via WhatsApp/Gmail and export a PDF.
 - **Devices** — connection, recording, battery/status, OTA and capability-aware controls.
-- **Chakshu media** — connected photo/video capture plus disconnected Hey Snap + SD capture and verified sync-to-app.
+- **Chakshu media** — PWA controls capture directly to the phone when connected; Hey Snap always records to SD; TTP records to phone when connected and SD audio when disconnected.
 
 ## Device family
 
@@ -34,16 +34,19 @@ Do not hard-code application commit SHAs into operational documentation. Git his
 | **Synap Odyssey C3** | `esp32c3-supermini-4m` | 2 | audio, settings, touch, battery, standby |
 | **Chakshu** | `xiao-esp32s3-sense-8m` | 3 | audio, camera, SD, photo, video, SD audio, settings, touch, battery, standby |
 
-Chakshu alone has camera, SD and the local Hey Snap runtime. When BLE is connected the PWA owns capture; when disconnected firmware owns Hey Snap and offline capture.
+Chakshu alone has camera, SD and the local Hey Snap runtime. Hey Snap remains armed whether BLE is connected or not and always writes its media to SD. PWA-initiated mic/photo/video capture stays on the live BLE-to-phone path. TTP double tap starts/stops phone audio while connected and SD audio while disconnected; touch never starts image or video capture.
 
 ## End-to-end path
 
 ```text
 Wearable
-  ├─ BLE connected ───────────────> PWA capture
-  └─ Chakshu disconnected ───────> SD offline capture
-                                      │ verified sync
-                                      v
+  ├─ PWA control + BLE connected ─────────> phone/PWA capture
+  ├─ Hey Snap (BLE on or off) ────────────> Chakshu SD
+  └─ TTP double tap
+       ├─ BLE connected ──────────────────> phone/PWA audio
+       └─ BLE disconnected ───────────────> Chakshu SD audio
+                                                │ verified sync
+                                                v
 PWA durable journal / local source
               │
               v
@@ -63,7 +66,7 @@ The 30-second browser/cloud segment is a **durability and recovery boundary**, n
 - [Architecture](docs/ARCHITECTURE.md) — end-to-end components, data flow and invariants.
 - [Operations](docs/OPERATIONS.md) — CI/CD, production checks, recovery and troubleshooting.
 - [Development and codebase](docs/DEVELOPMENT.md) — repo map, tests, catalog/version rules and cleanup policy.
-- [Chakshu offline + Hey Snap](docs/CHAKSHU_OFFLINE_AND_HEY_SNAP.md) — single-owner BLE/offline contract, SD recovery and verified sync.
+- [Chakshu offline + Hey Snap](docs/CHAKSHU_OFFLINE_AND_HEY_SNAP.md) — source-based command routing, SD recovery and verified sync.
 - [Automatic speech processing](docs/AUTOMATIC_SPEECH.md) — local enhancement, source preservation and resource limits.
 - [RNNoise provenance](vendor/audio-enhancement/README.md) — bundled model/runtime provenance and licensing.
 
