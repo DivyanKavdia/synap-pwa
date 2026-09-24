@@ -1,6 +1,6 @@
 # Synap architecture
 
-**Reviewed: 22 September 2026**
+**Reviewed: 24 September 2026**
 
 This document describes the current production architecture. It deliberately avoids historical build-by-build narrative.
 
@@ -8,11 +8,11 @@ This document describes the current production architecture. It deliberately avo
 
 Synap has three execution domains:
 
-1. **Wearable firmware** — captures audio and device media, exposes BLE protocols and, on Chakshu while disconnected, owns Hey Snap + SD capture.
+1. **Wearable firmware** — captures audio and device media, exposes BLE protocols and, on Chakshu, owns the always-available Hey Snap → SD path plus disconnected TTP → SD audio.
 2. **PWA** — owns the connected user experience, local durable journal, playback/source retention, device control and cloud upload/recovery.
 3. **Synap Cloud** — authenticates accounts, stores encrypted source/derived state, runs processing, indexes memories and serves Ask/People/Actions.
 
-The core rule is one owner per hardware operation. Connected Chakshu capture is PWA-owned; disconnected Chakshu capture is firmware-owned.
+The core rule is one owner per hardware operation, but connectivity is not the owner selector. The initiator selects the route: Hey Snap → SD in either BLE state; PWA controls and connected TTP audio → phone; disconnected TTP audio → SD. Shared camera/microphone/SD resources are serialized so conflicting operations fail busy instead of creating two writers.
 
 ## 2. Device and capability model
 
@@ -39,9 +39,9 @@ The browser receives framed BLE audio and writes durable local recovery windows.
 
 Connected capture belongs to the app. Media is transferred into browser-owned storage and represented in Library/Memory surfaces.
 
-### Disconnected Chakshu
+### Chakshu SD capture
 
-Firmware writes supported standalone photo, video and WAV captures to `/synap` on SD. Reconnect catalogue is non-destructive. Verified sync imports first and deletes the SD source only after durable-copy verification.
+Firmware writes Hey Snap photo, video and WAV captures to `/synap` on SD whether BLE is connected or not. Disconnected TTP audio uses the same durable SD path. Catalogue discovery is non-destructive. Verified sync imports first and deletes the SD source only after durable-copy verification. PWA-started capture never silently switches to this SD route.
 
 See [Chakshu offline + Hey Snap](CHAKSHU_OFFLINE_AND_HEY_SNAP.md).
 
