@@ -539,7 +539,7 @@ test('device voice media sync discovers SD media and only explicit verified sync
   assert(deletion.indexOf("stem(path) + '.wav'") < deletion.indexOf('return deleteSD(path)'));
   const verifiedMove=lifecycle.slice(lifecycle.indexOf('async function moveSD'),lifecycle.indexOf('async function clearSD'));
   assert.match(verifiedMove,/localStorage\.setItem\(key, JSON\.stringify\(receipt\)\)[\s\S]*await deleteSyncedSet\(path\)/);
-  assert.match(voice,/Firmware owns capture/);
+  assert.match(voice,/Firmware owns voice capture/);
   assert.match(media,/if \(next && !wifi\?\.active\) schedulePendingSync\(1200\)/);
   // GPIO21 is both SD CS and the active-low orange USER_LED. One automatic
   // catalogue per connection still discovers offline captures while preventing
@@ -582,7 +582,8 @@ test('unsynced Chakshu audio photo and video surface in the shared Library befor
   assert.match(library,/SynapChakshuV2\?\.moveSD/);
   assert.match(lifecycle,/The imported visual could not be verified\. The SD original was kept\./);
   assert.match(lifecycle,/The imported audio could not be verified\. The SD original was kept\./);
-  assert.match(voice,/await write\(b, VOICE_OFF\)/);
+  assert.match(voice,/await write\(b, VOICE_ON\)/);
+  assert.doesNotMatch(voice,/await write\(b, VOICE_OFF\)/,'connected PWA must not stand Hey Snap down');
   assert.doesNotMatch(voice,/startNotifications|characteristicvaluechanged/);
   const headerStart=html.indexOf('class="topbar"'),headerEnd=html.indexOf('</header>',headerStart),feedback=html.indexOf('id="heySynapFeedback"');
   assert(headerStart>=0&&feedback>headerStart&&feedback<headerEnd,'voice feedback must render inside the header, below device controls');
