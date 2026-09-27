@@ -8,14 +8,14 @@ This document defines the current Chakshu interaction model. Odyssey C3/S3 do no
 
 ## 1. Routing is determined by input source
 
-BLE connection state no longer enables or disables Hey Snap.
+BLE connection state alone does not enable or disable Hey Snap. An active PWA audio/video recording does: PWA capture has exclusive interaction ownership, so firmware Hey Snap is suspended until that recording ends.
 
 | Input source | BLE connected | BLE disconnected | Destination |
 | --- | --- | --- | --- |
-| **Hey Snap → Record audio** | Supported | Supported | Chakshu SD WAV |
-| **Hey Snap → Take a photo** | Supported | Supported | Chakshu SD JPG |
-| **Hey Snap → Record video** | Supported | Supported | Chakshu SD video bundle |
-| **Hey Snap → Explain what you see** | Supported | Supported | Tagged Chakshu SD JPG |
+| **Hey Snap → Record audio** | Supported while PWA recording is idle | Supported | Chakshu SD WAV |
+| **Hey Snap → Take a photo** | Supported while PWA recording is idle | Supported | Chakshu SD JPG |
+| **Hey Snap → Record video** | Supported while PWA recording is idle | Supported | Chakshu SD video bundle |
+| **Hey Snap → Explain what you see** | Supported while PWA recording is idle | Supported | Tagged Chakshu SD JPG |
 | **PWA mic control** | Supported | Not available | Phone/PWA recording journal |
 | **PWA photo control** | Supported | Not available | Phone/PWA visual library |
 | **PWA video control** | Supported | Not available | Phone/PWA media |
@@ -28,11 +28,11 @@ The product invariant is therefore simple:
 - **PWA control means phone/PWA.**
 - **Touch means audio only:** phone when connected, SD when disconnected.
 
-A BLE connection is transport availability, not a Hey Snap ownership boundary.
+A BLE connection is transport availability, not by itself a Hey Snap ownership boundary. PWA audio/video START is the ownership boundary: once admitted, it suppresses Hey Snap until the PWA stream stops or fails.
 
 ## 2. Hey Snap lifecycle
 
-The lightweight TinyML wake/command engine remains device-owned and stays armed across BLE connect and disconnect.
+The lightweight TinyML wake/command engine remains device-owned and stays armed across BLE connect and disconnect while PWA capture is idle. During an active PWA audio/video recording, the firmware voice interaction path is suspended.
 
 Current learned classes include:
 
@@ -55,7 +55,7 @@ TinyML allocation is deferred until the normal BLE/SD boot path is healthy. It i
 
 The idle listener and the PWA audio stream share the microphone. PWA START takes the shared recursive microphone mutex before live capture begins. This prevents the idle voice reader and the first PWA capture read from racing.
 
-While PWA audio is actively streaming, the voice classifier can receive a copy of completed PWA PCM frames, but a voice media command that needs the same capture resources returns busy instead of redirecting the live PWA take to SD.
+While PWA audio is actively streaming—including the soundtrack owned by PWA video—the firmware does not feed PCM into TinyML, does not run wake/command inference, and does not execute queued Hey Snap actions. PWA START invalidates any wake/action recognized immediately before ownership transfer; Hey Snap resumes from a fresh wake-word window only after the PWA stream stops or fails.
 
 ### Stop semantics
 
@@ -181,12 +181,12 @@ If transfer or verification fails, the SD original remains.
 
 ## 7. Resource-conflict rules
 
-The routing model permits Hey Snap and BLE to coexist, but the physical camera/microphone/SD resources are still serialized.
+The routing model permits Hey Snap and an idle BLE connection to coexist, but PWA audio/video recording has exclusive interaction ownership and the physical camera/microphone/SD resources remain serialized.
 
 Rules:
 
-- PWA START owns the live microphone stream once admitted.
-- A conflicting Hey Snap media action returns busy.
+- PWA START owns the live microphone stream once admitted and hard-suspends Hey Snap recognition/execution.
+- Any queued wake/action from immediately before PWA START is invalidated rather than executed or returned as a competing media action.
 - An active SD media operation can block a new PWA media transition until the SD worker finalizes.
 - OTA remains mutually exclusive with active capture.
 - Existing files are finalized before state changes.
@@ -199,7 +199,7 @@ This is intentionally different from the old model, which disabled Hey Snap for 
 Physical validation for the next OTA build should cover the full matrix:
 
 1. Cold boot with SD inserted reports SD ready.
-2. Connect PWA and keep BLE connected; **Hey Snap** still recognizes.
+2. Connect PWA and keep BLE connected while capture is idle; **Hey Snap** still recognizes.
 3. Connected **Hey Snap → Take a photo** creates an SD JPG, not a PWA photo.
 4. Connected **Hey Snap → Record audio** creates an SD WAV, not a PWA recording.
 5. Connected **Hey Snap → Record video** creates an SD video bundle.
@@ -209,8 +209,8 @@ Physical validation for the next OTA build should cover the full matrix:
 9. Disconnected TTP double tap starts/stops SD audio.
 10. No TTP gesture starts image or video capture.
 11. While Hey Snap idle listening is active, PWA START begins without first-frame loss or BLE stall.
-12. During an active PWA recording, a conflicting voice media command is rejected/busy and does not corrupt or stop the PWA take.
-13. Voice **Stop** does not terminate a PWA-started recording.
+12. During an active PWA audio/video recording, Hey Snap produces no wake recognition, inference or firmware media action; a wake/action queued immediately before START is discarded.
+13. Voice **Stop** cannot terminate a PWA-started recording because firmware voice interaction is suspended for the full PWA capture ownership window.
 14. BLE disconnect/reconnect does not require re-arming Hey Snap.
 15. Reconnect lists all unsynced SD items.
 16. Successful verified sync deletes only the verified SD original.
