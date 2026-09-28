@@ -60,6 +60,25 @@ export interface ProcessRecordingOptions {
   memoryOnly?: boolean;
 }
 
+/**
+ * How many identical `model_incomplete` failures to pay for before accepting a
+ * transcript without complete word timestamps.
+ *
+ * The dedicated ASR regularly returns good text alongside word annotations that
+ * fail `timestampAnnotationsComplete` — one merged word or one zero-duration
+ * token is enough. That is deterministic for a given piece of audio, so an
+ * unbounded retry bills the same failing request every couple of minutes
+ * forever. Three attempts is enough to ride out a genuinely flaky response.
+ */
+export const INCOMPLETE_TIMESTAMP_ATTEMPTS = 3;
+
+/** Whether this recording has already burned its word-timestamp retries. */
+export function timestampsExhausted(recording: RecordingDoc): boolean {
+  const failure = recording.processingFailure;
+  return failure?.code === 'model_incomplete' &&
+    (failure.attempts ?? 0) >= INCOMPLETE_TIMESTAMP_ATTEMPTS;
+}
+
 export function binding(uid: string, scope: string, field: string): Binding {
   return { uid, scope, field };
 }
@@ -132,8 +151,12 @@ export async function processRecording(
     log.info('Recording processed', { uid, recordingId, conversations: memory.conversations.length, memoryOnly: Boolean(options.memoryOnly) });
   } catch (cause) {
     const failure = processingFailure(cause);
+    // `claimProcessing` clears processingFailure, so `recording` still holds the
+    // previous attempt's failure: the only place the streak survives.
+    const previous = recording.processingFailure;
+    const attempts = previous?.code === failure.code ? (previous.attempts ?? 1) + 1 : 1;
     const { message, retryable } = failure;
-    log.error('Processing failed', { uid, recordingId, error: message, retryable });
+    log.error('Processing failed', { uid, recordingId, error: message, retryable, attempts });
     try {
       // The fence also prevents a delayed failure from undoing another worker's
       // success or resurrecting a recording the user deleted.
@@ -142,7 +165,7 @@ export async function processRecording(
             sealedMemory: recording.sealedMemory, sealedTranscript: recording.sealedTranscript,
             sealedIdentifiedSpeakers: recording.sealedIdentifiedSpeakers || null }
         : { state: 'failed', errorCode: message.slice(0, 200), retryable, processingLease: null,
-          processingFailure: { ...failure, message: message.slice(0, 200),
+          processingFailure: { ...failure, message: message.slice(0, 200), attempts,
             ...(failure.retryAfterMs ? { retryAt: Date.now() + failure.retryAfterMs } : {}) } });
     } catch { /* A deleted recording or superseded attempt belongs to its current owner. */ }
     throw cause;
@@ -163,6 +186,13 @@ async function transcribeAll(
   recording: RecordingDoc,
   patch: (fields: Partial<RecordingDoc>) => Promise<void>,
 ): Promise<SegmentDoc[]> {
+  // Read from the pre-claim snapshot; the claim has already cleared the stored
+  // failure by the time any batch could look it up itself.
+  const allowIncompleteTimestamps = timestampsExhausted(recording);
+  if (allowIncompleteTimestamps)
+    log.warn('Word timestamps repeatedly incomplete; accepting text-only transcript', {
+      uid, recordingId, attempts: recording.processingFailure?.attempts ?? 0,
+    });
   const listed = await db.listSegments(uid, recordingId);
   const ordered = requireCompleteSegments(listed, recording.segmentCount || listed.length);
   let done = ordered.filter(segment => hasUsableTranscription(uid, recordingId, dek, segment)).length;
@@ -178,7 +208,7 @@ async function transcribeAll(
   for (const batch of batches) {
     let completed: SegmentDoc[];
     try {
-      completed = await transcribeUploadedBatch(uid, recordingId, batch, dek);
+      completed = await transcribeUploadedBatch(uid, recordingId, batch, dek, { allowIncompleteTimestamps });
     } catch (cause) {
       const cooldownMs = longAsrCooldownMs(cause);
       if (!cooldownMs) throw cause;

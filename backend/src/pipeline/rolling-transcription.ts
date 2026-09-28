@@ -83,11 +83,45 @@ const BATCH_TRANSCRIPTION_LEASE_MS = 6 * 60_000;
  * Storage/recovery granularity stays small while provider request granularity
  * follows Gemini 3.5 Transcribe's long-form file-processing model.
  */
+/**
+ * Spread a flat transcript across its source windows in proportion to their
+ * duration.
+ *
+ * Only used once word timestamps have failed verification repeatedly. The
+ * boundaries are approximate, but `understand()` reads the windows back in
+ * order as one transcript, so the text survives intact and only within-batch
+ * provenance loses precision. The alternative is discarding the transcript.
+ */
+export function shareTextByDuration(text: string, segments: SegmentDoc[]): Map<number, string> {
+  const shares = new Map<number, string>();
+  for (const segment of segments) shares.set(segment.index, '');
+  const plain = text.replace(/^\[\d{2}:\d{2}(?::\d{2})?\]\s+S\?:\s*/u, '').trim();
+  if (!plain || !segments.length) return shares;
+
+  const tokens = plain.split(/\s+/u);
+  const spans = segments.map(segment => Math.max(1, segment.endMs - segment.startMs));
+  const total = spans.reduce((sum, span) => sum + span, 0);
+  let cursor = 0;
+  let elapsed = 0;
+  segments.forEach((segment, i) => {
+    elapsed += spans[i]!;
+    // Cumulative rather than per-window rounding, so the last window always
+    // ends on the final token and nothing is dropped.
+    const end = i === segments.length - 1
+      ? tokens.length
+      : Math.max(cursor, Math.round((tokens.length * elapsed) / total));
+    shares.set(segment.index, tokens.slice(cursor, end).join(' '));
+    cursor = end;
+  });
+  return shares;
+}
+
 export async function transcribeUploadedBatch(
   uid: string,
   recordingId: string,
   sources: SegmentDoc[],
   dek: Buffer,
+  options: { allowIncompleteTimestamps?: boolean } = {},
 ): Promise<SegmentDoc[]> {
   if (!sources.length) return [];
   const recording = await db.getRecording(uid, recordingId);
@@ -151,6 +185,7 @@ export async function transcribeUploadedBatch(
       primaryDiarization: annotateSpeakers,
       useFileApi: true,
       enrichAnnotations: false,
+      allowIncompleteTimestamps: options.allowIncompleteTimestamps,
       signal: batchSignal,
     });
     ambiguous = batchSignal.aborted;
@@ -165,7 +200,8 @@ export async function transcribeUploadedBatch(
       if (owner) wordsBySegment.get(owner.index)!.push(word);
     }
 
-    if (result.review.outcome === 'speech' && result.words.length === 0)
+    if (result.review.outcome === 'speech' && result.words.length === 0 &&
+        !options.allowIncompleteTimestamps)
       throw new GeminiError(
         'Long transcription batch returned no usable word timestamps.',
         0,
@@ -175,11 +211,19 @@ export async function transcribeUploadedBatch(
         { model: config.gemini.transcribeModel, stage: 'transcription' },
       );
 
+    // The batch text is normally reconstructed from word timestamps. When those
+    // did not verify and the caller has accepted that, fall back to sharing the
+    // flat transcript out by duration rather than losing it.
+    const annotated = result.review.annotationsComplete !== false && result.words.length > 0;
+    const shared = annotated ? null : shareTextByDuration(result.text, claimed);
+
     const completed: SegmentDoc[] = [];
     for (let i = 0; i < claimed.length; i++) {
       const segment = claimed[i]!;
-      const words = wordsBySegment.get(segment.index) || [];
-      const text = words.map(word => word.text).join(' ').trim();
+      const words = annotated ? (wordsBySegment.get(segment.index) || []) : [];
+      const text = (shared
+        ? shared.get(segment.index) || ''
+        : words.map(word => word.text).join(' ')).trim();
       const outcome = result.review.outcome === 'digital-silence'
         ? 'digital-silence'
         : text ? 'speech' : 'no-speech';
@@ -190,7 +234,7 @@ export async function transcribeUploadedBatch(
         transcribedAt: new Date().toISOString(),
         transcriptionReview: {
           attempted: result.review.attempted,
-          annotationsComplete: true,
+          annotationsComplete: annotated,
           policy: 'text-first-v1',
           outcome,
         },

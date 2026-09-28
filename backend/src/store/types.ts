@@ -67,7 +67,11 @@ export interface RecordingDoc {
   /** Safe provider diagnostics, retained for background retry scheduling. */
   processingFailure?: { code: string; message: string; retryable: boolean; providerStatus?: number;
     source?: 'provider' | 'cooldown'; model?: string; modelStage?: string;
-    retryAfterMs?: number; quotaKind?: 'rate' | 'daily' | 'unknown'; retryAt?: number } | null;
+    retryAfterMs?: number; quotaKind?: 'rate' | 'daily' | 'unknown'; retryAt?: number;
+    /** Consecutive attempts that failed with this same code. A failure that
+     *  repeats identically is deterministic, not transient, and the pipeline
+     *  uses this to stop paying for a retry that can never converge. */
+    attempts?: number } | null;
   /** Sealed `StructuredMemory`. Present once understanding completes. */
   sealedMemory: Sealed | null;
   /** Ownership fence for a processing attempt; stale workers cannot publish. */

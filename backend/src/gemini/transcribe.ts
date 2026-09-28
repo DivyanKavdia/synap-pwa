@@ -61,6 +61,15 @@ export interface TranscribeOptions {
   useFileApi?: boolean;
   /** Extra audio submission; opt in only when a caller explicitly needs labels. */
   enrichAnnotations?: boolean;
+  /** Accept a transcript whose word timestamps did not verify.
+   *
+   * `timestampAnnotationsComplete` is all-or-nothing: the flat text must match
+   * the concatenated words exactly and every word must have a positive
+   * duration. On long batches the ASR frequently returns good text with one
+   * imperfect annotation, which is deterministic for that audio — so the caller
+   * can decide, after paying for a few attempts, that the text is worth more
+   * than the timestamps. */
+  allowIncompleteTimestamps?: boolean;
   signal?: AbortSignal;
 }
 
@@ -387,7 +396,7 @@ export async function transcribeSegment(
         ? annotationsComplete(rawText, words)
         : timestampAnnotationsComplete(rawText, words))
     : !generalFallback && annotationsComplete(rawText, words);
-  if (options.primaryWordTimestamps && !complete)
+  if (options.primaryWordTimestamps && !complete && !options.allowIncompleteTimestamps)
     throw new GeminiError(
       'Long transcription batch returned incomplete word timestamps. Saved audio is retained.',
       0,
