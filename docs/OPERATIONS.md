@@ -150,3 +150,14 @@ Record exact PWA shell + installed firmware build and verify:
 ### Bluefy/iOS recording recovery
 
 Foreground audio-stall recovery reuses the existing audio notification subscription and requests buffered replay directly. It does not rewrite the CCCD while the live Bluefy link is congested. After repeated immediate native Bluetooth reason-2 failures, Synap recognizes the permitted device wrapper as stale, refreshes it once through `navigator.bluetooth.getDevices()` without opening a chooser, and only then falls back to explicit device reselection if the refreshed handle also fails. The recording journal remains preserved throughout the reconnect grace period.
+
+### Odyssey SD detection display — shell166
+
+Device settings show the Odyssey C3/S3 startup SD probe result over the existing
+module descriptor (extension version 1 at byte 17, state at byte 18). This is
+read-only detection status; SD recording, browsing and sync are not enabled.
+Build 1435 only logs the probe to Serial and needs a newer firmware release to
+send its result to the app. Older/unknown descriptor extensions show an update
+prompt instead of falsely reporting a missing card. Refresh reads the boot snapshot;
+restart the pendant after changing the card. Mount failure may indicate card,
+wiring, power or filesystem trouble. Chakshu storage controls are unchanged.

@@ -45,6 +45,9 @@
       mediaVersion: value.getUint8(14),
       mediaFeatures: profile.id === 3 ? value.getUint8(16) : 0,
       voiceVersion: value.getUint8(15),
+      // Odyssey boot-probe snapshot, independent of usable SD/media capabilities.
+      sdDetectionState: [1, 2].includes(profile.id) && value.getUint8(17) === 1
+        && value.getUint8(18) <= 3 ? value.getUint8(18) : null,
       legacy: false,
     });
   }

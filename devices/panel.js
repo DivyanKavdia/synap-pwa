@@ -40,6 +40,16 @@
         chip.dataset.ready = info.legacy ? 'unknown' : String(ready);
         chips.append(chip);
       }
+    if (info && [1, 2].includes(info.id)) {
+      const chip = document.createElement('span');
+      chip.className = 'module-feature';
+      const state = info.sdDetectionState;
+      chip.textContent = 'SD card · ' + (state === 1 ? 'detected at startup'
+        : state === 2 ? 'check failed at startup' : state === 3 ? 'not detected at startup'
+        : state === 0 ? 'not checked' : 'update firmware to check');
+      chip.dataset.ready = state === 1 ? 'true' : state === 2 || state === 3 ? 'false' : 'unknown';
+      chips.append(chip);
+    }
     const caps = root.SynapCapabilities,
       chakshu = caps.isChakshu(info),
       status = client?.status;
@@ -65,7 +75,14 @@
     if (!chakshu) {
       byId('moduleStatus').textContent =
         client?.error ||
-        (info?.legacy ? 'Earlier firmware detected. Update for hardware readiness checks.' : '');
+        (info?.legacy ? 'Earlier firmware detected. Update for hardware readiness checks.'
+          : info?.sdDetectionState === 1
+            ? 'SD card detected at startup. Detection only; recording and sync are not enabled. Restart the pendant after changing the card.'
+            : info?.sdDetectionState === 2
+              ? 'SD check failed at startup. Check the card, wiring and filesystem, then restart the pendant. Refresh status reads the last startup result.'
+              : info?.sdDetectionState === 3
+                ? 'No SD card reported at startup. Check the card and wiring, then restart the pendant.'
+                : '');
       return;
     }
     byId('chakshuStorage').textContent =
