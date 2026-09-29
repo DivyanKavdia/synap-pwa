@@ -75,6 +75,7 @@
       "advertisingName": "synap",
       "features": [
         "audio",
+        "sd",
         "settings",
         "touch",
         "battery",
@@ -96,6 +97,9 @@
         "batteryFullMv": 4150,
         "batteryAttenuation": "ADC_11db",
         "batteryCutoff": false
+      },
+      "protocols": {
+        "media": 1
       }
     },
     {
