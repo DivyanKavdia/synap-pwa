@@ -3809,13 +3809,18 @@
     const notice=document.getElementById("firmwareNotice"),noticeText=document.getElementById("firmwareNoticeText");
     const bannerProgress=document.getElementById("firmwareNoticeProgress"),spinner=document.getElementById("firmwareUpdateSpinner");
     const latestButton=document.getElementById("otaLatest"),bannerButton=document.getElementById("firmwareUpdateButton");
-    const showProgress=(message,value=null,committing=false)=>{
-      status.textContent=message;noticeText.textContent=message;notice.hidden=false;
+    const showProgress=(message,value=null,committing=false,detail=null)=>{
+      const eta=Number.isFinite(detail?.etaSeconds)&&detail.etaSeconds>=3
+        ? ` · ~${detail.etaSeconds < 60 ? detail.etaSeconds + 's' : Math.ceil(detail.etaSeconds / 60) + 'm'} left`
+        : '';
+      const display=message+eta;
+      status.textContent=display;noticeText.textContent=display;notice.hidden=false;
       spinner.hidden=false;latestButton.hidden=true;bannerButton.hidden=true;cancel.disabled=committing;
       for(const bar of [progress,bannerProgress]){
         bar.hidden=false;
         if(Number.isFinite(value))bar.value=Math.max(0,Math.min(1,value));
         else bar.removeAttribute('value');
+        if(detail?.phase)bar.setAttribute?.('aria-valuetext',display);
       }
     };
     const targetId = () => deviceAssociation?.deviceId || null;
@@ -3868,6 +3873,12 @@
     if (!globalThis.SynapReleases) return;
     const releases=globalThis.SynapReleases;
     let offered=null,offeredDevice=null,lastCheck=0,downloadController=null;
+    let autoResume=null,autoResumeTimer=null;
+    const clearAutoResume=()=>{autoResume=null;clearTimeout(autoResumeTimer);autoResumeTimer=null;};
+    const armAutoResume=(manifest,id)=>{
+      autoResume={manifest,id,expiresAt:Date.now()+120000};
+      log('Firmware auto-resume armed',{deviceId:id,target:manifest?.target||null,build:manifest?.build||null});
+    };
     function checkPreparationCancelled() {
       if (downloadController?.signal.aborted) throw Error('Update cancelled. Nothing was flashed.');
     }
@@ -3919,9 +3930,10 @@
         if(firmwareBusy||!eligible())return;
         if(epoch!==connectionEpoch||id!==targetId()||!isGattConnected())throw Error('Pendant connection changed.');
         if(releases.compatible(m,info,board)) {
+          const running=releases.targetFromIdentity(board);
           offered=m;offeredDevice=id;bannerButton.hidden=false;latestButton.hidden=false;
           offerLabel(false);
-          announce(`Update ${releases.versionLabel(m)} available`);
+          announce(`Update ${releases.versionLabel(m)} available${running ? ` · build ${running.build} → ${m.build}` : ''}`);
         } else {
           offered=null;bannerButton.hidden=true;latestButton.hidden=true;
           if(!pending&&!verified)status.textContent=`Up to date · ${releases.versionLabel(releases.targetFromIdentity(board)||info)}`;
@@ -3989,6 +4001,13 @@
         checkPreparationCancelled();
         if(!releases.compatible(m,info,board))throw Error('This release is already installed or older than the running firmware.');
         if(![1,3,4,6].includes(info.state))throw Error('An update is already pending. Wait for reboot or transfer timeout.');
+        const running=releases.targetFromIdentity(board);
+        log('Firmware update preflight',{
+          deviceId:id,target:m.target||running?.target||null,currentBuild:running?.build??info.build,
+          targetBuild:m.build,size:m.size||null,capacity:info.capacity,maxData:info.maxData,
+          recoveryMode:document.body?.dataset.otaRecovery||null
+        });
+        showProgress(`Preparing build ${running?.build??info.build} → ${m.build}…`,0,false,{phase:'preflight'});
         const epoch=connectionEpoch;
         // Screen control is optional; a missing browser reply must not block OTA.
         void acquireWakeLock();showProgress('Downloading update…');
@@ -3997,7 +4016,7 @@
         if(epoch!==connectionEpoch||id!==targetId()||!isGattConnected())throw Error('Pendant connection changed during download. Nothing was flashed.');
         savePending(id,m);
         preparing=false;
-        try{await firmwareUpdater.update(binary,id);commitSent=true;}
+        try{await firmwareUpdater.update(binary,id,m.target||null);commitSent=true;}
         catch(error){if(!firmwareUpdater.committing){if(error.resumable)resumeInterrupted=true;else savePending(id,null);throw error;}commitSent=true;}
         showProgress('Restarting pendant…',1,true);
         const deadline=Date.now()+8000;
@@ -4006,20 +4025,31 @@
         await delay(1500);
         showProgress('Reconnecting to verify update…',1,true);
         let verified=false;
-        for(let attempt=0;attempt<4;attempt++) {
-          if(!isGattConnected())await connectPendant({silent:true,autoReconnect:true});
-          if(isGattConnected()) {
-            const running=await firmwareUpdater.check();
-            if(requireTarget(running)!==id)throw Error('Reconnect the original pendant device ID to verify its update.');
-            const runningIdentity=await identity();
-            if(running.build===m.build&&runningIdentity===m.identity){verified=true;break;}
+        for(let attempt=0;attempt<6;attempt++) {
+          try {
+            if(!isGattConnected())await connectPendant({silent:true,autoReconnect:true});
+            if(isGattConnected()) {
+              const running=await firmwareUpdater.check();
+              if(requireTarget(running)!==id)throw Error('Reconnect the original pendant device ID to verify its update.');
+              const runningIdentity=await identity();
+              if(running.build===m.build&&runningIdentity===m.identity){verified=true;break;}
+              log('Firmware verification pending',{attempt:attempt+1,runningBuild:running.build,targetBuild:m.build});
+            }
+          } catch(verificationError) {
+            if(/device ID mismatch|original pendant device ID|different pendant/i.test(verificationError.message||''))throw verificationError;
+            log('Firmware verification retry',{attempt:attempt+1,error:friendlyError(verificationError)});
           }
-          await delay(2000);
+          await delay(Math.min(3000,1200+attempt*400));
         }
         if(!verified)throw Error(`Update not confirmed. Reconnect to check.`);
-        savePending(id,null);offered=null;bannerButton.hidden=true;latestButton.hidden=true;
-        announce(`Update complete · ${releases.versionLabel(m)}`);
-      }catch(error){if(error.resumable)offerLabel(true);announce(error.resumable?'Update paused · Reconnect to continue':friendlyError(error));}
+        clearAutoResume();savePending(id,null);offered=null;bannerButton.hidden=true;latestButton.hidden=true;
+        log('Firmware update verified',{deviceId:id,target:m.target||null,build:m.build});
+        announce(`Update complete · ${releases.versionLabel(m)} · verified`);
+      }catch(error){
+        if(error.resumable){resumeInterrupted=true;armAutoResume(m,id);offerLabel(true);}
+        else clearAutoResume();
+        announce(error.resumable?'Update paused · reconnecting automatically…':friendlyError(error));
+      }
       finally{
         preparing=false;downloadController=null;firmwareUpdater.reset();
         void releaseWakeLock();lock(false);
@@ -4031,6 +4061,24 @@
         }
       }
     }
+    async function tryAutoResume() {
+      if(!autoResume||firmwareBusy||updateRequested||!eligible())return;
+      if(Date.now()>autoResume.expiresAt){clearAutoResume();announce('Update paused · tap Continue update');return;}
+      if(targetId()!==autoResume.id)return;
+      const pending=autoResume;
+      updateRequested=true;
+      clearTimeout(autoResumeTimer);
+      autoResumeTimer=setTimeout(async()=>{
+        autoResumeTimer=null;
+        try{
+          if(!autoResume||targetId()!==pending.id||!eligible())return;
+          offered=pending.manifest;offeredDevice=pending.id;offerLabel(true);
+          announce('Connection restored · resuming update…');
+          await installOfferedUpdate(pending.manifest,pending.id);
+        }finally{updateRequested=false;}
+      },350);
+    }
+    window.addEventListener?.('synap-gatt-ready',()=>{void tryAutoResume();});
     latestButton.addEventListener('click',updateLatest);bannerButton.addEventListener('click',updateLatest);
   }
 
