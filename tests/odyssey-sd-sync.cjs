@@ -19,6 +19,10 @@ assert.match(media,/schedulePendingSync\(250\)/);
 assert.match(media,/camera\(\)\.request\(14/);
 assert.match(preview,/id = 'deviceSDSettings'/);
 assert.match(preview,/Clear SD Card/);
+const settingsRender=preview.indexOf("settings = document.getElementById('deviceSDSettings')"),
+  libraryPanelReturn=preview.indexOf('if (!panel) return;', settingsRender);
+assert(settingsRender>=0 && libraryPanelReturn>settingsRender,
+  'Settings SD state must render before Library-panel early return');
 assert.match(preview,/await verifyAudio\(record\.id, source\.main\)/);
 const verified=preview.indexOf('await verifyAudio(record.id, source.main)');
 assert(verified>=0);
