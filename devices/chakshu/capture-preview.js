@@ -634,10 +634,18 @@
             ? count + ' unsynced item' + (count === 1 ? '' : 's') + ' on SD.'
             : 'SD card ready · no unsynced content.'
           : info?.id === 2 && info?.sdProbeState === 2
-            ? 'SD card is not responding electrically. Check SD power, wiring or card contact.'
+            ? 'SD card is not responding electrically.'
             : info?.id === 2 && info?.sdProbeState === 1
-              ? 'SD card responds electrically, but its filesystem could not mount.'
-              : 'SD card unavailable. Check the card and refresh status.';
+              ? 'SD card responds, but raw initialization did not finish.'
+              : info?.id === 2 && info?.sdProbeState === 3
+                ? 'SD card initializes, but sector 0 cannot be read.'
+                : info?.id === 2 && info?.sdProbeState === 4
+                  ? 'SD card sector 0 has an invalid boot signature.'
+                  : info?.id === 2 && info?.sdProbeState === 5
+                    ? 'SD card sector 0 is valid, but FAT/exFAT was not recognized.'
+                    : info?.id === 2 && info?.sdProbeState === 6
+                      ? 'SD card and FAT/exFAT are readable, but the filesystem mount still fails.'
+                      : 'SD card unavailable. Check the card and refresh status.';
     if (clearSettings)
       clearSettings.disabled =
         !supportsStorage ||

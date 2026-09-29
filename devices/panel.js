@@ -82,8 +82,16 @@
               : info?.id === 2 && info?.sdProbeState === 2
                 ? 'SD card is not responding on the SPI bus. Check SD power, wiring or card contact.'
                 : info?.id === 2 && info?.sdProbeState === 1
-                  ? 'SD card responds electrically, but the filesystem could not mount. Check the card format/filesystem.'
-                  : 'SD transfer is supported, but the card is unavailable. Check the card and refresh status.'
+                  ? 'SD card responds electrically, but raw initialization did not finish.'
+                  : info?.id === 2 && info?.sdProbeState === 3
+                    ? 'SD card initializes, but sector 0 cannot be read.'
+                    : info?.id === 2 && info?.sdProbeState === 4
+                      ? 'SD card sector 0 is readable but its boot signature is invalid.'
+                      : info?.id === 2 && info?.sdProbeState === 5
+                        ? 'SD card sector 0 is valid, but no FAT/exFAT boot sector was recognized.'
+                        : info?.id === 2 && info?.sdProbeState === 6
+                          ? 'SD card and FAT/exFAT boot sector are readable, but Arduino filesystem mount still fails.'
+                          : 'SD transfer is supported, but the card is unavailable. Check the card and refresh status.'
             : info?.sdDetectionState === 1
               ? 'SD card detected at startup. Restart the pendant after changing the card.'
               : info?.sdDetectionState === 2

@@ -340,8 +340,16 @@
       : info?.id === 2 && info?.sdProbeState === 2
         ? 'SD card has no SPI response. Offline recording is disabled until SD power/wiring/contact is restored.'
         : info?.id === 2 && info?.sdProbeState === 1
-          ? 'SD card responds electrically, but the filesystem mount failed. Check the card format/filesystem.'
-          : 'SD card unavailable. Offline Hey Snap capture requires the card; choose Check SD card.';
+          ? 'SD card responds, but raw initialization did not finish.'
+          : info?.id === 2 && info?.sdProbeState === 3
+            ? 'SD card initializes, but sector 0 cannot be read.'
+            : info?.id === 2 && info?.sdProbeState === 4
+              ? 'SD card sector 0 has an invalid boot signature.'
+              : info?.id === 2 && info?.sdProbeState === 5
+                ? 'SD card sector 0 is valid, but FAT/exFAT was not recognized.'
+                : info?.id === 2 && info?.sdProbeState === 6
+                  ? 'SD card and FAT/exFAT boot data are readable, but the filesystem mount failed.'
+                  : 'SD card unavailable. Offline Hey Snap capture requires the card; choose Check SD card.';
     if (syncNotice) syncNotice.hidden = !state.connected || pendingSD === 0;
     if (syncText) syncText.textContent = pendingSD
       ? pendingSD + ' offline capture' + (pendingSD === 1 ? '' : 's') + ' not synced with this app.'
