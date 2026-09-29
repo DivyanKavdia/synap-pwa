@@ -151,7 +151,7 @@ function setup(options={}){
     t.c.globalThis.SynapDesktopCapture.state=()=>({active:true,phase});await t.click('otaLatest');assert(!t.calls.includes('flash'),phase);
   }
   const desktopRace=setup({desktopBeforeQueuedRead:true});await desktopRace.click('otaReleaseCheck');assert(!desktopRace.calls.includes('manifest'));
-  let t=setup();await t.click('otaReleaseCheck');assert.equal(t.node('firmwareNoticeText').textContent,'Update synap-os1-build1001 available · build 503 → 1001');
+  let t=setup();await t.click('otaReleaseCheck');assert.equal(t.node('firmwareNoticeText').textContent,'Update synap-os1-build1001 available');
   await t.click('firmwareUpdateButton');
   assert(t.calls.includes('flash'));assert(t.calls.includes('reconnect'));assert.match(t.node('otaStatus').textContent,/Update complete/);assert.equal(t.storage.size,0);assert(!t.c.firmwareBusy);
   assert(t.node('firmwareUpdateSpinner').hidden);assert(t.node('firmwareNoticeProgress').hidden);assert(t.node('firmwareUpdateButton').hidden);assert(t.node('settingsDialog').open);
