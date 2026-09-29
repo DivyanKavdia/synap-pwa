@@ -3874,7 +3874,7 @@
     const releases=globalThis.SynapReleases;
     let offered=null,offeredDevice=null,lastCheck=0,downloadController=null;
     let autoResume=null,autoResumeTimer=null;
-    const clearAutoResume=()=>{autoResume=null;clearTimeout(autoResumeTimer);autoResumeTimer=null;};
+    const clearAutoResume=()=>{autoResume=null;if(autoResumeTimer)window.clearTimeout?.(autoResumeTimer);autoResumeTimer=null;};
     const armAutoResume=(manifest,id)=>{
       autoResume={manifest,id,expiresAt:Date.now()+120000};
       log('Firmware auto-resume armed',{deviceId:id,target:manifest?.target||null,build:manifest?.build||null});
@@ -4067,8 +4067,8 @@
       if(targetId()!==autoResume.id)return;
       const pending=autoResume;
       updateRequested=true;
-      clearTimeout(autoResumeTimer);
-      autoResumeTimer=setTimeout(async()=>{
+      if(autoResumeTimer)window.clearTimeout?.(autoResumeTimer);
+      autoResumeTimer=window.setTimeout(async()=>{
         autoResumeTimer=null;
         try{
           if(!autoResume||targetId()!==pending.id||!eligible())return;
