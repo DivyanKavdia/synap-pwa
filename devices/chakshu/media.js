@@ -598,6 +598,12 @@
     clearTimeout(autoSyncTimer);
     autoSyncTimer = null;
     if (!owner || !connected() || !ready()) return;
+    // Bluefy/iOS can report the core link ready while optional GATT traffic is
+    // still settling. Odyssey C3 has no camera urgency, so give its first SD
+    // catalogue request a small stability window; Chakshu keeps existing timing.
+    const info = moduleInfo(),
+      stableDelayMs =
+        info && !capabilities.isChakshu(info) ? Math.max(delayMs, 3000) : delayMs;
     autoSyncTimer = setTimeout(() => {
       autoSyncTimer = null;
       syncPendingSD().catch((e) => {
@@ -606,7 +612,7 @@
           notify();
         }
       });
-    }, delayMs);
+    }, stableDelayMs);
   }
   async function pollOffline() {
     clearTimeout(offlineTimer);
