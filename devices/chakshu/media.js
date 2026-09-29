@@ -598,12 +598,12 @@
     clearTimeout(autoSyncTimer);
     autoSyncTimer = null;
     if (!owner || !connected() || !ready()) return;
-    // Bluefy/iOS can report the core link ready while optional GATT traffic is
-    // still settling. Odyssey C3 has no camera urgency, so give its first SD
-    // catalogue request a small stability window; Chakshu keeps existing timing.
-    const info = moduleInfo(),
-      stableDelayMs =
-        info && !capabilities.isChakshu(info) ? Math.max(delayMs, 3000) : delayMs;
+    const info = moduleInfo();
+    // OTA recovery guard for Odyssey C3. Builds before 1445 can reset while
+    // enumerating FAT from the first automatic media op7 catalogue request.
+    // Do not touch C3 SD in the background: this keeps BLE stable so Settings
+    // can run the OTA updater. Explicit user-driven SD operations still work.
+    if (info && !capabilities.isChakshu(info)) return;
     autoSyncTimer = setTimeout(() => {
       autoSyncTimer = null;
       syncPendingSD().catch((e) => {
@@ -612,7 +612,7 @@
           notify();
         }
       });
-    }, stableDelayMs);
+    }, delayMs);
   }
   async function pollOffline() {
     clearTimeout(offlineTimer);
