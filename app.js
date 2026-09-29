@@ -4270,7 +4270,10 @@
       const client = globalThis.SynapModules?.client, info = client?.module;
       const hardware = { module: info?.id ?? null, target: info?.target ?? null,
         supported: info?.supported ?? null, ready: info?.ready ?? null,
-        mediaVersion: info?.mediaVersion ?? null, error: client?.error || '' };
+        mediaVersion: info?.mediaVersion ?? null,
+        sdDetectionState: info?.sdDetectionState ?? null,
+        sdProbeState: info?.sdProbeState ?? null,
+        error: client?.error || '' };
       const signature = JSON.stringify(hardware);
       if (signature !== hardwareSignature) {
         hardwareSignature = signature;
