@@ -35,16 +35,27 @@ test('OTA, release selection and module discovery share the generated catalog', 
     assert.equal(info.name, p.name);
   }
 });
-test('a protocol version or spoofed extra flags never gives C3/S3 Chakshu functions', () => {
-  for (const id of [1, 2]) {
-    const info = descriptor(id, 1023, 1023);
-    assert.equal(caps.supports(info, 'audio'), true);
-    assert.equal(caps.supports(info, 'camera'), false);
-    assert.equal(caps.canCapture(info, 'photo'), false);
-    assert.equal(caps.hasMedia(info), false);
-    assert.equal(caps.hasVoice(info), false);
-    assert.equal(caps.hardwareCheck(info, 1), false);
-  }
+test('profile-scoped protocols give C3 SD media without unlocking Chakshu camera functions', () => {
+  const s3 = descriptor(1, 1023, 1023);
+  assert.equal(caps.supports(s3, 'audio'), true);
+  assert.equal(caps.supports(s3, 'camera'), false);
+  assert.equal(caps.supports(s3, 'sd'), false);
+  assert.equal(caps.canCapture(s3, 'photo'), false);
+  assert.equal(caps.hasMedia(s3), false);
+  assert.equal(caps.hasVoice(s3), false);
+  assert.equal(caps.hardwareCheck(s3, 1), false);
+
+  const c3 = descriptor(2, 1023, 1023);
+  assert.equal(caps.supports(c3, 'audio'), true);
+  assert.equal(caps.supports(c3, 'sd'), true);
+  assert.equal(caps.supports(c3, 'camera'), false);
+  assert.equal(caps.hasMedia(c3), true, 'C3 media-v1 is the SD catalogue/read/delete transport');
+  assert.equal(caps.canCapture(c3, 'photo'), false, 'media-v1 must not imply a camera');
+  assert.equal(caps.canCapture(c3, 'video'), false);
+  assert.equal(caps.hasVoice(c3), false);
+  assert.equal(caps.hardwareCheck(c3, 1), false);
+  assert.equal(caps.hasMedia(descriptor(2, 1023, 1023, 0)), false, 'wrong media version stays locked');
+
   const chakshuMask = mask(profiles.BY_MODULE[3].features);
   const wrong = { ...descriptor(3, chakshuMask, chakshuMask), target: profiles.BY_MODULE[1].target };
   assert.equal(caps.isChakshu(wrong), false);

@@ -577,7 +577,7 @@ test('unsynced Chakshu audio photo and video surface in the shared Library befor
   assert.match(media,/!\/\\\.wav\$\/i\.test\(file\.path\) \|\| !videoStems\.has/);
   assert.match(library,/\(jpg\|mjpeg\|wav\)/);
   assert.match(library,/sdOnly: true/);
-  assert.match(library,/Not synced · On Chakshu SD/);
+  assert.match(library,/Not synced · On device SD/);
   assert.match(library,/Sync to Memories/);
   assert.match(library,/SynapChakshuV2\?\.moveSD/);
   assert.match(lifecycle,/The imported visual could not be verified\. The SD original was kept\./);
@@ -600,7 +600,7 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(media, /offlineReady: false/);
   assert.match(media, /synap-chakshu-sd-pending/);
   assert.match(library, /\(jpg\|mjpeg\|wav\)/);
-  assert.match(library, /Not synced · On Chakshu SD/);
+  assert.match(library, /Not synced · On device SD/);
   assert.match(library, /SynapChakshuV2\?\.moveSD/);
   assert.match(lifecycle, /async function syncAll\(\)/);
   assert.match(lifecycle, /verification failed/);
