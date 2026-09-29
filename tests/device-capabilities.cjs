@@ -9,7 +9,7 @@ const ota = require('../ota.js'),
   releases = require('../releases.js');
 const { generate } = require('../tools/device-catalog.cjs');
 const mask = (features) => features.reduce((sum, key) => sum | profiles.FLAGS[key], 0);
-function descriptor(id, supported, ready, media = 1, voice = 1) {
+function descriptor(id, supported, ready, media = 1, voice = 1, sdState = 0, sdProbe = 0) {
   const v = new DataView(new ArrayBuffer(20));
   [0xc7, 1, id, 1].forEach((n, i) => v.setUint8(i, n));
   v.setUint16(4, supported, true);
@@ -17,6 +17,11 @@ function descriptor(id, supported, ready, media = 1, voice = 1) {
   v.setUint16(10, 16000, true);
   v.setUint8(14, media);
   v.setUint8(15, voice);
+  if ([1, 2].includes(id)) {
+    v.setUint8(17, 1);
+    v.setUint8(18, sdState);
+    v.setUint8(19, sdProbe);
+  }
   return decode(v);
 }
 test('OTA, release selection and module discovery share the generated catalog', () => {
@@ -45,7 +50,9 @@ test('profile-scoped protocols give C3 SD media without unlocking Chakshu camera
   assert.equal(caps.hasVoice(s3), false);
   assert.equal(caps.hardwareCheck(s3, 1), false);
 
-  const c3 = descriptor(2, 1023, 1023);
+  const c3 = descriptor(2, 1023, 1023, 1, 1, 2, 1);
+  assert.equal(c3.sdDetectionState, 2);
+  assert.equal(c3.sdProbeState, 1, 'C3 exposes raw SPI response separately from filesystem mount');
   assert.equal(caps.supports(c3, 'audio'), true);
   assert.equal(caps.supports(c3, 'sd'), true);
   assert.equal(caps.supports(c3, 'sdAudio'), true, 'C3 advertises local SD WAV recording support');
@@ -116,4 +123,16 @@ test('catalog keeps current product names and Chakshu control hardware metadata'
   assert.equal(chakshu.hardware.batteryAdcMv,1320);
   assert.equal(chakshu.hardware.batteryCellMv,4130);
   for(const feature of ['touch','battery','standby'])assert(chakshu.features.includes(feature));
+});
+
+
+test('C3 SD probe state distinguishes electrical silence from a filesystem mount failure', () => {
+  const all = mask(profiles.BY_MODULE[2].features);
+  const noReply = descriptor(2, all, 0, 1, 0, 2, 2);
+  assert.equal(noReply.sdDetectionState, 2);
+  assert.equal(noReply.sdProbeState, 2);
+  const replied = descriptor(2, all, 0, 1, 0, 2, 1);
+  assert.equal(replied.sdDetectionState, 2);
+  assert.equal(replied.sdProbeState, 1);
+  assert.equal(descriptor(1, 0, 0, 0, 0, 2, 2).sdProbeState, null);
 });

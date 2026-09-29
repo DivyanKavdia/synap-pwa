@@ -48,6 +48,9 @@
       // Odyssey boot-probe snapshot, independent of usable SD/media capabilities.
       sdDetectionState: [1, 2].includes(profile.id) && value.getUint8(17) === 1
         && value.getUint8(18) <= 3 ? value.getUint8(18) : null,
+      // C3 raw SPI probe: 0=unknown, 1=card answered CMD0, 2=no electrical reply.
+      sdProbeState: profile.id === 2 && value.getUint8(17) === 1
+        && value.getUint8(19) <= 2 ? value.getUint8(19) : null,
       legacy: false,
     });
   }
