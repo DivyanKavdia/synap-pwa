@@ -48,6 +48,8 @@ test('profile-scoped protocols give C3 SD media without unlocking Chakshu camera
   const c3 = descriptor(2, 1023, 1023);
   assert.equal(caps.supports(c3, 'audio'), true);
   assert.equal(caps.supports(c3, 'sd'), true);
+  assert.equal(caps.supports(c3, 'sdAudio'), true, 'C3 advertises local SD WAV recording support');
+  assert.equal(caps.ready(c3, 'sdAudio'), true);
   assert.equal(caps.supports(c3, 'camera'), false);
   assert.equal(caps.hasMedia(c3), true, 'C3 media-v1 is the SD catalogue/read/delete transport');
   assert.equal(caps.canCapture(c3, 'photo'), false, 'media-v1 must not imply a camera');
