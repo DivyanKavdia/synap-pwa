@@ -598,12 +598,10 @@
     clearTimeout(autoSyncTimer);
     autoSyncTimer = null;
     if (!owner || !connected() || !ready()) return;
-    const info = moduleInfo();
-    // OTA recovery guard for Odyssey C3. Builds before 1445 can reset while
-    // enumerating FAT from the first automatic media op7 catalogue request.
-    // Do not touch C3 SD in the background: this keeps BLE stable so Settings
-    // can run the OTA updater. Explicit user-driven SD operations still work.
-    if (info && !capabilities.isChakshu(info)) return;
+    // The app marks only a pre-1445 Odyssey C3 connection as OTA recovery.
+    // Suppress background SD traffic on that link, then automatically restore
+    // normal C3 catalogue discovery once build 1445+ reconnects normally.
+    if (root.document?.body?.dataset.otaRecovery === 'c3') return;
     autoSyncTimer = setTimeout(() => {
       autoSyncTimer = null;
       syncPendingSD().catch((e) => {
