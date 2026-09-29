@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 const caps = require('../devices/capabilities.js');
+const profiles = require('../devices/profiles.js');
 const { decode } = require('../devices/modules.js');
 function info(id, version, state, supported = 0, ready = 0, media = 0) {
   const v = new DataView(new ArrayBuffer(20));
@@ -37,7 +38,7 @@ test('Odyssey reports boot SD state and C3 media-v1 unlocks only SD transfer', (
     if (state === 3) assert.match(nodes.moduleStatus.textContent, /restart the pendant/);
   }
 
-  const sd = caps.flag('sd');
+  const sd = profiles.FLAGS.sd;
   const c3 = info(2, 1, 1, sd, sd, 1), nodes = render(c3);
   assert.equal(caps.supports(c3, 'sd'), true);
   assert.equal(caps.ready(c3, 'sd'), true);
