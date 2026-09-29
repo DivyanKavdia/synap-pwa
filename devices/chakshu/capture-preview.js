@@ -633,7 +633,11 @@
           ? count
             ? count + ' unsynced item' + (count === 1 ? '' : 's') + ' on SD.'
             : 'SD card ready · no unsynced content.'
-          : 'SD card unavailable. Check the card and refresh status.';
+          : info?.id === 2 && info?.sdProbeState === 2
+            ? 'SD card is not responding electrically. Check SD power, wiring or card contact.'
+            : info?.id === 2 && info?.sdProbeState === 1
+              ? 'SD card responds electrically, but its filesystem could not mount.'
+              : 'SD card unavailable. Check the card and refresh status.';
     if (clearSettings)
       clearSettings.disabled =
         !supportsStorage ||

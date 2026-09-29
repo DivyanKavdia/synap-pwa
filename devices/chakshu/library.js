@@ -337,7 +337,11 @@
       ? pendingSD
         ? 'SD card ready · ' + pendingSD + ' offline capture' + (pendingSD === 1 ? '' : 's') + ' waiting to sync.'
         : 'SD card ready. Offline Hey Snap captures will appear here after the next connection.'
-      : 'SD card unavailable. Offline Hey Snap capture requires the card; choose Check SD card.';
+      : info?.id === 2 && info?.sdProbeState === 2
+        ? 'SD card has no SPI response. Offline recording is disabled until SD power/wiring/contact is restored.'
+        : info?.id === 2 && info?.sdProbeState === 1
+          ? 'SD card responds electrically, but the filesystem mount failed. Check the card format/filesystem.'
+          : 'SD card unavailable. Offline Hey Snap capture requires the card; choose Check SD card.';
     if (syncNotice) syncNotice.hidden = !state.connected || pendingSD === 0;
     if (syncText) syncText.textContent = pendingSD
       ? pendingSD + ' offline capture' + (pendingSD === 1 ? '' : 's') + ' not synced with this app.'

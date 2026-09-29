@@ -79,7 +79,11 @@
           : caps.hasMedia(info) && caps.supports(info, 'sd')
             ? caps.ready(info, 'sd')
               ? 'SD card ready. Offline WAV recordings appear in Memories while BLE is connected.'
-              : 'SD transfer is supported, but the card is unavailable. Check the card and refresh status.'
+              : info?.id === 2 && info?.sdProbeState === 2
+                ? 'SD card is not responding on the SPI bus. Check SD power, wiring or card contact.'
+                : info?.id === 2 && info?.sdProbeState === 1
+                  ? 'SD card responds electrically, but the filesystem could not mount. Check the card format/filesystem.'
+                  : 'SD transfer is supported, but the card is unavailable. Check the card and refresh status.'
             : info?.sdDetectionState === 1
               ? 'SD card detected at startup. Restart the pendant after changing the card.'
               : info?.sdDetectionState === 2
