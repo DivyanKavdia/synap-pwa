@@ -170,7 +170,7 @@
         throw error;
       }
     }
-    async update(file, expectedDeviceId) {
+    async update(file, expectedDeviceId, expectedTarget = null) {
       if (this.busy) throw new Error("An update is already running.");
       this.busy=true;this.cancelled=false;this.committing=false;
       const epoch=this.epoch;let session=0,begun=false;
@@ -183,9 +183,9 @@
         if(![1,3,4,6].includes(info.state)) throw new Error("Another update is pending. Wait for reboot or the transfer timeout.");
         if (info.maxData<64 || info.maxData>503) throw new Error("Unsupported BLE firmware packet size.");
         if (!file || file.size<36 || file.size>info.capacity || file.size>16*1024*1024) throw new Error("Choose an application .bin that fits the available slot.");
-        this.io.progress("Preparing update…",0,false);
+        this.io.progress("Preparing update…",0,false,{phase:"prepare",offset:0,total:file.size||0});
         const bytes=new Uint8Array(await file.arrayBuffer());
-        const imageTarget=validateImage(bytes,info.capacity,info.protocol);
+        const imageTarget=validateImage(bytes,info.capacity,info.protocol,expectedTarget);
         // Earlier Chakshu builds defer the BLE callback while reusing one value
         // buffer. A write response acknowledges the radio, not the copied bytes.
         // Wait for the persisted offset before replacing that buffer. Build 1227
@@ -196,6 +196,7 @@
         if(await this.readDeviceId()!==expectedDeviceId) throw new Error("Device ID mismatch. Nothing was flashed.");
         this.ensure(epoch);
         let offset=0,ready=info.state===4;
+        let transferStartedAt=Date.now(),transferStartOffset=0;
         if([3,4].includes(info.state) && info.session) {
           session=info.session;offset=info.offset;
           if(offset>bytes.length) throw new Error("Saved update position exceeds this firmware image.");
@@ -204,8 +205,8 @@
           this.status=null;begun=true;await this.send(resume,epoch,true,true);
           const resumed=await this.ack(s=>[3,4].includes(s.state)&&s.offset===offset,epoch,session,15000);
           ready=resumed.state===4;
-          offset=resumed.offset;
-          this.io.progress("Resuming · "+Math.floor(offset*100/bytes.length)+"%",offset/bytes.length,false);
+          offset=resumed.offset;transferStartedAt=Date.now();transferStartOffset=offset;
+          this.io.progress("Resuming · "+Math.floor(offset*100/bytes.length)+"%",offset/bytes.length,false,{phase:"resume",offset,total:bytes.length,percent:Math.floor(offset*100/bytes.length),etaSeconds:null});
         } else {
           session=crypto.getRandomValues(new Uint32Array(1))[0] || 1;
           const begin=packet(1,session,59);new DataView(begin.buffer).setUint32(5,bytes.length,true);begin.set(digest,9);
@@ -213,7 +214,7 @@
           this.status=null;
           begun=true;await this.send(begin,epoch,true,true);
           const started=await this.ack(s=>s.state===3 && s.offset===0,epoch,session,30000);
-          offset=started.offset;
+          offset=started.offset;transferStartedAt=Date.now();transferStartOffset=offset;
         }
         while(!ready && offset<bytes.length) {
           const start=offset;let target=offset;
@@ -227,14 +228,17 @@
           const confirmed=await this.ackWindow(start,target,epoch,session);
           if(confirmed.offset<start || confirmed.offset>target) throw new Error("Firmware returned an invalid cumulative offset.");
           offset=confirmed.offset;
-          this.io.progress("Updating · "+Math.floor(offset*100/bytes.length)+"%",offset/bytes.length,false);
+          const percent=Math.floor(offset*100/bytes.length),elapsedMs=Math.max(1,Date.now()-transferStartedAt),
+            advanced=Math.max(0,offset-transferStartOffset),bytesPerSecond=advanced>0?Math.round(advanced*1000/elapsedMs):0,
+            etaSeconds=bytesPerSecond>0?Math.ceil((bytes.length-offset)/bytesPerSecond):null;
+          this.io.progress("Updating · "+percent+"%",offset/bytes.length,false,{phase:"transfer",offset,total:bytes.length,percent,bytesPerSecond,etaSeconds});
         }
         if(!ready) {
-          this.io.progress("Verifying update…",1,false);
+          this.io.progress("Verifying update…",1,false,{phase:"verify",offset:bytes.length,total:bytes.length,percent:100,etaSeconds:null});
           await this.send(packet(3,session),epoch,true,true);await this.ack(s=>s.state===4,epoch,session,30000);
         }
         this.ensure(epoch);this.committing=true;
-        this.io.progress("Restarting pendant…",1,true);
+        this.io.progress("Restarting pendant…",1,true,{phase:"restart",offset:bytes.length,total:bytes.length,percent:100,etaSeconds:null});
         await this.send(packet(4,session),epoch);await this.ack(s=>s.state===5,epoch,session,10000);
         return {committed:true,sha256:Array.from(digest,b=>b.toString(16).padStart(2,"0")).join("")};
       } catch(error) {
