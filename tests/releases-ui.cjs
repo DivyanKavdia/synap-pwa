@@ -14,7 +14,7 @@ function setup(options={}){
     for(const id of ['otaProgress','firmwareNoticeProgress']){assert.equal(node(id).hidden,false);if(value===null)assert.equal(node(id).hasAttribute('value'),false);else assert.equal(node(id).value,value);}
   }
   const version=options.legacyVersion?'1.0.0':'synap-os1-build1001';
-  const m={version,build:1001,identity:`SYNAP-FW:esp32s3-fh4r2-qspi-4m:${version}:1001`};
+  const m={version,build:1001,target:'esp32s3-fh4r2-qspi-4m',size:1000,identity:`SYNAP-FW:esp32s3-fh4r2-qspi-4m:${version}:1001`};
   const ID='SYNAP-AABBCCDDEEFF',OTHER='SYNAP-112233445566';
   if(options.pending)storage.set('synap-ota-pending-device:'+ID,JSON.stringify({...m,size:1000}));
   class Client {
@@ -25,7 +25,7 @@ function setup(options={}){
         await this.io.queue(()=>calls.push('late-firmware-read'),'Read update device ID');
       }
       return{protocol:options.legacy?2:3,deviceId:options.wrongIdentity?OTHER:c.deviceAssociation?.deviceId,state:options.resumeState?3:1,session:options.resumeState?55:0,offset:options.resumeState?500:0,build,capacity:2048,maxData:503};}
-    async update(blob,id){assert.equal(id,ID);assert(c.firmwareBusy);calls.push('flash');
+    async update(blob,id,target){assert.equal(id,ID);assert.equal(target,m.target);assert(c.firmwareBusy);calls.push('flash');
       if(options.pause){connected=false;const e=Error('paused');e.resumable=true;throw e;}
       this.io.progress('Updating · 50%',0.5,false);progressMatches('Updating · 50%',0.5);assert.equal(node('otaCancel').disabled,false);
       for(const fn of node('firmwareUpdateButton').events.click)await fn();assert.equal(calls.filter(call=>call==='flash').length,1,'duplicate clicks cannot start another update');
@@ -151,14 +151,14 @@ function setup(options={}){
     t.c.globalThis.SynapDesktopCapture.state=()=>({active:true,phase});await t.click('otaLatest');assert(!t.calls.includes('flash'),phase);
   }
   const desktopRace=setup({desktopBeforeQueuedRead:true});await desktopRace.click('otaReleaseCheck');assert(!desktopRace.calls.includes('manifest'));
-  let t=setup();await t.click('otaReleaseCheck');assert.equal(t.node('firmwareNoticeText').textContent,'Update synap-os1-build1001 available');
+  let t=setup();await t.click('otaReleaseCheck');assert.equal(t.node('firmwareNoticeText').textContent,'Update synap-os1-build1001 available · build 503 → 1001');
   await t.click('firmwareUpdateButton');
   assert(t.calls.includes('flash'));assert(t.calls.includes('reconnect'));assert.match(t.node('otaStatus').textContent,/Update complete/);assert.equal(t.storage.size,0);assert(!t.c.firmwareBusy);
   assert(t.node('firmwareUpdateSpinner').hidden);assert(t.node('firmwareNoticeProgress').hidden);assert(t.node('firmwareUpdateButton').hidden);assert(t.node('settingsDialog').open);
   assert.equal(t.node('settingsDialog').section,'device');
-  assert.equal(t.node('otaStatus').textContent,'Update complete · synap-os1-build1001');
+  assert.equal(t.node('otaStatus').textContent,'Update complete · synap-os1-build1001 · verified');
   await t.click('otaReleaseCheck');assert.equal(t.node('otaStatus').textContent,'Up to date · synap-os1-build1001');
-  t=setup({legacyVersion:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert.equal(t.node('otaStatus').textContent,'Update complete · 1.0.0 · build 1001');
+  t=setup({legacyVersion:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert.equal(t.node('otaStatus').textContent,'Update complete · 1.0.0 · build 1001 · verified');
   t=setup({pending:true,installed:true});await t.click('otaReleaseCheck');assert.equal(t.node('otaStatus').textContent,'Update complete · synap-os1-build1001');assert.equal(t.storage.size,0);
   t=setup({settingsOpen:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert(t.node('settingsDialog').open,'starting inside Settings keeps it open');assert(!t.calls.includes('settings'),'the update must not toggle Settings closed');
   t=setup({commitDrop:true});await t.click('otaReleaseCheck');await t.click('otaLatest');assert.match(t.node('otaStatus').textContent,/Update complete/);
