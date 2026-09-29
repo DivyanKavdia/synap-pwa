@@ -92,8 +92,11 @@ function mock(options={}) {
   for(const index of [0,12,32,40]){const f=image();f.bytes[index]^=1;assert.throws(()=>validateImage(f.bytes,2048));}
   assert.throws(()=>validateImage(image().bytes,100),/slot/);
   let t=mock();const info=await t.client.check();assert.equal(info.deviceId,ID);assert.equal(info.protocol,3);
-  const result=await t.client.update(image(),ID);assert.equal(result.committed,true);assert.equal(t.client.busy,false);
+  const result=await t.client.update(image(),ID,'esp32s3-fh4r2-qspi-4m');assert.equal(result.committed,true);assert.equal(t.client.busy,false);
   assert.deepEqual(t.commands,[1,2,2,2,3,4]);assert.equal(Buffer.concat(t.chunks).length,512);
+  const transferProgress=t.progress.find(p=>p[3]?.phase==='transfer');
+  assert(transferProgress,'transfer progress exposes structured telemetry');
+  assert.equal(transferProgress[3].total,512);assert(Number.isInteger(transferProgress[3].percent));
   assert.equal(t.progress.at(-1)[2],true,'cancel disabled at commit');
   t=mock({resume:true,fast:true});await t.client.check();assert((await t.client.update(image(),ID)).committed);
   assert.equal(t.commands[0],6,'reconnect resumes rather than sends BEGIN');assert.equal(Buffer.concat(t.chunks).length,512);
@@ -116,6 +119,9 @@ function mock(options={}) {
   t=mock({noNotifications:true});await t.client.check();assert((await t.client.update(image(80),ID)).committed,'read fallback');
   t=mock();await t.client.check();const bad=image();bad.bytes[0]=0;
   await assert.rejects(t.client.update(bad,ID),/application/);assert.equal(t.commands.length,0);
+  t=mock();await t.client.check();
+  await assert.rejects(t.client.update(image(),ID,'esp32c3-supermini-4m'),/selected synap hardware target/);
+  assert.equal(t.commands.length,0,'cross-target image is rejected before BEGIN');
   for(const id of [undefined,'','bad',OTHER]){
     t=mock();await t.client.check();await assert.rejects(t.client.update(image(),id));assert.equal(t.commands.length,0);
   }
