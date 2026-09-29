@@ -30,7 +30,7 @@
     return { state: 'connected', message: 'Chakshu connected.' };
   }
   function protocol(info, key) {
-    const expected = isChakshu(info) ? profile(info).protocols[key] : 0;
+    const expected = profile(info)?.protocols?.[key] || 0;
     return Boolean(Number.isInteger(expected) && expected > 0 && info[key + 'Version'] === expected);
   }
   const hasMedia = (info) => protocol(info, 'media');

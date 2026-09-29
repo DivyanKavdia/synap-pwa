@@ -28,9 +28,20 @@
   let workController = null;
   let associatedConnection = null;
   const MAX_VIDEO_BYTES = 32 * 1024 * 1024;
+  const SD_FILE_PATH =
+    /^\/synap\/(?:[a-f0-9]{8}-[a-f0-9]{8}\.(?:jpg|mjpeg)|[a-z0-9][a-z0-9._-]{0,51}\.wav)$/i;
   const notify = () => root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
-  const connectionStatus = () =>
-    capabilities.cameraConnection(root.SynapDevices?.connection, root.SynapModules?.client);
+  const connectionStatus = () => {
+    const connection = root.SynapDevices?.connection,
+      client = root.SynapModules?.client,
+      info = client?.context === connection ? client.module : null;
+    if (connection && info && capabilities.hasMedia(info) && !capabilities.isChakshu(info))
+      return {
+        state: 'connected',
+        message: (capabilities.profile(info)?.name || 'Pendant') + ' connected.',
+      };
+    return capabilities.cameraConnection(connection, client);
+  };
   const connected = () =>
     connectionStatus().state === 'connected' ? root.SynapDevices.connection : null;
   async function prepareCamera() {
@@ -42,7 +53,14 @@
       throw Error('Pendant connection changed. Retry capture.');
     if (!connected()) throw Error(connectionStatus().message);
   }
-  const ready = () => Boolean(owner && devices.some((device) => device.target === TARGET));
+  const ready = () =>
+    Boolean(
+      owner &&
+        (devices.some((device) => device.target === TARGET) ||
+          (connected() &&
+            capabilities.hasMedia(moduleInfo()) &&
+            !capabilities.isChakshu(moduleInfo()))),
+    );
   function check(expected) {
     if (!expected || uid() !== expected || owner !== expected)
       throw Error('Account changed. Return to the capture owner to continue.');
@@ -73,20 +91,22 @@
   function requireAccess() {
     check(owner);
     if (!ready())
-      throw Error('Photo/video library unavailable. Associate Chakshu with this account first.');
+      throw Error('Device media library unavailable. Sign in and connect the associated pendant first.');
     return { owner, store };
   }
   function camera(kind, offlineCapture = false) {
     requireAccess();
     const next = connected();
     if (!next?.deviceId) throw Error(connectionStatus().message);
-    if (!devices.some((device) => device.deviceId === next.deviceId))
+    const info = moduleInfo(),
+      chakshu = capabilities.isChakshu(info);
+    if (chakshu && !devices.some((device) => device.deviceId === next.deviceId))
       throw Error('Associate this Chakshu with your account first.');
-    if (!capabilities.hasMedia(moduleInfo()))
-      throw Error(
-        'Update Chakshu firmware to enable camera transfers and paired video. SD files can still be imported.',
-      );
-    if (kind && !capabilities.canCapture(moduleInfo(), kind, offlineCapture))
+    if (!capabilities.hasMedia(info))
+      throw Error('Update pendant firmware to enable SD media transfer.');
+    if (kind && !chakshu)
+      throw Error('Camera capture is available only on Chakshu.');
+    if (kind && !capabilities.canCapture(info, kind, offlineCapture))
       throw Error(
         offlineCapture
           ? 'Camera, microphone or SD card unavailable. Check hardware before recording offline.'
@@ -181,8 +201,10 @@
           capabilities.hasMedia(moduleInfo()) &&
           !session &&
           !working
-        )
-          pollOffline();
+        ) {
+          if (capabilities.isChakshu(moduleInfo())) pollOffline();
+          else schedulePendingSync(250);
+        }
       }
     }
   }
@@ -470,7 +492,10 @@
     // An explicit Check SD card is the user telling us to look again.
     forgetSDProbe();
     try {
-      if (moduleInfo()?.mediaFeatures & 8)
+      if (
+        capabilities.hasMedia(moduleInfo()) &&
+        (!capabilities.isChakshu(moduleInfo()) || moduleInfo()?.mediaFeatures & 8)
+      )
         await operation(async (signal) => camera().request(14, 0, '', signal));
       else await root.SynapModules.run(1);
     } finally {
@@ -615,7 +640,7 @@
     const previous = new Map(sdFiles.map((file) => [file.path, file])),
       raw = files.flatMap((file) => {
         const path = String(file?.path || ''), bytes = Number(file?.bytes);
-        if (!/^\/synap\/[a-f0-9]{8}-[a-f0-9]{8}\.(jpg|wav|mjpeg)$/i.test(path) || !Number.isSafeInteger(bytes) || bytes < 0) return [];
+        if (!SD_FILE_PATH.test(path) || !Number.isSafeInteger(bytes) || bytes < 0) return [];
         return [{
           path,
           bytes,
@@ -677,7 +702,11 @@
       }),
     });
     const id = await journal.begin(
-      localOnly ? 'Video soundtrack' : 'Chakshu audio',
+      localOnly
+        ? 'Video soundtrack'
+        : capabilities.isChakshu(moduleInfo())
+          ? 'Chakshu audio'
+          : 'Odyssey SD audio',
       { deviceId },
       { localOnly },
     );

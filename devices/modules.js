@@ -133,9 +133,14 @@
       return value;
     }
     async identify(queue = this.context.queue) {
-      // S3/C3 features and legacy absence do not change during a connection.
-      // Chakshu still refreshes readiness as cards and media state change.
-      if (this.available && !capabilities.isChakshu(this.module)) return;
+      // Plain audio modules are static for a connection. Media-capable modules
+      // refresh so an SD remount/clear is reflected without reconnecting.
+      if (
+        this.available &&
+        !capabilities.isChakshu(this.module) &&
+        !capabilities.hasMedia(this.module)
+      )
+        return;
       let value;
       try {
         value = await this.read(UUID, queue);

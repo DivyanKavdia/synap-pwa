@@ -493,7 +493,8 @@
             ? 'Video'
             : 'Photo';
       opener.setAttribute('aria-label', 'Sync to Memories: ' + title);
-      card.querySelector('.recording-row-meta').textContent = type + ' · Not synced · On Chakshu SD · ' + byteLabel(row.byteSize);
+      card.querySelector('.recording-row-meta').textContent =
+        type + ' · Not synced · On device SD · ' + byteLabel(row.byteSize);
       preview.textContent = row.describeRequested ? 'Sync & describe' : 'Sync to Memories';
       preview.hidden = false;
       disposeCard(card);
@@ -568,7 +569,9 @@
       const item = card.synapRecording;
       if (item?.sdOnly) {
         const move = root.SynapChakshuV2?.moveSD || api().moveSD;
-        await move(item.sourcePath, (progress) => status('Syncing from Chakshu SD · ' + Math.round(progress * 100) + '%'));
+        await move(item.sourcePath, (progress) =>
+          status('Syncing from device SD · ' + Math.round(progress * 100) + '%'),
+        );
         await api().syncPendingSD().catch(() => {});
         await render();
         return 'Synced to Memories. Verified SD source removed.';

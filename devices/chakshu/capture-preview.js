@@ -244,16 +244,19 @@
   function context() {
     const state = api()?.state,
       connection = root.SynapDevices?.connection;
-    if (!state?.available) throw Error('Associate Chakshu with this account first.');
-    if (!state.connected || !connection?.deviceId) throw Error(state?.connectionStatus?.message || 'Connect Chakshu first.');
-    if (!state.mediaSupported) throw Error('Update Chakshu firmware for media controls.');
+    if (!state?.available) throw Error('Sign in and connect a media-capable pendant first.');
+    if (!state.connected || !connection?.deviceId)
+      throw Error(state?.connectionStatus?.message || 'Connect the pendant first.');
+    if (!state.mediaSupported) throw Error('Update pendant firmware for SD media controls.');
     return connection;
   }
   function client() {
     return new root.SynapChakshuTransfer.Client(context());
   }
   function pathOk(path) {
-    return /^\/synap\/[a-f0-9]{8}-[a-f0-9]{8}\.(jpg|wav|mjpeg|json)$/.test(path);
+    return /^\/synap\/(?:[a-f0-9]{8}-[a-f0-9]{8}\.(?:jpg|wav|mjpeg|json)|[a-z0-9][a-z0-9._-]{0,51}\.wav)$/i.test(
+      path,
+    );
   }
   async function digest(blob) {
     const bytes = await blob.arrayBuffer();
@@ -489,7 +492,7 @@
     }
   }
   async function clearSD() {
-    if (busy) throw Error('Another Chakshu transfer is already running.');
+    if (busy) throw Error('Another SD transfer is already running.');
     const connection = context();
     if (api().state.offline || api().state.session || root.SynapAppControls.recordingState().active)
       throw Error('Stop recording before clearing the SD card.');
@@ -637,6 +640,30 @@
     if (sync) sync.disabled = blocked || !state.connected || !state.storageReady || count === 0;
     if (list && (!state.connected || !state.storageReady)) list.hidden = true;
     else if (list && !list.hidden) renderSDRows(list, state.sdFiles || []);
+    const settings = document.getElementById('deviceSDSettings'),
+      settingsStatus = document.getElementById('deviceSDSettingsStatus'),
+      clearSettings = document.getElementById('clearDeviceSD'),
+      info = root.SynapModules?.client?.module,
+      supportsStorage =
+        Boolean(info) &&
+        root.SynapCapabilities?.hasMedia?.(info) &&
+        root.SynapCapabilities?.supports?.(info, 'sd');
+    if (settings) settings.hidden = !supportsStorage;
+    if (settingsStatus && supportsStorage)
+      settingsStatus.textContent = !state.connected
+        ? 'Connect the pendant to manage its SD card.'
+        : state.storageReady
+          ? count
+            ? count + ' unsynced item' + (count === 1 ? '' : 's') + ' on SD.'
+            : 'SD card ready · no unsynced content.'
+          : 'SD card unavailable. Check the card and refresh status.';
+    if (clearSettings)
+      clearSettings.disabled =
+        !supportsStorage ||
+        blocked ||
+        !state.connected ||
+        !state.storageReady ||
+        Boolean(root.SynapAppControls?.recordingState?.().active);
   }
   async function syncAll() {
     if (busy) throw Error('Another Chakshu transfer is already running.');
@@ -756,13 +783,51 @@
         renderSDInbox();
       }
     });
+    const extras = document.getElementById('settingsDeviceExtras');
+    if (extras && !document.getElementById('deviceSDSettings')) {
+      const card = document.createElement('section');
+      card.id = 'deviceSDSettings';
+      card.className = 'settings-card';
+      card.hidden = true;
+      card.innerHTML =
+        '<h3 class="settings-card-title">SD card</h3>' +
+        '<p id="deviceSDSettingsStatus" class="settings-hint">Connect a supported pendant to manage SD storage.</p>' +
+        '<div class="visual-actions"><button id="clearDeviceSD" type="button">Clear SD Card</button></div>';
+      extras.append(card);
+      document.getElementById('clearDeviceSD')?.addEventListener('click', async () => {
+        if (
+          !confirm(
+            'Remove all Synap captures from this device SD card? Unrelated files are kept. This cannot be undone.',
+          )
+        )
+          return;
+        const button = document.getElementById('clearDeviceSD');
+        button.disabled = true;
+        try {
+          const count = await clearSD();
+          status(
+            'Cleared ' +
+              count +
+              ' Synap capture' +
+              (count === 1 ? '' : 's') +
+              ' from the SD card.',
+          );
+          await api().syncPendingSD().catch(() => {});
+        } catch (error) {
+          status(error.message);
+        } finally {
+          button.disabled = false;
+          renderSDInbox();
+        }
+      });
+    }
     if (browse?.parentNode && !document.getElementById('visualClearSD')) {
       const clear = document.createElement('button');
       clear.id = 'visualClearSD';
       clear.type = 'button';
       clear.textContent = 'Clear SD';
       clear.addEventListener('click', async () => {
-        if (!confirm('Remove all Synap captures from the Chakshu SD card? Other files and voice-model files are kept.')) return;
+        if (!confirm('Remove all Synap captures from this device SD card? Unrelated files are kept.')) return;
         clear.disabled = true;
         try {
           const count = await clearSD();

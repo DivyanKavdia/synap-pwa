@@ -76,13 +76,17 @@
       byId('moduleStatus').textContent =
         client?.error ||
         (info?.legacy ? 'Earlier firmware detected. Update for hardware readiness checks.'
-          : info?.sdDetectionState === 1
-            ? 'SD card detected at startup. Detection only; recording and sync are not enabled. Restart the pendant after changing the card.'
-            : info?.sdDetectionState === 2
-              ? 'SD check failed at startup. Check the card, wiring and filesystem, then restart the pendant. Refresh status reads the last startup result.'
-              : info?.sdDetectionState === 3
-                ? 'No SD card reported at startup. Check the card and wiring, then restart the pendant.'
-                : '');
+          : caps.hasMedia(info) && caps.supports(info, 'sd')
+            ? caps.ready(info, 'sd')
+              ? 'SD card ready. Offline WAV recordings appear in Memories while BLE is connected.'
+              : 'SD transfer is supported, but the card is unavailable. Check the card and refresh status.'
+            : info?.sdDetectionState === 1
+              ? 'SD card detected at startup. Restart the pendant after changing the card.'
+              : info?.sdDetectionState === 2
+                ? 'SD check failed at startup. Check the card, wiring and filesystem, then restart the pendant. Refresh status reads the last startup result.'
+                : info?.sdDetectionState === 3
+                  ? 'No SD card reported at startup. Check the card and wiring, then restart the pendant.'
+                  : '');
       return;
     }
     byId('chakshuStorage').textContent =

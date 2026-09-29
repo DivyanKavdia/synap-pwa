@@ -55,12 +55,15 @@
       "releasePrefix": "targets/esp32c3-supermini-4m/",
       "features": [
         "audio",
+        "sd",
         "settings",
         "touch",
         "battery",
         "standby"
       ],
-      "protocols": {}
+      "protocols": {
+        "media": 1
+      }
     },
     {
       "id": 3,

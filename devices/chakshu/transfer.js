@@ -377,7 +377,9 @@
       });
     }
     file(path, signal, progress) {
-      if (!/^\/synap\/[a-f0-9]{8}-[a-f0-9]{8}\.(jpg|wav|mjpeg|json)$/.test(path))
+      if (
+        !/^\/synap\/(?:[a-f0-9]{8}-[a-f0-9]{8}\.(?:jpg|wav|mjpeg|json)|[a-z0-9][a-z0-9._-]{0,51}\.wav)$/i.test(path)
+      )
         throw Error('Invalid SD path.');
       return this.bytes(3, path, signal, progress);
     }
