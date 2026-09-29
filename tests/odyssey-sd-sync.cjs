@@ -16,7 +16,7 @@ const library=fs.readFileSync(path.join(root,'devices/chakshu/library.js'),'utf8
 assert(transfer.includes('{0,51}\\.wav'));
 assert.match(media,/Odyssey SD audio/);
 assert.match(media,/schedulePendingSync\(250\)/);
-assert.match(media,/Math\.max\(delayMs, 3000\)/,'Odyssey auto-catalogue must wait for a stable Bluefy link');
+assert.match(media,/if \(info && !capabilities\.isChakshu\(info\)\) return;/,'Odyssey automatic catalogue must be suppressed during OTA recovery');
 assert.match(media,/camera\(\)\.request\(14/);
 assert.match(preview,/id = 'deviceSDSettings'/);
 assert.match(preview,/Clear SD Card/);
