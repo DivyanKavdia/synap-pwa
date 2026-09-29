@@ -59,7 +59,8 @@
         "settings",
         "touch",
         "battery",
-        "standby"
+        "standby",
+        "sdAudio"
       ],
       "protocols": {
         "media": 1
