@@ -615,32 +615,9 @@
       deviceId = root.SynapDevices?.connection?.deviceId || state.sdFilesDeviceId || state.devices?.[0]?.deviceId || '',
       last = root.SynapChakshuVoice?.lastOutcome?.(deviceId),
       outcome = last?.message ? String(last.message).replace(/Chakshu SD/g, 'device storage').replace(/Chakshu/g, 'device') : '',
-      suffix = outcome ? ' Last offline result: ' + outcome : '';
-    if (!panel) return;
-    if (toggle) {
-      toggle.hidden = !state.available;
-      if (!state.available) toggle.setAttribute('aria-expanded', 'false');
-    }
-    const open = Boolean(toggle && toggle.getAttribute('aria-expanded') === 'true');
-    panel.hidden = !state.available || !open;
-    if (panel.hidden) return;
-    if (text) {
-      if (!state.connected)
-        text.textContent = 'Connect a device to review or sync content saved offline. Photos, videos and audio remain safely stored locally until sync.' + suffix;
-      else if (!state.storageReady)
-        text.textContent = 'Device connected · local storage unavailable. Check the device storage and try again.' + suffix;
-      else
-        text.textContent = (count
-          ? count + ' offline item' + (count === 1 ? '' : 's') + ' waiting. Sync copies each item to Memories, verifies it, then removes the local original.'
-          : 'Device storage ready · no unsynced offline content.') + suffix;
-    }
-    const blocked = busy || state.working || state.offline || Boolean(state.session);
-    if (check) check.disabled = blocked || !state.connected || !state.mediaSupported;
-    if (browse) browse.disabled = blocked || !state.connected || !state.storageReady;
-    if (sync) sync.disabled = blocked || !state.connected || !state.storageReady || count === 0;
-    if (list && (!state.connected || !state.storageReady)) list.hidden = true;
-    else if (list && !list.hidden) renderSDRows(list, state.sdFiles || []);
-    const settings = document.getElementById('deviceSDSettings'),
+      suffix = outcome ? ' Last offline result: ' + outcome : '',
+      blocked = busy || state.working || state.offline || Boolean(state.session),
+      settings = document.getElementById('deviceSDSettings'),
       settingsStatus = document.getElementById('deviceSDSettingsStatus'),
       clearSettings = document.getElementById('clearDeviceSD'),
       info = root.SynapModules?.client?.module,
@@ -664,6 +641,29 @@
         !state.connected ||
         !state.storageReady ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
+    if (!panel) return;
+    if (toggle) {
+      toggle.hidden = !state.available;
+      if (!state.available) toggle.setAttribute('aria-expanded', 'false');
+    }
+    const open = Boolean(toggle && toggle.getAttribute('aria-expanded') === 'true');
+    panel.hidden = !state.available || !open;
+    if (panel.hidden) return;
+    if (text) {
+      if (!state.connected)
+        text.textContent = 'Connect a device to review or sync content saved offline. Photos, videos and audio remain safely stored locally until sync.' + suffix;
+      else if (!state.storageReady)
+        text.textContent = 'Device connected · local storage unavailable. Check the device storage and try again.' + suffix;
+      else
+        text.textContent = (count
+          ? count + ' offline item' + (count === 1 ? '' : 's') + ' waiting. Sync copies each item to Memories, verifies it, then removes the local original.'
+          : 'Device storage ready · no unsynced offline content.') + suffix;
+    }
+    if (check) check.disabled = blocked || !state.connected || !state.mediaSupported;
+    if (browse) browse.disabled = blocked || !state.connected || !state.storageReady;
+    if (sync) sync.disabled = blocked || !state.connected || !state.storageReady || count === 0;
+    if (list && (!state.connected || !state.storageReady)) list.hidden = true;
+    else if (list && !list.hidden) renderSDRows(list, state.sdFiles || []);
   }
   async function syncAll() {
     if (busy) throw Error('Another Chakshu transfer is already running.');
