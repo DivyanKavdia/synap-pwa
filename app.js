@@ -1238,6 +1238,85 @@
       assertConnection();
       log("Pendant service resolved");
 
+      // Odyssey C3 OTA recovery: builds before 1445 can reset when the old SD
+      // transfer worker is touched after connection. Before publishing the
+      // service to optional module/media consumers, identify the firmware and
+      // reserve this BLE link for OTA only. Build 1445+ returns to the normal
+      // connection path automatically.
+      if (
+        !resumingRecording &&
+        globalThis.SynapOTA &&
+        globalThis.SynapReleases?.IDENTITY_UUID &&
+        globalThis.SynapDevices?.UUID &&
+        globalThis.SynapDevices?.decode
+      ) {
+        try {
+          const recoveryIdentityCharacteristic = await queueGattOperation(
+            () => nativeService.getCharacteristic(globalThis.SynapReleases.IDENTITY_UUID),
+            "Find C3 recovery firmware identity",
+          );
+          const recoveryIdentityValue = await queueGattOperation(
+            () => recoveryIdentityCharacteristic.readValue(),
+            "Read C3 recovery firmware identity",
+          );
+          assertConnection();
+          const recoveryIdentity = new TextDecoder("utf-8", { fatal: true }).decode(
+            new Uint8Array(
+              recoveryIdentityValue.buffer || recoveryIdentityValue,
+              recoveryIdentityValue.byteOffset || 0,
+              recoveryIdentityValue.byteLength,
+            ),
+          );
+          const c3RecoveryMatch =
+            /^SYNAP-FW:esp32c3-supermini-4m:[^:]+:(\d+)$/.exec(recoveryIdentity);
+          const recoveryBuild = c3RecoveryMatch ? Number(c3RecoveryMatch[1]) : 0;
+          if (recoveryBuild > 0 && recoveryBuild < 1445) {
+            const recoveryDeviceCharacteristic = await queueGattOperation(
+              () => nativeService.getCharacteristic(globalThis.SynapDevices.UUID),
+              "Find C3 recovery device identity",
+            );
+            const recoveryDeviceValue = await queueGattOperation(
+              () => recoveryDeviceCharacteristic.readValue(),
+              "Read C3 recovery device identity",
+            );
+            assertConnection();
+            const recoveryDeviceId = globalThis.SynapDevices.decode(recoveryDeviceValue);
+            rememberDeviceAssociation(
+              recoveryDeviceId,
+              connectingDevice,
+              "Connected in Odyssey C3 firmware recovery mode.",
+            );
+            needsDeviceSelection = false;
+            try {
+              localStorage.setItem("dk-pendant-device-id", bluetoothDevice.id);
+            } catch (_) {
+              log("Device preference could not be saved during C3 OTA recovery.");
+            }
+            if (globalThis.document?.body) document.body.dataset.otaRecovery = "c3";
+            setReconnectCapability(
+              "Odyssey C3 firmware recovery mode",
+              "Bluetooth is reserved for firmware update. SD and media checks are paused until build 1445 is installed.",
+            );
+            setAppState(
+              "idle",
+              "Firmware recovery connection ready. Update the pendant before using SD or media.",
+            );
+            log("C3 OTA recovery connection ready", {
+              build: recoveryBuild,
+              target: "esp32c3-supermini-4m",
+              deviceId: recoveryDeviceId,
+            });
+            setupSucceeded = true;
+            rapidNativeLinkFailures = 0;
+            rememberedHandleRefreshAttempted = false;
+            return;
+          }
+        } catch (recoveryError) {
+          assertConnection();
+          log("C3 OTA recovery probe skipped", friendlyError(recoveryError));
+        }
+      }
+
       // Find the two required protocol-v2 endpoints directly. A bridge's bulk
       // inventory API must not be the only way to obtain working audio handles.
       connectionStage("audio characteristic");
@@ -1591,6 +1670,7 @@
   function cleanupCharacteristics() {
     globalThis.SynapDisconnectProtection?.detach();
     globalThis.SynapDevices?.clearService?.();
+    if (globalThis.document?.body) delete document.body.dataset.otaRecovery;
     deviceAssociation = null;
     deviceIdentityMessage = "Not connected";
     firmwareUpdater?.reset();
@@ -3858,10 +3938,11 @@
       clearTimeout(automaticFirmwareCheckTimer);
       // Leave initial ATT discovery to audio, recovery and camera capabilities.
       // Manual update checks remain immediate; passive checks need quiet idle time.
+      const recoveryDelay = document.body?.dataset.otaRecovery === 'c3' ? 150 : 5000;
       automaticFirmwareCheckTimer=setTimeout(()=>{
         automaticFirmwareCheckTimer=null;
         inspect().catch(error=>log('Firmware check',friendlyError(error)));
-      },5000);
+      },recoveryDelay);
     };
     document.getElementById("otaReleaseCheck").addEventListener("click",()=>inspect(true));
     // Discovery runs after connection and on the existing interval, not on app focus.
