@@ -4,7 +4,7 @@ const CONTROL_UUID='4fa12347-0000-1000-8000-00805f9b34fb';
 const PROTOCOL_VERSION=0x02,CMD_STANDBY=0x03,CMD_WAKE=0x04,CMD_RESTART=0x05;
 const POWER_MAGIC=0xE2,POWER_VERSION=1,POWER_AWAKE=1,POWER_STANDBY=2,POWER_DEEP_SLEEP=3,POWER_WAKE_RECORD=4;
 const IDLE_TO_STANDBY_MS=30000,MIN_SAFE_STANDBY_BUILD=1125,MIN_RESTART_BUILD=1508;
-let connection=null,control=null,standbyTimer=0,autoStartPending=false,lastPowerState=0,firmwareBuild=0,writeBusy=false,stateObserver=null;
+let connection=null,control=null,standbyTimer=0,autoStartPending=false,lastPowerState=0,firmwareBuild=0,writeBusy=false,stateObserver=null,restartCapabilityPending=false;
 function state(){return String(document.body?.dataset?.state||'')}
 function cancelStandby(){if(standbyTimer){clearTimeout(standbyTimer);standbyTimer=0}}
 function compatibleStandby(){
@@ -54,6 +54,7 @@ async function restartFirmware(){
   try{
     const c=await getControl(current);
     if(!c||connection!==current)throw Error('Pendant control is unavailable.');
+    restartCapabilityPending=true;
     await current.queue(async()=>{
       if(connection!==current)throw Error('Pendant disconnected before restart.');
       await writeControl(c,new Uint8Array([CMD_RESTART,PROTOCOL_VERSION]));
@@ -98,6 +99,23 @@ function onPowerPacket(event){
 }
 root.addEventListener('synap-module-changed',onStateChange);
 root.addEventListener('synap-event-packet',onPowerPacket);
+root.addEventListener('synap-gatt-ready',()=>{
+  if(!restartCapabilityPending)return;
+  setTimeout(async()=>{
+    if(!restartCapabilityPending||!connection)return;
+    await root.SynapModules?.refresh?.().catch(()=>{});
+    const info=root.SynapModules?.client?.module;
+    root.dispatchEvent?.(new CustomEvent('synap-post-restart-capabilities',{
+      detail:{
+        module:info?.id??null,target:info?.target??null,supported:info?.supported??null,
+        ready:info?.ready??null,mediaVersion:info?.mediaVersion??null,
+        sdDetectionState:info?.sdDetectionState??null,sdProbeState:info?.sdProbeState??null,
+        error:root.SynapModules?.client?.error||''
+      }
+    }));
+    restartCapabilityPending=false;
+  },350);
+});
 root.addEventListener('synap-gatt-service-ready',event=>{connection=event.detail;control=null;lastPowerState=0;firmwareBuild=0;bindStateObserver();cancelStandby();renderRestartControl();setTimeout(tryAutoStart,900)});
 root.addEventListener('synap-gatt-disconnected',()=>{connection=null;control=null;firmwareBuild=0;lastPowerState=0;autoStartPending=false;cancelStandby();renderRestartControl()});
 function bindRestartControl(){
