@@ -634,19 +634,15 @@
           ? count
             ? count + ' unsynced item' + (count === 1 ? '' : 's') + ' on SD.'
             : 'SD card ready · no unsynced content.'
-          : info?.id === 2 && info?.sdProbeState === 2
-            ? 'SD card is not responding electrically.'
-            : info?.id === 2 && info?.sdProbeState === 1
-              ? 'SD card responds, but raw initialization did not finish.'
+          : info?.id === 2 && info?.sdProbeState === 1
+            ? 'SD SPI bus setup failed.'
+            : info?.id === 2 && info?.sdProbeState === 2
+              ? 'SD card protocol initialization failed.'
               : info?.id === 2 && info?.sdProbeState === 3
-                ? 'SD card initializes, but sector 0 cannot be read.'
+                ? 'SD card initialized, but the FAT filesystem could not be mounted.'
                 : info?.id === 2 && info?.sdProbeState === 4
-                  ? 'SD card sector 0 has an invalid boot signature.'
-                  : info?.id === 2 && info?.sdProbeState === 5
-                    ? 'SD card sector 0 is valid, but FAT/exFAT was not recognized.'
-                    : info?.id === 2 && info?.sdProbeState === 6
-                      ? 'SD card and FAT/exFAT are readable, but the filesystem mount still fails.'
-                      : 'SD card unavailable. Check the card and refresh status.';
+                  ? 'SD filesystem mounted, but VFS validation failed.'
+                  : 'SD card unavailable. Check the card and retry storage.';
     if (retrySettings)
       retrySettings.disabled =
         !supportsStorage ||

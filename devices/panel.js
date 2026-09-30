@@ -79,19 +79,15 @@
           : caps.hasMedia(info) && caps.supports(info, 'sd')
             ? caps.ready(info, 'sd')
               ? 'SD card ready. Offline WAV recordings appear in Memories while BLE is connected.'
-              : info?.id === 2 && info?.sdProbeState === 2
-                ? 'SD card is not responding on the SPI bus. Check SD power, wiring or card contact.'
-                : info?.id === 2 && info?.sdProbeState === 1
-                  ? 'SD card responds electrically, but raw initialization did not finish.'
+              : info?.id === 2 && info?.sdProbeState === 1
+                ? 'SD SPI bus setup failed.'
+                : info?.id === 2 && info?.sdProbeState === 2
+                  ? 'SD card protocol initialization failed.'
                   : info?.id === 2 && info?.sdProbeState === 3
-                    ? 'SD card initializes, but sector 0 cannot be read.'
+                    ? 'SD card initialized, but the FAT filesystem could not be mounted.'
                     : info?.id === 2 && info?.sdProbeState === 4
-                      ? 'SD card sector 0 is readable but its boot signature is invalid.'
-                      : info?.id === 2 && info?.sdProbeState === 5
-                        ? 'SD card sector 0 is valid, but no FAT/exFAT boot sector was recognized.'
-                        : info?.id === 2 && info?.sdProbeState === 6
-                          ? 'SD card and FAT/exFAT boot sector are readable, but Arduino filesystem mount still fails.'
-                          : 'SD transfer is supported, but the card is unavailable. Check the card and refresh status.'
+                      ? 'SD filesystem mounted, but VFS validation failed.'
+                      : 'SD transfer is supported, but the card is unavailable. Retry storage.'
             : info?.sdDetectionState === 1
               ? 'SD card detected at startup. Restart the pendant after changing the card.'
               : info?.sdDetectionState === 2
