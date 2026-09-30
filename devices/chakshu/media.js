@@ -489,8 +489,10 @@
   async function refreshSD() {
     if (root.SynapAppControls.recordingState().active)
       throw Error('Stop recording before checking the SD card.');
-    // An explicit Check SD card is the user telling us to look again.
+    // Explicit SD recovery must wake Odyssey C3 out of the PWA's 30-second
+    // remote-standby state before firmware operation 14 is dispatched.
     forgetSDProbe();
+    await root.SynapPowerLifecycle?.wakeForActivity?.();
     try {
       if (
         capabilities.hasMedia(moduleInfo()) &&
