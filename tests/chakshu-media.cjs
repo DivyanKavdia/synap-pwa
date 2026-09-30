@@ -621,6 +621,7 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(lifecycle, /id="retryDeviceSD"[^>]*>Retry SD card<\/button>/);
   assert.match(lifecycle, /getElementById\('retryDeviceSD'\)\?\.addEventListener\('click'/);
   assert.match(lifecycle, /await api\(\)\.refreshSD\(\)/);
+  assert.match(media, /await root\.SynapPowerLifecycle\?\.wakeForActivity\?\.\(\)/);
   assert.match(lifecycle, /sdDetectionState === 1 && info\?\.sdProbeState === 6/);
   assert.match(lifecycle, /SD retry finished · detection/);
   assert.match(lifecycle, /browseSD\('librarySDList'\)/);
