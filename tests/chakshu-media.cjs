@@ -639,3 +639,32 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(html, /View device content/);
   assert.match(html, /id="visualRecordSD"[^>]*disabled/);
 });
+
+test('separate media clients on one BLE context serialize complete requests', async () => {
+  let releaseFirst, writes = 0, lastId = 0;
+  const context = {
+    queue: async (action) => action(),
+    service: {
+      getCharacteristic: async (uuid) =>
+        uuid.includes('354-')
+          ? {
+              writeValueWithResponse: async (bytes) => {
+                writes++;
+                lastId = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(2, true);
+                if (writes === 1) await new Promise((resolve) => (releaseFirst = resolve));
+              },
+            }
+          : { readValue: async () => response(lastId, 0, 0) },
+    },
+  };
+  const first = new Client(context), second = new Client(context);
+  const a = first.request(9);
+  while (!releaseFirst) await new Promise(setImmediate);
+  const b = second.request(9);
+  await new Promise(setImmediate);
+  assert.equal(writes, 1, 'second Client must wait for the first Client on the same connection');
+  releaseFirst();
+  await a;
+  await b;
+  assert.equal(writes, 2);
+});
