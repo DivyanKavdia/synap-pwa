@@ -233,7 +233,7 @@ test('camera commands prefer write without response when the pendant advertises 
   assert.equal(commandWrites, 1);
   assert.equal(responseWrites, 0);
 });
-test('SD file paths retain long writes while chunk requests use short commands', async () => {
+test('path-addressed SD file chunks retain long writes for deterministic sync', async () => {
   const writes = [];
   let last;
   const accept = (bytes, method) => {
@@ -260,9 +260,10 @@ test('SD file paths retain long writes while chunk requests use short commands',
   assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), Uint8Array.of(7, 8, 9));
   assert.deepEqual(
     writes.map((x) => x.method),
-    ['long', 'short'],
+    ['long', 'long'],
   );
   assert(writes[0].length > 20);
+  assert(writes[1].length > 20, 'path-addressed chunk read must carry the SD path');
 });
 test('an ambiguous camera write failure cannot repeat a capture', async () => {
   let writes = 0;
