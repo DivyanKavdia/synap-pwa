@@ -550,7 +550,7 @@ test('device voice media sync discovers SD media and only explicit verified sync
   assert.doesNotMatch(probe,/capabilities\.ready/,'ready storage must not re-arm repeated automatic catalogues');
   // The probe must be forgotten wherever the card could have changed, or a
   // reseated card would stay invisible for the rest of the session.
-  assert.match(media,/forgetSDProbe\(\);\s*\n\s*try \{/,'Check SD card clears the probe');
+  assert.match(media,/forgetSDProbe\(\);\s*\n\s*await root\.SynapPowerLifecycle\?\.wakeForActivity\?\.\(\);\s*\n\s*try \{/,'Check SD card clears the probe and wakes standby before recovery');
   const dropped=media.slice(media.indexOf("addEventListener('synap-gatt-disconnected'"));
   assert.match(dropped.slice(0,400),/forgetSDProbe\(\)/,'disconnect clears the probe');
   assert.doesNotMatch(voice,/synap-chakshu-media-pending/);
@@ -621,6 +621,7 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(lifecycle, /id="retryDeviceSD"[^>]*>Retry SD card<\/button>/);
   assert.match(lifecycle, /getElementById\('retryDeviceSD'\)\?\.addEventListener\('click'/);
   assert.match(lifecycle, /await api\(\)\.refreshSD\(\)/);
+  assert.match(media, /await root\.SynapPowerLifecycle\?\.wakeForActivity\?\.\(\)/);
   assert.match(lifecycle, /sdDetectionState === 1 && info\?\.sdProbeState === 6/);
   assert.match(lifecycle, /SD retry finished · detection/);
   assert.match(lifecycle, /browseSD\('librarySDList'\)/);

@@ -14,7 +14,12 @@ test('PWA idles into protocol-compatible firmware standby only on safe builds',(
   assert.match(src,/document\.body\?\.dataset\?\.deviceState==='1'/);
   assert.match(src,/new Uint8Array\(\[CMD_STANDBY,PROTOCOL_VERSION\]\)/);
   assert.match(src,/firmwareBuild=\(bytes\[4\]\|\|0\)\|\(\(bytes\[5\]\|\|0\)<<8\)/);
-  assert.doesNotMatch(src,/CMD_WAKE/,'START remains the one command that wakes standby and starts capture');
+  assert.match(src,/CMD_WAKE=0x04/);
+  assert.match(src,/async function wakeForActivity\(\)/);
+  assert.match(src,/new Uint8Array\(\[CMD_WAKE,PROTOCOL_VERSION\]\)/);
+  assert.match(src,/Wake pendant for device activity/);
+  assert.match(src,/lastPowerState===POWER_STANDBY\|\|document\.body\?\.dataset\?\.powerState==='standby'/);
+  assert.match(src,/wakeForActivity/);
 });
 
 test('head-loaded bridge binds state observer once body becomes available',()=>{
