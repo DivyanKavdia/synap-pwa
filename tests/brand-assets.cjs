@@ -29,7 +29,7 @@ test('live branding follows palette and light-dark appearance everywhere',()=>{
   assert.match(capture,/dataset\.palette \|\| 'olive'/);
   for(const palette of palettes)for(const mode of modes)assert(sw.includes("'./synap-mark-"+palette+"-"+mode+".svg'"));
   for(const source of [html,theme,capture,sw])assert(!source.includes('synap-logo-light.png'));
-  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell169-c3-sd-retry'/);
+  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell170-c3-sd-wake'/);
 });
 
 test('favicon and installed launcher use the same S identity',()=>{
