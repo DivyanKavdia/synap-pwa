@@ -58,8 +58,9 @@
     }
     const input=label.querySelector('input');
     input.setAttribute('aria-label','Select '+(recording.name||'recording'));
-    input.checked=selected.has(String(recording.id));input.disabled=busy||!selectable(recording);
-    label.hidden=!selecting;card.classList.toggle('is-selecting',selecting);card.classList.toggle('is-selected',selecting&&input.checked);
+    const allowed=selectable(recording);
+    input.checked=selected.has(String(recording.id));input.disabled=busy||!allowed;
+    label.hidden=!selecting||!allowed;card.classList.toggle('is-selecting',selecting&&allowed);card.classList.toggle('is-selected',selecting&&allowed&&input.checked);
   }
   function paint(){
     if(!$('selectRecordingsButton'))return;
