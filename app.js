@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell172-native-sd";
+  const APP_SHELL_REVISION = "1.0.0-shell173-sd-sync";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -313,6 +313,25 @@
       module: globalThis.SynapModules?.client?.module,
       audioState: deviceStatus,
       audioStats: sessionStats
+    });
+  });
+  window.addEventListener('synap-sd-sync-diagnostic', function (event) {
+    log('SD sync ' + String(event.detail?.stage || 'event'), {
+      ...event.detail,
+      module: globalThis.SynapModules?.client?.module,
+    });
+  });
+  window.addEventListener('synap-firmware-restart-reconnected', function (event) {
+    const info = event.detail?.module || globalThis.SynapModules?.client?.module;
+    log('Post-restart hardware capabilities', {
+      module: info?.id ?? null,
+      target: info?.target ?? null,
+      supported: info?.supported ?? null,
+      ready: info?.ready ?? null,
+      mediaVersion: info?.mediaVersion ?? null,
+      sdDetectionState: info?.sdDetectionState ?? null,
+      sdProbeState: info?.sdProbeState ?? null,
+      error: globalThis.SynapModules?.client?.error || '',
     });
   });
   window.addEventListener("synap-audio-signal", function (event) {

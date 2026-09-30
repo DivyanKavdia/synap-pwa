@@ -15,6 +15,10 @@ const media=fs.readFileSync(path.join(root,'devices/chakshu/media.js'),'utf8');
 const preview=fs.readFileSync(path.join(root,'devices/chakshu/capture-preview.js'),'utf8');
 const library=fs.readFileSync(path.join(root,'devices/chakshu/library.js'),'utf8');
 assert(transfer.includes('{0,51}\\.wav'));
+assert.match(transfer,/connectionOperations = new WeakMap\(\)/);
+assert.match(transfer,/connectionOperations\.get\(this\.context\)/);
+assert.match(transfer,/op === 8 \? '@catalogue' : path/);
+assert.match(transfer,/this\._request\(readOp, size, readPath, signal\)/);
 assert.match(media,/Odyssey SD audio/);
 assert.match(media,/schedulePendingSync\(250\)/);
 assert.match(media,/root\.document\?\.body\?\.dataset\.otaRecovery === 'c3'/,'Odyssey automatic catalogue must be suppressed only during OTA recovery');
@@ -26,6 +30,11 @@ const settingsRender=preview.indexOf("settings = document.getElementById('device
 assert(settingsRender>=0 && libraryPanelReturn>settingsRender,
   'Settings SD state must render before Library-panel early return');
 assert.match(preview,/await verifyAudio\(record\.id, source\.main\)/);
+assert.match(preview,/synap-sd-sync-diagnostic/);
+assert.match(preview,/syncDiagnostic\('downloaded'/);
+assert.match(preview,/syncDiagnostic\('verified'/);
+assert.match(preview,/syncDiagnostic\('deleted'/);
+assert.match(preview,/syncDiagnostic\('failed'/);
 const verified=preview.indexOf('await verifyAudio(record.id, source.main)');
 assert(verified>=0);
 assert(preview.indexOf('await deleteSyncedSet(path)',verified)>verified);
