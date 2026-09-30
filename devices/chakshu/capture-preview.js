@@ -235,6 +235,11 @@
   const api = () => root.SynapChakshu;
   const RECEIPT_PREFIX = 'synap-chakshu-move-v2:';
   let busy = false;
+  function syncDiagnostic(stage, detail = {}) {
+    root.dispatchEvent?.(new CustomEvent('synap-sd-sync-diagnostic', {
+      detail: { stage, at: Date.now(), ...detail },
+    }));
+  }
   const status = (message) => {
     const node = document.getElementById('visualConnectionStatus'),
       inbox = document.getElementById('librarySDInboxText');
@@ -411,6 +416,8 @@
       wantsDescribe = Boolean(api().state.sdFiles?.find((file) => file.path === path)?.describe),
       key = receiptKey(connection.deviceId, path);
     busy = true;
+    let stage = 'start';
+    syncDiagnostic(stage, { path, deviceId: connection.deviceId });
     try {
       const cached = JSON.parse(localStorage.getItem(key) || 'null');
       if (await verifyReceipt(cached)) {
@@ -427,13 +434,17 @@
         return cached;
       }
       localStorage.removeItem(key);
+      stage = 'download';
       const before = await localSnapshot(),
         source = await download(path, undefined, progress),
         mainSha = await digest(source.main),
         wavSha = source.wav ? await digest(source.wav) : null;
+      syncDiagnostic('downloaded', { path, bytes: source.main.size });
       if (owner !== api().state.owner || connection !== root.SynapDevices?.connection)
         throw Error('Account or pendant changed during transfer. The SD original was kept.');
+      stage = 'import';
       await api().importFiles(source.files, connection.deviceId);
+      syncDiagnostic('imported', { path, files: source.files.length });
       const rows = await api().store.list(),
         journal = audioJournal(),
         recordings = await journal.all('recordings');
@@ -452,8 +463,10 @@
           .filter((item) => !before.recordings.has(item.id) && item.ownerUid === owner)
           .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
         if (!record) throw Error('The imported audio could not be verified. The SD original was kept.');
+        stage = 'verify';
         await verifyAudio(record.id, source.main);
         audioId = record.id;
+        syncDiagnostic('verified', { path, audioId });
       } else throw Error('Move the primary photo, video or audio file instead.');
       const receipt = {
         schema: 1,
@@ -473,7 +486,9 @@
         savedAt: new Date().toISOString(),
       };
       localStorage.setItem(key, JSON.stringify(receipt));
+      stage = 'delete';
       await deleteSyncedSet(path);
+      syncDiagnostic('deleted', { path });
       localStorage.removeItem(key);
       root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
       // Sync durability and SD deletion are complete before cloud inference.
@@ -487,6 +502,9 @@
         }
       }
       return receipt;
+    } catch (error) {
+      syncDiagnostic('failed', { path, stage, message: error?.message || String(error) });
+      throw error;
     } finally {
       busy = false;
     }
