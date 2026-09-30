@@ -4280,6 +4280,12 @@
         log('Connected hardware capabilities', hardware);
       }
     });
+    window.addEventListener('synap-post-restart-capabilities', function (event) {
+      log('Connected hardware capabilities after firmware restart', event.detail || {});
+    });
+    window.addEventListener('synap-sd-sync-diagnostic', function (event) {
+      log('SD memory sync', event.detail || {});
+    });
     window.addEventListener("synap-recording-draining", () => {
       if (!recordingConfirmed || finalizing) return;
       recordingStopRequested = true;
