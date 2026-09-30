@@ -41,7 +41,10 @@
     return true;
   }
   function model(recording){return state(recording,jobs.get(String(recording.id))||[],provider());}
-  function selectable(recording){return config?.protected?!config.protected(recording):!model(recording).protectedRecording;}
+  function selectable(recording){
+    if(recording?.sdOnly)return false;
+    return config?.protected?!config.protected(recording):!model(recording).protectedRecording;
+  }
   function setJobs(values){jobs=new Map();for(const job of values||[]){const id=String(job.recordingId);if(!jobs.has(id))jobs.set(id,[]);jobs.get(id).push(job);}}
   function announce(message,error=false){const node=$('libraryActionStatus');if(!node)return;node.hidden=!message;node.textContent=message||'';node.dataset.error=String(error);}
   function decorate(card,recording){
