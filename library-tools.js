@@ -41,7 +41,10 @@
     return true;
   }
   function model(recording){return state(recording,jobs.get(String(recording.id))||[],provider());}
-  function selectable(recording){return config?.protected?!config.protected(recording):!model(recording).protectedRecording;}
+  function selectable(recording){
+    if(recording?.sdOnly)return false;
+    return config?.protected?!config.protected(recording):!model(recording).protectedRecording;
+  }
   function setJobs(values){jobs=new Map();for(const job of values||[]){const id=String(job.recordingId);if(!jobs.has(id))jobs.set(id,[]);jobs.get(id).push(job);}}
   function announce(message,error=false){const node=$('libraryActionStatus');if(!node)return;node.hidden=!message;node.textContent=message||'';node.dataset.error=String(error);}
   function decorate(card,recording){
@@ -55,8 +58,9 @@
     }
     const input=label.querySelector('input');
     input.setAttribute('aria-label','Select '+(recording.name||'recording'));
-    input.checked=selected.has(String(recording.id));input.disabled=busy||!selectable(recording);
-    label.hidden=!selecting;card.classList.toggle('is-selecting',selecting);card.classList.toggle('is-selected',selecting&&input.checked);
+    const allowed=selectable(recording);
+    input.checked=selected.has(String(recording.id));input.disabled=busy||!allowed;
+    label.hidden=!selecting||!allowed;card.classList.toggle('is-selecting',selecting&&allowed);card.classList.toggle('is-selected',selecting&&allowed&&input.checked);
   }
   function paint(){
     if(!$('selectRecordingsButton'))return;

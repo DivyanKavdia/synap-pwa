@@ -28,6 +28,13 @@ test('local soundtracks are playable library items without missing transcription
   assert.equal(state({ ...record, status: 'recording', sealed: false }).protectedRecording, true);
 });
 
+test('SD-only inbox items never enter bulk process or delete selection',()=> {
+  const source=read('library-tools.js');
+  assert.match(source,/if\(recording\?\.sdOnly\)return false/);
+  assert.match(source,/label\.hidden=!selecting\|\|!allowed/);
+  assert.match(source,/card\.classList\.toggle\('is-selecting',selecting&&allowed\)/);
+});
+
 test('recording filters distinguish missing work, partial text and completed cloud metadata',()=>{
   const {state,matchesStatus}=load().SynapLibraryTools;
   for(const record of [{processingStage:'ready'}, {processingState:'done',transcript:'',summary:''}]){
