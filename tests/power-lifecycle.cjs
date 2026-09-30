@@ -20,6 +20,13 @@ test('PWA idles into protocol-compatible firmware standby only on safe builds',(
   assert.match(src,/Wake pendant for device activity/);
   assert.match(src,/lastPowerState===POWER_STANDBY\|\|document\.body\?\.dataset\?\.powerState==='standby'/);
   assert.match(src,/wakeForActivity/);
+  assert.match(src,/CMD_RESTART=0x05/);
+  assert.match(src,/MIN_RESTART_BUILD=1508/);
+  assert.match(src,/async function restartFirmware\(\)/);
+  assert.match(src,/new Uint8Array\(\[CMD_RESTART,PROTOCOL_VERSION\]\)/);
+  assert.match(src,/Restart pendant firmware/);
+  assert.match(src,/firmwareBuild<MIN_RESTART_BUILD/);
+  assert.match(src,/state\(\)!=='idle'/);
 });
 
 test('head-loaded bridge binds state observer once body becomes available',()=>{
@@ -44,4 +51,14 @@ test('power bridge never sends standby during recording, saving, OTA or connecti
   assert.match(src,/function eligibleIdle\(\).*state\(\)==='idle'/s);
   assert.match(src,/if\(s==='idle'\).*else cancelStandby\(\)/s);
   assert.match(src,/standby command failed/);
+});
+
+test('Settings exposes restart only for restart-capable idle firmware',()=>{
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const src=fs.readFileSync(path.join(root,'devices/power.js'),'utf8');
+  assert.match(html,/id="firmwareRestart"[^>]*hidden[^>]*>Restart firmware<\/button>/);
+  assert.match(src,/button\.hidden=!supported/);
+  assert.match(src,/button\.disabled=!supported\|\|state\(\)!=='idle'\|\|writeBusy/);
+  assert.match(src,/confirm\('Restart the connected pendant firmware now\?/);
+  assert.match(src,/synap-gatt-disconnected/);
 });
