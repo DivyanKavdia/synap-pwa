@@ -619,6 +619,7 @@
       blocked = busy || state.working || state.offline || Boolean(state.session),
       settings = document.getElementById('deviceSDSettings'),
       settingsStatus = document.getElementById('deviceSDSettingsStatus'),
+      retrySettings = document.getElementById('retryDeviceSD'),
       clearSettings = document.getElementById('clearDeviceSD'),
       info = root.SynapModules?.client?.module,
       supportsStorage =
@@ -646,6 +647,12 @@
                     : info?.id === 2 && info?.sdProbeState === 6
                       ? 'SD card and FAT/exFAT are readable, but the filesystem mount still fails.'
                       : 'SD card unavailable. Check the card and refresh status.';
+    if (retrySettings)
+      retrySettings.disabled =
+        !supportsStorage ||
+        blocked ||
+        !state.connected ||
+        Boolean(root.SynapAppControls?.recordingState?.().active);
     if (clearSettings)
       clearSettings.disabled =
         !supportsStorage ||
@@ -804,8 +811,35 @@
       card.innerHTML =
         '<h3 class="settings-card-title">SD card</h3>' +
         '<p id="deviceSDSettingsStatus" class="settings-hint">Connect a supported pendant to manage SD storage.</p>' +
-        '<div class="visual-actions"><button id="clearDeviceSD" type="button">Clear SD Card</button></div>';
+        '<div class="visual-actions"><button id="retryDeviceSD" type="button">Retry SD card</button><button id="clearDeviceSD" type="button">Clear SD Card</button></div>';
       extras.append(card);
+      document.getElementById('retryDeviceSD')?.addEventListener('click', async () => {
+        const button = document.getElementById('retryDeviceSD'),
+          settingsStatus = document.getElementById('deviceSDSettingsStatus');
+        button.disabled = true;
+        if (settingsStatus) settingsStatus.textContent = 'Retrying SD card…';
+        try {
+          await api().refreshSD();
+          const info = root.SynapModules?.client?.module;
+          if (info?.sdDetectionState === 1 && info?.sdProbeState === 6) {
+            if (settingsStatus) settingsStatus.textContent = 'SD card recovered · refreshing offline content…';
+            await api().syncPendingSD().catch(() => {});
+          } else if (settingsStatus) {
+            settingsStatus.textContent =
+              'SD retry finished · detection ' +
+              String(info?.sdDetectionState ?? 'unknown') +
+              ' / probe ' +
+              String(info?.sdProbeState ?? 'unknown') +
+              '.';
+          }
+        } catch (error) {
+          if (settingsStatus) settingsStatus.textContent = 'SD retry failed · ' + error.message;
+          status(error.message);
+        } finally {
+          button.disabled = false;
+          renderSDInbox();
+        }
+      });
       document.getElementById('clearDeviceSD')?.addEventListener('click', async () => {
         if (
           !confirm(
