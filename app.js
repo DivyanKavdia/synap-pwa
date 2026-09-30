@@ -315,6 +315,25 @@
       audioStats: sessionStats
     });
   });
+  window.addEventListener('synap-sd-sync-diagnostic', function (event) {
+    log('SD sync ' + String(event.detail?.stage || 'event'), {
+      ...event.detail,
+      module: globalThis.SynapModules?.client?.module,
+    });
+  });
+  window.addEventListener('synap-firmware-restart-reconnected', function (event) {
+    const info = event.detail?.module || globalThis.SynapModules?.client?.module;
+    log('Post-restart hardware capabilities', {
+      module: info?.id ?? null,
+      target: info?.target ?? null,
+      supported: info?.supported ?? null,
+      ready: info?.ready ?? null,
+      mediaVersion: info?.mediaVersion ?? null,
+      sdDetectionState: info?.sdDetectionState ?? null,
+      sdProbeState: info?.sdProbeState ?? null,
+      error: globalThis.SynapModules?.client?.error || '',
+    });
+  });
   window.addEventListener("synap-audio-signal", function (event) {
     log(event.detail.nearSilent ? "Audio signal nearly silent" : "Audio signal returned", {
       ...event.detail, recordingId: currentRecordingId, visibility: document.visibilityState
