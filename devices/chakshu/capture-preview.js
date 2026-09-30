@@ -404,16 +404,27 @@
     if (!blob.size) throw Error('The synced photo has no image bytes.');
     return describeVisual(visualId, blob);
   }
-    async function moveSD(path, progress = () => {}) {
+    function reportSDStage(path, stage, detail = {}) {
+    root.dispatchEvent?.(
+      new CustomEvent('synap-sd-sync-diagnostic', {
+        detail: { path, stage, ...detail },
+      }),
+    );
+  }
+  async function moveSD(path, progress = () => {}) {
     if (busy) throw Error('Another Chakshu transfer is already running.');
     const connection = context(),
       owner = api().state.owner,
       wantsDescribe = Boolean(api().state.sdFiles?.find((file) => file.path === path)?.describe),
       key = receiptKey(connection.deviceId, path);
+    let stage = 'receipt-check';
     busy = true;
+    reportSDStage(path, stage);
     try {
       const cached = JSON.parse(localStorage.getItem(key) || 'null');
       if (await verifyReceipt(cached)) {
+        stage = 'delete-verified-receipt';
+        reportSDStage(path, stage);
         await deleteSyncedSet(path);
         localStorage.removeItem(key);
         root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
@@ -427,18 +438,26 @@
         return cached;
       }
       localStorage.removeItem(key);
+      stage = 'download';
+      reportSDStage(path, stage);
       const before = await localSnapshot(),
-        source = await download(path, undefined, progress),
-        mainSha = await digest(source.main),
+        source = await download(path, undefined, progress);
+      reportSDStage(path, 'download-complete', { bytes: source.main.size });
+      const mainSha = await digest(source.main),
         wavSha = source.wav ? await digest(source.wav) : null;
       if (owner !== api().state.owner || connection !== root.SynapDevices?.connection)
         throw Error('Account or pendant changed during transfer. The SD original was kept.');
+      stage = 'import';
+      reportSDStage(path, stage, { files: source.files.length });
       await api().importFiles(source.files, connection.deviceId);
+      reportSDStage(path, 'import-complete');
       const rows = await api().store.list(),
         journal = audioJournal(),
         recordings = await journal.all('recordings');
       let visualId = null,
         audioId = null;
+      stage = 'verify';
+      reportSDStage(path, stage);
       if (/\.(jpg|mjpeg)$/.test(path)) {
         const row = rows
           .filter((item) => !before.visuals.has(item.id) && item.sourceName === basename(path))
@@ -473,8 +492,12 @@
         savedAt: new Date().toISOString(),
       };
       localStorage.setItem(key, JSON.stringify(receipt));
+      reportSDStage(path, 'verify-complete', { audioId, visualId });
+      stage = 'delete-source';
+      reportSDStage(path, stage);
       await deleteSyncedSet(path);
       localStorage.removeItem(key);
+      reportSDStage(path, 'complete', { audioId, visualId });
       root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
       // Sync durability and SD deletion are complete before cloud inference.
       // A Gemini failure must never make a verified transfer look failed or
@@ -487,6 +510,9 @@
         }
       }
       return receipt;
+    } catch (error) {
+      reportSDStage(path, 'failed', { failedAt: stage, message: error?.message || String(error) });
+      throw error;
     } finally {
       busy = false;
     }

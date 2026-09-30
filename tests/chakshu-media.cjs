@@ -233,12 +233,14 @@ test('camera commands prefer write without response when the pendant advertises 
   assert.equal(commandWrites, 1);
   assert.equal(responseWrites, 0);
 });
-test('SD file paths retain long writes while chunk requests use short commands', async () => {
+test('SD file chunks repeat the path so catalogue refreshes cannot replace their source', async () => {
   const writes = [];
   let last;
   const accept = (bytes, method) => {
-    writes.push({ method, length: bytes.length });
-    last = { id: new DataView(bytes.buffer).getUint32(2, true), op: bytes[1] };
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+      path = new TextDecoder().decode(bytes.subarray(10));
+    writes.push({ method, length: bytes.length, op: bytes[1], path });
+    last = { id: view.getUint32(2, true), op: bytes[1] };
   };
   const client = new Client({
     queue: (action) => action(),
@@ -248,21 +250,17 @@ test('SD file paths retain long writes while chunk requests use short commands',
           ? {
               properties: { write: true, writeWithoutResponse: true },
               writeValueWithResponse: async (bytes) => accept(bytes, 'long'),
-              writeValueWithoutResponse: async (bytes) => {
-                assert(bytes.length <= 20, 'a short command must fit the minimum ATT payload');
-                accept(bytes, 'short');
-              },
+              writeValueWithoutResponse: async (bytes) => accept(bytes, 'short'),
             }
           : { readValue: async () => response(last.id, 3, 0, last.op === 4 ? [7, 8, 9] : []) },
     },
   });
-  const blob = await client.file('/synap/abcdef01-00000001.jpg');
+  const path = '/synap/abcdef01-00000001.wav',
+    blob = await client.file(path);
   assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), Uint8Array.of(7, 8, 9));
-  assert.deepEqual(
-    writes.map((x) => x.method),
-    ['long', 'short'],
-  );
-  assert(writes[0].length > 20);
+  assert.deepEqual(writes.map((x) => x.op), [3, 4]);
+  assert.deepEqual(writes.map((x) => x.path), [path, path]);
+  assert(writes.every((x) => x.method === 'long' && x.length > 20));
 });
 test('an ambiguous camera write failure cannot repeat a capture', async () => {
   let writes = 0;
@@ -353,6 +351,50 @@ test('transfer ignores old replies, validates offsets and rejects changed file s
   changed = true;
   await assert.rejects(client.snapshot(), /changed/);
 });
+test('catalogue chunk reads explicitly address the catalogue buffer', async () => {
+  const writes = [];
+  let last;
+  const encoded = new TextEncoder().encode('[{"path":"/synap/a.wav","bytes":1}]');
+  const client = new Client({
+    queue: (action) => action(),
+    service: {
+      getCharacteristic: async (uuid) =>
+        uuid.includes('354-')
+          ? {
+              properties: { write: true, writeWithoutResponse: true },
+              writeValueWithResponse: async (bytes) => {
+                const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                last = { id: view.getUint32(2, true), op: bytes[1], offset: view.getUint32(6, true) };
+                writes.push({
+                  op: bytes[1],
+                  path: new TextDecoder().decode(bytes.subarray(10)),
+                });
+              },
+              writeValueWithoutResponse: async (bytes) => {
+                const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                last = { id: view.getUint32(2, true), op: bytes[1], offset: view.getUint32(6, true) };
+                writes.push({
+                  op: bytes[1],
+                  path: new TextDecoder().decode(bytes.subarray(10)),
+                });
+              },
+            }
+          : {
+              readValue: async () =>
+                response(
+                  last.id,
+                  encoded.length,
+                  last.offset,
+                  last.op === 4 ? encoded.slice(last.offset, last.offset + 480) : [],
+                ),
+            },
+    },
+  });
+  assert.deepEqual(await client.catalogue(), [{ path: '/synap/a.wav', bytes: 1 }]);
+  assert.deepEqual(writes.map((x) => x.op), [7, 8, 4]);
+  assert.equal(writes[2].path, '@catalogue');
+});
+
 test('background status, photos and SD catalogue serialize complete transfers without replacing their source', async () => {
   const photo = Uint8Array.from([255, 216, 1, 2, 255, 217]);
   const files = [{ path: '/synap/abcdef01-00000001.jpg', bytes: 6 }];
@@ -525,6 +567,7 @@ test('device voice media sync discovers SD media and only explicit verified sync
   const sync=media.slice(media.indexOf('async function syncPendingSD()'),media.indexOf('const apiObject'));
   const move=media.slice(media.indexOf('async function moveSD('),media.indexOf('async function syncPendingSD()'));
   assert.match(sync,/const files = await catalogueNow\(\)/);
+  assert.match(sync,/root\.SynapChakshuV2\?\.busy/,'background catalogue must pause during verified SD sync');
   assert.doesNotMatch(sync,/operation\(/,'background SD discovery must not claim foreground capture state');
   assert.doesNotMatch(sync,/importSD\(|deleteSyncedSet\(/);
   assert.match(move,/SynapChakshuV2\?\.moveSD/);

@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell172-native-sd";
+  const APP_SHELL_REVISION = "1.0.0-shell173-sd-sync";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -4279,6 +4279,12 @@
         hardwareSignature = signature;
         log('Connected hardware capabilities', hardware);
       }
+    });
+    window.addEventListener('synap-post-restart-capabilities', function (event) {
+      log('Connected hardware capabilities after firmware restart', event.detail || {});
+    });
+    window.addEventListener('synap-sd-sync-diagnostic', function (event) {
+      log('SD memory sync', event.detail || {});
     });
     window.addEventListener("synap-recording-draining", () => {
       if (!recordingConfirmed || finalizing) return;

@@ -327,7 +327,11 @@
       const parts = [];
       let size = 0,
         stalls = 0;
-      const readOp = image ? 2 : 4;
+      const readOp = image ? 2 : 4,
+        // SD reads must be self-describing. Multiple Client instances can share
+        // one firmware worker; a background catalogue must never replace the
+        // foreground file selection between chunks.
+        readPath = image ? '' : op === 8 ? '@catalogue' : path;
       try {
         while (size < first.total) {
           signal?.throwIfAborted();
@@ -346,7 +350,7 @@
             this.streamDisabled = true;
             await this.sendOnly(16, 0, signal);
           }
-          const reply = await this._request(readOp, size, '', signal);
+          const reply = await this._request(readOp, size, readPath, signal);
           if (
             reply.total !== first.total ||
             reply.offset !== size ||
@@ -391,6 +395,6 @@
       });
     }
   }
-  root.SynapChakshuTransfer = { Client, MediaWindow, decode, revision: '1.0.0-chakshu-core16' };
+  root.SynapChakshuTransfer = { Client, MediaWindow, decode, revision: '1.0.0-chakshu-core17' };
   if (typeof module !== 'undefined') module.exports = root.SynapChakshuTransfer;
 })(globalThis);
