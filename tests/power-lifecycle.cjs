@@ -27,6 +27,10 @@ test('PWA idles into protocol-compatible firmware standby only on safe builds',(
   assert.match(src,/Restart pendant firmware/);
   assert.match(src,/firmwareBuild<MIN_RESTART_BUILD/);
   assert.match(src,/state\(\)!=='idle'/);
+  assert.match(src,/restartCapabilityPending=true/);
+  assert.match(src,/synap-gatt-ready/);
+  assert.match(src,/SynapModules\?\.refresh\?\.\(\)/);
+  assert.match(src,/synap-post-restart-capabilities/);
 });
 
 test('head-loaded bridge binds state observer once body becomes available',()=>{
