@@ -624,6 +624,11 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(media, /await root\.SynapPowerLifecycle\?\.wakeForActivity\?\.\(\)/);
   assert.match(lifecycle, /sdDetectionState === 1 && info\?\.sdProbeState === 6/);
   assert.match(lifecycle, /SD retry finished · detection/);
+  assert.match(lifecycle, /SD SPI bus setup failed/);
+  assert.match(lifecycle, /SD card protocol initialization failed/);
+  assert.match(lifecycle, /FAT filesystem could not be mounted/);
+  assert.match(lifecycle, /VFS validation failed/);
+  assert.doesNotMatch(lifecycle, /sector 0|raw initialization did not finish|boot signature/);
   assert.match(lifecycle, /browseSD\('librarySDList'\)/);
   assert.match(lifecycle, /SynapChakshuVoice\?\.lastOutcome\?\.\(deviceId\)/);
   assert.match(lifecycle, /Last offline result:/);
