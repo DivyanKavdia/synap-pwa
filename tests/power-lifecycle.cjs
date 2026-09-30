@@ -20,6 +20,9 @@ test('PWA idles into protocol-compatible firmware standby only on safe builds',(
   assert.match(src,/Wake pendant for device activity/);
   assert.match(src,/lastPowerState===POWER_STANDBY\|\|document\.body\?\.dataset\?\.powerState==='standby'/);
   assert.match(src,/wakeForActivity/);
+  assert.match(src,/restartAwaitingReconnect/);
+  assert.match(src,/synap-firmware-restart-reconnected/);
+  assert.match(src,/SynapModules\?\.refresh\?\.\(\)/);
   assert.match(src,/CMD_RESTART=0x05/);
   assert.match(src,/MIN_RESTART_BUILD=1508/);
   assert.match(src,/async function restartFirmware\(\)/);
