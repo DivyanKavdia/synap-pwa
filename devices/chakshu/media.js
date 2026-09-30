@@ -873,7 +873,17 @@
   }
   async function syncPendingSD() {
     if (autoSyncPromise) return autoSyncPromise;
-    if (!owner || !connected() || !ready() || working || session || offline || wifi?.active) return 0;
+    if (
+      !owner ||
+      !connected() ||
+      !ready() ||
+      working ||
+      session ||
+      offline ||
+      wifi?.active ||
+      root.SynapChakshuV2?.busy
+    )
+      return 0;
     const expected = owner,
       deviceId = connected()?.deviceId;
     if (!deviceId) return 0;
