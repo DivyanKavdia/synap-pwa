@@ -13,7 +13,7 @@ const releaseBase = 'https://raw.githubusercontent.com/DivyanKavdia/synap-firmwa
 function release(target) {
   const c3 = target.includes('c3'),
     prefix = c3 ? 'targets/' + target + '/' : '';
-  const identity = 'SYNAP-FW:' + target + ':1.0.0:1543',
+  const identity = 'SYNAP-FW:' + target + ':1.0.0:1201',
     binary = Buffer.alloc(8192);
   binary[0] = 0xe9;
   binary.writeUInt16LE(c3 ? 5 : 9, 12);
@@ -26,7 +26,7 @@ function release(target) {
     manifest: {
       schema: 3,
       version: '1.0.0',
-      build: 1543,
+      build: 1201,
       target,
       protocol: 3,
       chip: c3 ? 5 : 9,
@@ -37,7 +37,7 @@ function release(target) {
       sha256,
       commit: 'a'.repeat(40),
       identity,
-      url: releaseBase + prefix + 'builds/1543-' + sha256 + '.bin',
+      url: releaseBase + prefix + 'builds/1201-' + sha256 + '.bin',
       channel: 'production',
       provenance: {
         provider: 'github-actions',
@@ -50,7 +50,7 @@ function release(target) {
 const releases = ['esp32s3-fh4r2-qspi-4m', 'esp32c3-supermini-4m'].map(release);
 const catalog = {
   schema: 1,
-  build: 1543,
+  build: 1201,
   primary: releases[0].manifest.target,
   channel: 'production',
   targets: Object.fromEntries(
@@ -602,6 +602,27 @@ const waitState = (page, state) =>
       );
       assert.equal(saved.status, 'saved');
       assert(saved.durationMs > 0, 'Stop persists actual received audio');
+      if (c3) {
+        await page.locator('#otaReleaseCheck').tap();
+        await page.waitForFunction(() =>
+          document.getElementById('otaStatus').textContent.includes('Up to date'),
+        );
+        assert(await page.locator('#otaLatest').isHidden(), 'current C3 never offers a downgrade');
+        await page.locator('#settingsButton').tap();
+        await page.locator('#headerCaptureToggle').tap();
+        await waitState(page, 'recording');
+        await page.locator('#headerCaptureToggle').tap();
+        await waitState(page, 'idle');
+        assert.equal(
+          await page.evaluate(async () => (await new DKAudioStore().all('recordings')).length),
+          2,
+          'current C3 records again after firmware check',
+        );
+        assert.deepEqual(t.errors, []);
+        await t.context.close();
+        console.log('PASS full app mobile controls / C3: current firmware, record/save, no downgrade and record again');
+        continue;
+      }
       await page.locator('#otaReleaseCheck').tap();
       await page.waitForFunction(() => !document.getElementById('otaLatest').hidden);
       // Starting a fresh background check must not turn a visible Update into a dead control.
@@ -646,7 +667,7 @@ const waitState = (page, state) =>
       await page.evaluate(() => bleFixture.holdFirmware(false));
       await page.waitForFunction(
         () =>
-          document.getElementById('firmwareNoticeText').textContent === 'Update complete · 1.0.0 · build 1543 · verified',
+          document.getElementById('firmwareNoticeText').textContent === 'Update complete · 1.0.0 · build 1201 · verified',
       );
       await waitState(page, 'idle');
       assert.deepEqual(
@@ -656,7 +677,7 @@ const waitState = (page, state) =>
           bleFixture.otaOffset,
           bleFixture.firmwareBuild,
         ]),
-        [1, 1, 8192, 1543],
+        [1, 1, 8192, 1201],
       );
       assert.equal(
         await page.evaluate(() => bleFixture.maximum),
@@ -762,7 +783,7 @@ const waitState = (page, state) =>
       await page.waitForFunction(() => !document.getElementById('otaLatest').hidden);
       await page.locator('#otaLatest').tap();
       await page.waitForFunction(
-        () => document.getElementById('otaStatus').textContent === 'Update complete · 1.0.0 · build 1543 · verified',
+        () => document.getElementById('otaStatus').textContent === 'Update complete · 1.0.0 · build 1201 · verified',
       );
       await waitState(page, 'idle');
       assert.equal(
