@@ -14,6 +14,15 @@ async function until(page, predicate, arg) {
           media: SynapChakshu.state,
           recording: SynapAppControls.recordingState(),
           notice: document.getElementById('headerMediaNotice').textContent,
+          visualStatus: document.getElementById('visualStatus')?.textContent,
+          visuals: (await SynapChakshu.store.list()).map((row) => ({
+            id: row.id,
+            name: row.name,
+            state: row.state,
+            kind: row.kind,
+            audioId: row.audioId || null,
+            timingEstimated: row.timingEstimated,
+          })),
           log: document.getElementById('log')?.textContent?.slice(-2000),
         })),
       );
