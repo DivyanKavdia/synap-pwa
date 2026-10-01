@@ -266,7 +266,7 @@ async function run() {
       await page.waitForFunction(
         () =>
           document.querySelector('#firmwareNoticeText').textContent ===
-          'Update complete · synap-os1-build1001',
+          'Update complete · synap-os1-build1001 · verified',
       );
       assert(
         await page
