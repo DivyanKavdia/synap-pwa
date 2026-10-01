@@ -494,7 +494,12 @@ async function run() {
       });
       await page.locator('#askForm button[type="submit"]').tap();
       await page.clock.runFor(35001);
-      await page.getByRole('button', { name: 'Retry search', exact: true }).waitFor();
+      await page.locator('.ask-search-meta').waitFor();
+      assert.match(
+        await page.locator('.ask-search-meta').innerText(),
+        /Synap Cloud is temporarily unavailable/,
+        'a stalled cloud search falls back to local recall',
+      );
       assert(
         await page.locator('#askInput').isEnabled(),
         'a stalled Ask request cannot lock the form',
@@ -502,7 +507,7 @@ async function run() {
       await page.evaluate(() => {
         qa.hold = '';
       });
-      await page.getByRole('button', { name: 'Retry search', exact: true }).tap();
+      await page.locator('#askForm button[type="submit"]').tap();
       await page.locator('.ask-source').waitFor();
       assert.match(await page.locator('.ask-answer-text').innerText(), /budget was reviewed/);
       const scoped = await page.evaluate(() => ({ request: JSON.parse(qa.calls.filter(x => x.url === '/v1/ask').at(-1).body), day: document.getElementById('datePicker').value }));
