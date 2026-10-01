@@ -589,9 +589,11 @@
    */
   let sdProbe = { deviceId: '', attempted: false };
   let c3SdRetryCount = 0;
+  let c3CatalogueRemountTried = false;
   function forgetSDProbe() {
     sdProbe = { deviceId: '', attempted: false };
     c3SdRetryCount = 0;
+    c3CatalogueRemountTried = false;
   }
   /** One automatic catalogue per BLE connection. Explicit Check SD can re-arm it. */
   function sdWorthCataloguing(deviceId) {
@@ -615,7 +617,7 @@
           notify();
         }
       });
-    }, delayMs);
+    }, moduleInfo()?.id === 2 && !c3SdRetryCount ? Math.max(delayMs, 2200) : delayMs);
   }
   async function pollOffline() {
     clearTimeout(offlineTimer);
@@ -676,8 +678,29 @@
     return sdFiles.slice();
   }
   async function catalogueNow(signal) {
-    const deviceId = connected()?.deviceId || '',
+    const deviceId = connected()?.deviceId || '';
+    let files;
+    try {
       files = await camera().catalogue(signal);
+    } catch (failure) {
+      // Mounted/ready only verifies the FAT mount, not the /synap directory.
+      // Released C3 builds can answer operation 7 with IO_ERROR (7) while
+      // reporting sdProbeState=6. Recover the VFS once per BLE connection;
+      // never remount on BUSY while an offline take may still be writing.
+      const recoverable = failure?.mediaCode === 7 || failure?.mediaCode === 3;
+      if (moduleInfo()?.id !== 2 || !recoverable || c3CatalogueRemountTried ||
+          signal?.aborted || connected()?.deviceId !== deviceId) throw failure;
+      c3CatalogueRemountTried = true;
+      root.dispatchEvent(new CustomEvent('synap-capture-diagnostic', {
+        detail: { operation: 14, stage: 'C3 catalogue remount', mediaCode: failure.mediaCode,
+          message: 'C3 SD catalogue unavailable despite mounted storage; attempting one safe remount.' },
+      }));
+      await camera().request(14, 0, '', signal);
+      await delay(200);
+      if (signal?.aborted || connected()?.deviceId !== deviceId)
+        throw Error('Pendant connection changed during SD recovery.');
+      files = await camera().catalogue(signal);
+    }
     return rememberCatalogue(files, deviceId);
   }
   async function catalogue() {
