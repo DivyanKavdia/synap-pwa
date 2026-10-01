@@ -9,7 +9,7 @@ async function until(page, predicate, arg) {
   while (!(await page.evaluate(predicate, arg))) {
     if (Date.now() > deadline) {
       console.log(
-        await page.evaluate(() => ({
+        await page.evaluate(async () => ({
           app: document.body.dataset.state,
           media: SynapChakshu.state,
           recording: SynapAppControls.recordingState(),
