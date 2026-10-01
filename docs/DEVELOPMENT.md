@@ -1,6 +1,6 @@
 # Synap development and codebase guide
 
-**Reviewed: 22 September 2026**
+**Reviewed: 1 October 2026**
 
 ## Repository map
 
@@ -67,7 +67,7 @@ Removed:
 
 The launcher icons `icon.svg`, `icon-192.png` and `icon-512.png` remain live. The SD cleanup is guarded by a source contract that rejects direct operation-17 deletion from `devices/chakshu/media.js`.
 
-`tests/code-hygiene.cjs` now also enforces that every top-level browser JS/CSS file is reachable from the production shell/cache graph and every browser `*-smoke.cjs` belongs to the canonical browser suite. This turns the audit rule into a CI contract instead of a one-time cleanup.
+`tests/code-hygiene.cjs` enforces reachability for top-level, device and recording JS/CSS, offline-shell asset existence, HTML dependency caching and canonical browser-suite membership. Retain the enhancement worker and its pinned RNNoise module: they load dynamically, not through HTML. This turns the audit rule into a CI contract instead of a one-time cleanup.
 
 ## Versioning
 
@@ -110,3 +110,9 @@ The browser suite list lives in `tools/browser-tests.cjs`; standalone smoke file
 ## Documentation policy
 
 Keep this document and the architecture/operations guides about the **current contract**. Put historical build narratives in Git/release history. When a doc names a current build, verify it from the authoritative release feed.
+
+## Launch cleanup and catalogue parity (1 October 2026)
+
+The PWA catalogue is a complete mirror of firmware `devices/catalog.json`, including optional SD-detection hardware pins. PWA runtime profiles remain generated from that mirror and intentionally expose only client-facing fields. Run `node tools/device-catalog.cjs --check` after catalogue synchronization; the physical C3 contract is pinned in `tests/device-catalog-parity.cjs`.
+
+Run all automated checks and the physical [launch acceptance checklist](LAUNCH_READINESS.md) before designating a build launch-ready. Repository cleanliness does not prove real-device SD, OTA, BLE or background behavior.

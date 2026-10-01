@@ -72,6 +72,7 @@ The 30-second browser/cloud segment is a **durability and recovery boundary**, n
 - [Architecture](docs/ARCHITECTURE.md) — end-to-end components, data flow and invariants.
 - [Operations](docs/OPERATIONS.md) — CI/CD, production checks, recovery and troubleshooting.
 - [Development and codebase](docs/DEVELOPMENT.md) — repo map, tests, catalog/version rules and cleanup policy.
+- [Launch readiness](docs/LAUNCH_READINESS.md) — release gates and physical acceptance evidence for PWA, backend and three firmware targets.
 - [Chakshu offline + Hey Snap](docs/CHAKSHU_OFFLINE_AND_HEY_SNAP.md) — source-based command routing, SD recovery and verified sync.
 - [Firmware variants](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/FIRMWARE_VARIANTS.md) — authoritative four-variant behavior, three-target OTA mapping and C3 + SD lifecycle.
 - [Automatic speech processing](docs/AUTOMATIC_SPEECH.md) — local enhancement, source preservation and resource limits.
