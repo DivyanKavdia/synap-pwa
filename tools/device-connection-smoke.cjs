@@ -58,7 +58,10 @@ const server = createStaticServer(process.env.SYNAP_UI_ROOT || path.resolve(__di
       );
       await page.locator('#headerPendantStatus').click();
       await page.waitForFunction(
-        () => document.body.dataset.state === 'idle' && SynapModules.client?.available,
+        (expectedModuleId) =>
+          document.body.dataset.state === 'idle' &&
+          (expectedModuleId === null || SynapModules.client?.available),
+        moduleId,
       );
       assert.equal(await page.evaluate(() => SynapModules.client.module?.id ?? null), moduleId);
       await page.waitForTimeout(5500); // Let automatic firmware/diagnostic checks run too.
