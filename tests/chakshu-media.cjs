@@ -233,14 +233,19 @@ test('camera commands prefer write without response when the pendant advertises 
   assert.equal(commandWrites, 1);
   assert.equal(responseWrites, 0);
 });
-test('SD file chunks repeat the path so catalogue refreshes cannot replace their source', async () => {
-  const writes = [];
+test('SD file chunks repeat the path on every read so catalogue refreshes cannot replace their source', async () => {
+  const writes = [],
+    data = Uint8Array.from({ length: 700 }, (_, i) => i & 0xff);
   let last;
   const accept = (bytes, method) => {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength),
       path = new TextDecoder().decode(bytes.subarray(10));
     writes.push({ method, length: bytes.length, op: bytes[1], path });
-    last = { id: view.getUint32(2, true), op: bytes[1] };
+    last = {
+      id: view.getUint32(2, true),
+      op: bytes[1],
+      offset: view.getUint32(6, true),
+    };
   };
   const client = new Client({
     queue: (action) => action(),
@@ -252,14 +257,22 @@ test('SD file chunks repeat the path so catalogue refreshes cannot replace their
               writeValueWithResponse: async (bytes) => accept(bytes, 'long'),
               writeValueWithoutResponse: async (bytes) => accept(bytes, 'short'),
             }
-          : { readValue: async () => response(last.id, 3, 0, last.op === 4 ? [7, 8, 9] : []) },
+          : {
+              readValue: async () =>
+                response(
+                  last.id,
+                  data.length,
+                  last.offset,
+                  last.op === 4 ? data.slice(last.offset, last.offset + 480) : [],
+                ),
+            },
     },
   });
   const path = '/synap/abcdef01-00000001.wav',
     blob = await client.file(path);
-  assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), Uint8Array.of(7, 8, 9));
-  assert.deepEqual(writes.map((x) => x.op), [3, 4]);
-  assert.deepEqual(writes.map((x) => x.path), [path, path]);
+  assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), data);
+  assert.deepEqual(writes.map((x) => x.op), [3, 4, 4]);
+  assert.deepEqual(writes.map((x) => x.path), [path, path, path]);
   assert(writes.every((x) => x.method === 'long' && x.length > 20));
 });
 test('an ambiguous camera write failure cannot repeat a capture', async () => {
