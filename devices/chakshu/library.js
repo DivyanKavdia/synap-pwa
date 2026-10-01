@@ -346,7 +346,9 @@
             ? 'SD card responded, but FAT mount failed. Check formatting and retry.'
             : info?.id === 2 && info?.sdProbeState === 4
               ? 'SD filesystem mounted but VFS validation failed.'
-              : 'SD card unavailable. Offline recording requires a mounted card; choose Check SD card.';
+              : info?.id === 3
+                ? 'SD card unavailable. Offline Hey Snap capture requires the card; choose Check SD card.'
+                : 'SD card unavailable. Offline recording requires a mounted card; choose Check SD card.';
     if (syncNotice) syncNotice.hidden = !state.connected || pendingSD === 0;
     if (syncText) syncText.textContent = pendingSD
       ? pendingSD + ' offline capture' + (pendingSD === 1 ? '' : 's') + ' not synced with this app.'
