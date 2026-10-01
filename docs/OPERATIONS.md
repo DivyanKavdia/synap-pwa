@@ -1,6 +1,6 @@
 # Synap operations and recovery
 
-**Reviewed: 22 September 2026**
+**Reviewed: 1 October 2026**
 
 ## 1. Release truth
 
@@ -17,7 +17,7 @@ Backend-affecting changes on `main` run the production workflow:
 6. retain rollback information if promotion fails.
 
 ### Firmware
-The firmware repository publishes an OTA feed. At this review the verified production feed reports **Synap OS build 1402** for all three targets, source commit `e63af76e2c8a764109f4d572d26b4b71ce7787c7`.
+The firmware repository publishes an OTA feed for **three build targets and four functional variants**. On 1 October 2026 the manifests reported **Synap OS build 1546** for S3, C3 and Chakshu, source commit `21bb5488ecdf7b128e560d59b30b583bcd634feb`. Standard C3 and C3 + SD share the same C3 image; read current manifests for newer releases.
 
 Never infer installed device behavior from a newer firmware `main` commit.
 
@@ -80,7 +80,11 @@ Use **People → Edit name**. The backend updates the canonical profile and rele
 
 Modern propagation is scoped by canonical person ID to avoid corrupting two different people who share a name.
 
-## 6. Chakshu SD troubleshooting
+## 6. SD troubleshooting by variant
+
+**Standard C3:** missing/unmounted SD is not a BLE audio failure; disconnected capture requires a healthy card. **C3 + SD:** native ESP-IDF SDSPI/FAT initializes at 400 kHz before BLE and promotes to validated 4 MHz. Offline double tap starts/stops WAV with a purple pulse; normal connected capture is green. On BLE reconnect, a local take keeps recording to SD until stopped or finalized for a subsequent PWA START. Catalogue/file chunk reads must carry an explicit path on every operation-4 request; `@catalogue` is reserved for catalogue bytes. Explicit operation 14 is the remount/recovery path. The PWA verifies a durable local copy before requesting SD deletion.
+
+**Chakshu:**
 
 Key diagnostics:
 - `sdReady`
@@ -111,9 +115,9 @@ Do not conflate an API transcription failure with an SD capture/transfer failure
 A browser/peripheral disconnect is not an app-requested disconnect unless diagnostics say so. Reconnect must establish a fresh connection/session generation before module/media state is trusted.
 
 For Chakshu:
-- connect immediately stands Hey Snap down;
-- disconnect re-arms Hey Snap in firmware;
-- PWA voice writes are idempotent session handoff signals.
+- Hey Snap remains armed across BLE connect/disconnect while PWA recording is idle;
+- an admitted PWA audio/video START suspends the Hey Snap listener and competing media actions;
+- voice Stop affects only voice/TTP-owned SD media and never stops a PWA-owned capture.
 
 ## 8. Deployment rollback
 
@@ -140,6 +144,8 @@ Record exact PWA shell + installed firmware build and verify:
 - TTP223 GPIO1 / D0 double-tap and 4-second deep-sleep/wake behavior;
 - GPIO2 / D1 battery percentage/raw telemetry with the 1 MΩ / 470 kΩ divider;
 - GPIO5 / D4 NeoPixel status behavior without any writes to SD CS GPIO21;
+- standard C3 BLE recording with no card; C3 + SD cold boot, offline double-tap start/stop, purple pulse and green connected capture;
+- C3 + SD reconnect during recording, PWA START handoff, verified sync and failed-sync original retention;
 - SD cold boot and re-detection;
 - offline photo/video/audio creation;
 - verified sync and source deletion;
@@ -151,13 +157,10 @@ Record exact PWA shell + installed firmware build and verify:
 
 Foreground audio-stall recovery reuses the existing audio notification subscription and requests buffered replay directly. It does not rewrite the CCCD while the live Bluefy link is congested. After repeated immediate native Bluetooth reason-2 failures, Synap recognizes the permitted device wrapper as stale, refreshes it once through `navigator.bluetooth.getDevices()` without opening a chooser, and only then falls back to explicit device reselection if the refreshed handle also fails. The recording journal remains preserved throughout the reconnect grace period.
 
-### Odyssey SD detection display — shell166
+### Odyssey C3 SD and PWA device controls — shell176
 
-Device settings show the Odyssey C3/S3 startup SD probe result over the existing
-module descriptor (extension version 1 at byte 17, state at byte 18). This is
-read-only detection status; SD recording, browsing and sync are not enabled.
-Build 1435 only logs the probe to Serial and needs a newer firmware release to
-send its result to the app. Older/unknown descriptor extensions show an update
-prompt instead of falsely reporting a missing card. Refresh reads the boot snapshot;
-restart the pendant after changing the card. Mount failure may indicate card,
-wiring, power or filesystem trouble. Chakshu storage controls are unchanged.
+Device settings retain the Odyssey startup SD probe extension (module descriptor version byte 17 and state byte 18) as a diagnostic snapshot, not a substitute for live storage readiness. **S3** only performs SD detection; **standard C3** continues BLE audio without storage; **C3 + SD** supports offline WAV recording and a pending-SD catalogue when the card mounts.
+
+The current checked-in PWA shell is `1.0.0-shell176-device-controls`. Restart Device is shown when a pendant is connected and enabled only in the idle state with firmware build **1508 or later**. Firmware control opcode `0x05` refuses restart during active media, OTA or sleep transition; an unresponsive BLE-disconnected device cannot be remotely restarted through the PWA. A loaded older service-worker shell may require an application refresh.
+
+The current C3 transfer diagnostics separate catalogue discovery, download, durable import, verification and SD deletion. Never interpret a failed cloud transcription step as an SD sync failure after a verified local import.
