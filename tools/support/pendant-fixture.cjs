@@ -284,7 +284,7 @@ module.exports = function pendantFixture() {
           if (command === 4) {
             otaCommits++;
             otaState = 5;
-            firmwareBuild = c3 ? 1543 : 1543;
+            firmwareBuild = 1201;
             setTimeout(() => {
               otaState = 1;
               loseLink();
