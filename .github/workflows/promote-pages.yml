@@ -1,0 +1,45 @@
+name: Promote validated PWA
+
+on:
+  workflow_run:
+    workflows: ["Validate production PWA"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pwa-production-promotion
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the exact validated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Confirm validated commit is still current main
+        env:
+          VALIDATED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          current="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          test -n "$current"
+          if [ "$current" != "$VALIDATED_SHA" ]; then
+            echo "Validated commit $VALIDATED_SHA is no longer main ($current); skipping promotion."
+            exit 0
+          fi
+          echo "PROMOTE_SHA=$VALIDATED_SHA" >> "$GITHUB_ENV"
+
+      - name: Promote validated source
+        if: env.PROMOTE_SHA != ''
+        run: |
+          git push origin HEAD:refs/heads/production
+          echo "Promoted $PROMOTE_SHA to production."
