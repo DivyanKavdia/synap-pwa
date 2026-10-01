@@ -14,6 +14,7 @@ const transfer=fs.readFileSync(path.join(root,'devices/chakshu/transfer.js'),'ut
 const media=fs.readFileSync(path.join(root,'devices/chakshu/media.js'),'utf8');
 const preview=fs.readFileSync(path.join(root,'devices/chakshu/capture-preview.js'),'utf8');
 const library=fs.readFileSync(path.join(root,'devices/chakshu/library.js'),'utf8');
+assert.match(library,/info = root\.SynapModules\?\.client\?\.module/,'SD library render must bind module capabilities before probe messaging');
 assert(transfer.includes('{0,51}\\.wav'));
 assert.match(transfer,/readPath = image \? '' : op === 8 \? '@catalogue' : path/);
 assert.match(transfer,/this\._request\(readOp, size, readPath, signal\)/);
