@@ -33,7 +33,23 @@ jobs:
       - run: npm test
 
   workflows:
+    name: browser-${{ matrix.name }}
     runs-on: ubuntu-latest
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: device
+            suites: startup device-connection hardware-recording chakshu chakshu-sd background-recording controls connection recording-notifications
+          - name: media
+            suites: chakshu-library audio-storage wav-upload audio-stall firmware-progress audio-enhancement
+          - name: ui
+            suites: layout first-memory workflow ui transcript settings
+          - name: actions
+            suites: processing meeting-features library-selection actions actions-functional memory-workspace workspace-experience
+          - name: identity
+            suites: speaker-names voice-profile
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,11 +57,11 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser
+      - run: npm run test:browser -- ${{ matrix.suites }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: workflow-screenshots
+          name: workflow-screenshots-${{ matrix.name }}
           path: artifacts/workflows
           if-no-files-found: ignore
 
