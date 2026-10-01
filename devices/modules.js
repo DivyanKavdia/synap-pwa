@@ -48,9 +48,8 @@
       // Odyssey boot-probe snapshot, independent of usable SD/media capabilities.
       sdDetectionState: [1, 2].includes(profile.id) && value.getUint8(17) === 1
         && value.getUint8(18) <= 3 ? value.getUint8(18) : null,
-      // C3 read-only raw SD probe:
-      // 0 unknown, 1 CMD0 only/init incomplete, 2 no response, 3 sector unreadable,
-      // 4 bad boot signature, 5 valid sector 0/unrecognized FS, 6 FAT/exFAT boot readable.
+      // C3 native SD mount stage: 0 unprobed, 1 bus setup, 2 card init,
+      // 3 FAT mount, 4 VFS validation failures, 6 mounted/ready.
       sdProbeState: profile.id === 2 && value.getUint8(17) === 1
         && value.getUint8(19) <= 6 ? value.getUint8(19) : null,
       legacy: false,
