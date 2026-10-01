@@ -308,6 +308,7 @@
                 offset,
                 elapsedMs: Date.now() - startedAt,
                 message: error.message,
+                ...(Number.isInteger(reason?.mediaCode) ? { mediaCode: reason.mediaCode } : {}),
                 ...(reason?.storage ? { storage: reason.storage } : {}),
               },
             }),
