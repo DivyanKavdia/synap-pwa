@@ -49,6 +49,7 @@
             error.storage = details;
         } catch (_) {}
       }
+      error.mediaCode = value.getUint8(3);
       throw error;
     }
     return {
@@ -320,7 +321,11 @@
     async _bytes(op, path, signal, progress = () => {}, preview = false) {
       const first = await this._request(op, op === 1 && preview ? 1 : 0, path, signal),
         image = op === 1 || op === 13,
-        limit = image ? 250000 : 32 * 1024 * 1024;
+        // C3 SD audio needs more than the Chakshu camera's 32 MiB ceiling.
+        // Keep a bounded memory cap for iOS; larger recordings need segmented transfer.
+        limit = image ? 250000 :
+          (root.SynapModules?.client?.module?.id === 2 && /\.wav$/i.test(path)
+            ? 64 * 1024 * 1024 : 32 * 1024 * 1024);
       if (!first.total || first.total > limit)
         throw Error('Camera file exceeds this transfer limit. Import it from the SD card.');
       progress(0, first.total);

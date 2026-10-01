@@ -597,7 +597,7 @@
         action.disabled = true;
         try {
           const receipt = await moveSD(file.path, (fraction) => status('Moving from SD · ' + Math.round(fraction * 100) + '%'));
-          await api().syncPendingSD().catch(() => {});
+          await api().catalogue().catch(() => {});
           status(
             receipt.description
               ? 'Photo synced to Memories. Description ready; verified SD source removed.'
@@ -710,7 +710,7 @@
     if (busy) throw Error('Another Chakshu transfer is already running.');
     let pending = api()?.state?.sdFiles?.slice?.() || [];
     if (!pending.length) {
-      await api().syncPendingSD();
+      await api().catalogue();
       pending = api()?.state?.sdFiles?.slice?.() || [];
     }
     if (!pending.length) return { synced: 0, failed: 0 };
@@ -726,7 +726,7 @@
         lastError = error.message;
       }
     }
-    await api().syncPendingSD().catch(() => {});
+    await api().catalogue().catch(() => {});
     if (failed)
       throw Error(synced + ' synced; ' + failed + ' kept on SD because verification failed. ' + lastError);
     return { synced, failed: 0 };
