@@ -13,7 +13,7 @@ const releaseBase = 'https://raw.githubusercontent.com/DivyanKavdia/synap-firmwa
 function release(target) {
   const c3 = target.includes('c3'),
     prefix = c3 ? 'targets/' + target + '/' : '';
-  const identity = 'SYNAP-FW:' + target + ':1.0.0:1201',
+  const identity = 'SYNAP-FW:' + target + ':1.0.0:1543',
     binary = Buffer.alloc(8192);
   binary[0] = 0xe9;
   binary.writeUInt16LE(c3 ? 5 : 9, 12);
@@ -26,7 +26,7 @@ function release(target) {
     manifest: {
       schema: 3,
       version: '1.0.0',
-      build: 1201,
+      build: 1543,
       target,
       protocol: 3,
       chip: c3 ? 5 : 9,
@@ -37,7 +37,7 @@ function release(target) {
       sha256,
       commit: 'a'.repeat(40),
       identity,
-      url: releaseBase + prefix + 'builds/1201-' + sha256 + '.bin',
+      url: releaseBase + prefix + 'builds/1543-' + sha256 + '.bin',
       channel: 'production',
       provenance: {
         provider: 'github-actions',
@@ -50,7 +50,7 @@ function release(target) {
 const releases = ['esp32s3-fh4r2-qspi-4m', 'esp32c3-supermini-4m'].map(release);
 const catalog = {
   schema: 1,
-  build: 1201,
+  build: 1543,
   primary: releases[0].manifest.target,
   channel: 'production',
   targets: Object.fromEntries(
@@ -646,7 +646,7 @@ const waitState = (page, state) =>
       await page.evaluate(() => bleFixture.holdFirmware(false));
       await page.waitForFunction(
         () =>
-          document.getElementById('firmwareNoticeText').textContent === 'Update complete · 1.0.0 · build 1201 · verified',
+          document.getElementById('firmwareNoticeText').textContent === 'Update complete · 1.0.0 · build 1543 · verified',
       );
       await waitState(page, 'idle');
       assert.deepEqual(
@@ -656,7 +656,7 @@ const waitState = (page, state) =>
           bleFixture.otaOffset,
           bleFixture.firmwareBuild,
         ]),
-        [1, 1, 8192, 1201],
+        [1, 1, 8192, 1543],
       );
       assert.equal(
         await page.evaluate(() => bleFixture.maximum),
@@ -762,7 +762,7 @@ const waitState = (page, state) =>
       await page.waitForFunction(() => !document.getElementById('otaLatest').hidden);
       await page.locator('#otaLatest').tap();
       await page.waitForFunction(
-        () => document.getElementById('otaStatus').textContent === 'Update complete · 1.0.0 · build 1201 · verified',
+        () => document.getElementById('otaStatus').textContent === 'Update complete · 1.0.0 · build 1543 · verified',
       );
       await waitState(page, 'idle');
       assert.equal(
