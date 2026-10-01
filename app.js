@@ -308,7 +308,11 @@
     log("Pendant diagnostics", event.detail);
   });
   window.addEventListener("synap-capture-diagnostic", function (event) {
-    log(event.detail?.operation === 7 ? "Chakshu SD listing failed" : "Chakshu capture failed", {
+    const isC3 = globalThis.SynapModules?.client?.module?.id === 2;
+    const operation = event.detail?.operation;
+    log(operation === 14 ? "C3 SD remount requested" :
+      operation === 7 ? (isC3 ? "C3 SD catalogue failed" : "Chakshu SD listing failed") :
+      (isC3 ? "C3 SD transfer failed" : "Chakshu capture failed"), {
       ...event.detail,
       module: globalThis.SynapModules?.client?.module,
       audioState: deviceStatus,
