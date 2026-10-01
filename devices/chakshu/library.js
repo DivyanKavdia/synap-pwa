@@ -273,6 +273,7 @@
   }
   async function render() {
     const state = api().state,
+      info = root.SynapModules?.client?.module,
       token = ++generation;
     const nextAccess = state.owner + ':' + state.available;
     if (owner !== state.owner || access !== nextAccess) {
