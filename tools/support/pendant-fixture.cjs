@@ -22,7 +22,7 @@ module.exports = function pendantFixture() {
   const legacyPathBuffer=new Uint8Array(64);
   const ota = location.search.includes('ota');
   const target = chakshu ? 'xiao-esp32s3-sense-8m' : c3 ? 'esp32c3-supermini-4m' : 'esp32s3-fh4r2-qspi-4m';
-  let firmwareBuild = chakshu1227 ? 1227 : 1200,
+  let firmwareBuild = chakshu1227 ? 1227 : c3 ? 1542 : 1200,
     otaState = 1,
     otaSession = 0,
     otaOffset = 0,
@@ -284,7 +284,7 @@ module.exports = function pendantFixture() {
           if (command === 4) {
             otaCommits++;
             otaState = 5;
-            firmwareBuild = 1201;
+            firmwareBuild = c3 ? 1543 : 1543;
             setTimeout(() => {
               otaState = 1;
               loseLink();
