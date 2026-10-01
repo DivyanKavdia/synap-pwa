@@ -37,11 +37,11 @@ const server = createStaticServer(process.env.SYNAP_UI_ROOT || path.resolve(__di
       console.log('PASS native link rejection: bounded restore, foreground guard, user reselection and recording');
       await context.close();
     }
-    for (const [name, query, moduleId] of [
-      ['older S3 audio-only firmware', 'minimal-pendant', null],
-      ['S3 with OTA', 'ota', 1],
-      ['C3 with OTA and recovery', 'ota&c3&buffered', 2],
-      ['Chakshu with camera and recovery', 'ota&chakshu-media&buffered', 3],
+    for (const [name, query, moduleId, inventory] of [
+      ['older S3 audio-only firmware', 'minimal-pendant', null, false],
+      ['S3 with OTA', 'ota', 1, true],
+      ['C3 with OTA and recovery', 'ota&c3&buffered', 2, true],
+      ['Chakshu with camera and recovery', 'ota&chakshu-media&buffered', 3, true],
     ]) {
       const context = await browser.newContext();
       await context.route('**/*', (route) =>
@@ -52,7 +52,7 @@ const server = createStaticServer(process.env.SYNAP_UI_ROOT || path.resolve(__di
       const errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.setDefaultTimeout(15000);
-      await page.goto(origin + '/?inventory&' + query);
+      await page.goto(origin + '/?' + (inventory ? 'inventory&' : '') + query);
       await page.waitForFunction(() =>
         document.querySelector('#diagnosticsLog')?.textContent.includes('Application started'),
       );
@@ -66,8 +66,8 @@ const server = createStaticServer(process.env.SYNAP_UI_ROOT || path.resolve(__di
       assert.equal(await page.evaluate(() => SynapModules.client.module?.id ?? null), moduleId);
       await page.waitForTimeout(5500); // Let automatic firmware/diagnostic checks run too.
       assert.equal(await page.evaluate(() => document.body.dataset.state), 'idle');
-      assert.equal(await page.evaluate(() => bleFixture.inventoryReads), 1);
-      assert.equal(await page.evaluate(() => bleFixture.missingProbes), 0);
+      assert.equal(await page.evaluate(() => bleFixture.inventoryReads), inventory ? 1 : 0);
+      if (inventory) assert.equal(await page.evaluate(() => bleFixture.missingProbes), 0);
       assert.equal(await page.evaluate(() => bleFixture.appDisconnects), 0);
       await page.locator('#headerCaptureToggle').click();
       await page.waitForFunction(
@@ -84,7 +84,10 @@ const server = createStaticServer(process.env.SYNAP_UI_ROOT || path.resolve(__di
         bleFixture.disconnect();
       });
       await page.waitForFunction(
-        () => document.body.dataset.state === 'idle' && bleFixture.inventoryReads === 2,
+        (usesInventory) =>
+          document.body.dataset.state === 'idle' &&
+          bleFixture.inventoryReads === (usesInventory ? 2 : 0),
+        inventory,
       );
       if (moduleId === 1) {
         for (const count of [3, 4]) {
@@ -99,7 +102,7 @@ const server = createStaticServer(process.env.SYNAP_UI_ROOT || path.resolve(__di
         assert.match(log, /"attempt":2,"delayMs":2600/);
         assert.match(log, /"attempt":3,"delayMs":5200/);
       }
-      assert.equal(await page.evaluate(() => bleFixture.missingProbes), 0);
+      if (inventory) assert.equal(await page.evaluate(() => bleFixture.missingProbes), 0);
       assert.equal(await page.evaluate(() => bleFixture.maximum), 1);
       assert.deepEqual(errors, []);
       console.log(
