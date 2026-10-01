@@ -338,19 +338,15 @@
       ? pendingSD
         ? 'SD card ready · ' + pendingSD + ' offline capture' + (pendingSD === 1 ? '' : 's') + ' waiting to sync.'
         : 'SD card ready. Offline Hey Snap captures will appear here after the next connection.'
-      : info?.id === 2 && info?.sdProbeState === 2
-        ? 'SD card has no SPI response. Offline recording is disabled until SD power/wiring/contact is restored.'
-        : info?.id === 2 && info?.sdProbeState === 1
-          ? 'SD card responds, but raw initialization did not finish.'
+      : info?.id === 2 && info?.sdProbeState === 1
+        ? 'SD SPI bus setup failed. Check power and wiring, then retry.'
+        : info?.id === 2 && info?.sdProbeState === 2
+          ? 'SD card protocol initialization failed. Check the card, then retry.'
           : info?.id === 2 && info?.sdProbeState === 3
-            ? 'SD card initializes, but sector 0 cannot be read.'
+            ? 'SD card responded, but FAT mount failed. Check formatting and retry.'
             : info?.id === 2 && info?.sdProbeState === 4
-              ? 'SD card sector 0 has an invalid boot signature.'
-              : info?.id === 2 && info?.sdProbeState === 5
-                ? 'SD card sector 0 is valid, but FAT/exFAT was not recognized.'
-                : info?.id === 2 && info?.sdProbeState === 6
-                  ? 'SD card and FAT/exFAT boot data are readable, but the filesystem mount failed.'
-                  : 'SD card unavailable. Offline Hey Snap capture requires the card; choose Check SD card.';
+              ? 'SD filesystem mounted but VFS validation failed.'
+              : 'SD card unavailable. Offline recording requires a mounted card; choose Check SD card.';
     if (syncNotice) syncNotice.hidden = !state.connected || pendingSD === 0;
     if (syncText) syncText.textContent = pendingSD
       ? pendingSD + ' offline capture' + (pendingSD === 1 ? '' : 's') + ' not synced with this app.'
@@ -585,7 +581,7 @@
         await move(item.sourcePath, (progress) =>
           status('Syncing from device SD · ' + Math.round(progress * 100) + '%'),
         );
-        await api().syncPendingSD().catch(() => {});
+        await api().catalogue().catch(() => {});
         await render();
         return 'Synced to Memories. Verified SD source removed.';
       }
