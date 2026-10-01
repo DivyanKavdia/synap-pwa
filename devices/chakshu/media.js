@@ -688,6 +688,19 @@
       // reporting sdProbeState=6. Recover the VFS once per BLE connection;
       // never remount on BUSY while an offline take may still be writing.
       const recoverable = failure?.mediaCode === 7 || failure?.mediaCode === 3;
+      const failedStage = Number(failure?.storage?.sdProbe ?? moduleInfo()?.sdProbeState);
+      const failedState = Number(failure?.storage?.sdState ?? moduleInfo()?.sdDetectionState);
+      // Failed SD protocol initialization is not a stale FAT/VFS mount.
+      // Firmware already performs bounded background recovery. Repeated BLE
+      // remounts cannot repair an unpowered or unresponsive card.
+      if (moduleInfo()?.id === 2 && failure?.mediaCode === 3 &&
+          failedState === 2 && failedStage === 2) {
+        const nativeError = Number(failure?.storage?.espErr);
+        failure.message = 'C3 SD card did not initialize' +
+          (Number.isFinite(nativeError) && nativeError !== 0 ? ' (ESP-IDF ' + nativeError + ')' : '') +
+          '. Fully power-cycle the pendant and SD module, reconnect, then choose Check SD card. Do not format the card.';
+        throw failure;
+      }
       if (moduleInfo()?.id !== 2 || !recoverable || c3CatalogueRemountTried ||
           signal?.aborted || connected()?.deviceId !== deviceId) throw failure;
       c3CatalogueRemountTried = true;
@@ -940,10 +953,17 @@
       const sameDevice = connected()?.deviceId === deviceId;
       const c3 = moduleInfo()?.id === 2;
       const busyCard = failure?.mediaCode === 1 || /\bbusy\b/i.test(String(failure?.message || ''));
-      if (sameDevice && c3 && (busyCard || c3SdRetryCount < 4)) {
+      const cardInitFailed = failure?.mediaCode === 3 &&
+        Number(failure?.storage?.sdProbe ?? moduleInfo()?.sdProbeState) === 2;
+      // Give firmware's deferred worker one chance to recover. Further
+      // unresponsive-card retries require reconnect or explicit Check SD.
+      const retryAllowed = cardInitFailed ? c3SdRetryCount < 1 :
+        busyCard ? c3SdRetryCount < 8 : c3SdRetryCount < 4;
+      if (sameDevice && c3 && retryAllowed) {
         c3SdRetryCount++;
         sdProbe = { deviceId, attempted: false };
-        const retryMs = busyCard ? 15000 : Math.min(15000, 2000 * c3SdRetryCount);
+        const retryMs = cardInitFailed ? 30000 :
+          busyCard ? 15000 : Math.min(15000, 2000 * c3SdRetryCount);
         root.setTimeout(() => {
           if (connected()?.deviceId === deviceId && owner === expected &&
               !root.SynapAppControls?.recordingState?.().active)
