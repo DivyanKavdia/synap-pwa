@@ -28,6 +28,7 @@
   let workController = null;
   let associatedConnection = null;
   const MAX_VIDEO_BYTES = 32 * 1024 * 1024;
+  const MAX_ODYSSEY_WAV_BYTES = 64 * 1024 * 1024;
   const SD_FILE_PATH =
     /^\/synap\/(?:[a-f0-9]{8}-[a-f0-9]{8}\.(?:jpg|mjpeg)|[a-z0-9][a-z0-9._-]{0,51}\.wav)$/i;
   const notify = () => root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
@@ -587,8 +588,10 @@
    * new connection, a different device, or an explicit Check SD card.
    */
   let sdProbe = { deviceId: '', attempted: false };
+  let c3SdRetryCount = 0;
   function forgetSDProbe() {
     sdProbe = { deviceId: '', attempted: false };
+    c3SdRetryCount = 0;
   }
   /** One automatic catalogue per BLE connection. Explicit Check SD can re-arm it. */
   function sdWorthCataloguing(deviceId) {
@@ -831,7 +834,8 @@
         )
       )
         continue;
-      if (file.size > MAX_VIDEO_BYTES) throw Error('Import audio files up to 32 MiB each.');
+      const audioLimit = capabilities.isChakshu(moduleInfo()) ? MAX_VIDEO_BYTES : MAX_ODYSSEY_WAV_BYTES;
+      if (file.size > audioLimit) throw Error('Recording exceeds this phone import limit. Keep the SD original.');
       await importAudio(file, deviceId, scope, async () => {});
       count++;
     }
@@ -881,7 +885,8 @@
       session ||
       offline ||
       wifi?.active ||
-      root.SynapChakshuV2?.busy
+      root.SynapChakshuV2?.busy ||
+      root.SynapAppControls?.recordingState?.().active
     )
       return 0;
     const expected = owner,
@@ -896,6 +901,8 @@
       // 'working' flag or reject a photo/video just because the SD inbox is
       // being refreshed; the transfer client still serializes BLE requests.
       const files = await catalogueNow();
+      error = '';
+      c3SdRetryCount = 0;
       check(expected);
       if (connected()?.deviceId !== deviceId) return 0;
       await root.SynapModules?.refresh?.().catch(() => {});
@@ -903,7 +910,25 @@
         detail: { deviceId, count: files.length, files: files.slice() },
       }));
       return files.length;
-    })().finally(() => {
+    })().catch((failure) => {
+      // C3 can be mounting after BLE starts or finishing an offline take.
+      // A first BUSY/NO_SD response must not permanently suppress discovery.
+      // Chakshu retains its one-probe-per-link policy for battery/SD-CS safety.
+      const sameDevice = connected()?.deviceId === deviceId;
+      const c3 = moduleInfo()?.id === 2;
+      const busyCard = failure?.mediaCode === 1 || /\bbusy\b/i.test(String(failure?.message || ''));
+      if (sameDevice && c3 && (busyCard || c3SdRetryCount < 4)) {
+        c3SdRetryCount++;
+        sdProbe = { deviceId, attempted: false };
+        const retryMs = busyCard ? 15000 : Math.min(15000, 2000 * c3SdRetryCount);
+        root.setTimeout(() => {
+          if (connected()?.deviceId === deviceId && owner === expected &&
+              !root.SynapAppControls?.recordingState?.().active)
+            schedulePendingSync(0);
+        }, retryMs);
+      }
+      throw failure;
+    }).finally(() => {
       autoSyncPromise = null;
     });
     return autoSyncPromise;
