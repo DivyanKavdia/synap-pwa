@@ -1,6 +1,6 @@
 # Synap architecture
 
-**Reviewed: 22 September 2026**
+**Reviewed: 1 October 2026**
 
 This document describes the current production architecture. It deliberately avoids historical build-by-build narrative.
 
@@ -8,11 +8,11 @@ This document describes the current production architecture. It deliberately avo
 
 Synap has three execution domains:
 
-1. **Wearable firmware** — captures audio and device media, exposes BLE protocols and, on Chakshu while disconnected, owns Hey Snap + SD capture.
+1. **Wearable firmware** — captures device audio/media and exposes BLE protocols. C3 + SD owns disconnected touch-initiated WAV; Chakshu owns SD captures from Hey Snap whether BLE is available or not while PWA capture is idle.
 2. **PWA** — owns the connected user experience, local durable journal, playback/source retention, device control and cloud upload/recovery.
 3. **Synap Cloud** — authenticates accounts, stores encrypted source/derived state, runs processing, indexes memories and serves Ask/People/Actions.
 
-The core rule is one owner per hardware operation. Connected Chakshu capture is PWA-owned; disconnected Chakshu capture is firmware-owned.
+The core rule is one owner per hardware operation. A connected **PWA-initiated** capture is PWA-owned; **Chakshu Hey Snap** captures remain SD-owned whenever PWA capture is idle. C3 + SD does not redirect an in-progress offline WAV merely because BLE reconnects.
 
 ## 2. Device and capability model
 
@@ -27,6 +27,8 @@ Stable identifiers:
 
 Display names may change without changing those compatibility identifiers.
 
+There are **four functional variants on three OTA targets**: Odyssey S3; standard Odyssey C3 without SD; Odyssey C3 + SD; and Chakshu. Both C3 variants share target `esp32c3-supermini-4m`, module 2 and one OTA image. C3 storage-related support in the catalogue is not evidence of a physically mounted/ready card. The firmware [variant mapping](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/FIRMWARE_VARIANTS.md) is the product-behavior source of truth.
+
 Chakshu's current hardware profile also exposes the shared touch (GPIO1 / D0), battery (GPIO2 / D1 with the S3 divider calibration), standby and status-NeoPixel (GPIO5 / D4) controls, while camera, SD and local Hey Snap remain Chakshu-specific capabilities.
 
 ## 3. Capture and local durability
@@ -39,9 +41,15 @@ The browser receives framed BLE audio and writes durable local recovery windows.
 
 Connected capture belongs to the app. Media is transferred into browser-owned storage and represented in Library/Memory surfaces.
 
-### Disconnected Chakshu
+### Standard C3 and C3 + SD
 
-Firmware writes supported standalone photo, video and WAV captures to `/synap` on SD. Reconnect catalogue is non-destructive. Verified sync imports first and deletes the SD source only after durable-copy verification.
+The **standard C3** records through BLE while connected and has no disconnected local recording when SD is absent/unmounted. **C3 + SD** initializes native SDSPI/FAT storage before BLE. Disconnected double tap toggles a local 16 kHz WAV with a purple indicator. A reconnect does not change an active take's destination; a subsequent PWA START finalizes the SD take before taking microphone ownership. Connected PWA audio uses the normal live recording journal and green indicator.
+
+With BLE connected, the PWA lists unsynced SD WAV files. The C3 media-v1 operation-4 request addresses the file on every chunk (or `@catalogue` for catalogue reads) to prevent background catalogue refreshes from invalidating transfers. Durable import and verification must complete before the SD original is deleted. Explicit recovery is separate from ordinary read/list operations.
+
+### Chakshu offline and Hey Snap
+
+Chakshu writes voice-initiated photo, video and WAV captures under `/synap` on SD while PWA capture is idle, whether BLE is connected or disconnected. A PWA START suspends conflicting Hey Snap activity until the PWA-owned capture completes. Disconnected TTP double tap toggles SD audio; connected TTP routes audio to PWA. Reconnect catalogue is non-destructive; verified sync imports first and deletes the SD source only after durable-copy verification.
 
 See [Chakshu offline + Hey Snap](CHAKSHU_OFFLINE_AND_HEY_SNAP.md).
 
