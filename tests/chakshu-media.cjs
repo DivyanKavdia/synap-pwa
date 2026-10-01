@@ -695,3 +695,18 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(html, /View device content/);
   assert.match(html, /id="visualRecordSD"[^>]*disabled/);
 });
+
+
+test('C3 hard SD init failure skips remount and limits automatic probes',()=>{
+  const fs=require('node:fs'),path=require('node:path');
+  const media=fs.readFileSync(path.join(__dirname,'../devices/chakshu/media.js'),'utf8');
+  const discovery=media.slice(media.indexOf('async function catalogueNow('),media.indexOf('async function catalogue()'));
+  const retry=media.slice(media.indexOf('async function syncPendingSD()'),media.indexOf('const apiObject'));
+  assert.match(discovery,/failedState === 2 && failedStage === 2/);
+  assert(discovery.indexOf('failedState === 2 && failedStage === 2')<discovery.indexOf('camera().request(14'));
+  assert.match(discovery,/Do not format the card/);
+  assert.match(discovery,/failure\?\.storage\?\.espErr/);
+  assert.match(retry,/cardInitFailed \? c3SdRetryCount < 1/);
+  assert.match(retry,/cardInitFailed \? 30000/);
+  assert.doesNotMatch(discovery,/camera\(\)\.request\(17/);
+});
