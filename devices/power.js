@@ -1,6 +1,7 @@
 /* Standby requires firmware that reports CONNECTED_IDLE while asleep. */
 (function(root){'use strict';
 const CONTROL_UUID='4fa12347-0000-1000-8000-00805f9b34fb';
+const OTA_STATUS_UUID='4fa12349-0000-1000-8000-00805f9b34fb';
 const PROTOCOL_VERSION=0x02,CMD_STANDBY=0x03,CMD_WAKE=0x04,CMD_RESTART=0x05;
 const POWER_MAGIC=0xE2,POWER_VERSION=1,POWER_AWAKE=1,POWER_STANDBY=2,POWER_DEEP_SLEEP=3,POWER_WAKE_RECORD=4;
 const IDLE_TO_STANDBY_MS=30000,MIN_SAFE_STANDBY_BUILD=1125,MIN_RESTART_BUILD=1508;
@@ -15,11 +16,37 @@ function eligibleIdle(){return compatibleStandby()&&state()==='idle'&&document.b
 function renderRestartControl(){
   const button=document.getElementById('firmwareRestart');
   if(!button)return;
-  const supported=Boolean(connection)&&firmwareBuild>=MIN_RESTART_BUILD;
-  button.hidden=!supported;
+  const connected=Boolean(connection),supported=connected&&firmwareBuild>=MIN_RESTART_BUILD;
+  button.hidden=!connected;
   button.disabled=!supported||state()!=='idle'||writeBusy;
-  button.title=!supported?'Available after firmware build '+MIN_RESTART_BUILD:
+  button.title=!connected?'Connect the pendant first.':
+    !firmwareBuild?'Checking restart support…':
+    firmwareBuild<MIN_RESTART_BUILD?'Available after firmware build '+MIN_RESTART_BUILD:
     state()!=='idle'?'Finish the current device activity before restarting.':'Restart the pendant firmware';
+}
+function decodeFirmwareBuild(value){
+  if(!value||value.byteLength!==20||value.getUint8(0)!==0xD7||![1,2,3].includes(value.getUint8(1)))return 0;
+  return value.getUint16(18,true);
+}
+async function refreshFirmwareBuild(){
+  const current=connection;
+  if(!current)return 0;
+  try{
+    if(current.canUse&&!current.canUse())return firmwareBuild;
+    const status=await current.queue(()=>current.service.getCharacteristic(OTA_STATUS_UUID),'Find firmware status');
+    if(connection!==current)return firmwareBuild;
+    const value=await current.queue(()=>status.readValue(),'Read firmware status');
+    if(connection!==current)return firmwareBuild;
+    const build=decodeFirmwareBuild(value);
+    if(build){
+      firmwareBuild=build;
+      if(document.body)document.body.dataset.firmwareBuild=String(build);
+      renderRestartControl();
+    }
+  }catch(error){
+    if(connection===current)console.warn('[synap power] firmware build check failed',error);
+  }
+  return firmwareBuild;
 }
 async function getControl(current){if(control)return control;const next=await current.queue(()=>current.service.getCharacteristic(CONTROL_UUID),'Find standby control');if(connection!==current)return null;control=next;return control}
 async function writeControl(c,payload){
@@ -100,6 +127,7 @@ function onPowerPacket(event){
 root.addEventListener('synap-module-changed',onStateChange);
 root.addEventListener('synap-event-packet',onPowerPacket);
 root.addEventListener('synap-gatt-ready',()=>{
+  void refreshFirmwareBuild();
   if(!restartCapabilityPending)return;
   setTimeout(async()=>{
     if(!restartCapabilityPending||!connection)return;
@@ -116,14 +144,14 @@ root.addEventListener('synap-gatt-ready',()=>{
     restartCapabilityPending=false;
   },350);
 });
-root.addEventListener('synap-gatt-service-ready',event=>{connection=event.detail;control=null;lastPowerState=0;firmwareBuild=0;bindStateObserver();cancelStandby();renderRestartControl();setTimeout(tryAutoStart,900)});
+root.addEventListener('synap-gatt-service-ready',event=>{const current=event.detail;connection=current;control=null;lastPowerState=0;firmwareBuild=0;bindStateObserver();cancelStandby();renderRestartControl();setTimeout(()=>{if(connection!==current)return;tryAutoStart();void refreshFirmwareBuild()},350)});
 root.addEventListener('synap-gatt-disconnected',()=>{connection=null;control=null;firmwareBuild=0;lastPowerState=0;autoStartPending=false;cancelStandby();renderRestartControl()});
 function bindRestartControl(){
   const button=document.getElementById('firmwareRestart');
   if(!button||button.dataset.bound==='true')return;
   button.dataset.bound='true';
   button.addEventListener('click',async()=>{
-    if(!confirm('Restart the connected pendant firmware now? Recording must be stopped.'))return;
+    if(!confirm('Restart the connected pendant now? Recording must be stopped.'))return;
     const status=document.getElementById('otaStatus');
     button.disabled=true;
     if(status)status.textContent='Restarting pendant…';
@@ -135,5 +163,5 @@ function bindRestartControl(){
 }
 if(document.body){bindStateObserver();bindRestartControl()}else document.addEventListener('DOMContentLoaded',()=>{bindStateObserver();bindRestartControl()},{once:true});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){bindStateObserver();tryAutoStart();scheduleStandby();renderRestartControl()}});
-root.SynapPowerLifecycle={IDLE_TO_STANDBY_MS,MIN_SAFE_STANDBY_BUILD,MIN_RESTART_BUILD,get state(){return lastPowerState},get firmwareBuild(){return firmwareBuild},get autoStartPending(){return autoStartPending},schedule:scheduleStandby,wakeForActivity,restartFirmware};
+root.SynapPowerLifecycle={IDLE_TO_STANDBY_MS,MIN_SAFE_STANDBY_BUILD,MIN_RESTART_BUILD,get state(){return lastPowerState},get firmwareBuild(){return firmwareBuild},get autoStartPending(){return autoStartPending},schedule:scheduleStandby,wakeForActivity,restartFirmware,refreshFirmwareBuild};
 })(globalThis);
