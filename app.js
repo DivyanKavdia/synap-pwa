@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell177-c3-sd-recovery";
+  const APP_SHELL_REVISION = "1.0.0-shell178-c3-sd-sync";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -308,7 +308,11 @@
     log("Pendant diagnostics", event.detail);
   });
   window.addEventListener("synap-capture-diagnostic", function (event) {
-    log(event.detail?.operation === 7 ? "Chakshu SD listing failed" : "Chakshu capture failed", {
+    const isC3 = globalThis.SynapModules?.client?.module?.id === 2;
+    const operation = event.detail?.operation;
+    log(operation === 14 ? "C3 SD remount requested" :
+      operation === 7 ? (isC3 ? "C3 SD catalogue failed" : "Chakshu SD listing failed") :
+      (isC3 ? "C3 SD transfer failed" : "Chakshu capture failed"), {
       ...event.detail,
       module: globalThis.SynapModules?.client?.module,
       audioState: deviceStatus,

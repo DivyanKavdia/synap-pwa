@@ -281,7 +281,9 @@
         while (Date.now() < deadline) {
           signal?.throwIfAborted();
           const reply = decode(
-            await run(() => this.data.readValue(), op === 7 ? 'Read Chakshu SD catalogue response' : 'Read Chakshu camera response', {
+            await run(() => this.data.readValue(), op === 7 ?
+              (root.SynapModules?.client?.module?.id === 2 ? 'Read C3 SD catalogue response' : 'Read Chakshu SD catalogue response') :
+              'Read Chakshu camera response', {
               timeoutMs: READ_TIMEOUT_MS,
             }),
             id,
@@ -308,6 +310,7 @@
                 offset,
                 elapsedMs: Date.now() - startedAt,
                 message: error.message,
+                ...(Number.isInteger(reason?.mediaCode) ? { mediaCode: reason.mediaCode } : {}),
                 ...(reason?.storage ? { storage: reason.storage } : {}),
               },
             }),

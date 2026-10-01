@@ -2,8 +2,9 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {Client,decode}=require('../devices/chakshu/transfer.js');
 const source=fs.readFileSync(path.join(__dirname,'../devices/chakshu/media.js'),'utf8');
-function transport(files){
+function transport(files, options={}){
   let response=new DataView(new ArrayBuffer(16)),selected='',catalogue='[]';
+  let failCatalogue=Boolean(options.failCatalogueOnce);
   const requests=[];
   const reply=(id,total=0,offset=0,payload=new Uint8Array(),error=0)=>{
     const bytes=new Uint8Array(16+payload.length),v=new DataView(bytes.buffer);
@@ -15,7 +16,11 @@ function transport(files){
   async function write(bytes){
     const v=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),op=bytes[1],id=v.getUint32(2,true),offset=v.getUint32(6,true);
     const name=new TextDecoder().decode(bytes.subarray(10));requests.push({op,name,offset});
-    if(op===7){catalogue=JSON.stringify(Object.entries(files).map(([path,data])=>({path,bytes:data.length})));selected='';reply(id,catalogue.length);return}
+    if(op===7){
+      if(failCatalogue){failCatalogue=false;reply(id,0,0,new TextEncoder().encode(JSON.stringify({stage:'catalogue-opendir',errno:5})),7);return}
+      catalogue=JSON.stringify(Object.entries(files).map(([path,data])=>({path,bytes:data.length})));selected='';reply(id,catalogue.length);return
+    }
+    if(op===14){reply(id);return}
     if(op===8){reply(id,catalogue.length);return}
     if(op===3){selected=name;reply(id,files[name]?.length||0);return}
     if(op===4){
@@ -48,4 +53,20 @@ test('a failed first C3 catalogue can be retried without reconnect',()=>{
   assert.match(source,/c3SdRetryCount < 4/);
   assert.match(source,/sdProbe = \{ deviceId, attempted: false \}/);
   assert.match(source,/busyCard \? 15000/);
+});
+test('C3 IO_ERROR retains catalogue errno and one remount restores listing',async()=>{
+  const wav='/synap/odyssey_audio_12345678_87654321.wav';
+  const t=transport({[wav]:new Uint8Array(200)},{failCatalogueOnce:true});
+  await assert.rejects(t.client.catalogue(),e=>e.mediaCode===7 && e.storage?.errno===5);
+  await t.client.request(14);
+  const files=await t.client.catalogue();
+  assert.deepEqual(files,[{path:wav,bytes:200}]);
+  assert.deepEqual(t.requests.map(r=>r.op).slice(0,4),[7,14,7,8]);
+});
+test('C3 reconnect makes a single safe op14 recovery attempt for mounted catalogue IO',()=>{
+  assert.match(source,/failure\?\.mediaCode === 7 \|\| failure\?\.mediaCode === 3/);
+  assert.match(source,/c3CatalogueRemountTried = true/);
+  assert.match(source,/camera\(\)\.request\(14, 0, '', signal\)/);
+  assert.match(source,/files = await camera\(\)\.catalogue\(signal\)/);
+  assert.match(source,/Math\.max\(delayMs, 2200\)/);
 });
