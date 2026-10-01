@@ -3933,7 +3933,7 @@
           const running=releases.targetFromIdentity(board);
           offered=m;offeredDevice=id;bannerButton.hidden=false;latestButton.hidden=false;
           offerLabel(false);
-          announce(`Update ${releases.versionLabel(m)} available${running ? ` · build ${running.build} → ${m.build}` : ''}`);
+          announce(`Update ${releases.versionLabel(m)} available${running && running.build !== m.build ? ` · build ${running.build} → ${m.build}` : ''}`);
         } else {
           offered=null;bannerButton.hidden=true;latestButton.hidden=true;
           if(!pending&&!verified)status.textContent=`Up to date · ${releases.versionLabel(releases.targetFromIdentity(board)||info)}`;
