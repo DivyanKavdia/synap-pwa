@@ -9,7 +9,8 @@ module.exports = function pendantFixture() {
   const orphanTransport = location.search.includes('orphan-transport');
   const buffered = location.search.includes('buffered') || orphanTransport;
   const connectedReplay = location.search.includes('background');
-  const recoveryCapacity = location.search.includes('c3') ? 25 : 600;
+  const c3=location.search.includes('c3');
+  const recoveryCapacity = c3 ? 25 : 600;
   const chakshu=location.search.includes('chakshu');
   const inventoryFixture=location.search.includes('inventory');
   let rejectRememberedLink = location.search.includes('native-link-reject');
@@ -20,7 +21,7 @@ module.exports = function pendantFixture() {
   const chakshu1227=chakshu&&location.search.includes('chakshu1227');
   const legacyPathBuffer=new Uint8Array(64);
   const ota = location.search.includes('ota');
-  const target = chakshu ? 'xiao-esp32s3-sense-8m' : location.search.includes('c3') ? 'esp32c3-supermini-4m' : 'esp32s3-fh4r2-qspi-4m';
+  const target = chakshu ? 'xiao-esp32s3-sense-8m' : c3 ? 'esp32c3-supermini-4m' : 'esp32s3-fh4r2-qspi-4m';
   let firmwareBuild = chakshu1227 ? 1227 : 1200,
     otaState = 1,
     otaSession = 0,
@@ -48,7 +49,7 @@ module.exports = function pendantFixture() {
   function transferCommand(bytes){const v=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),op=bytes[1],id=v.getUint32(2,true),offset=v.getUint32(6,true);let payload=new Uint8Array(),total=0;
     mediaCommands.push(op);
     if(op===1||op===13)transferBytes=cameraJPEG();
-    if(op===7)transferBytes=new TextEncoder().encode(JSON.stringify([{path:'/synap/abcdef01-00000001.jpg',bytes:1200}]));
+    if(op===7)transferBytes=new TextEncoder().encode(c3?'[]':JSON.stringify([{path:'/synap/abcdef01-00000001.jpg',bytes:1200}]));
     if(op===3)transferBytes=cameraJPEG();
     if(op===5){offlineRecording=true;sdVideoOptions=offset;}if(op===6)offlineRecording=false;
     if(op===14)sdAvailable=sdInserted;
@@ -76,7 +77,15 @@ module.exports = function pendantFixture() {
   let mediaOperation=0,mediaId=0,mediaState=0,mediaError=0,sdAvailable=!location.search.includes('missing-sd'),mediaWrites=0;
   function moduleDescriptor() {
     const v=new DataView(new ArrayBuffer(20));
-    [0xC7,1,3,1].forEach((x,i)=>v.setUint8(i,x));
+    [0xC7,1,c3?2:3,1].forEach((x,i)=>v.setUint8(i,x));
+    if(c3){
+      const supported=1|4|8|16|32|64|256,
+        ready=(1|8|16|32|64)|(sdAvailable?(4|256):0);
+      v.setUint16(4,supported,true);v.setUint16(6,ready,true);
+      v.setUint16(8,0,true);v.setUint16(10,16000,true);v.setUint8(12,4);v.setUint8(13,0);
+      v.setUint8(14,1);v.setUint8(17,1);v.setUint8(18,sdAvailable?1:2);v.setUint8(19,sdAvailable?6:2);
+      return v;
+    }
     v.setUint16(4,911,true);v.setUint16(6,sdAvailable?911:651,true);
     v.setUint16(8,0x3660,true);v.setUint16(10,16000,true);v.setUint8(12,8);v.setUint8(13,8);v.setUint8(14,location.search.includes('chakshu-media')?1:0);v.setUint8(15,location.search.includes('voice')?1:0);v.setUint8(16,location.search.includes('sd-profiles')?31:location.search.includes('sd-fast')?15:0);return v;
   }
@@ -381,6 +390,7 @@ module.exports = function pendantFixture() {
     [uuid('4e'), new Characteristic(uuid('4e'))],
   ]);
   if(chakshu)for(const id of ['50','51','52','53','54','55','56','57','5a','4b'])chars.set(uuid(id),new Characteristic(uuid(id)));
+  if(c3)for(const id of ['50','54','55','4b'])chars.set(uuid(id),new Characteristic(uuid(id)));
   if(chakshu&&location.search.includes('model'))for(const id of ['58','59'])chars.set(uuid(id),new Characteristic(uuid(id)));
   if (buffered) chars.set(uuid('4f'), new Characteristic(uuid('4f')));
   if (ota) for (const id of ['48', '49', '4b']) chars.set(uuid(id), new Characteristic(uuid(id)));
