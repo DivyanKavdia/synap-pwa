@@ -517,7 +517,8 @@ async function until(page, predicate, arg) {
       await until(
         page,
         async (count) =>
-          !SynapChakshu.state.working && (await SynapChakshu.store.list()).length === count + 1,
+          !SynapChakshu.state.working && !SynapChakshuV2.busy &&
+          (await SynapChakshu.store.list()).length === count + 1,
         beforeImport,
       );
       // Import a paired SD take with real image bytes and an independent PCM WAV.
