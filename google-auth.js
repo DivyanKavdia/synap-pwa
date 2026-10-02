@@ -174,7 +174,24 @@
     var touchPoints = Number(nav.maxTouchPoints || 0);
     var ios = /iPad|iPhone|iPod/i.test(ua) || (platform === 'MacIntel' && touchPoints > 1);
     var webBluetooth = Boolean(nav.bluetooth);
-    return /Bluefy/i.test(ua) || (ios && webBluetooth);
+    return /Bluefy/i.test(ua) || (ios && webBluetooth) || isNativeShell();
+  }
+
+  /**
+   * The Android shell is the same shape of problem as Bluefy: it supplies the
+   * Web Bluetooth the platform browser lacks, and Google refuses Sign in with
+   * Google inside a WebView. It reuses this pairing transaction, handing the
+   * login to Chrome rather than Safari. Plain Android Chrome exposes no shell
+   * bridge and keeps the direct Google Identity Services path.
+   */
+  function isNativeShell() {
+    try {
+      return Boolean(root.SynapNative &&
+        typeof root.SynapNative.isNativeShell === 'function' &&
+        root.SynapNative.isNativeShell());
+    } catch (error) {
+      return false;
+    }
   }
 
   function pairingPageUrl(pairing, settings) {
@@ -190,7 +207,17 @@
     return String(httpsUrl).replace(/^https:\/\//i, 'x-safari-https://');
   }
 
-  function launchSafari(url) {
+  function launchExternalBrowser(url) {
+    if (isNativeShell()) {
+      /* A Custom Tab is real Chrome, which Google accepts; the WebView it was
+         launched from keeps polling and claims the transaction on return. */
+      try {
+        root.SynapNative.openExternal(url);
+        return;
+      } catch (error) {
+        throw new Error('Could not open Chrome. Open the Synap sign-in link in Chrome and try again.');
+      }
+    }
     var target = safariUrl(url);
     /* x-safari-https asks iOS to leave the Web-Bluetooth browser and open the
        transaction in Safari. The normal HTTPS URL contains no claim secret and
@@ -306,7 +333,7 @@
       /* Start polling before leaving Bluefy so it is ready as soon as the app
          becomes visible again after Safari approval. */
       var result = waitForPairing(pairing);
-      launchSafari(loginUrl);
+      launchExternalBrowser(loginUrl);
       return result;
     }).then(function (session) {
       pairingPromise = null;

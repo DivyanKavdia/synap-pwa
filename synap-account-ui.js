@@ -55,6 +55,24 @@
       statusEl.dataset.kind = kind || '';
     }
 
+    /**
+     * Sign-in succeeded, so leave Settings.
+     *
+     * The Google button lives inside the Settings panel, so a successful
+     * sign-in used to change a line of status text and nothing else: the panel
+     * stayed open over the app and it read as "nothing happened". Close it and
+     * hand the user back to their memories. The short delay lets the success
+     * message register first.
+     */
+    function finishSignIn(session) {
+      status('Signed in. Your memories will sync from now on.', 'ok');
+      maybeProcessPending(session);
+      root.setTimeout(function () {
+        try { root.SynapSettingsPanel && root.SynapSettingsPanel.close(); }
+        catch (error) { /* a missing panel must not break a good sign-in */ }
+      }, 700);
+    }
+
     function maybeProcessPending(session) {
       var auto = el('autoProcessInput');
       if (provider.value !== 'synap' || !session || !session.refreshToken || !auto || !auto.checked) return;
@@ -147,8 +165,7 @@
         signIn.disabled = true;
 
         auth.signIn().then(function () {
-          status('Signed in. Your memories will sync from now on.', 'ok');
-          maybeProcessPending(auth.session());
+          finishSignIn(auth.session());
         }).catch(function (error) {
           /* One Tap is routinely suppressed in installed PWAs and on iOS.
              Fall back to the explicit button rather than dead-ending. */
@@ -158,8 +175,7 @@
             status('Use the Google button below to continue.');
             auth.renderButton(buttonHost, function () {
               buttonHost.hidden = true;
-              status('Signed in. Your memories will sync from now on.', 'ok');
-              maybeProcessPending(auth.session());
+              finishSignIn(auth.session());
             }, function (failure) {
               status(failure.message || 'Sign-in failed.', 'error');
             });
