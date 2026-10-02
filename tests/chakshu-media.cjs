@@ -697,16 +697,17 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
 });
 
 
-test('C3 hard SD init failure skips remount and limits automatic probes',()=>{
+test('C3 hard SD init failure is observational until explicit Check SD',()=>{
   const fs=require('node:fs'),path=require('node:path');
   const media=fs.readFileSync(path.join(__dirname,'../devices/chakshu/media.js'),'utf8');
   const discovery=media.slice(media.indexOf('async function catalogueNow('),media.indexOf('async function catalogue()'));
   const retry=media.slice(media.indexOf('async function syncPendingSD()'),media.indexOf('const apiObject'));
+  const refresh=media.slice(media.indexOf('async function refreshSD()'),media.indexOf('function decodeWifi'));
   assert.match(discovery,/failedState === 2 && failedStage === 2/);
-  assert(discovery.indexOf('failedState === 2 && failedStage === 2')<discovery.indexOf('camera().request(14'));
-  assert.match(discovery,/Do not format the card/);
-  assert.match(discovery,/failure\?\.storage\?\.espErr/);
-  assert.match(retry,/cardInitFailed \? c3SdRetryCount < 1/);
-  assert.match(retry,/cardInitFailed \? 30000/);
+  assert.match(discovery,/Choose Check SD card to run the explicit software recovery sequence/);
+  assert.doesNotMatch(discovery,/camera\(\)\.request\(14/);
+  assert.doesNotMatch(retry,/cardInitFailed|30000|c3SdRetryCount < 4/);
+  assert.match(retry,/retryAllowed = busyCard && c3SdRetryCount < 8/);
+  assert.match(refresh,/camera\(\)\.request\(14, 0, '', signal\)/);
   assert.doesNotMatch(discovery,/camera\(\)\.request\(17/);
 });

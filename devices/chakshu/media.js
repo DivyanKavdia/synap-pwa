@@ -589,11 +589,9 @@
    */
   let sdProbe = { deviceId: '', attempted: false };
   let c3SdRetryCount = 0;
-  let c3CatalogueRemountTried = false;
   function forgetSDProbe() {
     sdProbe = { deviceId: '', attempted: false };
     c3SdRetryCount = 0;
-    c3CatalogueRemountTried = false;
   }
   /** One automatic catalogue per BLE connection. Explicit Check SD can re-arm it. */
   function sdWorthCataloguing(deviceId) {
@@ -679,43 +677,28 @@
   }
   async function catalogueNow(signal) {
     const deviceId = connected()?.deviceId || '';
-    let files;
     try {
-      files = await camera().catalogue(signal);
+      const files = await camera().catalogue(signal);
+      return rememberCatalogue(files, deviceId);
     } catch (failure) {
-      // Mounted/ready only verifies the FAT mount, not the /synap directory.
-      // Released C3 builds can answer operation 7 with IO_ERROR (7) while
-      // reporting sdProbeState=6. Recover the VFS once per BLE connection;
-      // never remount on BUSY while an offline take may still be writing.
-      const recoverable = failure?.mediaCode === 7 || failure?.mediaCode === 3;
-      const failedStage = Number(failure?.storage?.sdProbe ?? moduleInfo()?.sdProbeState);
-      const failedState = Number(failure?.storage?.sdState ?? moduleInfo()?.sdDetectionState);
-      // Failed SD protocol initialization is not a stale FAT/VFS mount.
-      // Firmware already performs bounded background recovery. Repeated BLE
-      // remounts cannot repair an unpowered or unresponsive card.
-      if (moduleInfo()?.id === 2 && failure?.mediaCode === 3 &&
-          failedState === 2 && failedStage === 2) {
-        const nativeError = Number(failure?.storage?.espErr);
-        failure.message = 'C3 SD card did not initialize' +
-          (Number.isFinite(nativeError) && nativeError !== 0 ? ' (ESP-IDF ' + nativeError + ')' : '') +
-          '. Fully power-cycle the pendant and SD module, reconnect, then choose Check SD card. Do not format the card.';
-        throw failure;
+      // Catalogue discovery is observational. It must never tear down a live
+      // or previously healthy filesystem. Explicit Check SD is the only PWA
+      // path allowed to send firmware operation 14.
+      if (moduleInfo()?.id === 2) {
+        const failedStage = Number(failure?.storage?.sdProbe ?? moduleInfo()?.sdProbeState);
+        const failedState = Number(failure?.storage?.sdState ?? moduleInfo()?.sdDetectionState);
+        if (failure?.mediaCode === 3 && failedState === 2 && failedStage === 2) {
+          failure.message =
+            'C3 SD protocol initialization failed. Choose Check SD card to run the explicit software recovery sequence.';
+        } else if (failure?.mediaCode === 7 || failedStage === 4) {
+          failure.message =
+            'C3 SD filesystem access failed. Choose Check SD card to remount explicitly.';
+        }
       }
-      if (moduleInfo()?.id !== 2 || !recoverable || c3CatalogueRemountTried ||
-          signal?.aborted || connected()?.deviceId !== deviceId) throw failure;
-      c3CatalogueRemountTried = true;
-      root.dispatchEvent(new CustomEvent('synap-capture-diagnostic', {
-        detail: { operation: 14, stage: 'C3 catalogue remount', mediaCode: failure.mediaCode,
-          message: 'C3 SD catalogue unavailable despite mounted storage; attempting one safe remount.' },
-      }));
-      await camera().request(14, 0, '', signal);
-      await delay(200);
-      if (signal?.aborted || connected()?.deviceId !== deviceId)
-        throw Error('Pendant connection changed during SD recovery.');
-      files = await camera().catalogue(signal);
+      throw failure;
     }
-    return rememberCatalogue(files, deviceId);
   }
+
   async function catalogue() {
     return operation((signal) => catalogueNow(signal));
   }
@@ -953,17 +936,11 @@
       const sameDevice = connected()?.deviceId === deviceId;
       const c3 = moduleInfo()?.id === 2;
       const busyCard = failure?.mediaCode === 1 || /\bbusy\b/i.test(String(failure?.message || ''));
-      const cardInitFailed = failure?.mediaCode === 3 &&
-        Number(failure?.storage?.sdProbe ?? moduleInfo()?.sdProbeState) === 2;
-      // Give firmware's deferred worker one chance to recover. Further
-      // unresponsive-card retries require reconnect or explicit Check SD.
-      const retryAllowed = cardInitFailed ? c3SdRetryCount < 1 :
-        busyCard ? c3SdRetryCount < 8 : c3SdRetryCount < 4;
+      const retryAllowed = busyCard && c3SdRetryCount < 8;
       if (sameDevice && c3 && retryAllowed) {
         c3SdRetryCount++;
         sdProbe = { deviceId, attempted: false };
-        const retryMs = cardInitFailed ? 30000 :
-          busyCard ? 15000 : Math.min(15000, 2000 * c3SdRetryCount);
+        const retryMs = 15000;
         root.setTimeout(() => {
           if (connected()?.deviceId === deviceId && owner === expected &&
               !root.SynapAppControls?.recordingState?.().active)
