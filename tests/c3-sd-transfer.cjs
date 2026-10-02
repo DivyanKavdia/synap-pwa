@@ -49,10 +49,11 @@ test('C3 catalogue and every WAV chunk use explicit paths',async()=>{
   assert.ok(t.requests.filter(r=>r.op===4&&r.name===path).length>=3);
   assert.ok(t.requests.some(r=>r.op===4&&r.name==='@catalogue'));
 });
-test('a failed first C3 catalogue can be retried without reconnect',()=>{
-  assert.match(source,/c3SdRetryCount < 4/);
+test('only transient C3 BUSY catalogue failures are retried automatically',()=>{
+  assert.match(source,/const retryAllowed = busyCard && c3SdRetryCount < 8/);
   assert.match(source,/sdProbe = \{ deviceId, attempted: false \}/);
-  assert.match(source,/busyCard \? 15000/);
+  assert.match(source,/const retryMs = 15000/);
+  assert.doesNotMatch(source,/cardInitFailed\s*\?|c3SdRetryCount < 4/);
 });
 test('C3 IO_ERROR retains catalogue errno and one remount restores listing',async()=>{
   const wav='/synap/odyssey_audio_12345678_87654321.wav';
@@ -63,10 +64,11 @@ test('C3 IO_ERROR retains catalogue errno and one remount restores listing',asyn
   assert.deepEqual(files,[{path:wav,bytes:200}]);
   assert.deepEqual(t.requests.map(r=>r.op).slice(0,4),[7,14,7,8]);
 });
-test('C3 reconnect makes a single safe op14 recovery attempt for mounted catalogue IO',()=>{
-  assert.match(source,/failure\?\.mediaCode === 7 \|\| failure\?\.mediaCode === 3/);
-  assert.match(source,/c3CatalogueRemountTried = true/);
-  assert.match(source,/camera\(\)\.request\(14, 0, '', signal\)/);
-  assert.match(source,/files = await camera\(\)\.catalogue\(signal\)/);
-  assert.match(source,/Math\.max\(delayMs, 2200\)/);
+test('C3 catalogue discovery is observational and never sends op14',()=>{
+  const discovery=source.slice(source.indexOf('async function catalogueNow('),source.indexOf('async function catalogue()'));
+  assert.match(discovery,/Catalogue discovery is observational/);
+  assert.doesNotMatch(discovery,/camera\(\)\.request\(14/);
+  assert.match(discovery,/Choose Check SD card to run the explicit software recovery sequence/);
+  const refresh=source.slice(source.indexOf('async function refreshSD()'),source.indexOf('function decodeWifi'));
+  assert.match(refresh,/camera\(\)\.request\(14, 0, '', signal\)/);
 });
