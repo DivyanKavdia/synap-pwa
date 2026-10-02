@@ -1,0 +1,114 @@
+diff --git a/google-auth.js b/google-auth.js
+index 7061410..8df118a 100644
+--- a/google-auth.js
++++ b/google-auth.js
+@@ -174,7 +174,24 @@
+     var touchPoints = Number(nav.maxTouchPoints || 0);
+     var ios = /iPad|iPhone|iPod/i.test(ua) || (platform === 'MacIntel' && touchPoints > 1);
+     var webBluetooth = Boolean(nav.bluetooth);
+-    return /Bluefy/i.test(ua) || (ios && webBluetooth);
++    return /Bluefy/i.test(ua) || (ios && webBluetooth) || isNativeShell();
++  }
++
++  /**
++   * The Android shell is the same shape of problem as Bluefy: it supplies the
++   * Web Bluetooth the platform browser lacks, and Google refuses Sign in with
++   * Google inside a WebView. It reuses this pairing transaction, handing the
++   * login to Chrome rather than Safari. Plain Android Chrome exposes no shell
++   * bridge and keeps the direct Google Identity Services path.
++   */
++  function isNativeShell() {
++    try {
++      return Boolean(root.SynapNative &&
++        typeof root.SynapNative.isNativeShell === 'function' &&
++        root.SynapNative.isNativeShell());
++    } catch (error) {
++      return false;
++    }
+   }
+ 
+   function pairingPageUrl(pairing, settings) {
+@@ -190,7 +207,17 @@
+     return String(httpsUrl).replace(/^https:\/\//i, 'x-safari-https://');
+   }
+ 
+-  function launchSafari(url) {
++  function launchExternalBrowser(url) {
++    if (isNativeShell()) {
++      /* A Custom Tab is real Chrome, which Google accepts; the WebView it was
++         launched from keeps polling and claims the transaction on return. */
++      try {
++        root.SynapNative.openExternal(url);
++        return;
++      } catch (error) {
++        throw new Error('Could not open Chrome. Open the Synap sign-in link in Chrome and try again.');
++      }
++    }
+     var target = safariUrl(url);
+     /* x-safari-https asks iOS to leave the Web-Bluetooth browser and open the
+        transaction in Safari. The normal HTTPS URL contains no claim secret and
+@@ -306,7 +333,7 @@
+       /* Start polling before leaving Bluefy so it is ready as soon as the app
+          becomes visible again after Safari approval. */
+       var result = waitForPairing(pairing);
+-      launchSafari(loginUrl);
++      launchExternalBrowser(loginUrl);
+       return result;
+     }).then(function (session) {
+       pairingPromise = null;
+diff --git a/tests/auth-pairing.cjs b/tests/auth-pairing.cjs
+index 81b87f7..372a2ab 100644
+--- a/tests/auth-pairing.cjs
++++ b/tests/auth-pairing.cjs
+@@ -9,7 +9,7 @@ const routeSource = fs.readFileSync('backend/src/http/routes/auth.ts', 'utf8');
+ const pairingSource = fs.readFileSync('backend/src/http/auth-pairing.ts', 'utf8');
+ const pairPage = fs.readFileSync('auth-pair.html', 'utf8');
+ 
+-function loadAuth(navigator) {
++function loadAuth(navigator, extras) {
+   const storage = new Map();
+   const sandbox = {
+     navigator,
+@@ -37,6 +37,7 @@ function loadAuth(navigator) {
+     },
+     fetch() { throw new Error('network should not be used by capability tests'); },
+   };
++  Object.assign(sandbox, extras || {});
+   sandbox.globalThis = sandbox;
+   vm.runInNewContext(authSource, sandbox, { filename: 'google-auth.js' });
+   return sandbox.SynapAuth;
+@@ -72,6 +73,25 @@ assert.strictEqual(loadAuth({
+   bluetooth: {},
+ }).needsExternalIosPairing(), true, 'iPad desktop UA with Web Bluetooth must use Safari pairing');
+ 
++// The Android native shell supplies Web Bluetooth but cannot run embedded GIS,
++// so it takes the same pairing transaction and hands the login to Chrome.
++assert.strictEqual(loadAuth({
++  userAgent: 'Mozilla/5.0 (Linux; Android 15; wv) AppleWebKit/537.36 Chrome/152 Mobile Safari/537.36',
++  platform: 'Linux armv8l',
++  maxTouchPoints: 5,
++  bluetooth: {},
++}, {
++  SynapNative: { isNativeShell() { return true; }, openExternal() {} },
++}).needsExternalIosPairing(), true, 'Android native shell must use Chrome pairing');
++
++// A shell bridge that is present but not a Synap shell must not divert login.
++assert.strictEqual(loadAuth({
++  userAgent: 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/152 Mobile Safari/537.36',
++  platform: 'Linux armv8l',
++  maxTouchPoints: 5,
++  bluetooth: {},
++}, { SynapNative: {} }).needsExternalIosPairing(), false, 'a bridge without isNativeShell keeps GIS');
++
+ // Regression guards: do not remove the working auth/session APIs while adding pairing.
+ assert.match(authSource, /\/v1\/auth\/google/, 'existing Google exchange must remain');
+ assert.match(authSource, /google\.accounts\.id\.prompt/, 'existing One Tap flow must remain');
+@@ -79,6 +99,8 @@ assert.match(authSource, /google\.accounts\.id\.renderButton/, 'existing explici
+ assert.match(authSource, /needsExternalIosPairing\(\) \? signInViaPairing\(\) : signInWithGis\(\)/,
+   'signIn must route by capability and keep GIS as the default');
+ assert.match(authSource, /x-safari-https:\/\//, 'iOS pairing should request Safari explicitly');
++assert.match(authSource, /SynapNative\.openExternal/,
++  'Android pairing should hand the login to Chrome through the shell bridge');
+ assert.match(authSource, /\/v1\/auth\/pair\/start/, 'pairing start endpoint must be used');
+ assert.match(authSource, /\/v1\/auth\/pair\/claim/, 'pairing claim endpoint must be used');
+ 

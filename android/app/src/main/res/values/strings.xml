@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Synap</string>
+
+    <string name="chooser_title">Select your pendant</string>
+    <string name="cancel">Cancel</string>
+    <string name="unnamed_device">Unnamed device</string>
+
+    <string name="bluetooth_permission_required">Synap needs Bluetooth permission to reach your pendant.</string>
+    <string name="webview_update_recommended">Update Android System WebView for reliable pendant support.</string>
+
+    <string name="channel_capture">Pendant link</string>
+    <string name="channel_capture_description">Shown while Synap is holding the connection to your pendant.</string>
+    <string name="capture_active_title">Synap is listening</string>
+    <string name="capture_active_text">Pendant connected. Tap to open.</string>
+</resources>

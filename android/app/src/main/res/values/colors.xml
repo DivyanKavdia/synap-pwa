@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the PWA manifest's background_color / theme_color. -->
+    <color name="brand_background">#F4F7F5</color>
+    <color name="brand_ink">#1E2A24</color>
+</resources>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.Synap" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <!-- Shown behind the system bars. The WebView is padded in by the real
+             inset heights, so this is what fills the status- and nav-bar strips;
+             it matches the PWA's own theme-color meta so the seam is invisible. -->
+        <item name="android:windowBackground">@color/brand_background</item>
+        <item name="android:statusBarColor">@color/brand_background</item>
+        <item name="android:navigationBarColor">@color/brand_background</item>
+        <!-- Light background needs dark icons in both bars, or they vanish. -->
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
+    </style>
+</resources>
