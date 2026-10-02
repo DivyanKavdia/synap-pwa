@@ -18,6 +18,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.ArrayAdapter
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -25,6 +26,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
@@ -54,14 +56,36 @@ class MainActivity : ComponentActivity() {
         BleManager.install(this)
         requestRuntimePermissions()
 
+        // Ask for edge-to-edge explicitly instead of letting the platform decide.
+        // Android 15 forces it for targetSdk 35 but Android 14 and below do not,
+        // so without this one line the same build insets itself two different
+        // ways depending on the phone, and only one of them is ever tested.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
         webView = WebView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            )
+        }
+        // The WebView goes inside a plain container and the CONTAINER carries the
+        // inset padding. Padding a WebView directly is the obvious thing to do and
+        // it is what shipped last build: WebView treats its own padding as a
+        // scroll inset rather than a smaller viewport, so `position:fixed` chrome
+        // -- which is exactly what .topbar and .rail are -- still pins itself to
+        // the full screen edges and slides under the status and navigation bars.
+        // Shrinking the view itself leaves the page no way to reach those strips.
+        val host = FrameLayout(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
+            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.brand_background))
+            addView(webView)
         }
-        setContentView(webView)
-        applyWindowInsets()
+        insetHost = host
+        setContentView(host)
+        applyWindowInsets(host)
         installBackNavigation()
 
         webView.settings.apply {
@@ -121,26 +145,14 @@ class MainActivity : ComponentActivity() {
 
         if (savedInstanceState == null) webView.loadUrl(BuildConfig.PWA_START_URL)
         else webView.restoreState(savedInstanceState)
+
+        // Debug builds get sideloaded by hand, so "is this actually the new APK?"
+        // is a real question with no good way to answer it from the UI. Say so.
+        if (BuildConfig.DEBUG && savedInstanceState == null) {
+            Toast.makeText(this, "Synap shell ${BuildConfig.VERSION_NAME}", Toast.LENGTH_SHORT).show()
+        }
     }
 
-    /**
-     * The shim has to be in place before any page script reads
-     * `navigator.bluetooth`, which `app.js` does during module init.
-     */
-    /**
-     * Keeps the page out from under the status and navigation bars.
-     *
-     * targetSdk 35 means Android 15 lays the activity out edge-to-edge, and the
-     * PWA is built for that: index.html sets `viewport-fit=cover` and styles.css
-     * pads the topbar and rail with `env(safe-area-inset-*)`. But WebView reports
-     * those insets as 0 — Chrome feeds them to an installed PWA, a plain WebView
-     * host does not — so every one of those paddings collapses and the topbar
-     * slides under the notification bar.
-     *
-     * Padding the WebView itself gives the page a correctly sized viewport; the
-     * strip behind the status bar then shows windowBackground, which is set to
-     * the same #F4F7F5 as the PWA's theme-color meta.
-     */
     /**
      * Back should move through the app, not drop out of it.
      *
@@ -160,16 +172,54 @@ class MainActivity : ComponentActivity() {
         })
     }
 
-    private fun applyWindowInsets() {
-        ViewCompat.setOnApplyWindowInsetsListener(webView) { view, windowInsets ->
+    private var insetHost: FrameLayout? = null
+    private var insetsApplied = false
+
+    /**
+     * Keeps the page out from under the status and navigation bars.
+     *
+     * The PWA is written for edge-to-edge: index.html sets `viewport-fit=cover`
+     * and styles.css pads `.topbar` and `.rail` with `env(safe-area-inset-*)`.
+     * But WebView reports those as 0 — Chrome feeds real values to an installed
+     * PWA, a plain WebView host does not — so every one of those paddings
+     * collapses to nothing and the page runs the full height of the screen.
+     *
+     * The host has to supply the inset, and it has to do it by making the
+     * WebView smaller rather than by padding it, or `position:fixed` chrome
+     * ignores it. The strip left over shows brand_background, the same #F4F7F5
+     * as the PWA's theme-color meta, so the seam is invisible.
+     */
+    private fun applyWindowInsets(host: FrameLayout) {
+        ViewCompat.setOnApplyWindowInsetsListener(host) { view, windowInsets ->
             val bars = windowInsets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
             )
             val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
             // The keyboard supersedes the navigation bar rather than stacking on it.
             view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+            insetsApplied = true
             windowInsets
         }
+        // The first inset dispatch can land before a listener registered during
+        // onCreate, and nothing dispatches a second time on its own.
+        ViewCompat.requestApplyInsets(host)
+    }
+
+    /**
+     * Last resort. If the listener above never fired -- some OEM shells skip the
+     * dispatch when the activity is restored rather than created -- read the
+     * insets straight off the attached window, which by now definitely has them.
+     * Better a frame late than an app wearing the status bar.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus || insetsApplied) return
+        val host = insetHost ?: return
+        val bars = ViewCompat.getRootWindowInsets(host)?.getInsets(
+            WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+        ) ?: return
+        host.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+        insetsApplied = true
     }
 
     private var lateShimSource: String? = null

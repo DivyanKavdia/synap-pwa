@@ -11,8 +11,8 @@ android {
         applicationId = "com.synap.pendant"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0-insets"
 
         // The live PWA origin. The backend CORS allowlist and the Google OAuth
         // client are both registered against this exact origin, so the WebView
