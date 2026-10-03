@@ -413,6 +413,16 @@
   }
   async function moveSD(path, progress = () => {}) {
     if (busy) throw Error('Another Chakshu transfer is already running.');
+    const sourceEntry = api()?.state?.sdFiles?.find?.((file) => file.path === path);
+    if (sourceEntry && (sourceEntry.syncable === false || Number(sourceEntry.bytes) <= 44)) {
+      const bytes = Math.max(0, Number(sourceEntry.bytes) || 0);
+      reportSDStage(path, 'blocked-incomplete-source', { bytes });
+      throw Error(
+        bytes
+          ? 'This SD recording did not finalize and cannot be synced. It has been kept on the SD card.'
+          : 'This SD recording contains no audio bytes and cannot be synced. It has been kept on the SD card.',
+      );
+    }
     const connection = context(),
       owner = api().state.owner,
       wantsDescribe = Boolean(api().state.sdFiles?.find((file) => file.path === path)?.describe),

@@ -473,6 +473,8 @@
             sourceName,
             sourcePath: file.path,
             byteSize: file.bytes,
+            sdSyncable: file.syncable !== false && Number(file.bytes) > 44,
+            sdIssue: file.issue || '',
             describeRequested: Boolean(file.describe),
             createdAt: file.seenAt || new Date().toISOString(),
             localOnly: true,
@@ -503,10 +505,19 @@
           : row.mediaKind === 'video'
             ? 'Video'
             : 'Photo';
-      opener.setAttribute('aria-label', 'Sync to Memories: ' + title);
-      card.querySelector('.recording-row-meta').textContent =
-        type + ' · Not synced · On device SD · ' + byteLabel(row.byteSize);
-      preview.textContent = row.describeRequested ? 'Sync & describe' : 'Sync to Memories';
+      const syncable = row.sdSyncable !== false && Number(row.byteSize) > 44;
+      opener.setAttribute(
+        'aria-label',
+        syncable ? 'Sync to Memories: ' + title : 'Incomplete SD recording: ' + title,
+      );
+      card.querySelector('.recording-row-meta').textContent = syncable
+        ? type + ' · Not synced · On device SD · ' + byteLabel(row.byteSize)
+        : type + ' · Incomplete SD recording · On device SD · ' + byteLabel(row.byteSize);
+      preview.textContent = syncable
+        ? row.describeRequested ? 'Sync & describe' : 'Sync to Memories'
+        : Number(row.byteSize) > 0
+          ? 'Cannot sync · recording did not finalize'
+          : 'Cannot sync · no audio was written';
       preview.hidden = false;
       disposeCard(card);
       image.removeAttribute('src');
@@ -579,6 +590,13 @@
     opener.addEventListener('click', () => action(async () => {
       const item = card.synapRecording;
       if (item?.sdOnly) {
+        if (item.sdSyncable === false) {
+          const message =
+            'This SD recording is incomplete and contains no syncable audio. It has been kept on the SD card.';
+          const preview = card.querySelector('.recording-row-preview');
+          if (preview) preview.textContent = message;
+          throw Error(message);
+        }
         const move = root.SynapChakshuV2?.moveSD || api().moveSD;
         await move(item.sourcePath, (progress) =>
           status('Syncing from device SD · ' + Math.round(progress * 100) + '%'),

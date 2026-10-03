@@ -650,9 +650,12 @@
       raw = files.flatMap((file) => {
         const path = String(file?.path || ''), bytes = Number(file?.bytes);
         if (!SD_FILE_PATH.test(path) || !Number.isSafeInteger(bytes) || bytes < 0) return [];
+        const syncable = file?.syncable !== false && bytes > 44;
         return [{
           path,
           bytes,
+          syncable,
+          issue: syncable ? '' : String(file?.issue || 'incomplete').slice(0, 32),
           describe: Boolean(file?.describe),
           seenAt: previous.get(path)?.seenAt || new Date().toISOString(),
         }];
@@ -665,8 +668,8 @@
       next = raw.filter(
         (file) => !/\.wav$/i.test(file.path) || !videoStems.has(file.path.replace(/\.wav$/i, '')),
       ),
-      before = JSON.stringify([sdFilesDeviceId, sdFiles.map((file) => [file.path, file.bytes, Boolean(file.describe)])]),
-      after = JSON.stringify([deviceId || '', next.map((file) => [file.path, file.bytes, Boolean(file.describe)])]);
+      before = JSON.stringify([sdFilesDeviceId, sdFiles.map((file) => [file.path, file.bytes, file.syncable, file.issue, Boolean(file.describe)])]),
+      after = JSON.stringify([deviceId || '', next.map((file) => [file.path, file.bytes, file.syncable, file.issue, Boolean(file.describe)])]);
     sdFiles = next;
     sdFilesDeviceId = deviceId || '';
     if (before !== after) {

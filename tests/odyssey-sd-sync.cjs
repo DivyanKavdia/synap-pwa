@@ -36,6 +36,10 @@ for(const stage of ['download','import','verify','delete-source','complete','fai
 const verified=preview.indexOf('await verifyAudio(record.id, source.main)');
 assert(verified>=0);
 assert(preview.indexOf('await deleteSyncedSet(path)',verified)>verified);
+assert.match(media,/file\?\.syncable !== false && bytes > 44/,'legacy and new catalogues must classify empty/header-only WAVs as incomplete');
+assert.match(preview,/blocked-incomplete-source/,'verified sync must reject incomplete SD artifacts before transfer');
+assert.match(library,/Incomplete SD recording/,'Memories must distinguish incomplete artifacts from syncable recordings');
+assert.match(library,/Cannot sync · no audio was written/);
 assert.match(library,/Not synced · On device SD/);
 assert.match(library,/Syncing from device SD/);
 console.log('PASS: Odyssey C3 SD files surface in Memories, sync uses verified delete, and Settings exposes safe clear.');
