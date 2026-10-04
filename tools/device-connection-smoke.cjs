@@ -137,9 +137,16 @@ const server = createStaticServer(process.env.SYNAP_UI_ROOT || path.resolve(__di
         await page.locator('#headerPendantStatus').click();
       }
       await page.waitForFunction(
-        () => document.body.dataset.state === 'idle' && SynapDevices.connection?.service.audioOnly,
+        (expectAudioOnly) =>
+          document.body.dataset.state === 'idle' &&
+          Boolean(SynapDevices.connection?.service.audioOnly) === expectAudioOnly,
+        failure !== 'hang',
       );
-      assert.equal(await page.evaluate(() => bleFixture.inventoryReads), 1);
+      assert.equal(
+        await page.evaluate(() => bleFixture.inventoryReads),
+        failure === 'hang' ? 2 : 1,
+        'a fresh manual retry performs full optional discovery after a transient native hang',
+      );
       assert.equal(
         await page.evaluate(() => bleFixture.appDisconnects),
         failure === 'hang' ? 1 : 0,
@@ -158,11 +165,14 @@ const server = createStaticServer(process.env.SYNAP_UI_ROOT || path.resolve(__di
       assert.equal(recording.stats.missingFrames, 0);
       await page.evaluate(() => bleFixture.disconnect());
       await page.waitForFunction(
-        () => document.body.dataset.state === 'idle' && SynapDevices.connection?.service.audioOnly,
+        (expectAudioOnly) =>
+          document.body.dataset.state === 'idle' &&
+          Boolean(SynapDevices.connection?.service.audioOnly) === expectAudioOnly,
+        failure !== 'hang',
       );
       assert.equal(
         await page.evaluate(() => bleFixture.inventoryReads),
-        2,
+        failure === 'hang' ? 3 : 2,
         'reconnect retries full optional discovery after the transient inventory failure',
       );
       assert.equal(await page.evaluate(() => bleFixture.missingProbes), 0);
