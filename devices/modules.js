@@ -44,7 +44,8 @@
       psramMiB: value.getUint8(13),
       mediaVersion: value.getUint8(14),
       // Byte 16 is additive media capability bits. Chakshu owns the full set;
-      // Odyssey C3 may advertise only bit 0 (notification-window transfer).
+      // Odyssey C3 currently uses bit 0 (notification-window transfer) and
+      // bit 1 (direct Wi-Fi cloud sync).
       mediaFeatures: profile.id === 3 ? value.getUint8(16) :
         profile.id === 2 ? value.getUint8(16) & 3 : 0,
       voiceVersion: value.getUint8(15),
