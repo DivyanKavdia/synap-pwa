@@ -346,3 +346,10 @@
 .visual-wifi[hidden] {
   display: none;
 }
+
+/* Incomplete SD artefacts have no payload to sync; expose exact-path cleanup without
+   making the entire card destructive. */
+.library-media-open{flex:1 1 auto;min-width:0;text-align:left}
+.library-sd-discard{flex:0 0 auto;align-self:center;min-height:40px;padding:8px 10px;border:1px solid var(--border,#dedee8);border-radius:10px;background:var(--surface,#fff);color:var(--muted,#68716d);font:inherit;font-size:12px;cursor:pointer}
+.library-sd-discard:disabled{opacity:.45;cursor:default}
+@media(max-width:520px){.recording-row:has(.library-sd-discard:not([hidden])){align-items:stretch;flex-direction:column}.library-sd-discard{align-self:flex-start;margin-left:0}}

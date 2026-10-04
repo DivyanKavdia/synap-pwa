@@ -371,6 +371,26 @@
     }
     return deleteSD(path);
   }
+  async function discardIncompleteSD(path) {
+    if (busy) throw Error('Another SD transfer is already running.');
+    const entry = api()?.state?.sdFiles?.find?.((file) => file.path === path),
+      bytes = Math.max(0, Number(entry?.bytes) || 0);
+    if (!entry) throw Error('This SD file is no longer available.');
+    if (entry.syncable !== false && bytes > 44)
+      throw Error('This SD recording contains audio. Sync it to Memories instead of deleting it.');
+    if (api().state.offline || api().state.session || root.SynapAppControls?.recordingState?.().active)
+      throw Error('Stop recording before removing the incomplete SD file.');
+    busy = true;
+    try {
+      reportSDStage(path, 'delete-incomplete-source', { bytes });
+      await deleteSD(path);
+    } finally {
+      busy = false;
+    }
+    await api().catalogue().catch(() => {});
+    root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
+    return { path, bytes };
+  }
   async function describeVisual(visualId, blob, source = 'gemini-offline-voice') {
     if (!visualId || !blob) throw Error('The photo is unavailable for visual inference.');
     const owner = api().state.owner;
@@ -601,20 +621,26 @@
               : 'Photo on SD';
       row.className = 'visual-sd-row';
       label.textContent = type + ' · ' + name + ' · ' + Math.max(1, Math.round((file.bytes || 0) / 1024)) + ' KB';
+      const incomplete = file.syncable === false || Number(file.bytes) <= 44;
       action.type = 'button';
-      action.textContent = 'Sync to Memories';
+      action.textContent = incomplete ? 'Remove from SD' : 'Sync to Memories';
       action.addEventListener('click', async () => {
         action.disabled = true;
         try {
-          const receipt = await moveSD(file.path, (fraction) => status('Moving from SD · ' + Math.round(fraction * 100) + '%'));
-          await api().catalogue().catch(() => {});
-          status(
-            receipt.description
-              ? 'Photo synced to Memories. Description ready; verified SD source removed.'
-              : receipt.descriptionError
-                ? 'Photo synced and SD source removed. Description needs retry: ' + receipt.descriptionError
-                : type.replace(' on SD', '') + ' synced to Memories. Verified SD source removed.',
-          );
+          if (incomplete) {
+            await discardIncompleteSD(file.path);
+            status('Incomplete SD recording removed.');
+          } else {
+            const receipt = await moveSD(file.path, (fraction) => status('Moving from SD · ' + Math.round(fraction * 100) + '%'));
+            await api().catalogue().catch(() => {});
+            status(
+              receipt.description
+                ? 'Photo synced to Memories. Description ready; verified SD source removed.'
+                : receipt.descriptionError
+                  ? 'Photo synced and SD source removed. Description needs retry: ' + receipt.descriptionError
+                  : type.replace(' on SD', '') + ' synced to Memories. Verified SD source removed.',
+            );
+          }
           await browseSD(list.id);
         } catch (error) {
           status(error.message);
@@ -920,7 +946,7 @@
       browse.parentNode.insertBefore(clear, browse.nextSibling);
     }
   }
-  const exposed = { moveSD, syncAll, clearSD, startOffline, startOfflineAudio, describeNow, browseSD, renderSDInbox, get busy() { return busy; } };
+  const exposed = { moveSD, discardIncompleteSD, syncAll, clearSD, startOffline, startOfflineAudio, describeNow, browseSD, renderSDInbox, get busy() { return busy; } };
   root.SynapChakshuV2 = exposed;
   for (const name of ['synap-chakshu-changed', 'synap-module-changed', 'synap-chakshu-sd-pending', 'synap-gatt-disconnected'])
     root.addEventListener?.(name, renderSDInbox);

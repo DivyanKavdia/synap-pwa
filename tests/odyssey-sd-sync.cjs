@@ -43,3 +43,10 @@ assert.match(library,/Cannot sync · no audio was written/);
 assert.match(library,/Not synced · On device SD/);
 assert.match(library,/Syncing from device SD/);
 console.log('PASS: Odyssey C3 SD files surface in Memories, sync uses verified delete, and Settings exposes safe clear.');
+
+assert.match(preview,/async function discardIncompleteSD\(path\)/,'incomplete SD files need an exact-path cleanup action');
+assert.match(preview,/delete-incomplete-source/);
+assert.match(preview,/entry\.syncable !== false && bytes > 44/,'cleanup must refuse valid syncable SD recordings');
+assert.match(library,/library-sd-discard/,'Memories must expose cleanup for incomplete SD entries');
+assert.match(library,/Remove from SD/);
+assert.match(library,/SynapChakshuV2\?\.discardIncompleteSD/);

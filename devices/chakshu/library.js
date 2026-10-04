@@ -495,7 +495,8 @@
   function updateCard(card, row) {
     card.synapRecording = row;
     const title = row.name || (row.mediaKind === 'audio' ? 'Audio' : row.mediaKind === 'video' ? 'Video' : 'Photo'),
-      opener = card.querySelector('.library-media-open'), image = card.querySelector('img'), preview = card.querySelector('.recording-row-preview');
+      opener = card.querySelector('.library-media-open'), image = card.querySelector('img'),
+      preview = card.querySelector('.recording-row-preview'), discard = card.querySelector('.library-sd-discard');
     card.querySelector('.recording-row-name').textContent = title;
     if (row.sdOnly) {
       const type = row.describeRequested
@@ -519,11 +520,17 @@
           ? 'Cannot sync · recording did not finalize'
           : 'Cannot sync · no audio was written';
       preview.hidden = false;
+      if (discard) {
+        discard.hidden = syncable;
+        discard.disabled = false;
+        discard.setAttribute('aria-label', 'Remove incomplete SD recording: ' + title);
+      }
       disposeCard(card);
       image.removeAttribute('src');
       image.hidden = true;
       return;
     }
+    if (discard) discard.hidden = true;
     opener.setAttribute('aria-label', (row.mediaKind === 'video' ? 'Play video: ' : 'Open photo: ') + title);
     card.querySelector('.recording-row-meta').textContent =
       (row.mediaKind === 'video'
@@ -607,7 +614,30 @@
       }
       return open(item.mediaId);
     }));
-    header.append(opener);
+    const discard = document.createElement('button');
+    discard.type = 'button';
+    discard.className = 'library-sd-discard';
+    discard.textContent = 'Remove from SD';
+    discard.hidden = true;
+    discard.addEventListener('click', (event) => {
+      event.stopPropagation();
+      action(async () => {
+        const item = card.synapRecording;
+        if (!item?.sdOnly || item.sdSyncable !== false)
+          throw Error('Only incomplete SD recordings can be removed without syncing.');
+        const removeIncomplete = root.SynapChakshuV2?.discardIncompleteSD;
+        if (!removeIncomplete) throw Error('SD cleanup is still loading. Retry in a moment.');
+        discard.disabled = true;
+        try {
+          await removeIncomplete(item.sourcePath);
+          await render();
+          return 'Incomplete SD recording removed.';
+        } finally {
+          discard.disabled = false;
+        }
+      });
+    });
+    header.append(opener, discard);
     card.append(header);
     updateCard(card, row);
     return card;
