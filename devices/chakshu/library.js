@@ -604,13 +604,31 @@
           if (preview) preview.textContent = message;
           throw Error(message);
         }
-        const move = root.SynapChakshuV2?.moveSD || api().moveSD;
-        await move(item.sourcePath, (progress) =>
-          status('Syncing from device SD · ' + Math.round(progress * 100) + '%'),
-        );
-        await api().catalogue().catch(() => {});
-        await render();
-        return 'Synced to Memories. Verified SD source removed.';
+        const move = root.SynapChakshuV2?.moveSD || api().moveSD,
+          syncPreview = card.querySelector('.recording-row-preview');
+        opener.disabled = true;
+        if (syncPreview) {
+          syncPreview.hidden = false;
+          syncPreview.textContent = 'Syncing to Memories · 0%';
+        }
+        try {
+          await move(item.sourcePath, (progress) => {
+            const percent = Math.max(0, Math.min(100, Math.round(progress * 100)));
+            if (syncPreview) syncPreview.textContent = 'Syncing to Memories · ' + percent + '%';
+            status('Syncing from device SD · ' + percent + '%');
+          });
+          await api().catalogue().catch(() => {});
+          await render();
+          return 'Synced to Memories. Verified SD source removed.';
+        } catch (error) {
+          if (syncPreview) {
+            syncPreview.hidden = false;
+            syncPreview.textContent = 'Sync paused · tap again to retry';
+          }
+          throw error;
+        } finally {
+          opener.disabled = false;
+        }
       }
       return open(item.mediaId);
     }));
