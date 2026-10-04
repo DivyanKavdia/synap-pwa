@@ -44,10 +44,10 @@
       psramMiB: value.getUint8(13),
       mediaVersion: value.getUint8(14),
       // Byte 16 is additive media capability bits. Chakshu owns the full set;
-      // Odyssey C3 currently uses bit 0 (notification-window transfer) and
-      // bit 1 (direct Wi-Fi cloud sync).
+      // Odyssey C3 uses bit 0 (notification-window transfer), bit 1 (direct
+      // Wi-Fi cloud sync), and bit 2 (explicit destructive SD formatting).
       mediaFeatures: profile.id === 3 ? value.getUint8(16) :
-        profile.id === 2 ? value.getUint8(16) & 3 : 0,
+        profile.id === 2 ? value.getUint8(16) & 7 : 0,
       voiceVersion: value.getUint8(15),
       // Odyssey boot-probe snapshot, independent of usable SD/media capabilities.
       sdDetectionState: [1, 2].includes(profile.id) && value.getUint8(17) === 1
