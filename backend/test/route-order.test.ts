@@ -93,6 +93,7 @@ const protectedRoutes = [
   ['POST', '/v1/voice-profile'],
   ['PATCH', '/v1/voice-profile'],
   ['DELETE', '/v1/voice-profile'],
+  ['POST', '/v1/device-uploads'],
   ['POST', '/v1/recordings'],
   ['PUT', '/v1/recordings/recording/segments/0'],
   ['POST', '/v1/recordings/recording/highlights'],
@@ -129,5 +130,17 @@ test('remembering, listing and forgetting voices all require a user session', as
     const result = await post(path!, {}, JSON.stringify({ consent: true }), method);
     assert.equal(result.status, 401);
     assert.equal(result.code, 'missing_token');
+  }
+});
+
+test('device upload data routes require the recording-scoped device credential', async () => {
+  for (const [method, path] of [
+    ['GET', '/v1/device-uploads/00000000-0000-4000-8000-000000000001/status'],
+    ['PUT', '/v1/device-uploads/00000000-0000-4000-8000-000000000001/segments/0'],
+    ['POST', '/v1/device-uploads/00000000-0000-4000-8000-000000000001/finalize'],
+  ]) {
+    const result = await post(path, {}, '{}', method);
+    assert.equal(result.status, 401);
+    assert.equal(result.code, 'missing_device_upload_token');
   }
 });
