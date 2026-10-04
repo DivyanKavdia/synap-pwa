@@ -711,3 +711,14 @@ test('C3 hard SD init failure is observational until explicit Check SD',()=>{
   assert.match(refresh,/camera\(\)\.request\(14, 0, '', signal\)/);
   assert.doesNotMatch(discovery,/camera\(\)\.request\(17/);
 });
+
+test('C3 SD sync UI keeps slow Bluefy transfers visible and safely locks storage controls',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ const transfer=fs.readFileSync(path.join(__dirname,'../devices/chakshu/transfer.js'),'utf8');
+ const library=fs.readFileSync(path.join(__dirname,'../devices/chakshu/library.js'),'utf8');
+ const lifecycle=fs.readFileSync(path.join(__dirname,'../devices/chakshu/capture-preview.js'),'utf8');
+ assert.match(transfer,/READ_TIMEOUT_MS = 20000/);
+ assert.match(transfer,/RESPONSE_DEADLINE_MS = 30000/);
+ assert.match(library,/Syncing to Memories · ' \\+ percent \\+ '%'/);
+ assert.match(lifecycle,/SD transfer in progress · Retry SD and Clear SD are temporarily disabled/);
+});
