@@ -428,9 +428,10 @@ module.exports = function pendantFixture() {
     inventoryReads++;
     if (location.search.includes('inventory-reject')) return Promise.reject(2);
     if (location.search.includes('inventory-incomplete')) return [chars.get(uuid('46'))];
-    if (location.search.includes('inventory-hang')) return new Promise((resolve, reject) => {
-      device.addEventListener('gattserverdisconnected', () => reject(2), { once: true });
-    });
+    if (location.search.includes('inventory-hang') && inventoryReads === 1)
+      return new Promise((resolve, reject) => {
+        device.addEventListener('gattserverdisconnected', () => reject(2), { once: true });
+      });
     return [...chars.values()];
   });
   const device = new EventTarget();
