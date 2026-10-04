@@ -18,7 +18,7 @@ assert.match(library,/info = root\.SynapModules\?\.client\?\.module/,'SD library
 assert(transfer.includes('{0,51}\\.wav'));
 assert.match(transfer,/readPath = image \? '' : op === 8 \? '@catalogue' : path/);
 assert.match(transfer,/this\._request\(readOp, size, readPath, signal\)/);
-assert.match(transfer,/revision: '1\\.0\\.0-chakshu-core18'/);
+assert.match(transfer,/revision: '1\.0\.0-chakshu-core18'/);
 assert.match(media,/Odyssey SD audio/);
 assert.match(media,/schedulePendingSync\(250\)/);
 assert.match(media,/root\.document\?\.body\?\.dataset\.otaRecovery === 'c3'/,'Odyssey automatic catalogue must be suppressed only during OTA recovery');
