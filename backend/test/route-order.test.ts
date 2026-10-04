@@ -138,7 +138,7 @@ test('device upload data routes require the recording-scoped device credential',
     ['GET', '/v1/device-uploads/00000000-0000-4000-8000-000000000001/status'],
     ['PUT', '/v1/device-uploads/00000000-0000-4000-8000-000000000001/segments/0'],
     ['POST', '/v1/device-uploads/00000000-0000-4000-8000-000000000001/finalize'],
-  ]) {
+  ] as const) {
     const result = await post(path, {}, '{}', method);
     assert.equal(result.status, 401);
     assert.equal(result.code, 'missing_device_upload_token');
