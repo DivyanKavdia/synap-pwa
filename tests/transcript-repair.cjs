@@ -22,7 +22,7 @@ test('PWA exposes an authenticated rebuild action for existing recordings',()=>{
 test('production shell loads and offline shell caches transcript repair',()=>{
   assert.match(fs.readFileSync(path.join(root,'index.html'),'utf8'),/transcript-repair\.js\?v=/);
   assert.match(sw,/\.\/transcript-repair\.js/);
-  assert.match(sw,/1\.0\.0-shell184-c3-media-v2/);
+  assert.match(sw,/1\.0\.0-shell185-c3-wifi-sync/);
 });
 
 test('backend rebuilds ready recordings without re-upload or retranscription and transcript assembly fails safe',()=>{
