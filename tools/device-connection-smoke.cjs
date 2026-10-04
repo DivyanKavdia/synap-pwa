@@ -162,8 +162,8 @@ const server = createStaticServer(process.env.SYNAP_UI_ROOT || path.resolve(__di
       );
       assert.equal(
         await page.evaluate(() => bleFixture.inventoryReads),
-        1,
-        'reconnect uses fresh core discovery without repeating the failed inventory',
+        2,
+        'reconnect retries full optional discovery after the transient inventory failure',
       );
       assert.equal(await page.evaluate(() => bleFixture.missingProbes), 0);
       assert.equal(await page.evaluate(() => bleFixture.maximum), 1);
