@@ -720,5 +720,5 @@ test('C3 SD sync UI keeps slow Bluefy transfers visible and safely locks storage
  assert.match(transfer,/C3_SD_READ_TIMEOUT_MS = 20000/);
  assert.match(transfer,/RESPONSE_DEADLINE_MS = 30000/);
  assert(library.includes("syncPreview.textContent = 'Syncing to Memories · ' + percent + '%'"));
- assert.match(lifecycle,/SD transfer in progress · Retry SD and Clear SD are temporarily disabled/);
+ assert.match(lifecycle,/SD transfer in progress · SD maintenance controls are temporarily disabled/);
 });
