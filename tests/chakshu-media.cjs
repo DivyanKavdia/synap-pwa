@@ -317,7 +317,7 @@ test('a lost short command times out without reissuing a photo', async (t) => {
   });
   const request = assert.rejects(client.snapshot(), /Camera request timed out/);
   await new Promise(setImmediate);
-  t.mock.timers.tick(12001);
+  t.mock.timers.tick(30001);
   await request;
   assert.equal(writes, 1);
 });
