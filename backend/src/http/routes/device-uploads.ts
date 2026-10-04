@@ -27,7 +27,6 @@ const beginBody = z.object({
 });
 
 const finalizeBody = z.object({
-  ended_at: z.string().datetime(),
   duration_ms: z.number().int().nonnegative(),
   segment_count: z.number().int().positive().safe(),
 });
@@ -78,7 +77,7 @@ export function deviceUploadRoutes(): Router {
       recording_id: doc.recordingId,
       upload_token: ticket.token,
       expires_in: ticket.expires_in,
-      segment_ms: 30000,
+      segment_ms: 120000,
     });
   }));
 
@@ -129,8 +128,8 @@ export function deviceUploadRoutes(): Router {
       if (declared && declared.toLowerCase() !== digest) {
         throw new HttpError(400, 'digest_mismatch', 'Segment digest mismatch');
       }
-      const startMs = Number(req.header('x-synap-start-ms') ?? index * 30000);
-      const endMs = Number(req.header('x-synap-end-ms') ?? startMs + 30000);
+      const startMs = Number(req.header('x-synap-start-ms') ?? index * 120000);
+      const endMs = Number(req.header('x-synap-end-ms') ?? startMs + 120000);
       if (!Number.isSafeInteger(startMs) || !Number.isSafeInteger(endMs) || startMs < 0 || endMs <= startMs) {
         throw new HttpError(400, 'bad_segment_timing', 'Invalid segment timing');
       }
@@ -181,10 +180,17 @@ export function deviceUploadRoutes(): Router {
     handler<DeviceUploadRequest>(async (req, res) => {
       const parsed = finalizeBody.safeParse(req.body);
       if (!parsed.success) throw new HttpError(400, 'bad_request', 'Invalid finalize body');
+      const source = await db.getRecording(req.uid, req.uploadRecordingId);
+      if (!source || source.deleting || (source.deviceId && source.deviceId !== req.uploadDeviceId)) {
+        throw new HttpError(404, 'not_found', 'Unknown device upload');
+      }
+      const started = Date.parse(source.startedAt);
+      if (!Number.isFinite(started)) throw new HttpError(409, 'invalid_recording_time', 'Recording start time is invalid');
+      const endedAt = new Date(started + parsed.data.duration_ms).toISOString();
       let recording: RecordingDoc;
       try {
         recording = await db.finalizeRecording(req.uid, req.uploadRecordingId, {
-          endedAt: parsed.data.ended_at,
+          endedAt,
           durationMs: parsed.data.duration_ms,
           segmentCount: parsed.data.segment_count,
         });
