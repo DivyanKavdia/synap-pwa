@@ -449,6 +449,7 @@
       key = receiptKey(connection.deviceId, path);
     let stage = 'receipt-check';
     busy = true;
+    renderSDInbox();
     reportSDStage(path, stage);
     try {
       const cached = JSON.parse(localStorage.getItem(key) || 'null');
@@ -545,6 +546,7 @@
       throw error;
     } finally {
       busy = false;
+      renderSDInbox();
     }
   }
   async function clearSD() {
@@ -692,11 +694,13 @@
     if (settingsStatus && supportsStorage)
       settingsStatus.textContent = !state.connected
         ? 'Connect the pendant to manage its SD card.'
-        : state.storageReady
-          ? count
-            ? count + ' unsynced item' + (count === 1 ? '' : 's') + ' on SD.'
-            : 'SD card ready · no unsynced content.'
-          : info?.id === 2 && info?.sdProbeState === 1
+        : busy
+          ? 'SD transfer in progress · Retry SD and Clear SD are temporarily disabled.'
+          : state.storageReady
+            ? count
+              ? count + ' unsynced item' + (count === 1 ? '' : 's') + ' on SD.'
+              : 'SD card ready · no unsynced content.'
+            : info?.id === 2 && info?.sdProbeState === 1
             ? 'SD SPI bus setup failed.'
             : info?.id === 2 && info?.sdProbeState === 2
               ? 'SD card protocol initialization failed.'
