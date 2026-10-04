@@ -30,10 +30,11 @@ test('SD status reports actual capacity and rejects impossible values',()=>{
   const bad=status();bad.setUint32(12,2000,true);assert.throws(()=>decodeStatus(bad),/capacity/);
   const progress=status();progress.setUint8(7,101);assert.throws(()=>decodeStatus(progress),/Invalid/);
 });
-test('optional media features are opt-in and belong only to Chakshu',()=>{
+test('optional media features are profile-scoped; C3 may use only notification-window bit 0',()=>{
   const old=descriptor();assert.equal(decode(old).mediaFeatures,0);
   const current=descriptor();current.setUint8(16,15);assert.equal(decode(current).mediaFeatures,15);
-  for(const id of [1,2]){const other=descriptor(id);other.setUint8(16,15);assert.equal(decode(other).mediaFeatures,0);}
+  const s3=descriptor(1);s3.setUint8(16,15);assert.equal(decode(s3).mediaFeatures,0);
+  const c3=descriptor(2);c3.setUint8(16,15);assert.equal(decode(c3).mediaFeatures,1);
 });
 test('all requests use the connection queue and cannot run during audio or another SD job',async()=>{
   let allowed=true,writes=0,queueCalls=0,current=status();
