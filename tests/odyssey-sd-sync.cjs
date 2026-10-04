@@ -63,3 +63,22 @@ assert.match(modulesSource,/profile\.id === 2 \? value\.getUint8\(16\) & 3 : 0/,
 assert.match(transfer,/if \(this\.features & 1 && !this\.streamDisabled\)/,
   'C3 media-v2 uses the existing notification-window transport');
 assert.match(transfer,/this\.window\(size, first\.total, signal\)/);
+
+assert.match(transfer,/configureC3Wifi\(ssid, password, signal\)/,
+  'C3 Wi-Fi credentials must be provisioned through the existing BLE media channel');
+assert.match(transfer,/startC3WifiUpload\(options, signal\)/);
+assert.match(transfer,/c3WifiStatus\(signal\)/);
+assert.match(transfer,/forgetC3Wifi\(signal\)/);
+assert.match(media,/moduleInfo\(\)\?\.id === 2[\s\S]*moduleInfo\(\)\?\.mediaFeatures & 2/,
+  'C3 direct Wi-Fi capability must use bit 1 without changing Chakshu hotspot bit 2');
+assert.match(preview,/WIFI_UPLOAD_PREFIX = 'synap-c3-wifi-upload-v1:'/);
+assert.match(preview,/async function moveC3Wifi\(path, sourceEntry, progress/);
+assert.match(preview,/wifiState\?\.configured\) return moveC3Wifi/,
+  'a configured C3 must prefer Wi-Fi before entering the BLE download path');
+assert.match(preview,/id = 'deviceWifiSettings'/);
+assert.match(preview,/Save Wi-Fi/);
+assert.match(preview,/Forget Wi-Fi/);
+assert.match(preview,/\/v1\/device-uploads/);
+assert.match(preview,/SynapCloudHistory\?\.restore/);
+assert.match(preview,/localStorage\.removeItem\(ticket\.key\)/);
+assert.match(preview,/wifi-verified/);
