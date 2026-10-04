@@ -43,7 +43,10 @@
       flashMiB: value.getUint8(12),
       psramMiB: value.getUint8(13),
       mediaVersion: value.getUint8(14),
-      mediaFeatures: profile.id === 3 ? value.getUint8(16) : 0,
+      // Byte 16 is additive media capability bits. Chakshu owns the full set;
+      // Odyssey C3 may advertise only bit 0 (notification-window transfer).
+      mediaFeatures: profile.id === 3 ? value.getUint8(16) :
+        profile.id === 2 ? value.getUint8(16) & 1 : 0,
       voiceVersion: value.getUint8(15),
       // Odyssey boot-probe snapshot, independent of usable SD/media capabilities.
       sdDetectionState: [1, 2].includes(profile.id) && value.getUint8(17) === 1
