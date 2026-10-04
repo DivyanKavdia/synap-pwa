@@ -7,6 +7,7 @@ import { askV3Routes } from './routes/ask-v3.js';
 import { brainRoutes } from './routes/brain.js';
 import { memoryToolRoutes } from './routes/memory-tools.js';
 import { recordingRoutes } from './routes/recordings.js';
+import { deviceUploadRoutes } from './routes/device-uploads.js';
 import { retryRoutes } from './routes/retry.js';
 import { sourceRoutes } from './routes/source.js';
 import { speakerNameRoutes } from './routes/speaker-names.js';
@@ -109,6 +110,7 @@ export function createApp(): Express {
   app.use('/v1', retryRoutes());
   app.use('/v1', speakerNameRoutes());
   app.use('/v1', knownSpeakerRoutes());
+  app.use('/v1', deviceUploadRoutes());
   app.use('/v1', recordingRoutes());
   app.use('/v1', brainRoutes());
   app.use('/v1', memoryToolRoutes());
