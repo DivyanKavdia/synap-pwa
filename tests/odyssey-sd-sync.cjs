@@ -50,3 +50,9 @@ assert.match(preview,/entry\.syncable !== false && bytes > 44/,'cleanup must ref
 assert.match(library,/library-sd-discard/,'Memories must expose cleanup for incomplete SD entries');
 assert.match(library,/Remove from SD/);
 assert.match(library,/SynapChakshuV2\?\.discardIncompleteSD/);
+
+assert.match(transfer,/READ_TIMEOUT_MS = 20000/,'Bluefy SD reads need margin above observed ~10 second bridge stalls');
+assert.match(transfer,/RESPONSE_DEADLINE_MS = 30000/);
+assert.match(library,/Syncing to Memories · 0%/,'SD cards must show foreground transfer progress');
+assert.match(library,/Sync paused · tap again to retry/);
+assert.match(preview,/SD transfer in progress · Retry SD and Clear SD are temporarily disabled/);
