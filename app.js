@@ -144,7 +144,8 @@
   let rapidNativeLinkFailures = 0;
   let rememberedHandleRefreshAttempted = false;
   // Session-local fallback for a pendant whose optional discovery broke setup.
-  // Reloading retries full discovery; changing devices never inherits this mode.
+  // Reuse it only while recovering an active recording. Idle/manual reconnects
+  // must retry full discovery so a transient Bluefy failure cannot hide C3/SD.
   const audioOnlyConnections = new Set();
   let firmwareBusy = false;
   let firmwareUpdater = null;
@@ -1196,10 +1197,10 @@
       const epoch = connectionEpoch;
       const connectingDevice = bluetoothDevice;
       setupDevice = connectingDevice;
-      // Keep a failed optional-discovery fallback for this page session so
-      // reconnect does not repeat a bridge/native inventory failure. Reloading the
-      // PWA clears this Set and retries full discovery, so the downgrade is not persistent.
-      audioOnly = audioOnlyConnections.has(connectingDevice.id);
+      // A temporary Bluefy optional-discovery failure must never downgrade an
+      // idle/manual connection for the rest of the page session. Reuse audio-only
+      // only while recovering an active take; normal reconnects retry full discovery.
+      audioOnly = resumingRecording && audioOnlyConnections.has(connectingDevice.id);
       connectionStage("Bluetooth link");
       lastGattDisconnectRequest = null;
       try {

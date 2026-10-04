@@ -8,6 +8,7 @@
   const IMAGE_TARGETS = profiles.BY_TARGET;
   const WINDOW_CHUNKS = root.navigator?.bluetooth ? 4 : 1;
   const MIGRATION_MESSAGE = "This pendant uses an older updater. Install the device-ID firmware by USB once during developer/factory provisioning. Future updates need only this app; no key is required.";
+  const DISCOVERY_MESSAGE = "This connection is in audio-only recovery mode. Reconnect the pendant to retry full device detection before checking for updates.";
   const errors = ["", "Updater is not available.", "Invalid OTA packet.",
     "Firmware does not fit the inactive slot.", "Chunk order or duplicate mismatch.", "Flash operation failed.",
     "Not a compatible synap application image.", "SHA-256 verification failed.",
@@ -74,8 +75,9 @@
     async check() {
       if (this.busy) throw new Error("An update is already running.");
       this.reset();const epoch=this.epoch;
+      let service=null;
       try {
-        const service=await this.io.getService();
+        service=await this.io.getService();
         const write=await this.io.queue(()=>service.getCharacteristic(WRITE_UUID),"Find firmware updater");
         const status=await this.io.queue(()=>service.getCharacteristic(STATUS_UUID),"Find firmware status");
         if (epoch!==this.epoch) throw new Error("Pendant connection changed.");
@@ -93,7 +95,10 @@
         return info;
       } catch (error) {
         this.reset();
-        if (error.name === "NotFoundError") throw new Error(MIGRATION_MESSAGE);
+        if (error.name === "NotFoundError") {
+          if (service?.audioOnly) throw new Error(DISCOVERY_MESSAGE);
+          throw new Error(MIGRATION_MESSAGE);
+        }
         throw error;
       }
     }
@@ -251,6 +256,6 @@
       } finally { this.busy=false; }
     }
   }
-  root.SynapOTA={Client,decode,packet,validateImage,validDeviceId,MIGRATION_MESSAGE,WINDOW_CHUNKS,IMAGE_TARGETS};
+  root.SynapOTA={Client,decode,packet,validateImage,validDeviceId,MIGRATION_MESSAGE,DISCOVERY_MESSAGE,WINDOW_CHUNKS,IMAGE_TARGETS};
   if(typeof module!=="undefined" && module.exports) module.exports=root.SynapOTA;
 })(globalThis);

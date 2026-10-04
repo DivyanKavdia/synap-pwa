@@ -74,7 +74,7 @@ function mock(options={}) {
   const write={properties:{writeWithoutResponse:!!options.fast},writeValueWithResponse:bytes=>deliver(bytes,true),
     writeValueWithoutResponse:bytes=>deliver(bytes,false)};
   const client=new Client({connected:()=>connected,queue:async f=>f(),progress:(...p)=>progress.push(p),
-    getService:async()=>({getCharacteristic:async uuid=>{
+    getService:async()=>({audioOnly:Boolean(options.audioOnly),getCharacteristic:async uuid=>{
       if(options.missing)throw Object.assign(Error('missing'),{name:'NotFoundError'});
       if(uuid.includes('12348'))return write;
       if(uuid.includes('1234c'))return{readValue:async()=>{
@@ -110,6 +110,7 @@ function mock(options={}) {
   assert.equal(t.commands[0],6);assert.equal(t.transport.peak,1);
   for(const protocol of [1,2]){t=mock({protocol});await t.client.check();await assert.rejects(t.client.update(image(),ID),/USB once/);assert.equal(t.commands.length,0);}
   t=mock({missing:true});await assert.rejects(t.client.check(),/USB once/);
+  t=mock({missing:true,audioOnly:true});await assert.rejects(t.client.check(),/Reconnect the pendant to retry full device detection/);
   for(const options of [{drop:true},{chunkFailure:true},{hashFailure:true},{cancel:true},{deviceMismatch:true}]){
     t=mock(options);await t.client.check();await assert.rejects(t.client.update(image(),ID));
     assert(!t.commands.includes(4),'failure never commits');assert.equal(t.client.busy,false);

@@ -13,7 +13,7 @@ assert.match(html,/id="installButton"[^>]*type="button"[^>]*>[\s\S]*?Install app
 
 const recoverySource=app.slice(app.indexOf('  const REMEMBERED_RECOVERY_INTERVAL_MS'),app.indexOf('  async function connectPendant('));
 const connectSource=app.slice(app.indexOf('  async function connectPendant('),app.indexOf('  async function disconnectPendant('));
-assert.match(connectSource,/audioOnly = audioOnlyConnections\.has\(connectingDevice\.id\)/,'session audio-only fallback is reused on reconnect');
+assert.match(connectSource,/audioOnly = resumingRecording && audioOnlyConnections\.has\(connectingDevice\.id\)/,'audio-only fallback is reused only for active recording recovery');
 
 function context(devices=[]){
   const saved=new Map(),calls=[],listeners={},control={checked:true,addEventListener(t,f){listeners.preference=f;}};
