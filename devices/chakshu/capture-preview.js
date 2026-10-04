@@ -234,6 +234,8 @@
   'use strict';
   const api = () => root.SynapChakshu;
   const RECEIPT_PREFIX = 'synap-chakshu-move-v2:';
+  const WIFI_UPLOAD_PREFIX = 'synap-c3-wifi-upload-v1:';
+  const pause = (ms) => new Promise((resolve) => root.setTimeout(resolve, ms));
   let busy = false;
   const status = (message) => {
     const node = document.getElementById('visualConnectionStatus'),
@@ -266,8 +268,136 @@
   const basename = (path) => path.split('/').pop();
   const stem = (path) => path.replace(/\.[^.]+$/, '');
   const receiptKey = (deviceId, path) => RECEIPT_PREFIX + deviceId + ':' + path;
+  const wifiUploadKey = (owner, deviceId, path) =>
+    WIFI_UPLOAD_PREFIX + owner + ':' + deviceId + ':' + path;
+  function c3WifiSupported() {
+    const info = root.SynapModules?.client?.module;
+    return Boolean(info?.id === 2 && (info.mediaFeatures & 2));
+  }
   function audioJournal() {
     return new root.DKAudioStore({ ...root.SynapRecordingJournal.options() });
+  }
+  async function responseJson(response, fallback) {
+    let data = null;
+    try { data = await response.json(); } catch (_) {}
+    if (!response.ok) throw Error(data?.error?.message || fallback || ('HTTP ' + response.status));
+    return data || {};
+  }
+  async function c3WifiStatus() {
+    if (!c3WifiSupported()) return null;
+    return client().c3WifiStatus();
+  }
+  async function configureC3Wifi(ssid, password) {
+    if (!c3WifiSupported()) throw Error('Update Odyssey C3 firmware for direct Wi-Fi sync.');
+    return client().configureC3Wifi(ssid, password);
+  }
+  async function forgetC3Wifi() {
+    if (!c3WifiSupported()) return null;
+    return client().forgetC3Wifi();
+  }
+  async function beginC3CloudUpload(path, sourceEntry, connection, owner) {
+    if (!root.SynapAuth?.isSignedIn?.()) throw Error('Sign in with Google before using Wi-Fi sync.');
+    const bytes = Math.max(0, Number(sourceEntry?.bytes) || 0);
+    if (bytes <= 44) throw Error('This SD recording contains no audio to sync.');
+    const durationMs = Math.max(1, Math.floor((bytes - 44) / 32));
+    const key = wifiUploadKey(owner, connection.deviceId, path);
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) {}
+    const validId = /^[0-9a-f-]{36}$/i.test(String(saved?.recordingId || ''));
+    const recordingId = validId ? saved.recordingId : crypto.randomUUID();
+    const firstSeen = Date.parse(sourceEntry?.seenAt || '');
+    const endedAtMs = Number.isFinite(firstSeen) ? firstSeen : Date.now();
+    const startedAt = new Date(Math.max(0, endedAtMs - durationMs)).toISOString();
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+    const response = await root.SynapAuth.authedFetch('/v1/device-uploads', {
+      method: 'POST',
+      expectedUid: owner,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recording_id: recordingId,
+        device_id: connection.deviceId,
+        started_at: startedAt,
+        language: 'auto',
+        timezone,
+      }),
+    });
+    const ticket = await responseJson(response, 'Synap Cloud could not prepare Wi-Fi sync.');
+    if (!ticket.upload_token || ticket.recording_id !== recordingId)
+      throw Error('Synap Cloud returned an invalid Wi-Fi upload ticket.');
+    localStorage.setItem(key, JSON.stringify({ recordingId, createdAt: new Date().toISOString() }));
+    return {
+      key,
+      recordingId,
+      endpoint: root.SynapAuth.config().backendUrl,
+      token: ticket.upload_token,
+      durationMs,
+    };
+  }
+  async function moveC3Wifi(path, sourceEntry, progress = () => {}) {
+    if (busy) throw Error('Another SD transfer is already running.');
+    const connection = context(), owner = api().state.owner;
+    busy = true;
+    renderSDInbox();
+    reportSDStage(path, 'wifi-ticket');
+    try {
+      const ticket = await beginC3CloudUpload(path, sourceEntry, connection, owner);
+      if (owner !== api().state.owner || connection !== root.SynapDevices?.connection)
+        throw Error('Account or pendant changed before Wi-Fi sync started.');
+      reportSDStage(path, 'wifi-start', { recordingId: ticket.recordingId });
+      const transfer = client();
+      let state = await transfer.startC3WifiUpload({
+        endpoint: ticket.endpoint,
+        token: ticket.token,
+        recordingId: ticket.recordingId,
+        path,
+      });
+      for (;;) {
+        const total = Math.max(0, Number(state?.total) || Number(sourceEntry?.bytes) || 0);
+        const uploaded = Math.max(0, Number(state?.uploaded) || 0);
+        if (total > 44) progress(Math.min(1, uploaded / Math.max(1, total - 44)));
+        status(
+          state?.message ||
+          (state?.active
+            ? 'Syncing over Wi-Fi · ' + Math.round(Math.min(1, uploaded / Math.max(1, total - 44)) * 100) + '%'
+            : 'Checking Wi-Fi sync…'),
+        );
+        if (Number(state?.phase) === 6) {
+          throw Error(
+            String(state?.message || 'Wi-Fi sync failed.') +
+              (state?.http ? ' HTTP ' + state.http + '.' : ''),
+          );
+        }
+        if (!state?.active) {
+          if (Number(state?.phase) === 5) break;
+          throw Error(state?.message || 'Wi-Fi sync stopped before cloud verification.');
+        }
+        await pause(750);
+        if (owner !== api().state.owner || connection !== root.SynapDevices?.connection)
+          throw Error('Wi-Fi sync is continuing on the pendant. Reconnect to refresh Memories.');
+        state = await transfer.c3WifiStatus();
+      }
+      progress(1);
+      localStorage.removeItem(ticket.key);
+      reportSDStage(path, 'wifi-verified', { recordingId: ticket.recordingId });
+      await root.SynapCloudHistory?.restore?.(true, { limit: 100 }).catch?.(() => {});
+      root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
+      root.dispatchEvent(new CustomEvent('synap-memory-ready', { detail: { recordingId: ticket.recordingId } }));
+      return {
+        owner,
+        deviceId: connection.deviceId,
+        path,
+        audioId: ticket.recordingId,
+        wifi: true,
+        cloud: true,
+        savedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      reportSDStage(path, 'wifi-failed', { message: error?.message || String(error) });
+      throw error;
+    } finally {
+      busy = false;
+      renderSDInbox();
+    }
   }
   async function localSnapshot() {
     const visuals = api().store ? await api().store.list() : [];
@@ -442,6 +572,10 @@
           ? 'This SD recording did not finalize and cannot be synced. It has been kept on the SD card.'
           : 'This SD recording contains no audio bytes and cannot be synced. It has been kept on the SD card.',
       );
+    }
+    if (sourceEntry && path.endsWith('.wav') && c3WifiSupported()) {
+      const wifiState = await c3WifiStatus().catch(() => null);
+      if (wifiState?.configured) return moveC3Wifi(path, sourceEntry, progress);
     }
     const connection = context(),
       owner = api().state.owner,
@@ -685,7 +819,12 @@
       settingsStatus = document.getElementById('deviceSDSettingsStatus'),
       retrySettings = document.getElementById('retryDeviceSD'),
       clearSettings = document.getElementById('clearDeviceSD'),
+      wifiSettings = document.getElementById('deviceWifiSettings'),
+      wifiSettingsStatus = document.getElementById('deviceWifiSettingsStatus'),
+      wifiSave = document.getElementById('saveDeviceWifi'),
+      wifiForget = document.getElementById('forgetDeviceWifi'),
       info = root.SynapModules?.client?.module,
+      supportsC3Wifi = Boolean(info?.id === 2 && (info?.mediaFeatures & 2)),
       supportsStorage =
         Boolean(info) &&
         root.SynapCapabilities?.hasMedia?.(info) &&
@@ -722,6 +861,21 @@
         !state.connected ||
         !state.storageReady ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
+    if (wifiSettings) wifiSettings.hidden = !supportsC3Wifi;
+    if (wifiSave)
+      wifiSave.disabled =
+        !supportsC3Wifi ||
+        blocked ||
+        !state.connected ||
+        Boolean(root.SynapAppControls?.recordingState?.().active);
+    if (wifiForget)
+      wifiForget.disabled =
+        !supportsC3Wifi ||
+        blocked ||
+        !state.connected ||
+        Boolean(root.SynapAppControls?.recordingState?.().active);
+    if (wifiSettingsStatus && supportsC3Wifi && !state.connected)
+      wifiSettingsStatus.textContent = 'Connect Odyssey C3 to manage its saved Wi-Fi network.';
     if (!panel) return;
     if (toggle) {
       toggle.hidden = !state.available;
@@ -929,6 +1083,70 @@
         }
       });
     }
+    if (extras && !document.getElementById('deviceWifiSettings')) {
+      const card = document.createElement('section');
+      card.id = 'deviceWifiSettings';
+      card.className = 'settings-card';
+      card.hidden = true;
+      card.innerHTML =
+        '<h3 class="settings-card-title">Wi-Fi sync</h3>' +
+        '<p id="deviceWifiSettingsStatus" class="settings-hint">Save a 2.4 GHz Wi-Fi network once. Odyssey C3 will join it directly when syncing SD audio; your phone stays on its normal network.</p>' +
+        '<label class="settings-field">Wi-Fi name (SSID)<input id="deviceWifiSsid" type="text" maxlength="32" autocomplete="off" autocapitalize="none" spellcheck="false"></label>' +
+        '<label class="settings-field">Wi-Fi password<input id="deviceWifiPassword" type="password" maxlength="63" autocomplete="new-password"></label>' +
+        '<div class="visual-actions"><button id="saveDeviceWifi" type="button">Save Wi-Fi</button><button id="forgetDeviceWifi" type="button">Forget Wi-Fi</button></div>';
+      extras.append(card);
+      document.getElementById('saveDeviceWifi')?.addEventListener('click', async () => {
+        const button = document.getElementById('saveDeviceWifi'),
+          statusNode = document.getElementById('deviceWifiSettingsStatus'),
+          ssid = document.getElementById('deviceWifiSsid')?.value || '',
+          password = document.getElementById('deviceWifiPassword')?.value || '';
+        button.disabled = true;
+        if (statusNode) statusNode.textContent = 'Saving Wi-Fi to Odyssey C3…';
+        try {
+          const next = await configureC3Wifi(ssid, password);
+          document.getElementById('deviceWifiPassword').value = '';
+          card.dataset.configured = String(Boolean(next?.configured));
+          if (statusNode)
+            statusNode.textContent = next?.configured
+              ? 'Wi-Fi saved on Odyssey C3. SD audio will prefer direct Wi-Fi sync.'
+              : 'Wi-Fi was not saved. Check the network name and retry.';
+        } catch (error) {
+          if (statusNode) statusNode.textContent = 'Could not save Wi-Fi · ' + error.message;
+          status(error.message);
+        } finally {
+          button.disabled = false;
+          renderSDInbox();
+        }
+      });
+      document.getElementById('forgetDeviceWifi')?.addEventListener('click', async () => {
+        const button = document.getElementById('forgetDeviceWifi'),
+          statusNode = document.getElementById('deviceWifiSettingsStatus');
+        button.disabled = true;
+        try {
+          const next = await forgetC3Wifi();
+          card.dataset.configured = String(Boolean(next?.configured));
+          if (statusNode) statusNode.textContent = 'Saved Wi-Fi removed. SD sync will use Bluetooth.';
+        } catch (error) {
+          if (statusNode) statusNode.textContent = 'Could not forget Wi-Fi · ' + error.message;
+          status(error.message);
+        } finally {
+          button.disabled = false;
+          renderSDInbox();
+        }
+      });
+      root.setTimeout(async () => {
+        if (!c3WifiSupported() || !root.SynapDevices?.connection) return;
+        const statusNode = document.getElementById('deviceWifiSettingsStatus');
+        try {
+          const next = await c3WifiStatus();
+          card.dataset.configured = String(Boolean(next?.configured));
+          if (statusNode)
+            statusNode.textContent = next?.configured
+              ? 'Wi-Fi is saved on Odyssey C3. SD audio will prefer direct Wi-Fi sync.'
+              : 'No Wi-Fi network is saved. Add one to enable direct cloud sync.';
+        } catch (_) {}
+      }, 500);
+    }
     if (browse?.parentNode && !document.getElementById('visualClearSD')) {
       const clear = document.createElement('button');
       clear.id = 'visualClearSD';
@@ -950,7 +1168,22 @@
       browse.parentNode.insertBefore(clear, browse.nextSibling);
     }
   }
-  const exposed = { moveSD, discardIncompleteSD, syncAll, clearSD, startOffline, startOfflineAudio, describeNow, browseSD, renderSDInbox, get busy() { return busy; } };
+  const exposed = {
+    moveSD,
+    moveC3Wifi,
+    c3WifiStatus,
+    configureC3Wifi,
+    forgetC3Wifi,
+    discardIncompleteSD,
+    syncAll,
+    clearSD,
+    startOffline,
+    startOfflineAudio,
+    describeNow,
+    browseSD,
+    renderSDInbox,
+    get busy() { return busy; },
+  };
   root.SynapChakshuV2 = exposed;
   for (const name of ['synap-chakshu-changed', 'synap-module-changed', 'synap-chakshu-sd-pending', 'synap-gatt-disconnected'])
     root.addEventListener?.(name, renderSDInbox);
