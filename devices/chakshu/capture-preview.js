@@ -274,6 +274,10 @@
     const info = root.SynapModules?.client?.module;
     return Boolean(info?.id === 2 && (info.mediaFeatures & 2));
   }
+  function c3FormatSupported() {
+    const info = root.SynapModules?.client?.module;
+    return Boolean(info?.id === 2 && (info.mediaFeatures & 4));
+  }
   function audioJournal() {
     return new root.DKAudioStore({ ...root.SynapRecordingJournal.options() });
   }
@@ -701,6 +705,33 @@
       busy = false;
     }
   }
+  async function formatSD() {
+    if (busy) throw Error('Another SD transfer is already running.');
+    const connection = context();
+    if (!c3FormatSupported()) throw Error('Update Odyssey C3 firmware to format its SD card.');
+    if (api().state.offline || api().state.session || root.SynapAppControls.recordingState().active)
+      throw Error('Stop recording before formatting the SD card.');
+    busy = true;
+    renderSDInbox();
+    try {
+      status('Formatting SD card…');
+      await client().request(19);
+      await api().refreshSD();
+      const info = root.SynapModules?.client?.module;
+      if (info?.sdDetectionState !== 1 || info?.sdProbeState !== 6)
+        throw Error('Format completed but the SD card did not return ready. Reconnect and check storage.');
+      for (let index = localStorage.length - 1; index >= 0; index--) {
+        const key = localStorage.key(index);
+        if (key?.startsWith(RECEIPT_PREFIX + connection.deviceId + ':')) localStorage.removeItem(key);
+      }
+      status('SD card formatted · FAT storage is ready.');
+      await api().syncPendingSD().catch(() => {});
+      return true;
+    } finally {
+      busy = false;
+      renderSDInbox();
+    }
+  }
   async function startOffline(profile = 0, seconds = 10) {
     void profile; void seconds;
     throw Error('Offline SD capture is device-owned and runs only while Chakshu is disconnected from the PWA.');
@@ -819,12 +850,14 @@
       settingsStatus = document.getElementById('deviceSDSettingsStatus'),
       retrySettings = document.getElementById('retryDeviceSD'),
       clearSettings = document.getElementById('clearDeviceSD'),
+      formatSettings = document.getElementById('formatDeviceSD'),
       wifiSettings = document.getElementById('deviceWifiSettings'),
       wifiSettingsStatus = document.getElementById('deviceWifiSettingsStatus'),
       wifiSave = document.getElementById('saveDeviceWifi'),
       wifiForget = document.getElementById('forgetDeviceWifi'),
       info = root.SynapModules?.client?.module,
       supportsC3Wifi = Boolean(info?.id === 2 && (info?.mediaFeatures & 2)),
+      supportsC3Format = Boolean(info?.id === 2 && (info?.mediaFeatures & 4)),
       supportsStorage =
         Boolean(info) &&
         root.SynapCapabilities?.hasMedia?.(info) &&
@@ -834,7 +867,7 @@
       settingsStatus.textContent = !state.connected
         ? 'Connect the pendant to manage its SD card.'
         : busy
-          ? 'SD transfer in progress · Retry SD and Clear SD are temporarily disabled.'
+          ? 'SD transfer in progress · SD maintenance controls are temporarily disabled.'
           : state.storageReady
             ? count
               ? count + ' unsynced item' + (count === 1 ? '' : 's') + ' on SD.'
@@ -861,6 +894,14 @@
         !state.connected ||
         !state.storageReady ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
+    if (formatSettings) {
+      formatSettings.hidden = !supportsC3Format;
+      formatSettings.disabled =
+        !supportsC3Format ||
+        blocked ||
+        !state.connected ||
+        Boolean(root.SynapAppControls?.recordingState?.().active);
+    }
     if (wifiSettings) wifiSettings.hidden = !supportsC3Wifi;
     if (wifiSave)
       wifiSave.disabled =
@@ -1027,7 +1068,7 @@
       card.innerHTML =
         '<h3 class="settings-card-title">SD card</h3>' +
         '<p id="deviceSDSettingsStatus" class="settings-hint">Connect a supported pendant to manage SD storage.</p>' +
-        '<div class="visual-actions"><button id="retryDeviceSD" type="button">Retry SD card</button><button id="clearDeviceSD" type="button">Clear SD Card</button></div>';
+        '<div class="visual-actions"><button id="retryDeviceSD" type="button">Retry SD card</button><button id="clearDeviceSD" type="button">Clear SD Card</button><button id="formatDeviceSD" type="button" hidden>Format SD Card</button></div>';
       extras.append(card);
       document.getElementById('retryDeviceSD')?.addEventListener('click', async () => {
         const button = document.getElementById('retryDeviceSD'),
@@ -1076,6 +1117,28 @@
           );
           await api().syncPendingSD().catch(() => {});
         } catch (error) {
+          status(error.message);
+        } finally {
+          button.disabled = false;
+          renderSDInbox();
+        }
+      });
+      document.getElementById('formatDeviceSD')?.addEventListener('click', async () => {
+        if (
+          !confirm(
+            'Format this SD card? ALL files on the card will be permanently erased, including non-Synap files. This cannot be undone.',
+          )
+        )
+          return;
+        const button = document.getElementById('formatDeviceSD'),
+          settingsStatus = document.getElementById('deviceSDSettingsStatus');
+        button.disabled = true;
+        if (settingsStatus) settingsStatus.textContent = 'Formatting SD card…';
+        try {
+          await formatSD();
+          if (settingsStatus) settingsStatus.textContent = 'SD card formatted · ready for offline recording.';
+        } catch (error) {
+          if (settingsStatus) settingsStatus.textContent = 'SD format failed · ' + error.message;
           status(error.message);
         } finally {
           button.disabled = false;
@@ -1177,6 +1240,7 @@
     discardIncompleteSD,
     syncAll,
     clearSD,
+    formatSD,
     startOffline,
     startOfflineAudio,
     describeNow,
