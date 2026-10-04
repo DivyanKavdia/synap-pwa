@@ -7,7 +7,8 @@
   // Large camera reads can outlast the recorder's short command deadline on
   // native browser bridges. Keep the read bounded and owned by the same queue;
   // cancellation never permits Stop to overlap an unresolved native operation.
-  const READ_TIMEOUT_MS = 20000,
+  const READ_TIMEOUT_MS = 10000,
+    C3_SD_READ_TIMEOUT_MS = 20000,
     RESPONSE_DEADLINE_MS = 30000;
   const delay = (ms) => new Promise((resolve) => root.setTimeout(resolve, ms));
   function decode(value, id) {
@@ -285,7 +286,10 @@
             await run(() => this.data.readValue(), op === 7 ?
               (root.SynapModules?.client?.module?.id === 2 ? 'Read C3 SD catalogue response' : 'Read Chakshu SD catalogue response') :
               'Read Chakshu camera response', {
-              timeoutMs: READ_TIMEOUT_MS,
+              timeoutMs:
+                root.SynapModules?.client?.module?.id === 2
+                  ? C3_SD_READ_TIMEOUT_MS
+                  : READ_TIMEOUT_MS,
             }),
             id,
           );
