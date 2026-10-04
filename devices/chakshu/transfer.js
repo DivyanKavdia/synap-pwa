@@ -7,7 +7,8 @@
   // Large camera reads can outlast the recorder's short command deadline on
   // native browser bridges. Keep the read bounded and owned by the same queue;
   // cancellation never permits Stop to overlap an unresolved native operation.
-  const READ_TIMEOUT_MS = 10000;
+  const READ_TIMEOUT_MS = 20000,
+    RESPONSE_DEADLINE_MS = 30000;
   const delay = (ms) => new Promise((resolve) => root.setTimeout(resolve, ms));
   function decode(value, id) {
     // Released firmware starts with a zeroed 16-byte response. Its worker (and
@@ -277,7 +278,7 @@
         v.setUint32(6, offset, true);
         bytes.set(name, 10);
         await this.writeCommand(run, bytes);
-        const deadline = Date.now() + 12000;
+        const deadline = Date.now() + RESPONSE_DEADLINE_MS;
         while (Date.now() < deadline) {
           signal?.throwIfAborted();
           const reply = decode(
