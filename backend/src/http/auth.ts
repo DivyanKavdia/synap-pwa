@@ -49,6 +49,19 @@ export interface AuthedRequest extends Request {
   dek: Buffer;
 }
 
+export interface DeviceUploadClaims extends JWTPayload {
+  uid: string;
+  typ: 'device-upload';
+  gen: number;
+  recordingId: string;
+  deviceId: string;
+}
+
+export interface DeviceUploadRequest extends AuthedRequest {
+  uploadRecordingId: string;
+  uploadDeviceId: string;
+}
+
 /** Verify a Google ID token and return its payload, or throw 401. */
 export async function verifyGoogleIdToken(idToken: string): Promise<TokenPayload> {
   let payload: TokenPayload | undefined;
@@ -142,6 +155,81 @@ export async function issueTokens(
     refresh_token: refresh,
     expires_in: config.session.accessTokenTtlSeconds,
     token_type: 'Bearer',
+  };
+}
+
+export async function issueDeviceUploadToken(
+  user: UserDoc,
+  recordingId: string,
+  deviceId: string,
+): Promise<{ token: string; expires_in: number }> {
+  if (!/^[0-9a-f-]{36}$/i.test(recordingId) || !deviceId || deviceId.length > 64) {
+    throw new HttpError(400, 'bad_device_upload_scope', 'Invalid device upload scope');
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const token = await new SignJWT({
+    uid: user.uid,
+    typ: 'device-upload',
+    gen: user.tokenGeneration,
+    recordingId,
+    deviceId,
+  })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer(config.session.issuer)
+    .setAudience('synap-device-upload')
+    .setSubject(user.uid)
+    .setIssuedAt(now)
+    .setExpirationTime(now + config.session.deviceUploadTtlSeconds)
+    .sign(await signingKey());
+  return { token, expires_in: config.session.deviceUploadTtlSeconds };
+}
+
+export async function verifyDeviceUploadToken(token: string): Promise<DeviceUploadClaims> {
+  try {
+    const { payload } = await jwtVerify(token, await signingKey(), {
+      issuer: config.session.issuer,
+      audience: 'synap-device-upload',
+      algorithms: ['HS256'],
+    });
+    const claims = payload as DeviceUploadClaims;
+    if (claims.typ !== 'device-upload' || !claims.uid || !claims.recordingId || !claims.deviceId ||
+        !Number.isInteger(claims.gen)) {
+      throw new HttpError(401, 'invalid_device_upload_token', 'Device upload token is invalid');
+    }
+    return claims;
+  } catch (cause) {
+    if (cause instanceof HttpError) throw cause;
+    throw new HttpError(401, 'invalid_device_upload_token', 'Device upload token is invalid or expired');
+  }
+}
+
+export function requireDeviceUpload() {
+  return async (req: Request, _res: Response, next: NextFunction) => {
+    try {
+      const header = req.header('authorization') ?? '';
+      const [scheme, token] = header.split(' ');
+      if (scheme?.toLowerCase() !== 'synapdevice' || !token) {
+        throw new HttpError(401, 'missing_device_upload_token', 'Authorization: SynapDevice <token> is required');
+      }
+      const claims = await verifyDeviceUploadToken(token);
+      const routeRecordingId = String(req.params.recordingId ?? '');
+      if (!routeRecordingId || routeRecordingId !== claims.recordingId) {
+        throw new HttpError(403, 'device_upload_scope_mismatch', 'Device token cannot access this recording');
+      }
+      const user = await db.getUser(claims.uid);
+      if (!user || user.tokenGeneration !== claims.gen) {
+        throw new HttpError(401, 'device_upload_token_revoked', 'Device upload token was revoked');
+      }
+      const authed = req as DeviceUploadRequest;
+      authed.uid = user.uid;
+      authed.user = user;
+      authed.dek = await keyring.unwrap(user.uid, user.key);
+      authed.uploadRecordingId = claims.recordingId;
+      authed.uploadDeviceId = claims.deviceId;
+      next();
+    } catch (cause) {
+      next(cause);
+    }
   };
 }
 
