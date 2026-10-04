@@ -72,3 +72,11 @@ test('C3 catalogue discovery is observational and never sends op14',()=>{
   const refresh=source.slice(source.indexOf('async function refreshSD()'),source.indexOf('function decodeWifi'));
   assert.match(refresh,/camera\(\)\.request\(14, 0, '', signal\)/);
 });
+
+test('C3 background discovery skips catalogue after authoritative SD init failure',()=>{
+  const sync=source.slice(source.indexOf('async function syncPendingSD()'),source.indexOf('const apiObject ='));
+  assert.match(sync,/module\.sdDetectionState === 2 \|\| module\.sdDetectionState === 3/);
+  assert.match(sync,/!capabilities\.ready\(module, 'sd'\)/);
+  assert(sync.indexOf("module.sdDetectionState === 2")<sync.indexOf("sdWorthCataloguing(deviceId)"));
+  assert.match(sync,/Explicit Check SD \(op14\)/);
+});

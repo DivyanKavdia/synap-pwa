@@ -912,8 +912,19 @@
     )
       return 0;
     const expected = owner,
-      deviceId = connected()?.deviceId;
+      deviceId = connected()?.deviceId,
+      module = moduleInfo();
     if (!deviceId) return 0;
+    // C3 mounts storage before BLE. If its authoritative capability descriptor
+    // already reports a hard SD init failure or no card, a background catalogue
+    // cannot recover it and only adds GATT traffic. Explicit Check SD (op14)
+    // remains the user-controlled recovery path.
+    if (
+      module?.id === 2 &&
+      (module.sdDetectionState === 2 || module.sdDetectionState === 3) &&
+      !capabilities.ready(module, 'sd')
+    )
+      return 0;
     if (!sdWorthCataloguing(deviceId)) return 0;
     // Background sync is discovery-only. SD media remains on Chakshu and is
     // represented in the shared Library until the user explicitly chooses
