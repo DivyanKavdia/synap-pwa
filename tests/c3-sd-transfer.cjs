@@ -2,6 +2,8 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {Client,decode}=require('../devices/chakshu/transfer.js');
 const source=fs.readFileSync(path.join(__dirname,'../devices/chakshu/media.js'),'utf8');
+const preview=fs.readFileSync(path.join(__dirname,'../devices/chakshu/capture-preview.js'),'utf8');
+const modules=fs.readFileSync(path.join(__dirname,'../devices/modules.js'),'utf8');
 function transport(files, options={}){
   let response=new DataView(new ArrayBuffer(16)),selected='',catalogue='[]';
   let failCatalogue=Boolean(options.failCatalogueOnce);
@@ -79,4 +81,12 @@ test('C3 background discovery skips catalogue after authoritative SD init failur
   assert.match(sync,/!capabilities\.ready\(module, 'sd'\)/);
   assert(sync.indexOf("module.sdDetectionState === 2")<sync.indexOf("sdWorthCataloguing(deviceId)"));
   assert.match(sync,/Explicit Check SD \(op14\)/);
+});
+
+test('C3 format is firmware-gated and uses explicit destructive op19',()=>{
+  assert.match(modules,/profile\.id === 2 \? value\.getUint8\(16\) & 7 : 0/);
+  assert.match(preview,/info\?\.id === 2 && \(info\.mediaFeatures & 4\)/);
+  assert.match(preview,/await client\(\)\.request\(19\)/);
+  assert.match(preview,/ALL files on the card will be permanently erased/);
+  assert.match(preview,/formatDeviceSD/);
 });
