@@ -30,13 +30,8 @@
     return { state: 'connected', message: 'Chakshu connected.' };
   }
   function protocol(info, key) {
-    const expected = profile(info)?.protocols?.[key] || 0,
-      actual = info?.[key + 'Version'];
-    if (!Number.isInteger(expected) || expected <= 0 || !Number.isInteger(actual)) return false;
-    // Media extensions are additive: v2 retains the complete v1 request/read
-    // protocol as a fallback. Other protocols stay exact unless explicitly
-    // versioned as backward-compatible in their own contract.
-    return key === 'media' ? actual >= expected : actual === expected;
+    const expected = profile(info)?.protocols?.[key] || 0;
+    return Boolean(Number.isInteger(expected) && expected > 0 && info[key + 'Version'] === expected);
   }
   const hasMedia = (info) => protocol(info, 'media');
   const hasVoice = (info) => protocol(info, 'voice') && supports(info, 'audio');
