@@ -56,3 +56,10 @@ assert.match(transfer,/RESPONSE_DEADLINE_MS = 30000/);
 assert.match(library,/Syncing to Memories · 0%/,'SD cards must show foreground transfer progress');
 assert.match(library,/Sync paused · tap again to retry/);
 assert.match(preview,/SD transfer in progress · Retry SD and Clear SD are temporarily disabled/);
+
+const modulesSource=fs.readFileSync(path.join(root,'devices/modules.js'),'utf8');
+assert.match(modulesSource,/profile\.id === 2 \? value\.getUint8\(16\) & 1 : 0/,
+  'C3 must accept only notification-window media feature bit 0');
+assert.match(transfer,/if \(this\.features & 1 && !this\.streamDisabled\)/,
+  'C3 media-v2 uses the existing notification-window transport');
+assert.match(transfer,/this\.window\(size, first\.total, signal\)/);
