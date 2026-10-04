@@ -47,7 +47,7 @@ test('one canonical memory view renders summaries, notes and transcripts',()=>{
 test('installed PWA caches the optional memory and sleep-state modules',()=>{
   const sw=fs.readFileSync(path.join(root,'sw.js'),'utf8');
   const shell=fs.readFileSync(path.join(root,'index.html'),'utf8');
-  assert.match(sw,/shell183-c3-sd-transfer/);
+  assert.match(sw,/shell184-c3-media-v2/);
   assert.match(sw,/\.\/memory-tools\.js/);
   assert.match(sw,/\.\/sleep-state-guard\.js/);
   assert.match(shell,/memory-tools\.js\?v=/);
