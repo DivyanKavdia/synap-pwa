@@ -138,6 +138,8 @@ export const config = {
     accessTokenTtlSeconds: Number(optional('SYNAP_ACCESS_TTL', '3600')),
     /** Long-lived refresh token so background processing survives a locked phone. */
     refreshTokenTtlSeconds: Number(optional('SYNAP_REFRESH_TTL', '2592000')),
+    /** Short-lived, recording-scoped credential handed to a pendant over BLE. */
+    deviceUploadTtlSeconds: Number(optional('SYNAP_DEVICE_UPLOAD_TTL', '3600')),
     issuer: 'https://synap.app',
   },
 
