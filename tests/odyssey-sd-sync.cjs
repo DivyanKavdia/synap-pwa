@@ -25,6 +25,9 @@ assert.match(media,/root\.document\?\.body\?\.dataset\.otaRecovery === 'c3'/,'Od
 assert.match(media,/camera\(\)\.request\(14/);
 assert.match(preview,/id = 'deviceSDSettings'/);
 assert.match(preview,/Clear SD Card/);
+assert.match(preview,/Format SD Card/);
+assert.match(preview,/request\(19\)/);
+assert.match(preview,/ALL files on the card will be permanently erased/);
 const settingsRender=preview.indexOf("settings = document.getElementById('deviceSDSettings')"),
   libraryPanelReturn=preview.indexOf('if (!panel) return;', settingsRender);
 assert(settingsRender>=0 && libraryPanelReturn>settingsRender,
@@ -55,11 +58,11 @@ assert.match(transfer,/C3_SD_READ_TIMEOUT_MS = 20000/,'C3 SD reads need margin a
 assert.match(transfer,/RESPONSE_DEADLINE_MS = 30000/);
 assert.match(library,/Syncing to Memories · 0%/,'SD cards must show foreground transfer progress');
 assert.match(library,/Sync paused · tap again to retry/);
-assert.match(preview,/SD transfer in progress · Retry SD and Clear SD are temporarily disabled/);
+assert.match(preview,/SD transfer in progress · SD maintenance controls are temporarily disabled/);
 
 const modulesSource=fs.readFileSync(path.join(root,'devices/modules.js'),'utf8');
-assert.match(modulesSource,/profile\.id === 2 \? value\.getUint8\(16\) & 3 : 0/,
-  'C3 must accept only notification-window and Wi-Fi media feature bits');
+assert.match(modulesSource,/profile\.id === 2 \? value\.getUint8\(16\) & 7 : 0/,
+  'C3 must accept notification-window, Wi-Fi and explicit format media feature bits');
 assert.match(transfer,/if \(this\.features & 1 && !this\.streamDisabled\)/,
   'C3 media-v2 uses the existing notification-window transport');
 assert.match(transfer,/this\.window\(size, first\.total, signal\)/);
