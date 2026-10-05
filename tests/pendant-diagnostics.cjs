@@ -30,7 +30,7 @@ function harness(state='idle') {
   };
   c.window=c;vm.createContext(c);
   const app=read('app.js');
-  vm.runInContext(app.slice(app.indexOf('  function log('),app.indexOf('  function toast(')),c);
+  vm.runInContext(app.slice(app.indexOf('  function localIsoTimestamp('),app.indexOf('  function toast(')),c);
   vm.runInContext(read('enhancements.js').replace('globalThis.SynapEnhancements={decodePendantDiagnostics}',
     'globalThis.SynapEnhancements={decodePendantDiagnostics,readPendantDiagnostics}'),c);
   return {c,calls,health,logNode,api:c.SynapEnhancements};

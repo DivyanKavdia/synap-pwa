@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell189-c3-offline-sd-v2";
+  const APP_SHELL_REVISION = "1.0.0-shell190-local-diagnostics";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -273,8 +273,26 @@
 
   // Logging and feedback
 
+  function localIsoTimestamp(date = new Date()) {
+    const pad = (value, width = 2) => String(value).padStart(width, "0");
+    const offsetMinutes = -date.getTimezoneOffset();
+    const sign = offsetMinutes >= 0 ? "+" : "-";
+    const offset = Math.abs(offsetMinutes);
+    return (
+      date.getFullYear() + "-" +
+      pad(date.getMonth() + 1) + "-" +
+      pad(date.getDate()) + "T" +
+      pad(date.getHours()) + ":" +
+      pad(date.getMinutes()) + ":" +
+      pad(date.getSeconds()) + "." +
+      pad(date.getMilliseconds(), 3) +
+      sign + pad(Math.floor(offset / 60)) + ":" + pad(offset % 60)
+    );
+  }
+
   function log(message, detail) {
-    const time = new Date().toISOString();
+    const now = new Date();
+    const time = localIsoTimestamp(now);
     let line = "[" + time + "] " + message;
 
     if (detail !== undefined) {
