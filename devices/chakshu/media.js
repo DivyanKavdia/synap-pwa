@@ -692,7 +692,7 @@
         const failedState = Number(failure?.storage?.sdState ?? moduleInfo()?.sdDetectionState);
         if (failure?.mediaCode === 3 && failedState === 2 && failedStage === 2) {
           failure.message =
-            'C3 SD protocol initialization failed. Choose Check SD card to run the explicit software recovery sequence.';
+            'C3 SD card initialization or FAT mount failed. See connection diagnostics for the device error.';
         } else if (failure?.mediaCode === 7 || failedStage === 4) {
           failure.message =
             'C3 SD filesystem access failed. Choose Check SD card to remount explicitly.';
@@ -915,16 +915,8 @@
       deviceId = connected()?.deviceId,
       module = moduleInfo();
     if (!deviceId) return 0;
-    // C3 mounts storage before BLE. If its authoritative capability descriptor
-    // already reports a hard SD init failure or no card, a background catalogue
-    // cannot recover it and only adds GATT traffic. Explicit Check SD (op14)
-    // remains the user-controlled recovery path.
-    if (
-      module?.id === 2 &&
-      (module.sdDetectionState === 2 || module.sdDetectionState === 3) &&
-      !capabilities.ready(module, 'sd')
-    )
-      return 0;
+    // Request one observational catalogue even when SD is unavailable so the
+    // device's mount and persisted recorder errors reach connection diagnostics.
     if (!sdWorthCataloguing(deviceId)) return 0;
     // Background sync is discovery-only. SD media remains on Chakshu and is
     // represented in the shared Library until the user explicitly chooses

@@ -704,7 +704,7 @@ test('C3 hard SD init failure is observational until explicit Check SD',()=>{
   const retry=media.slice(media.indexOf('async function syncPendingSD()'),media.indexOf('const apiObject'));
   const refresh=media.slice(media.indexOf('async function refreshSD()'),media.indexOf('function decodeWifi'));
   assert.match(discovery,/failedState === 2 && failedStage === 2/);
-  assert.match(discovery,/Choose Check SD card to run the explicit software recovery sequence/);
+  assert.match(discovery,/See connection diagnostics for the device error/);
   assert.doesNotMatch(discovery,/camera\(\)\.request\(14/);
   assert.doesNotMatch(retry,/cardInitFailed|30000|c3SdRetryCount < 4/);
   assert.match(retry,/retryAllowed = busyCard && c3SdRetryCount < 8/);
