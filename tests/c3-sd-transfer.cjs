@@ -70,17 +70,16 @@ test('C3 catalogue discovery is observational and never sends op14',()=>{
   const discovery=source.slice(source.indexOf('async function catalogueNow('),source.indexOf('async function catalogue()'));
   assert.match(discovery,/Catalogue discovery is observational/);
   assert.doesNotMatch(discovery,/camera\(\)\.request\(14/);
-  assert.match(discovery,/Choose Check SD card to run the explicit software recovery sequence/);
+  assert.match(discovery,/See connection diagnostics for the device error/);
   const refresh=source.slice(source.indexOf('async function refreshSD()'),source.indexOf('function decodeWifi'));
   assert.match(refresh,/camera\(\)\.request\(14, 0, '', signal\)/);
 });
 
-test('C3 background discovery skips catalogue after authoritative SD init failure',()=>{
+test('C3 failed mounts still reach observational catalogue diagnostics',()=>{
   const sync=source.slice(source.indexOf('async function syncPendingSD()'),source.indexOf('const apiObject ='));
-  assert.match(sync,/module\.sdDetectionState === 2 \|\| module\.sdDetectionState === 3/);
-  assert.match(sync,/!capabilities\.ready\(module, 'sd'\)/);
-  assert(sync.indexOf("module.sdDetectionState === 2")<sync.indexOf("sdWorthCataloguing(deviceId)"));
-  assert.match(sync,/Explicit Check SD \(op14\)/);
+  assert.doesNotMatch(sync,/module\.sdDetectionState === 2/);
+  assert.match(sync,/const files = await catalogueNow\(\)/);
+  assert.doesNotMatch(sync,/camera\(\)\.request\(14/);
 });
 
 test('C3 format is firmware-gated and uses explicit destructive op19',()=>{
