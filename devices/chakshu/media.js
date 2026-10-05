@@ -650,13 +650,21 @@
       raw = files.flatMap((file) => {
         const path = String(file?.path || ''), bytes = Number(file?.bytes);
         if (!SD_FILE_PATH.test(path) || !Number.isSafeInteger(bytes) || bytes < 0) return [];
-        const syncable = file?.syncable !== false && bytes > 44;
+        const syncable = file?.syncable !== false && bytes > 44,
+          crc32 = Number(file?.crc32),
+          pcmBytes = Number(file?.pcmBytes),
+          part = Number(file?.part),
+          take = /^[0-9a-f]{16}$/i.test(String(file?.take || '')) ? String(file.take).toLowerCase() : '';
         return [{
           path,
           bytes,
           syncable,
           issue: syncable ? '' : String(file?.issue || 'incomplete').slice(0, 32),
           describe: Boolean(file?.describe),
+          ...(Number.isSafeInteger(crc32) && crc32 >= 0 && crc32 <= 0xffffffff ? { crc32 } : {}),
+          ...(Number.isSafeInteger(pcmBytes) && pcmBytes >= 0 && pcmBytes + 44 === bytes ? { pcmBytes } : {}),
+          ...(Number.isSafeInteger(part) && part >= 0 ? { part } : {}),
+          ...(take ? { take } : {}),
           seenAt: previous.get(path)?.seenAt || new Date().toISOString(),
         }];
       }),
@@ -668,8 +676,8 @@
       next = raw.filter(
         (file) => !/\.wav$/i.test(file.path) || !videoStems.has(file.path.replace(/\.wav$/i, '')),
       ),
-      before = JSON.stringify([sdFilesDeviceId, sdFiles.map((file) => [file.path, file.bytes, file.syncable, file.issue, Boolean(file.describe)])]),
-      after = JSON.stringify([deviceId || '', next.map((file) => [file.path, file.bytes, file.syncable, file.issue, Boolean(file.describe)])]);
+      before = JSON.stringify([sdFilesDeviceId, sdFiles.map((file) => [file.path, file.bytes, file.syncable, file.issue, file.crc32 ?? null, file.take || '', file.part ?? null, Boolean(file.describe)])]),
+      after = JSON.stringify([deviceId || '', next.map((file) => [file.path, file.bytes, file.syncable, file.issue, file.crc32 ?? null, file.take || '', file.part ?? null, Boolean(file.describe)])]);
     sdFiles = next;
     sdFilesDeviceId = deviceId || '';
     if (before !== after) {

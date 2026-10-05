@@ -89,3 +89,12 @@ test('C3 format is firmware-gated and uses explicit destructive op19',()=>{
   assert.match(preview,/ALL files on the card will be permanently erased/);
   assert.match(preview,/formatDeviceSD/);
 });
+
+test('C3 optional integrity/session catalogue fields survive into SD state',()=>{
+  assert.match(source,/crc32 = Number\(file\?\.crc32\)/);
+  assert.match(source,/pcmBytes = Number\(file\?\.pcmBytes\)/);
+  assert.match(source,/part = Number\(file\?\.part\)/);
+  assert.match(source,/take = \/\^\[0-9a-f\]\{16\}\$\/i/);
+  assert.match(preview,/verifyFirmwareCrc/);
+  assert.match(preview,/integrity-complete/);
+});

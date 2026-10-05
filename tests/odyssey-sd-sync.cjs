@@ -85,3 +85,13 @@ assert.match(preview,/\/v1\/device-uploads/);
 assert.match(preview,/SynapCloudHistory\?\.restore/);
 assert.match(preview,/localStorage\.removeItem\(ticket\.key\)/);
 assert.match(preview,/wifi-verified/);
+
+assert.match(media,/crc32 = Number\(file\?\.crc32\)/,'C3 catalogue must preserve optional firmware CRC metadata');
+assert.match(media,/pcmBytes \+ 44 === bytes/,'C3 catalogue must validate firmware PCM length metadata');
+assert.match(media,/take = \/\^\[0-9a-f\]\{16\}\$\/i/,'C3 catalogue must preserve stable take identity');
+assert.match(preview,/function crc32\(bytes, start = 0\)/,'PWA must implement the same CRC32 used by firmware');
+assert.match(preview,/verifyFirmwareCrc\(source\.main, sourceEntry\)/,'BLE SD sync must verify firmware CRC before import');
+const crcVerify=preview.indexOf('verifyFirmwareCrc(source.main, sourceEntry)');
+const importStage=preview.indexOf("stage = 'import'",crcVerify);
+assert(crcVerify>=0 && importStage>crcVerify,'CRC verification must complete before durable import');
+assert.match(preview,/SD recording integrity check failed before import\. The SD original was kept\./);

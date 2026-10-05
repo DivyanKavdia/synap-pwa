@@ -265,6 +265,26 @@
     const hash = await crypto.subtle.digest('SHA-256', bytes);
     return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('');
   }
+  function crc32(bytes, start = 0) {
+    let crc = 0xffffffff;
+    for (let i = start; i < bytes.length; i++) {
+      crc = (crc ^ bytes[i]) >>> 0;
+      for (let bit = 0; bit < 8; bit++)
+        crc = ((crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0)) >>> 0;
+    }
+    return (~crc) >>> 0;
+  }
+  async function verifyFirmwareCrc(blob, entry) {
+    const expected = Number(entry?.crc32);
+    if (!Number.isSafeInteger(expected) || expected < 0 || expected > 0xffffffff) return null;
+    if (!String(entry?.path || '').toLowerCase().endsWith('.wav')) return null;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    if (bytes.length < 44) throw Error('SD recording is shorter than a WAV header. The SD original was kept.');
+    const actual = crc32(bytes, 44);
+    if (actual !== expected)
+      throw Error('SD recording integrity check failed before import. The SD original was kept.');
+    return actual;
+  }
   const basename = (path) => path.split('/').pop();
   const stem = (path) => path.replace(/\.[^.]+$/, '');
   const receiptKey = (deviceId, path) => RECEIPT_PREFIX + deviceId + ':' + path;
@@ -612,6 +632,12 @@
       const before = await localSnapshot(),
         source = await download(path, undefined, progress);
       reportSDStage(path, 'download-complete', { bytes: source.main.size });
+      if (sourceEntry?.crc32 !== undefined && path.endsWith('.wav')) {
+        stage = 'integrity';
+        reportSDStage(path, stage, { expectedCrc32: sourceEntry.crc32 });
+        const verifiedCrc32 = await verifyFirmwareCrc(source.main, sourceEntry);
+        reportSDStage(path, 'integrity-complete', { crc32: verifiedCrc32 });
+      }
       const mainSha = await digest(source.main),
         wavSha = source.wav ? await digest(source.wav) : null;
       if (owner !== api().state.owner || connection !== root.SynapDevices?.connection)
@@ -651,6 +677,8 @@
         visualId,
         audioId,
         mainBytes: source.main.size,
+        ...(sourceEntry?.crc32 !== undefined ? { sourceCrc32: sourceEntry.crc32 } : {}),
+        ...(sourceEntry?.take ? { take: sourceEntry.take, part: sourceEntry.part ?? null } : {}),
         mainSha256: mainSha,
         ...(source.wav
           ? { audioBytes: source.wav.size, audioSha256: wavSha }
