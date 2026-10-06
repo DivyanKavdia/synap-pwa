@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell191-c3-offline-status";
+  const APP_SHELL_REVISION = "1.0.0-shell192-c3-record-stage";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -4297,6 +4297,7 @@
         mediaVersion: info?.mediaVersion ?? null,
         sdDetectionState: info?.sdDetectionState ?? null,
         sdProbeState: info?.sdProbeState ?? null,
+        sdRecordStage: info?.sdRecordStage ?? null,
         error: client?.error || '' };
       const signature = JSON.stringify(hardware);
       if (signature !== hardwareSignature) {
