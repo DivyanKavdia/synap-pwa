@@ -53,11 +53,16 @@
       // with bit 7 of byte 16. Older builds used byte 15 for another purpose.
       lastRecordKiB: profile.id === 2 && (value.getUint8(16) & 0x80)
         ? value.getUint8(15) * 8 : null,
+      // Bits 3..5 of byte 16 carry the live C3 mount/probe stage whenever the
+      // validation marker is present. Value 7 means unavailable/recorder stage.
+      sdLiveProbeState: profile.id === 2 && (value.getUint8(16) & 0x80)
+        ? (((value.getUint8(16) >> 3) & 7) <= 6 ? ((value.getUint8(16) >> 3) & 7) : null)
+        : null,
       // Odyssey boot-probe snapshot, independent of usable SD/media capabilities.
       sdDetectionState: [1, 2].includes(profile.id) && value.getUint8(17) === 1
         && value.getUint8(18) <= 3 ? value.getUint8(18) : null,
       // C3 SD stage. 0-6 are mount/probe states; validation firmware also
-      // reports persisted offline-recorder failure stages 40-65 in this byte.
+      // reports persisted offline-recorder failure stages 40-70 in this byte.
       // Preserve the raw value so diagnostics do not erase the actual failure.
       sdProbeState: profile.id === 2 && value.getUint8(17) === 1
         ? value.getUint8(19) : null,
