@@ -30,6 +30,11 @@ test('SD status reports actual capacity and rejects impossible values',()=>{
   const bad=status();bad.setUint32(12,2000,true);assert.throws(()=>decodeStatus(bad),/capacity/);
   const progress=status();progress.setUint8(7,101);assert.throws(()=>decodeStatus(progress),/Invalid/);
 });
+test('C3 decodes persisted recorder failure stage independently of the mount stage',()=>{
+  const c3=descriptor(2);c3.setUint8(15,51);c3.setUint8(17,1);c3.setUint8(18,2);c3.setUint8(19,4);
+  const info=decode(c3);assert.equal(info.sdRecordStage,51);assert.equal(info.sdDetectionState,2);assert.equal(info.sdProbeState,4);assert.equal(info.voiceVersion,0);
+  const chakshu=descriptor(3);chakshu.setUint8(15,2);assert.equal(decode(chakshu).voiceVersion,2);assert.equal(decode(chakshu).sdRecordStage,null);
+});
 test('optional media features are profile-scoped; C3 may use notification-window, Wi-Fi and format bits',()=>{
   const old=descriptor();assert.equal(decode(old).mediaFeatures,0);
   const current=descriptor();current.setUint8(16,15);assert.equal(decode(current).mediaFeatures,15);
