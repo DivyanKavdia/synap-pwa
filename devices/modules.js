@@ -48,7 +48,10 @@
       // Wi-Fi cloud sync), and bit 2 (explicit destructive SD formatting).
       mediaFeatures: profile.id === 3 ? value.getUint8(16) :
         profile.id === 2 ? value.getUint8(16) & 7 : 0,
-      voiceVersion: value.getUint8(15),
+      voiceVersion: profile.id === 3 ? value.getUint8(15) : 0,
+      // C3 reuses byte 15 for its persisted recorder substage. This is
+      // intentionally independent of the generic mount/VFS stage in byte 19.
+      sdRecordStage: profile.id === 2 ? value.getUint8(15) : null,
       // Odyssey boot-probe snapshot, independent of usable SD/media capabilities.
       sdDetectionState: [1, 2].includes(profile.id) && value.getUint8(17) === 1
         && value.getUint8(18) <= 3 ? value.getUint8(18) : null,
