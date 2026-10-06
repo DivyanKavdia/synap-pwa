@@ -30,23 +30,41 @@
         : 'Reading connected hardware';
     const chips = byId('moduleFeatures');
     chips.replaceChildren();
+    const c3OfflineWriter = Boolean(
+      info &&
+      info.id === 2 &&
+      info.mediaVersion === 0 &&
+      root.SynapCapabilities.supports(info, 'sd') &&
+      root.SynapCapabilities.supports(info, 'sdAudio')
+    );
     if (info)
       for (const [key, label] of Object.entries(labels)) {
         if (!root.SynapCapabilities.supports(info, key)) continue;
         const chip = document.createElement('span');
         chip.className = 'module-feature';
         const ready = root.SynapCapabilities.ready(info, key);
-        chip.textContent = label + (info.legacy ? '' : ready ? ' · ready' : ' · unavailable');
-        chip.dataset.ready = info.legacy ? 'unknown' : String(ready);
+        if (key === 'sd' && c3OfflineWriter) {
+          chip.textContent = 'SD card · offline recorder';
+          chip.dataset.ready = 'unknown';
+        } else {
+          chip.textContent = label + (info.legacy ? '' : ready ? ' · ready' : ' · unavailable');
+          chip.dataset.ready = info.legacy ? 'unknown' : String(ready);
+        }
         chips.append(chip);
       }
     if (info && [1, 2].includes(info.id)) {
       const chip = document.createElement('span');
       chip.className = 'module-feature';
       const state = info.sdDetectionState;
-      chip.textContent = 'SD card · ' + (state === 1 ? 'detected at startup'
-        : state === 2 ? 'check failed at startup' : state === 3 ? 'not detected at startup'
-        : state === 0 ? 'not checked' : 'update firmware to check');
+      chip.textContent = 'SD card · ' + (c3OfflineWriter
+        ? state === 1 ? 'last offline check succeeded'
+          : state === 2 ? 'last offline check failed'
+            : state === 3 ? 'no card on last offline check'
+              : state === 0 ? 'checked on offline double-tap'
+                : 'offline check status unavailable'
+        : state === 1 ? 'detected at startup'
+          : state === 2 ? 'check failed at startup' : state === 3 ? 'not detected at startup'
+            : state === 0 ? 'not checked' : 'update firmware to check');
       chip.dataset.ready = state === 1 ? 'true' : state === 2 || state === 3 ? 'false' : 'unknown';
       chips.append(chip);
     }
@@ -76,6 +94,8 @@
       byId('moduleStatus').textContent =
         client?.error ||
         (info?.legacy ? 'Earlier firmware detected. Update for hardware readiness checks.'
+          : c3OfflineWriter
+            ? 'Offline SD validation mode. The card is mounted only after the app is disconnected and a double-tap starts recording. SD browsing and sync are intentionally disabled in this firmware.'
           : caps.hasMedia(info) && caps.supports(info, 'sd')
             ? caps.ready(info, 'sd')
               ? 'SD card ready. Offline WAV recordings appear in Memories while BLE is connected.'

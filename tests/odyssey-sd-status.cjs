@@ -48,6 +48,20 @@ test('Odyssey reports boot SD state and C3 media-v1 unlocks only SD transfer', (
   assert.match(nodes.moduleStatus.textContent, /SD card ready/);
   assert.match(nodes.moduleStatus.textContent, /Offline WAV recordings appear in Memories/);
 });
+test('C3 write-only firmware is presented as offline validation instead of failed storage', () => {
+  const all = profiles.FLAGS.audio | profiles.FLAGS.sd | profiles.FLAGS.settings |
+    profiles.FLAGS.touch | profiles.FLAGS.battery | profiles.FLAGS.standby |
+    profiles.FLAGS.sdAudio;
+  const module = info(2, 1, 0, all, all & ~(profiles.FLAGS.sd | profiles.FLAGS.sdAudio), 0);
+  const nodes = render(module);
+  const labels = nodes.moduleFeatures.children.map(child => child.textContent);
+  assert(labels.includes('SD card · offline recorder'));
+  assert(labels.includes('SD card · checked on offline double-tap'));
+  assert.match(nodes.moduleStatus.textContent, /Offline SD validation mode/);
+  assert.match(nodes.moduleStatus.textContent, /double-tap starts recording/);
+  assert.match(nodes.moduleStatus.textContent, /sync are intentionally disabled/);
+});
+
 test('old and unknown descriptors do not claim an SD result; Chakshu ignores the extension', () => {
   for (const id of [1, 2]) for (const [version, state] of [[0, 0], [2, 1], [1, 255]]) {
     const module = info(id, version, state);
