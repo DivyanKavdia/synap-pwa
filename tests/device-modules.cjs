@@ -30,9 +30,11 @@ test('SD status reports actual capacity and rejects impossible values',()=>{
   const bad=status();bad.setUint32(12,2000,true);assert.throws(()=>decodeStatus(bad),/capacity/);
   const progress=status();progress.setUint8(7,101);assert.throws(()=>decodeStatus(progress),/Invalid/);
 });
-test('C3 diagnostics preserve recorder failure stage and written progress',()=>{
+test('C3 diagnostics preserve recorder failure stage and marked write progress',()=>{
   const c3=descriptor(2);
-  c3.setUint8(15,12);c3.setUint8(17,1);c3.setUint8(18,2);c3.setUint8(19,55);
+  c3.setUint8(15,55);c3.setUint8(17,1);c3.setUint8(18,2);c3.setUint8(19,55);
+  assert.equal(decode(c3).lastRecordKiB,null,'older firmware byte 15 must not be misread as progress');
+  c3.setUint8(15,12);c3.setUint8(16,0x80);
   const failed=decode(c3);
   assert.equal(failed.sdDetectionState,2);
   assert.equal(failed.sdProbeState,55);

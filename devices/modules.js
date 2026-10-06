@@ -49,9 +49,10 @@
       mediaFeatures: profile.id === 3 ? value.getUint8(16) :
         profile.id === 2 ? value.getUint8(16) & 7 : 0,
       voiceVersion: profile.id === 2 ? 0 : value.getUint8(15),
-      // Odyssey C3 validation firmware uses byte 15 for successful PCM before
-      // the persisted recorder failure, in 8 KiB units.
-      lastRecordKiB: profile.id === 2 ? value.getUint8(15) * 8 : null,
+      // New C3 validation firmware marks byte 15's 8 KiB progress semantics
+      // with bit 7 of byte 16. Older builds used byte 15 for another purpose.
+      lastRecordKiB: profile.id === 2 && (value.getUint8(16) & 0x80)
+        ? value.getUint8(15) * 8 : null,
       // Odyssey boot-probe snapshot, independent of usable SD/media capabilities.
       sdDetectionState: [1, 2].includes(profile.id) && value.getUint8(17) === 1
         && value.getUint8(18) <= 3 ? value.getUint8(18) : null,
