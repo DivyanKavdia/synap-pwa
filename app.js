@@ -4297,8 +4297,6 @@
         mediaVersion: info?.mediaVersion ?? null,
         sdDetectionState: info?.sdDetectionState ?? null,
         sdProbeState: info?.sdProbeState ?? null,
-        rawSdProbeState: info?.rawSdProbeState ?? null,
-        lastRecordStage: info?.lastRecordStage ?? null,
         error: client?.error || '' };
       const signature = JSON.stringify(hardware);
       if (signature !== hardwareSignature) {

@@ -30,19 +30,14 @@ test('SD status reports actual capacity and rejects impossible values',()=>{
   const bad=status();bad.setUint32(12,2000,true);assert.throws(()=>decodeStatus(bad),/capacity/);
   const progress=status();progress.setUint8(7,101);assert.throws(()=>decodeStatus(progress),/Invalid/);
 });
-test('C3 exposes persisted offline-recorder failure stage without corrupting normalized SD mount state',()=>{
+test('C3 diagnostics preserve offline-recorder failure stages instead of erasing them',()=>{
   const c3=descriptor(2);
-  c3.setUint8(15,45);c3.setUint8(17,1);c3.setUint8(18,2);c3.setUint8(19,45);
+  c3.setUint8(17,1);c3.setUint8(18,2);c3.setUint8(19,45);
   const failed=decode(c3);
-  assert.equal(failed.lastRecordStage,45);
-  assert.equal(failed.rawSdProbeState,45);
-  assert.equal(failed.sdProbeState,null);
   assert.equal(failed.sdDetectionState,2);
-  c3.setUint8(15,0);c3.setUint8(19,6);
-  const healthy=decode(c3);
-  assert.equal(healthy.lastRecordStage,0);
-  assert.equal(healthy.rawSdProbeState,6);
-  assert.equal(healthy.sdProbeState,6);
+  assert.equal(failed.sdProbeState,45);
+  c3.setUint8(19,6);
+  assert.equal(decode(c3).sdProbeState,6);
 });
 
 test('optional media features are profile-scoped; C3 may use notification-window, Wi-Fi and format bits',()=>{

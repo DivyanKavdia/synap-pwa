@@ -49,18 +49,13 @@
       mediaFeatures: profile.id === 3 ? value.getUint8(16) :
         profile.id === 2 ? value.getUint8(16) & 7 : 0,
       voiceVersion: value.getUint8(15),
-      // Odyssey C3 reuses byte 15 in validation firmware for a persisted
-      // offline-recorder failure stage. Keep it separate from voice semantics.
-      lastRecordStage: profile.id === 2 ? value.getUint8(15) : null,
       // Odyssey boot-probe snapshot, independent of usable SD/media capabilities.
       sdDetectionState: [1, 2].includes(profile.id) && value.getUint8(17) === 1
         && value.getUint8(18) <= 3 ? value.getUint8(18) : null,
-      // C3 native SD mount stage: 0 unprobed, 1 bus setup, 2 card init,
-      // 3 FAT mount, 4 VFS validation failures, 6 mounted/ready. Recording
-      // validation stages are intentionally kept out of this normalized field.
+      // C3 SD stage. 0-6 are mount/probe states; validation firmware also
+      // reports persisted offline-recorder failure stages 40-48 in this byte.
+      // Preserve the raw value so diagnostics do not erase the actual failure.
       sdProbeState: profile.id === 2 && value.getUint8(17) === 1
-        && value.getUint8(19) <= 6 ? value.getUint8(19) : null,
-      rawSdProbeState: profile.id === 2 && value.getUint8(17) === 1
         ? value.getUint8(19) : null,
       legacy: false,
     });
