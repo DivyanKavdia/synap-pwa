@@ -48,12 +48,15 @@
       // Wi-Fi cloud sync), and bit 2 (explicit destructive SD formatting).
       mediaFeatures: profile.id === 3 ? value.getUint8(16) :
         profile.id === 2 ? value.getUint8(16) & 7 : 0,
-      voiceVersion: value.getUint8(15),
+      voiceVersion: profile.id === 2 ? 0 : value.getUint8(15),
+      // Odyssey C3 validation firmware uses byte 15 for successful PCM before
+      // the persisted recorder failure, in 8 KiB units.
+      lastRecordKiB: profile.id === 2 ? value.getUint8(15) * 8 : null,
       // Odyssey boot-probe snapshot, independent of usable SD/media capabilities.
       sdDetectionState: [1, 2].includes(profile.id) && value.getUint8(17) === 1
         && value.getUint8(18) <= 3 ? value.getUint8(18) : null,
       // C3 SD stage. 0-6 are mount/probe states; validation firmware also
-      // reports persisted offline-recorder failure stages 40-48 in this byte.
+      // reports persisted offline-recorder failure stages 40-65 in this byte.
       // Preserve the raw value so diagnostics do not erase the actual failure.
       sdProbeState: profile.id === 2 && value.getUint8(17) === 1
         ? value.getUint8(19) : null,

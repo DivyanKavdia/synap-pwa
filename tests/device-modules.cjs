@@ -30,14 +30,18 @@ test('SD status reports actual capacity and rejects impossible values',()=>{
   const bad=status();bad.setUint32(12,2000,true);assert.throws(()=>decodeStatus(bad),/capacity/);
   const progress=status();progress.setUint8(7,101);assert.throws(()=>decodeStatus(progress),/Invalid/);
 });
-test('C3 diagnostics preserve offline-recorder failure stages instead of erasing them',()=>{
+test('C3 diagnostics preserve recorder failure stage and written progress',()=>{
   const c3=descriptor(2);
-  c3.setUint8(17,1);c3.setUint8(18,2);c3.setUint8(19,45);
+  c3.setUint8(15,12);c3.setUint8(17,1);c3.setUint8(18,2);c3.setUint8(19,55);
   const failed=decode(c3);
   assert.equal(failed.sdDetectionState,2);
-  assert.equal(failed.sdProbeState,45);
-  c3.setUint8(19,6);
-  assert.equal(decode(c3).sdProbeState,6);
+  assert.equal(failed.sdProbeState,55);
+  assert.equal(failed.lastRecordKiB,96);
+  assert.equal(failed.voiceVersion,0);
+  c3.setUint8(15,0);c3.setUint8(19,6);
+  const healthy=decode(c3);
+  assert.equal(healthy.sdProbeState,6);
+  assert.equal(healthy.lastRecordKiB,0);
 });
 
 test('optional media features are profile-scoped; C3 may use notification-window, Wi-Fi and format bits',()=>{
