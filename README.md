@@ -1,15 +1,15 @@
 # Synap
 
-**Repository reviewed: 1 October 2026**
+**Repository reviewed: 7 October 2026**
 
 Synap is the companion PWA and cloud memory platform for the Synap wearable family. Device firmware lives in `DivyanKavdia/synap-firmware`; this repository owns the browser experience, local durable journal, cloud API, processing pipeline, retrieval, memory surfaces and production deployment.
 
 ## Production truth
 
 - **PWA:** `main` → GitHub Pages.
-- **Current checked-in shell generation:** `1.0.0-shell176-device-controls` (the installed browser may still need a refresh).
+- **Current checked-in shell generation:** `1.0.0-shell191-c3-offline-status` (the installed browser may still need a refresh after cache-busted SD UI changes).
 - **Backend:** Google Cloud Run in `asia-south1`, promoted only after readiness validation.
-- **Firmware OTA release checked at this review:** Synap OS build **1546** for three compiled targets (S3, C3 and Chakshu), covering **four functional device variants**. The OTA feed is authoritative; verify the installed build separately.
+- **Firmware OTA baseline checked at this review:** Odyssey C3 build **1838** on `esp32c3-supermini-4m`; read each target's OTA manifest before quoting the current S3/Chakshu build. The OTA feed is authoritative; verify the installed device separately.
 - **Runtime:** Node.js 22+ for local/CI tooling and the backend.
 
 Do not hard-code application commit SHAs into operational documentation. Git history and Actions identify the deployed source; architecture docs describe the stable contract.
@@ -22,7 +22,7 @@ Do not hard-code application commit SHAs into operational documentation. Git his
 - **People & speaker identity** — user-confirmed person names, remembered voices and recording-level speaker identity correction.
 - **Unified memories** — merge consecutive memories, recreate the unified memory, unmerge without touching source recordings, share via WhatsApp/Gmail and export a PDF.
 - **Devices** — connection, recording, battery/status, OTA, idle-only Restart Device on compatible firmware and capability-aware controls.
-- **C3 + SD** — disconnected double tap records WAV to SD (purple pulse); connected PWA audio uses BLE (green pulse); pending local WAV files can be verified and synced to Memories.
+- **C3 + SD** — disconnected double tap records WAV to SD (purple pulse); connected PWA audio uses BLE (green pulse); local WAV files can be verified and synced to Memories, retained on SD as already-synced copies, or explicitly deleted from SD.
 - **Chakshu media** — PWA controls capture directly to the phone when connected; Hey Snap captures to SD while PWA capture is idle (BLE may be connected or not); TTP sends audio to phone when connected and SD when disconnected.
 
 ## Device family
@@ -51,10 +51,14 @@ Chakshu ────────────────┬─ PWA controls + BL
                        └─ disconnected TTP -> SD WAV ────────┤
                                                              v
                                                PWA verified SD import
-                                               (delete SD original only
-                                                after durable verification)
                                                              │
-                 phone/PWA recording journal <────────────────┘
+                                               persist sync receipt
+                                               mark SD source Synced
+                                                /              \
+                                               /                \
+                                       Keep SD copy        Delete from SD
+                                             │                  │
+                 phone/PWA recording journal <──────────────────┘
                               │
                               v
 Synap Cloud API -> encrypted storage + Firestore + Cloud Tasks
@@ -75,6 +79,7 @@ The 30-second browser/cloud segment is a **durability and recovery boundary**, n
 - [Launch readiness](docs/LAUNCH_READINESS.md) — release gates and physical acceptance evidence for PWA, backend and three firmware targets.
 - [Chakshu offline + Hey Snap](docs/CHAKSHU_OFFLINE_AND_HEY_SNAP.md) — source-based command routing, SD recovery and verified sync.
 - [Firmware variants](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/FIRMWARE_VARIANTS.md) — authoritative four-variant behavior, three-target OTA mapping and C3 + SD lifecycle.
+- [Odyssey C3 SD architecture](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/ODYSSEY_C3_SD_AUDIO.md) — canonical C3 SD mount/record/recovery/CMD24 implementation and non-regression rules.
 - [Automatic speech processing](docs/AUTOMATIC_SPEECH.md) — local enhancement, source preservation and resource limits.
 - [RNNoise provenance](vendor/audio-enhancement/README.md) — bundled model/runtime provenance and licensing.
 

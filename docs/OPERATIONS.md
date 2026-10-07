@@ -1,6 +1,6 @@
 # Synap operations and recovery
 
-**Reviewed: 1 October 2026**
+**Reviewed: 7 October 2026**
 
 ## 1. Release truth
 
@@ -17,7 +17,7 @@ Backend-affecting changes on `main` run the production workflow:
 6. retain rollback information if promotion fails.
 
 ### Firmware
-The firmware repository publishes an OTA feed for **three build targets and four functional variants**. On 1 October 2026 the manifests reported **Synap OS build 1546** for S3, C3 and Chakshu, source commit `21bb5488ecdf7b128e560d59b30b583bcd634feb`. Standard C3 and C3 + SD share the same C3 image; read current manifests for newer releases.
+The firmware repository publishes an OTA feed for **three build targets and four functional variants**. On 7 October 2026 the Odyssey C3 manifest reports **Synap OS build 1838**, source commit `978b44a8cc8b4c4b270fd15c396c1ab740d92008`. Standard C3 and C3 + SD share the same C3 image. Read each target manifest before quoting the current S3/Chakshu version.
 
 Never infer installed device behavior from a newer firmware `main` commit.
 
@@ -82,11 +82,84 @@ Modern propagation is scoped by canonical person ID to avoid corrupting two diff
 
 ## 6. SD troubleshooting by variant
 
-**Standard C3:** missing/unmounted SD is not a BLE audio failure; disconnected capture requires a healthy card. **C3 + SD:** native ESP-IDF SDSPI/FAT initializes at 400 kHz before BLE and promotes to validated 4 MHz. Offline double tap starts/stops WAV with a purple pulse; normal connected capture is green. On BLE reconnect, a local take keeps recording to SD until stopped or finalized for a subsequent PWA START. Catalogue/file chunk reads must carry an explicit path on every operation-4 request; `@catalogue` is reserved for catalogue bytes. Explicit operation 14 is the remount/recovery path. The PWA verifies a durable local copy before requesting SD deletion.
+### Odyssey C3
 
-**Chakshu:**
+**Standard C3:** missing/unmounted SD is not a BLE audio failure. Connected audio must remain usable without a card.
+
+**C3 + SD:** the canonical firmware implementation is documented in [Odyssey C3 SD architecture](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/ODYSSEY_C3_SD_AUDIO.md). Do not troubleshoot it using Chakshu clocks/pins or the older abandoned native-SDSPI/preallocation design.
+
+The validated C3 path uses:
+
+- Arduino-ESP32 3.3.5 SD/SPI;
+- retained runtime clock 1 MHz;
+- 4 KiB multi-sector recording writes;
+- append-only STOP behavior;
+- virtual WAV-header synthesis during transfer;
+- bounded CMD18/CMD25 re-arm;
+- C3-only CMD24 busy-completion patch.
+
+Healthy capability diagnostics are:
+
+```json
+{
+  "sdDetectionState": 1,
+  "sdProbeState": 6,
+  "sdLiveProbeState": 6,
+  "lastRecordKiB": 0
+}
+```
+
+Interpret the fields separately:
+
+- `sdDetectionState` — current card/mount state snapshot;
+- `sdProbeState` — persisted recorder failure stage when present, otherwise probe state;
+- `sdLiveProbeState` — current mount/probe state even when historical failure evidence is retained;
+- `lastRecordKiB` — approximate successfully written PCM before the persisted recorder failure.
+
+A historical `sdProbeState` is not proof the current card is still unhealthy if `sdLiveProbeState` is 6.
+
+Useful recorder stages for field diagnosis:
+
+- 40 — storage guard/not-ready fallback;
+- 41 — path failure;
+- 42 — stream setup failure;
+- 43 — microphone/I2S failure;
+- 47 — close/metadata commit failure;
+- 48 — zero PCM;
+- 49–54 — file-create errno classes;
+- 66–70 — 4 KiB batch-write errno classes.
+
+Older upgraded devices can still report stages from earlier validation builds. Always record the installed firmware build with the stage.
+
+Offline double tap starts/stops WAV with a purple pulse. Normal connected capture uses the BLE path. Catalogue/file chunk reads carry an explicit path on every operation-4 request; `@catalogue` is reserved for catalogue bytes. Operation 14 is explicit storage recovery.
+
+### C3 sync troubleshooting
+
+Treat sync as two separate transactions:
+
+1. **durability** — download → local import → verification → persisted receipt;
+2. **retention** — keep or explicitly delete the SD source.
+
+After successful durability verification, a retained source must show **Synced to Memories · Also on device SD**. It must not return to **Sync to Memories** and must not be imported a second time.
+
+If a synced file remains on SD, that is not a failed sync. The user can choose **Delete from SD** immediately after sync or later. Deleting the SD copy must not delete the Memory.
+
+If sync fails, distinguish:
+
+1. live SD mount/readiness;
+2. BLE media request/queue;
+3. byte download;
+4. durable local import;
+5. verification/receipt persistence;
+6. optional SD deletion;
+7. later cloud transcription/understanding.
+
+A transcription/provider failure after a verified local import is not an SD sync failure.
+
+### Chakshu
 
 Key diagnostics:
+
 - `sdReady`
 - `sdClockHz`
 - `sdMountStage`
@@ -95,20 +168,15 @@ Key diagnostics:
 - `freeHeap`
 
 Rules:
+
 - catalogue/reconnect is non-destructive;
 - cold detection tries 10 → 4 → 1 MHz;
 - post-mount I/O recovery locks to conservative 1 MHz for that boot;
 - failed sync retains the SD original;
 - Clear SD removes only Synap-owned capture patterns and never formats the card;
-- verified source deletion is owned only by `devices/chakshu/capture-preview.js`; `devices/chakshu/media.js` must not issue media operation 17 directly.
+- SD deletion is owned by `devices/chakshu/capture-preview.js`; `devices/chakshu/media.js` must not issue media operation 17 directly.
 
-When SD fails during sync, separate:
-1. mount/readiness failure;
-2. BLE/media queue interruption;
-3. copy/digest verification failure;
-4. cloud processing after import.
-
-Do not conflate an API transcription failure with an SD capture/transfer failure.
+Do not mix these Chakshu-specific recovery clocks or GPIO assumptions with Odyssey C3.
 
 ## 7. BLE recovery
 
@@ -146,9 +214,10 @@ Record exact PWA shell + installed firmware build and verify:
 - GPIO5 / D4 NeoPixel status behavior without any writes to SD CS GPIO21;
 - standard C3 BLE recording with no card; C3 + SD cold boot, offline double-tap start/stop, purple pulse and green connected capture;
 - C3 + SD reconnect during recording, PWA START handoff, verified sync and failed-sync original retention;
+- C3 retained synced-copy state, duplicate-import prevention, explicit Delete from SD before/after sync and Memory preservation after SD deletion;
 - SD cold boot and re-detection;
 - offline photo/video/audio creation;
-- verified sync and source deletion;
+- verified sync plus explicit keep/delete retention choice;
 - transcript → memory → Ask provenance;
 - OTA target validation.
 
@@ -157,10 +226,12 @@ Record exact PWA shell + installed firmware build and verify:
 
 Foreground audio-stall recovery reuses the existing audio notification subscription and requests buffered replay directly. It does not rewrite the CCCD while the live Bluefy link is congested. After repeated immediate native Bluetooth reason-2 failures, Synap recognizes the permitted device wrapper as stale, refreshes it once through `navigator.bluetooth.getDevices()` without opening a chooser, and only then falls back to explicit device reselection if the refreshed handle also fails. The recording journal remains preserved throughout the reconnect grace period.
 
-### Odyssey C3 SD and PWA device controls — shell176
+### Odyssey C3 SD and PWA device controls — current
 
-Device settings retain the Odyssey startup SD probe extension (module descriptor version byte 17 and state byte 18) as a diagnostic snapshot, not a substitute for live storage readiness. **S3** only performs SD detection; **standard C3** continues BLE audio without storage; **C3 + SD** supports offline WAV recording and a pending-SD catalogue when the card mounts.
+Device settings retain the Odyssey startup/live SD diagnostics as evidence, not as a substitute for actual current storage readiness. **S3** only performs its own detection behavior; **standard C3** continues BLE audio without storage; **C3 + SD** supports offline WAV recording and media-v1 catalogue/sync when the card is healthy.
 
-The current checked-in PWA shell is `1.0.0-shell176-device-controls`. Restart Device is shown when a pendant is connected and enabled only in the idle state with firmware build **1508 or later**. Firmware control opcode `0x05` refuses restart during active media, OTA or sleep transition; an unresponsive BLE-disconnected device cannot be remotely restarted through the PWA. A loaded older service-worker shell may require an application refresh.
+The current checked-in PWA shell is `1.0.0-shell191-c3-offline-status`. Static SD UI assets are cache-busted independently, so after a retention/sync UI deployment Bluefy may need a full close/reopen to load the new script revision.
 
-The current C3 transfer diagnostics separate catalogue discovery, download, durable import, verification and SD deletion. Never interpret a failed cloud transcription step as an SD sync failure after a verified local import.
+Current C3 sync diagnostics separate catalogue discovery, download, durable import, verification/receipt persistence and optional SD deletion. Successful sync does **not** imply deletion: a retained source is intentionally shown as already synced and remains deletable later through **Delete from SD**.
+
+A Bluefy saved-handle `Operation failed (code 2)` followed by successful explicit device reselection is a browser Bluetooth permission/handle issue, not evidence of SD failure.

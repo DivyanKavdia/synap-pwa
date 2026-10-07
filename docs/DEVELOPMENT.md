@@ -103,7 +103,7 @@ The browser suite list lives in `tools/browser-tests.cjs`; standalone smoke file
 
 - Never mutate raw audio to improve transcription.
 - Never overwrite source transcript words/timestamps when editing speaker identity.
-- Never delete SD source before verified import.
+- Never delete an SD source as an implicit side effect of sync. First verify durable import, persist the sync receipt, then require an explicit user choice before deleting the SD copy.
 - Never delete source recordings when creating/uncreating a unified memory.
 - Never turn a user name correction into implicit voice-profile enrollment.
 
@@ -111,7 +111,9 @@ The browser suite list lives in `tools/browser-tests.cjs`; standalone smoke file
 
 Keep this document and the architecture/operations guides about the **current contract**. Put historical build narratives in Git/release history. When a doc names a current build, verify it from the authoritative release feed.
 
-## Launch cleanup and catalogue parity (1 October 2026)
+For Odyssey C3 SD implementation details, do not restate low-level firmware behavior from memory. Link to the firmware repository's canonical [Odyssey C3 SD architecture](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/ODYSSEY_C3_SD_AUDIO.md). The PWA owns only the client-side catalogue/import/receipt/retention contract.
+
+## Launch cleanup and catalogue parity (7 October 2026)
 
 The PWA catalogue is a complete mirror of firmware `devices/catalog.json`, including optional SD-detection hardware pins. PWA runtime profiles remain generated from that mirror and intentionally expose only client-facing fields. Run `node tools/device-catalog.cjs --check` after catalogue synchronization; the physical C3 contract is pinned in `tests/device-catalog-parity.cjs`.
 

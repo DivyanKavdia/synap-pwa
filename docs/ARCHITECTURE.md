@@ -1,6 +1,6 @@
 # Synap architecture
 
-**Reviewed: 1 October 2026**
+**Reviewed: 7 October 2026**
 
 This document describes the current production architecture. It deliberately avoids historical build-by-build narrative.
 
@@ -43,9 +43,24 @@ Connected capture belongs to the app. Media is transferred into browser-owned st
 
 ### Standard C3 and C3 + SD
 
-The **standard C3** records through BLE while connected and has no disconnected local recording when SD is absent/unmounted. **C3 + SD** initializes native SDSPI/FAT storage before BLE. Disconnected double tap toggles a local 16 kHz WAV with a purple indicator. A reconnect does not change an active take's destination; a subsequent PWA START finalizes the SD take before taking microphone ownership. Connected PWA audio uses the normal live recording journal and green indicator.
+The **standard C3** records through BLE while connected and has no disconnected local recording when SD is absent/unmounted. **C3 + SD** uses the same firmware identity and adds local storage only when the card is healthy and ready.
 
-With BLE connected, the PWA lists unsynced SD WAV files. The C3 media-v1 operation-4 request addresses the file on every chunk (or `@catalogue` for catalogue reads) to prevent background catalogue refreshes from invalidating transfers. Durable import and verification must complete before the SD original is deleted. Explicit recovery is separate from ordinary read/list operations.
+The canonical low-level implementation is documented in the firmware repository at [Odyssey C3 SD architecture](https://github.com/DivyanKavdia/synap-firmware/blob/main/docs/ODYSSEY_C3_SD_AUDIO.md). The physically validated path uses Arduino-ESP32 3.3.5 SD/SPI at a retained 1 MHz runtime clock, 4 KiB multi-sector PCM writes, append-only STOP behavior, virtual WAV-header synthesis during transfer, bounded card re-arm, and a C3-only CMD24 busy-completion patch.
+
+Disconnected double tap toggles a local 16 kHz WAV with a purple indicator. A reconnect does not change an active take's destination; a subsequent PWA START finalizes/releases the local take before taking microphone ownership. Connected PWA audio uses the normal live recording journal and green indicator.
+
+With BLE connected, the PWA lists C3 SD WAV files. The media-v1 operation-4 request addresses the file on every chunk (or `@catalogue` for catalogue reads) to prevent background catalogue refreshes from invalidating transfers.
+
+The PWA sync transaction is deliberately split into **durability** and **retention**:
+
+1. download the SD source;
+2. import it into Memories;
+3. verify the imported copy;
+4. persist a receipt keyed to the device/path;
+5. mark the still-present SD file **Synced to Memories**;
+6. ask the user whether to delete the SD copy.
+
+A retained verified SD file is not pending work and must not be imported again. **Delete from SD** is available before sync (with a destructive warning) and after sync (while preserving the Memory). Explicit recovery is separate from ordinary read/list operations.
 
 ### Chakshu offline and Hey Snap
 
