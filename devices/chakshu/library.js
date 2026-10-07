@@ -453,9 +453,8 @@
         sealed: row.state !== 'capturing',
         status: row.state === 'capturing' ? 'recording' : 'saved',
       })),
-      imported = new Set(rows.filter((row) => row.state === 'saved' && row.sourceName).map((row) => row.sourceName)),
       sd = (state.sdFiles || [])
-        .filter((file) => /\.(jpg|mjpeg|wav)$/i.test(file.path) && !imported.has(file.path.split('/').pop()))
+        .filter((file) => /\.(jpg|mjpeg|wav)$/i.test(file.path))
         .map((file) => {
           const sourceName = file.path.split('/').pop(),
             mediaId = 'sd:' + encodeURIComponent(file.path),
@@ -474,6 +473,7 @@
             sourcePath: file.path,
             byteSize: file.bytes,
             sdSyncable: file.syncable !== false && Number(file.bytes) > 44,
+            sdSynced: Boolean(root.SynapChakshuV2?.isSDSynced?.(file.path)),
             sdIssue: file.issue || '',
             describeRequested: Boolean(file.describe),
             createdAt: file.seenAt || new Date().toISOString(),
@@ -506,24 +506,34 @@
           : row.mediaKind === 'video'
             ? 'Video'
             : 'Photo';
-      const syncable = row.sdSyncable !== false && Number(row.byteSize) > 44;
+      const syncable = row.sdSyncable !== false && Number(row.byteSize) > 44,
+        synced = syncable && Boolean(row.sdSynced);
       opener.setAttribute(
         'aria-label',
-        syncable ? 'Sync to Memories: ' + title : 'Incomplete SD recording: ' + title,
+        synced
+          ? 'Already synced to Memories: ' + title
+          : syncable
+            ? 'Sync to Memories: ' + title
+            : 'Incomplete SD recording: ' + title,
       );
-      card.querySelector('.recording-row-meta').textContent = syncable
-        ? type + ' · Not synced · On device SD · ' + byteLabel(row.byteSize)
-        : type + ' · Incomplete SD recording · On device SD · ' + byteLabel(row.byteSize);
-      preview.textContent = syncable
-        ? row.describeRequested ? 'Sync & describe' : 'Sync to Memories'
-        : Number(row.byteSize) > 0
-          ? 'Cannot sync · recording did not finalize'
-          : 'Cannot sync · no audio was written';
+      card.querySelector('.recording-row-meta').textContent = synced
+        ? type + ' · Synced to Memories · Also on device SD · ' + byteLabel(row.byteSize)
+        : syncable
+          ? type + ' · Not synced · On device SD · ' + byteLabel(row.byteSize)
+          : type + ' · Incomplete SD recording · On device SD · ' + byteLabel(row.byteSize);
+      preview.textContent = synced
+        ? 'Synced · SD copy retained'
+        : syncable
+          ? row.describeRequested ? 'Sync & describe' : 'Sync to Memories'
+          : Number(row.byteSize) > 0
+            ? 'Cannot sync · recording did not finalize'
+            : 'Cannot sync · no audio was written';
       preview.hidden = false;
       if (discard) {
-        discard.hidden = syncable;
+        discard.hidden = false;
         discard.disabled = false;
-        discard.setAttribute('aria-label', 'Remove incomplete SD recording: ' + title);
+        discard.textContent = 'Delete from SD';
+        discard.setAttribute('aria-label', 'Delete from SD: ' + title);
       }
       disposeCard(card);
       image.removeAttribute('src');
@@ -597,14 +607,17 @@
     opener.addEventListener('click', () => action(async () => {
       const item = card.synapRecording;
       if (item?.sdOnly) {
+        if (item.sdSynced)
+          return 'Already synced to Memories. The SD copy is still available; use Delete from SD if you no longer need it.';
         if (item.sdSyncable === false) {
           const message =
-            'This SD recording is incomplete and contains no syncable audio. It has been kept on the SD card.';
+            'This SD recording is incomplete and contains no syncable audio. Delete it from SD if you no longer need it.';
           const preview = card.querySelector('.recording-row-preview');
           if (preview) preview.textContent = message;
           throw Error(message);
         }
         const move = root.SynapChakshuV2?.moveSD || api().moveSD,
+          removeFromSD = root.SynapChakshuV2?.deleteSDItem,
           syncPreview = card.querySelector('.recording-row-preview');
         opener.disabled = true;
         if (syncPreview) {
@@ -617,9 +630,19 @@
             if (syncPreview) syncPreview.textContent = 'Syncing to Memories · ' + percent + '%';
             status('Syncing from device SD · ' + percent + '%');
           });
+          let deleted = false;
+          if (
+            removeFromSD &&
+            confirm('Synced to Memories successfully. Delete this recording from the device SD card now? The copy in Memories will be kept.')
+          ) {
+            await removeFromSD(item.sourcePath);
+            deleted = true;
+          }
           await api().catalogue().catch(() => {});
           await render();
-          return 'Synced to Memories. Verified SD source removed.';
+          return deleted
+            ? 'Synced to Memories. SD copy deleted.'
+            : 'Synced to Memories. SD copy kept.';
         } catch (error) {
           if (syncPreview) {
             syncPreview.hidden = false;
@@ -641,15 +664,20 @@
       event.stopPropagation();
       action(async () => {
         const item = card.synapRecording;
-        if (!item?.sdOnly || item.sdSyncable !== false)
-          throw Error('Only incomplete SD recordings can be removed without syncing.');
-        const removeIncomplete = root.SynapChakshuV2?.discardIncompleteSD;
-        if (!removeIncomplete) throw Error('SD cleanup is still loading. Retry in a moment.');
+        if (!item?.sdOnly) throw Error('This item is not stored on the device SD card.');
+        const removeFromSD = root.SynapChakshuV2?.deleteSDItem;
+        if (!removeFromSD) throw Error('SD cleanup is still loading. Retry in a moment.');
+        const warning = item.sdSynced
+          ? 'Delete this SD copy? The synced copy in Memories will be kept.'
+          : item.sdSyncable === false
+            ? 'Delete this incomplete recording from the SD card? This cannot be undone.'
+            : 'Delete this recording from the SD card without syncing it to Memories? This cannot be undone.';
+        if (!confirm(warning)) return 'SD copy kept.';
         discard.disabled = true;
         try {
-          await removeIncomplete(item.sourcePath);
+          await removeFromSD(item.sourcePath);
           await render();
-          return 'Incomplete SD recording removed.';
+          return item.sdSynced ? 'SD copy deleted. Memory kept.' : 'Recording deleted from SD.';
         } finally {
           discard.disabled = false;
         }

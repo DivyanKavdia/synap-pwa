@@ -34,25 +34,38 @@ assert(settingsRender>=0 && libraryPanelReturn>settingsRender,
   'Settings SD state must render before Library-panel early return');
 assert.match(preview,/await verifyAudio\(record\.id, source\.main\)/);
 assert.match(preview,/synap-sd-sync-diagnostic/);
-for(const stage of ['download','import','verify','delete-source','complete','failed'])
+for(const stage of ['download','import','verify','already-synced','complete','delete-user-requested','failed'])
   assert(preview.includes(stage),'sync diagnostics must expose '+stage);
 const verified=preview.indexOf('await verifyAudio(record.id, source.main)');
 assert(verified>=0);
-assert(preview.indexOf('await deleteSyncedSet(path)',verified)>verified);
+const receiptSaved=preview.indexOf('localStorage.setItem(key, JSON.stringify(receipt))',verified);
+assert(receiptSaved>verified,'verified sync must persist a receipt before returning success');
+const moveEnd=preview.indexOf('async function clearSD()',receiptSaved);
+assert(moveEnd>receiptSaved);
+assert(!preview.slice(receiptSaved,moveEnd).includes('await deleteSyncedSet(path)'),
+  'successful sync must retain the SD source until explicit user deletion');
+assert.match(preview,/return \{ \.\.\.cached, alreadySynced: true, keptOnSD: true \}/,
+  'a verified receipt must prevent duplicate import while the SD source remains');
+assert.match(preview,/const isSDSynced = \(path\) => Boolean\(storedReceipt\(path\)\)/);
+assert.match(preview,/async function deleteSDItem\(path\)/);
+assert.match(preview,/Delete this recording from the device SD card now\?/);
 assert.match(media,/file\?\.syncable !== false && bytes > 44/,'legacy and new catalogues must classify empty/header-only WAVs as incomplete');
 assert.match(preview,/blocked-incomplete-source/,'verified sync must reject incomplete SD artifacts before transfer');
 assert.match(library,/Incomplete SD recording/,'Memories must distinguish incomplete artifacts from syncable recordings');
 assert.match(library,/Cannot sync · no audio was written/);
 assert.match(library,/Not synced · On device SD/);
+assert.match(library,/Synced to Memories · Also on device SD/);
+assert.match(library,/Synced · SD copy retained/);
 assert.match(library,/Syncing from device SD/);
-console.log('PASS: Odyssey C3 SD files surface in Memories, sync uses verified delete, and Settings exposes safe clear.');
+console.log('PASS: Odyssey C3 SD sync retains explicit SD copies, prevents duplicate imports, and offers user-controlled deletion.');
 
-assert.match(preview,/async function discardIncompleteSD\(path\)/,'incomplete SD files need an exact-path cleanup action');
+assert.match(preview,/async function discardIncompleteSD\(path\)/,'incomplete SD files retain their exact-path cleanup action');
 assert.match(preview,/delete-incomplete-source/);
-assert.match(preview,/entry\.syncable !== false && bytes > 44/,'cleanup must refuse valid syncable SD recordings');
-assert.match(library,/library-sd-discard/,'Memories must expose cleanup for incomplete SD entries');
-assert.match(library,/Remove from SD/);
-assert.match(library,/SynapChakshuV2\?\.discardIncompleteSD/);
+assert.match(library,/library-sd-discard/,'Memories must expose an SD delete action');
+assert.match(library,/Delete from SD/);
+assert.match(library,/SynapChakshuV2\?\.deleteSDItem/);
+assert.match(library,/without syncing it to Memories/,'unsynced SD deletion must require an explicit destructive confirmation');
+assert.match(library,/The synced copy in Memories will be kept/,'post-sync SD deletion must preserve the Memory copy');
 
 assert.match(transfer,/C3_SD_READ_TIMEOUT_MS = 20000/,'C3 SD reads need margin above observed ~10 second Bluefy bridge stalls');
 assert.match(transfer,/RESPONSE_DEADLINE_MS = 30000/);

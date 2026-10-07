@@ -926,9 +926,10 @@
     // Request one observational catalogue even when SD is unavailable so the
     // device's mount and persisted recorder errors reach connection diagnostics.
     if (!sdWorthCataloguing(deviceId)) return 0;
-    // Background sync is discovery-only. SD media remains on Chakshu and is
-    // represented in the shared Library until the user explicitly chooses
-    // Move to app. moveSD() is the only path that may delete an SD original.
+    // Background sync is discovery-only. SD media remains on the device and is
+    // represented in the shared Library until the user explicitly syncs it.
+    // Sync verification never deletes the SD source; deleteSDItem() is the
+    // separate, user-confirmed path for removing an SD copy.
     autoSyncPromise = (async () => {
       // Discovery is background work. Do not set the foreground
       // 'working' flag or reject a photo/video just because the SD inbox is

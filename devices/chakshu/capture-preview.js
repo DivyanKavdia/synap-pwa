@@ -288,6 +288,20 @@
   const basename = (path) => path.split('/').pop();
   const stem = (path) => path.replace(/\.[^.]+$/, '');
   const receiptKey = (deviceId, path) => RECEIPT_PREFIX + deviceId + ':' + path;
+  function storedReceipt(path) {
+    const connection = root.SynapDevices?.connection,
+      owner = api()?.state?.owner;
+    if (!connection?.deviceId || !owner) return null;
+    try {
+      const receipt = JSON.parse(localStorage.getItem(receiptKey(connection.deviceId, path)) || 'null');
+      return receipt && receipt.owner === owner && receipt.deviceId === connection.deviceId && receipt.path === path
+        ? receipt
+        : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  const isSDSynced = (path) => Boolean(storedReceipt(path));
   const wifiUploadKey = (owner, deviceId, path) =>
     WIFI_UPLOAD_PREFIX + owner + ':' + deviceId + ':' + path;
   function c3WifiSupported() {
@@ -525,6 +539,26 @@
     }
     return deleteSD(path);
   }
+  async function deleteSDItem(path) {
+    if (busy) throw Error('Another SD transfer is already running.');
+    const connection = context();
+    if (api().state.offline || api().state.session || root.SynapAppControls?.recordingState?.().active)
+      throw Error('Stop recording before deleting from the SD card.');
+    busy = true;
+    renderSDInbox();
+    try {
+      reportSDStage(path, 'delete-user-requested');
+      await deleteSyncedSet(path);
+      localStorage.removeItem(receiptKey(connection.deviceId, path));
+      await api().catalogue().catch(() => {});
+      root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
+      return true;
+    } finally {
+      busy = false;
+      renderSDInbox();
+    }
+  }
+
   async function discardIncompleteSD(path) {
     if (busy) throw Error('Another SD transfer is already running.');
     const entry = api()?.state?.sdFiles?.find?.((file) => file.path === path),
@@ -612,19 +646,15 @@
     try {
       const cached = JSON.parse(localStorage.getItem(key) || 'null');
       if (await verifyReceipt(cached)) {
-        stage = 'delete-verified-receipt';
-        reportSDStage(path, stage);
-        await deleteSyncedSet(path);
-        localStorage.removeItem(key);
-        root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
-        if (wantsDescribe && cached.visualId) {
+        reportSDStage(path, 'already-synced', { audioId: cached.audioId || null, visualId: cached.visualId || null });
+        if (wantsDescribe && cached.visualId && !cached.description) {
           try {
             cached.description = await describeSavedVisual(cached.visualId);
           } catch (error) {
             cached.descriptionError = error.message;
           }
         }
-        return cached;
+        return { ...cached, alreadySynced: true, keptOnSD: true };
       }
       localStorage.removeItem(key);
       stage = 'download';
@@ -690,15 +720,11 @@
       };
       localStorage.setItem(key, JSON.stringify(receipt));
       reportSDStage(path, 'verify-complete', { audioId, visualId });
-      stage = 'delete-source';
-      reportSDStage(path, stage);
-      await deleteSyncedSet(path);
-      localStorage.removeItem(key);
-      reportSDStage(path, 'complete', { audioId, visualId });
+      reportSDStage(path, 'complete', { audioId, visualId, keptOnSD: true });
       root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
-      // Sync durability and SD deletion are complete before cloud inference.
-      // A Gemini failure must never make a verified transfer look failed or
-      // resurrect/delete the SD source incorrectly; the photo remains in Memories.
+      // Verification completes the sync transaction. The SD original is kept
+      // until the user explicitly chooses Delete from SD. Cloud inference is
+      // independent of that retention choice; Memories stays durable either way.
       if (wantsDescribe && visualId) {
         try {
           receipt.description = await describeVisual(visualId, source.main);
@@ -706,7 +732,7 @@
           receipt.descriptionError = error.message;
         }
       }
-      return receipt;
+      return { ...receipt, alreadySynced: false, keptOnSD: true };
     } catch (error) {
       reportSDStage(path, 'failed', { failedAt: stage, message: error?.message || String(error) });
       throw error;
@@ -799,13 +825,14 @@
     if (!list) return;
     list.replaceChildren();
     if (!files.length) {
-      list.textContent = 'No unsynced Synap captures on the SD card.';
+      list.textContent = 'No Synap captures on the SD card.';
       return;
     }
     for (const file of files) {
       const row = document.createElement('div'),
         label = document.createElement('span'),
         action = document.createElement('button'),
+        remove = document.createElement('button'),
         name = basename(file.path),
         type = file.describe
           ? 'Explain photo on SD'
@@ -813,38 +840,64 @@
             ? 'Audio on SD'
             : file.path.endsWith('.mjpeg')
               ? 'Video on SD'
-              : 'Photo on SD';
+              : 'Photo on SD',
+        incomplete = file.syncable === false || Number(file.bytes) <= 44,
+        synced = !incomplete && isSDSynced(file.path);
       row.className = 'visual-sd-row';
-      label.textContent = type + ' · ' + name + ' · ' + Math.max(1, Math.round((file.bytes || 0) / 1024)) + ' KB';
-      const incomplete = file.syncable === false || Number(file.bytes) <= 44;
+      label.textContent =
+        type + ' · ' + name + ' · ' + Math.max(1, Math.round((file.bytes || 0) / 1024)) + ' KB' +
+        (synced ? ' · Synced to Memories' : incomplete ? ' · Incomplete' : ' · Not synced');
       action.type = 'button';
-      action.textContent = incomplete ? 'Remove from SD' : 'Sync to Memories';
-      action.addEventListener('click', async () => {
-        action.disabled = true;
-        try {
-          if (incomplete) {
-            await discardIncompleteSD(file.path);
-            status('Incomplete SD recording removed.');
-          } else {
-            const receipt = await moveSD(file.path, (fraction) => status('Moving from SD · ' + Math.round(fraction * 100) + '%'));
-            await api().catalogue().catch(() => {});
-            status(
-              receipt.description
-                ? 'Photo synced to Memories. Description ready; verified SD source removed.'
-                : receipt.descriptionError
-                  ? 'Photo synced and SD source removed. Description needs retry: ' + receipt.descriptionError
-                  : type.replace(' on SD', '') + ' synced to Memories. Verified SD source removed.',
+      action.textContent = incomplete ? 'Cannot sync' : synced ? 'Synced to Memories' : 'Sync to Memories';
+      action.disabled = incomplete || synced;
+      if (!action.disabled) {
+        action.addEventListener('click', async () => {
+          action.disabled = true;
+          try {
+            const receipt = await moveSD(file.path, (fraction) =>
+              status('Syncing to Memories · ' + Math.round(fraction * 100) + '%'),
             );
+            const deleteNow = confirm(
+              'Synced to Memories successfully. Delete this recording from the device SD card now? The copy in Memories will be kept.',
+            );
+            if (deleteNow) {
+              await deleteSDItem(file.path);
+              status(type.replace(' on SD', '') + ' synced to Memories · SD copy deleted.');
+            } else {
+              status(type.replace(' on SD', '') + ' synced to Memories · SD copy kept.');
+            }
+            void receipt;
+          } catch (error) {
+            status(error.message);
+          } finally {
+            action.disabled = false;
+            await browseSD(list.id).catch(() => {});
+            renderSDInbox();
           }
+        });
+      }
+      remove.type = 'button';
+      remove.textContent = 'Delete from SD';
+      remove.addEventListener('click', async () => {
+        const warning = synced
+          ? 'Delete this SD copy? The synced copy in Memories will be kept.'
+          : incomplete
+            ? 'Delete this incomplete recording from the SD card? This cannot be undone.'
+            : 'Delete this recording from the SD card without syncing it to Memories? This cannot be undone.';
+        if (!confirm(warning)) return;
+        remove.disabled = true;
+        try {
+          await deleteSDItem(file.path);
+          status(synced ? 'SD copy deleted. Memory kept.' : 'Recording deleted from SD.');
           await browseSD(list.id);
         } catch (error) {
           status(error.message);
         } finally {
-          action.disabled = false;
+          remove.disabled = false;
           renderSDInbox();
         }
       });
-      row.append(label, action);
+      row.append(label, action, remove);
       list.append(row);
     }
   }
@@ -868,7 +921,11 @@
       browse = document.getElementById('libraryBrowseSD'),
       sync = document.getElementById('librarySyncSD'),
       list = document.getElementById('librarySDList'),
-      count = state.sdPendingCount ?? state.sdFiles?.length ?? 0,
+      sdFiles = state.sdFiles || [],
+      count = sdFiles.length,
+      unsyncedCount = sdFiles.filter(
+        (file) => file.syncable !== false && Number(file.bytes) > 44 && !isSDSynced(file.path),
+      ).length,
       deviceId = root.SynapDevices?.connection?.deviceId || state.sdFilesDeviceId || state.devices?.[0]?.deviceId || '',
       last = root.SynapChakshuVoice?.lastOutcome?.(deviceId),
       outcome = last?.message ? String(last.message).replace(/Chakshu SD/g, 'device storage').replace(/Chakshu/g, 'device') : '',
@@ -898,8 +955,8 @@
           ? 'SD transfer in progress · SD maintenance controls are temporarily disabled.'
           : state.storageReady
             ? count
-              ? count + ' unsynced item' + (count === 1 ? '' : 's') + ' on SD.'
-              : 'SD card ready · no unsynced content.'
+              ? count + ' item' + (count === 1 ? '' : 's') + ' on SD · ' + unsyncedCount + ' waiting to sync.'
+              : 'SD card ready · no captures on SD.'
             : info?.id === 2 && info?.sdProbeState === 1
             ? 'SD SPI bus setup failed.'
             : info?.id === 2 && info?.sdProbeState === 2
@@ -960,30 +1017,35 @@
         text.textContent = 'Device connected · local storage unavailable. Check the device storage and try again.' + suffix;
       else
         text.textContent = (count
-          ? count + ' offline item' + (count === 1 ? '' : 's') + ' waiting. Sync copies each item to Memories, verifies it, then removes the local original.'
-          : 'Device storage ready · no unsynced offline content.') + suffix;
+          ? count + ' item' + (count === 1 ? '' : 's') + ' on SD · ' + unsyncedCount + ' waiting to sync. Synced SD copies stay visible until you choose Delete from SD.'
+          : 'Device storage ready · no captures on SD.') + suffix;
     }
     if (check) check.disabled = blocked || !state.connected || !state.mediaSupported;
     if (browse) browse.disabled = blocked || !state.connected || !state.storageReady;
-    if (sync) sync.disabled = blocked || !state.connected || !state.storageReady || count === 0;
+    if (sync) sync.disabled = blocked || !state.connected || !state.storageReady || unsyncedCount === 0;
     if (list && (!state.connected || !state.storageReady)) list.hidden = true;
     else if (list && !list.hidden) renderSDRows(list, state.sdFiles || []);
   }
   async function syncAll() {
     if (busy) throw Error('Another Chakshu transfer is already running.');
-    let pending = api()?.state?.sdFiles?.slice?.() || [];
-    if (!pending.length) {
+    let files = api()?.state?.sdFiles?.slice?.() || [];
+    if (!files.length) {
       await api().catalogue();
-      pending = api()?.state?.sdFiles?.slice?.() || [];
+      files = api()?.state?.sdFiles?.slice?.() || [];
     }
-    if (!pending.length) return { synced: 0, failed: 0 };
+    const pending = files.filter(
+      (file) => file.syncable !== false && Number(file.bytes) > 44 && !isSDSynced(file.path),
+    );
+    if (!pending.length) return { synced: 0, failed: 0, paths: [] };
     let synced = 0, failed = 0, lastError = '';
+    const paths = [];
     for (const file of pending) {
       try {
         await moveSD(file.path, (fraction) =>
           status('Syncing offline captures · ' + (synced + failed + 1) + '/' + pending.length + ' · ' + Math.round(fraction * 100) + '%'),
         );
         synced++;
+        paths.push(file.path);
       } catch (error) {
         failed++;
         lastError = error.message;
@@ -992,7 +1054,21 @@
     await api().catalogue().catch(() => {});
     if (failed)
       throw Error(synced + ' synced; ' + failed + ' kept on SD because verification failed. ' + lastError);
-    return { synced, failed: 0 };
+    return { synced, failed: 0, paths };
+  }
+  async function offerDeleteSynced(paths) {
+    const unique = [...new Set(paths || [])];
+    if (!unique.length) return 0;
+    const message = unique.length === 1
+      ? 'Sync completed. Delete the synced recording from the device SD card now? The copy in Memories will be kept.'
+      : 'Sync completed for ' + unique.length + ' recordings. Delete these synced copies from the device SD card now? The copies in Memories will be kept.';
+    if (!confirm(message)) return 0;
+    let deleted = 0;
+    for (const path of unique) {
+      await deleteSDItem(path);
+      deleted++;
+    }
+    return deleted;
   }
   function upgradeUi() {
     const length = document.getElementById('visualSDLength');
@@ -1029,7 +1105,11 @@
       sync.disabled = true;
       try {
         const result = await syncAll();
-        status(result.synced ? result.synced + ' offline capture' + (result.synced === 1 ? '' : 's') + ' synced.' : 'No offline captures waiting.');
+        const deleted = await offerDeleteSynced(result.paths);
+        status(result.synced
+          ? result.synced + ' offline capture' + (result.synced === 1 ? '' : 's') + ' synced to Memories' +
+            (deleted ? ' · ' + deleted + ' SD cop' + (deleted === 1 ? 'y deleted.' : 'ies deleted.') : ' · SD cop' + (result.synced === 1 ? 'y kept.' : 'ies kept.'))
+          : 'No unsynced offline captures waiting.');
       } catch (error) {
         status(error.message);
       } finally {
@@ -1074,10 +1154,12 @@
       librarySync.disabled = true;
       try {
         const result = await syncAll();
+        const deleted = await offerDeleteSynced(result.paths);
         status(
           result.synced
-            ? result.synced + ' offline capture' + (result.synced === 1 ? '' : 's') + ' moved to Memories; verified SD originals removed.'
-            : 'No offline captures waiting.',
+            ? result.synced + ' offline capture' + (result.synced === 1 ? '' : 's') + ' synced to Memories' +
+              (deleted ? ' · ' + deleted + ' SD cop' + (deleted === 1 ? 'y deleted.' : 'ies deleted.') : ' · SD cop' + (result.synced === 1 ? 'y kept.' : 'ies kept.'))
+            : 'No unsynced offline captures waiting.',
         );
         await browseSD('librarySDList');
       } catch (error) {
@@ -1266,6 +1348,9 @@
     configureC3Wifi,
     forgetC3Wifi,
     discardIncompleteSD,
+    deleteSDItem,
+    isSDSynced,
+    storedReceipt,
     syncAll,
     clearSD,
     formatSD,
