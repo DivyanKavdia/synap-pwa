@@ -89,8 +89,9 @@ assert.match(media,/moduleInfo\(\)\?\.id === 2[\s\S]*moduleInfo\(\)\?\.mediaFeat
   'C3 direct Wi-Fi capability must use bit 1 without changing Chakshu hotspot bit 2');
 assert.match(preview,/WIFI_UPLOAD_PREFIX = 'synap-c3-wifi-upload-v1:'/);
 assert.match(preview,/async function moveC3Wifi\(path, sourceEntry, progress/);
-assert.match(preview,/wifiState\?\.configured\) return moveC3Wifi/,
-  'a configured C3 must prefer Wi-Fi before entering the BLE download path');
+assert.doesNotMatch(preview,/wifiState\?\.configured\) return moveC3Wifi/,
+  'ordinary Sync to Memories must remain Bluetooth; Wi-Fi transfer is an explicit user action');
+assert.match(preview,/Transfer over Wi-Fi/,'C3 SD rows must expose an explicit Wi-Fi transfer action');
 assert.match(preview,/id = 'deviceWifiSettings'/);
 assert.match(preview,/Save Wi-Fi/);
 assert.match(preview,/Forget Wi-Fi/);

@@ -123,6 +123,6 @@ test('C3 Wi-Fi BLE control uses operations 23 through 26 and HTTPS cloud tickets
   assert.match(transferSource,/this\._request\(24, mode, '', signal\)/);
   assert.match(transferSource,/this\._request\(25, 0, '', signal\)/);
   assert.match(transferSource,/this\._request\(26, 0, '', signal\)/);
-  assert.match(transferSource,/\^https:\\/\\/\[\^\/?#@\]\+/);
+  assert.match(transferSource,/Synap Wi-Fi upload endpoint is invalid/);
   assert.match(preview,/\/v1\/device-uploads/);
 });
