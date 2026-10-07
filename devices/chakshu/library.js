@@ -496,7 +496,8 @@
     card.synapRecording = row;
     const title = row.name || (row.mediaKind === 'audio' ? 'Audio' : row.mediaKind === 'video' ? 'Video' : 'Photo'),
       opener = card.querySelector('.library-media-open'), image = card.querySelector('img'),
-      preview = card.querySelector('.recording-row-preview'), discard = card.querySelector('.library-sd-discard');
+      preview = card.querySelector('.recording-row-preview'),
+      wifi = card.querySelector('.library-sd-wifi'), discard = card.querySelector('.library-sd-discard');
     card.querySelector('.recording-row-name').textContent = title;
     if (row.sdOnly) {
       const type = row.describeRequested
@@ -529,6 +530,16 @@
             ? 'Cannot sync · recording did not finalize'
             : 'Cannot sync · no audio was written';
       preview.hidden = false;
+      if (wifi) {
+        const module = root.SynapModules?.client?.module,
+          wifiSupported = Boolean(
+            syncable && !synced && row.mediaKind === 'audio' &&
+            module?.id === 2 && (module.mediaFeatures & 2)
+          );
+        wifi.hidden = !wifiSupported;
+        wifi.disabled = !wifiSupported;
+        wifi.setAttribute('aria-label', 'Transfer over Wi-Fi: ' + title);
+      }
       if (discard) {
         discard.hidden = false;
         discard.disabled = false;
@@ -540,6 +551,7 @@
       image.hidden = true;
       return;
     }
+    if (wifi) wifi.hidden = true;
     if (discard) discard.hidden = true;
     opener.setAttribute('aria-label', (row.mediaKind === 'video' ? 'Play video: ' : 'Open photo: ') + title);
     card.querySelector('.recording-row-meta').textContent =
@@ -655,6 +667,56 @@
       }
       return open(item.mediaId);
     }));
+    const wifi = document.createElement('button');
+    wifi.type = 'button';
+    wifi.className = 'library-sd-wifi';
+    wifi.textContent = 'Transfer over Wi-Fi';
+    wifi.hidden = true;
+    wifi.addEventListener('click', (event) => {
+      event.stopPropagation();
+      action(async () => {
+        const item = card.synapRecording,
+          transfer = root.SynapChakshuV2;
+        if (!item?.sdOnly || item.mediaKind !== 'audio' || item.sdSyncable === false || item.sdSynced)
+          throw Error('This SD recording is not available for Wi-Fi transfer.');
+        if (!transfer?.moveC3Wifi || !transfer?.c3WifiStatus)
+          throw Error('Wi-Fi transfer is still loading. Retry in a moment.');
+        const network = await transfer.c3WifiStatus().catch(() => null);
+        if (!network?.configured)
+          throw Error('Save a 2.4 GHz Wi-Fi or phone hotspot in Settings → Wi-Fi sync first.');
+        const source = api().state.sdFiles?.find?.((file) => file.path === item.sourcePath);
+        if (!source) throw Error('Refresh device storage and retry Wi-Fi transfer.');
+        const syncPreview = card.querySelector('.recording-row-preview');
+        wifi.disabled = true;
+        opener.disabled = true;
+        try {
+          await transfer.moveC3Wifi(item.sourcePath, source, (progress) => {
+            const percent = Math.max(0, Math.min(100, Math.round(progress * 100)));
+            if (syncPreview) {
+              syncPreview.hidden = false;
+              syncPreview.textContent = 'Transferring over Wi-Fi · ' + percent + '%';
+            }
+            status('Transferring SD recording over Wi-Fi · ' + percent + '%');
+          });
+          let deleted = false;
+          if (
+            transfer.deleteSDItem &&
+            confirm('Wi-Fi transfer completed and the recording is safely stored in Synap. Delete this recording from the device SD card now?')
+          ) {
+            await transfer.deleteSDItem(item.sourcePath);
+            deleted = true;
+          }
+          await api().catalogue().catch(() => {});
+          await render();
+          return deleted
+            ? 'Wi-Fi transfer complete. SD copy deleted.'
+            : 'Wi-Fi transfer complete. SD copy kept.';
+        } finally {
+          wifi.disabled = false;
+          opener.disabled = false;
+        }
+      });
+    });
     const discard = document.createElement('button');
     discard.type = 'button';
     discard.className = 'library-sd-discard';
@@ -683,7 +745,7 @@
         }
       });
     });
-    header.append(opener, discard);
+    header.append(opener, wifi, discard);
     card.append(header);
     updateCard(card, row);
     return card;

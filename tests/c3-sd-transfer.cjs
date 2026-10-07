@@ -3,6 +3,8 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {Client,decode}=require('../devices/chakshu/transfer.js');
 const source=fs.readFileSync(path.join(__dirname,'../devices/chakshu/media.js'),'utf8');
 const preview=fs.readFileSync(path.join(__dirname,'../devices/chakshu/capture-preview.js'),'utf8');
+const transferSource=fs.readFileSync(path.join(__dirname,'../devices/chakshu/transfer.js'),'utf8');
+const library=fs.readFileSync(path.join(__dirname,'../devices/chakshu/library.js'),'utf8');
 const modules=fs.readFileSync(path.join(__dirname,'../devices/modules.js'),'utf8');
 function transport(files, options={}){
   let response=new DataView(new ArrayBuffer(16)),selected='',catalogue='[]';
@@ -97,4 +99,30 @@ test('C3 optional integrity/session catalogue fields survive into SD state',()=>
   assert.match(source,/take = \/\^\[0-9a-f\]\{16\}\$\/i/);
   assert.match(preview,/verifyFirmwareCrc/);
   assert.match(preview,/integrity-complete/);
+});
+
+
+test('C3 Wi-Fi transfer is explicit, firmware-gated, and retains SD source after verified cloud upload',()=>{
+  assert.match(modules,/profile\.id === 2 \? value\.getUint8\(16\) & 7 : 0/);
+  assert.match(preview,/info\?\.id === 2 && \(info\.mediaFeatures & 2\)/);
+  assert.match(preview,/Transfer over Wi-Fi/);
+  assert.match(library,/library-sd-wifi/);
+  assert.match(library,/moveC3Wifi/);
+  assert.match(preview,/Save a 2\.4 GHz Wi-Fi or phone hotspot in Settings/);
+  assert.match(preview,/startC3WifiUpload/);
+  assert.match(preview,/c3WifiStatus/);
+  assert.match(preview,/localStorage\.setItem\(receiptKey\(connection\.deviceId, path\), JSON\.stringify\(receipt\)\)/);
+  const move=preview.slice(preview.indexOf('async function moveC3Wifi'),preview.indexOf('async function localSnapshot'));
+  assert.doesNotMatch(move,/deleteSDItem\(|request\(17/,'Wi-Fi completion must retain SD source until explicit user deletion');
+  const normal=preview.slice(preview.indexOf('async function moveSD'),preview.indexOf('async function clearSD'));
+  assert.doesNotMatch(normal,/return moveC3Wifi/,'normal Sync to Memories must remain a distinct Bluetooth action');
+});
+
+test('C3 Wi-Fi BLE control uses operations 23 through 26 and HTTPS cloud tickets',()=>{
+  assert.match(transferSource,/this\._request\(23, offset, chunk, signal\)/);
+  assert.match(transferSource,/this\._request\(24, mode, '', signal\)/);
+  assert.match(transferSource,/this\._request\(25, 0, '', signal\)/);
+  assert.match(transferSource,/this\._request\(26, 0, '', signal\)/);
+  assert.match(transferSource,/\^https:\\/\\/\[\^\/?#@\]\+/);
+  assert.match(preview,/\/v1\/device-uploads/);
 });

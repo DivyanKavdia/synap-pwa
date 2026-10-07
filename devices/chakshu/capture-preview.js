@@ -416,19 +416,25 @@
       }
       progress(1);
       localStorage.removeItem(ticket.key);
-      reportSDStage(path, 'wifi-verified', { recordingId: ticket.recordingId });
-      await root.SynapCloudHistory?.restore?.(true, { limit: 100 }).catch?.(() => {});
-      root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
-      root.dispatchEvent(new CustomEvent('synap-memory-ready', { detail: { recordingId: ticket.recordingId } }));
-      return {
+      const receipt = {
+        schema: 1,
         owner,
         deviceId: connection.deviceId,
         path,
         audioId: ticket.recordingId,
+        visualId: null,
+        mainBytes: Math.max(0, Number(sourceEntry?.bytes) || 0),
+        ...(sourceEntry?.crc32 !== undefined ? { sourceCrc32: sourceEntry.crc32 } : {}),
+        ...(sourceEntry?.take ? { take: sourceEntry.take, part: sourceEntry.part ?? null } : {}),
         wifi: true,
         cloud: true,
         savedAt: new Date().toISOString(),
       };
+      localStorage.setItem(receiptKey(connection.deviceId, path), JSON.stringify(receipt));
+      reportSDStage(path, 'wifi-verified', { recordingId: ticket.recordingId });
+      await root.SynapCloudHistory?.restore?.(true, { limit: 100 }).catch?.(() => {});
+      root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
+      return { ...receipt, alreadySynced: false, keptOnSD: true };
     } catch (error) {
       reportSDStage(path, 'wifi-failed', { message: error?.message || String(error) });
       throw error;
@@ -631,10 +637,6 @@
           : 'This SD recording contains no audio bytes and cannot be synced. It has been kept on the SD card.',
       );
     }
-    if (sourceEntry && path.endsWith('.wav') && c3WifiSupported()) {
-      const wifiState = await c3WifiStatus().catch(() => null);
-      if (wifiState?.configured) return moveC3Wifi(path, sourceEntry, progress);
-    }
     const connection = context(),
       owner = api().state.owner,
       wantsDescribe = Boolean(api().state.sdFiles?.find((file) => file.path === path)?.describe),
@@ -832,6 +834,7 @@
       const row = document.createElement('div'),
         label = document.createElement('span'),
         action = document.createElement('button'),
+        wifi = document.createElement('button'),
         remove = document.createElement('button'),
         name = basename(file.path),
         type = file.describe
@@ -842,7 +845,8 @@
               ? 'Video on SD'
               : 'Photo on SD',
         incomplete = file.syncable === false || Number(file.bytes) <= 44,
-        synced = !incomplete && isSDSynced(file.path);
+        synced = !incomplete && isSDSynced(file.path),
+        wifiEligible = !incomplete && !synced && file.path.endsWith('.wav') && c3WifiSupported();
       row.className = 'visual-sd-row';
       label.textContent =
         type + ' · ' + name + ' · ' + Math.max(1, Math.round((file.bytes || 0) / 1024)) + ' KB' +
@@ -853,9 +857,10 @@
       if (!action.disabled) {
         action.addEventListener('click', async () => {
           action.disabled = true;
+          wifi.disabled = true;
           try {
-            const receipt = await moveSD(file.path, (fraction) =>
-              status('Syncing to Memories · ' + Math.round(fraction * 100) + '%'),
+            await moveSD(file.path, (fraction) =>
+              status('Syncing to Memories over Bluetooth · ' + Math.round(fraction * 100) + '%'),
             );
             const deleteNow = confirm(
               'Synced to Memories successfully. Delete this recording from the device SD card now? The copy in Memories will be kept.',
@@ -866,11 +871,45 @@
             } else {
               status(type.replace(' on SD', '') + ' synced to Memories · SD copy kept.');
             }
-            void receipt;
           } catch (error) {
             status(error.message);
           } finally {
             action.disabled = false;
+            wifi.disabled = false;
+            await browseSD(list.id).catch(() => {});
+            renderSDInbox();
+          }
+        });
+      }
+      wifi.type = 'button';
+      wifi.textContent = 'Transfer over Wi-Fi';
+      wifi.hidden = !wifiEligible;
+      wifi.disabled = !wifiEligible;
+      if (wifiEligible) {
+        wifi.addEventListener('click', async () => {
+          action.disabled = true;
+          wifi.disabled = true;
+          try {
+            const network = await c3WifiStatus().catch(() => null);
+            if (!network?.configured)
+              throw Error('Save a 2.4 GHz Wi-Fi or phone hotspot in Settings → Wi-Fi sync first.');
+            await moveC3Wifi(file.path, file, (fraction) =>
+              status('Transferring over Wi-Fi · ' + Math.round(fraction * 100) + '%'),
+            );
+            const deleteNow = confirm(
+              'Wi-Fi transfer completed and the recording is safely stored in Synap Cloud. Delete this recording from the device SD card now?',
+            );
+            if (deleteNow) {
+              await deleteSDItem(file.path);
+              status('Wi-Fi transfer complete · SD copy deleted.');
+            } else {
+              status('Wi-Fi transfer complete · SD copy kept.');
+            }
+          } catch (error) {
+            status(error.message);
+          } finally {
+            action.disabled = false;
+            wifi.disabled = false;
             await browseSD(list.id).catch(() => {});
             renderSDInbox();
           }
@@ -897,7 +936,7 @@
           renderSDInbox();
         }
       });
-      row.append(label, action, remove);
+      row.append(label, action, wifi, remove);
       list.append(row);
     }
   }
