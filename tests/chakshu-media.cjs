@@ -679,7 +679,7 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(html, /id="libraryCheckSD"/);
   assert.match(html, /id="libraryBrowseSD"/);
   assert.match(html, /id="librarySyncSD"/);
-  assert.match(lifecycle, /deleting the SD copy is always a separate user choice/);
+  assert.match(lifecycle, /Synced SD copies stay visible until you choose Delete from SD/);
   assert.match(lifecycle, /unsyncedCount/);
   assert.match(lifecycle, /Connect a device to review or sync content saved offline/);
   assert.match(lifecycle, /Device connected · local storage unavailable/);
