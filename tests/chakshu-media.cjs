@@ -594,7 +594,13 @@ test('device voice media sync discovers SD media and only explicit verified sync
   assert(deletion.indexOf("stem(path) + '.json'") < deletion.indexOf('return deleteSD(path)'));
   assert(deletion.indexOf("stem(path) + '.wav'") < deletion.indexOf('return deleteSD(path)'));
   const verifiedMove=lifecycle.slice(lifecycle.indexOf('async function moveSD'),lifecycle.indexOf('async function clearSD'));
-  assert.match(verifiedMove,/localStorage\.setItem\(key, JSON\.stringify\(receipt\)\)[\s\S]*await deleteSyncedSet\(path\)/);
+  assert.match(verifiedMove,/localStorage\.setItem\(key, JSON\.stringify\(receipt\)\)/);
+  assert.doesNotMatch(verifiedMove,/localStorage\.setItem\(key, JSON\.stringify\(receipt\)\)[\s\S]*await deleteSyncedSet\(path\)/,
+    'verified sync must retain the SD source until explicit user deletion');
+  assert.match(verifiedMove,/alreadySynced: true, keptOnSD: true/,
+    'retained verified receipts must prevent duplicate imports');
+  assert.match(lifecycle,/async function deleteSDItem\(path\)/,
+    'SD deletion must be a separate explicit operation');
   assert.match(voice,/Voice actions always create durable media on Chakshu SD/);
   assert.match(media,/if \(next && !wifi\?\.active\) schedulePendingSync\(1200\)/);
   // GPIO21 is both SD CS and the active-low orange USER_LED. One automatic
@@ -627,7 +633,10 @@ test('unsynced Chakshu audio photo and video surface in the shared Library befor
   assert.match(lifecycle,/async function describeVisual\(visualId, blob/);
   assert.match(lifecycle,/wantsDescribe = Boolean\(api\(\)\.state\.sdFiles/);
   assert.match(lifecycle,/receipt\.description = await describeVisual\(visualId, source\.main\)/);
-  assert.match(lifecycle,/Description ready; verified SD source removed/);
+  assert.match(lifecycle,/Synced to Memories successfully\. Delete this recording from the device SD card now\?/);
+  assert.match(lifecycle,/SD copy kept/);
+  assert.match(library,/Synced to Memories · Also on device SD/);
+  assert.match(library,/Delete from SD/);
   assert.match(library,/describeRequested: Boolean\(file\.describe\)/);
   assert.match(library,/Sync & describe/);
   assert.match(media,/!\/\\\.wav\$\/i\.test\(file\.path\) \|\| !videoStems\.has/);
@@ -660,7 +669,8 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(library, /SynapChakshuV2\?\.moveSD/);
   assert.match(lifecycle, /async function syncAll\(\)/);
   assert.match(lifecycle, /verification failed/);
-  assert.match(lifecycle, /Verified SD source removed/);
+  assert.match(lifecycle, /Synced to Memories successfully\. Delete this recording from the device SD card now\?/);
+  assert.match(lifecycle, /deleteSDItem/);
   assert.match(html, /While Chakshu is disconnected from this app, Hey Snap owns capture/);
   assert.match(html, /id="visualSDSyncNotice"/);
   assert.match(html, /id="librarySDInbox"/);
@@ -669,7 +679,8 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(html, /id="libraryCheckSD"/);
   assert.match(html, /id="libraryBrowseSD"/);
   assert.match(html, /id="librarySyncSD"/);
-  assert.match(lifecycle, /Sync copies each item to Memories, verifies it, then removes the local original/);
+  assert.match(lifecycle, /deleting the SD copy is always a separate user choice/);
+  assert.match(lifecycle, /unsyncedCount/);
   assert.match(lifecycle, /Connect a device to review or sync content saved offline/);
   assert.match(lifecycle, /Device connected · local storage unavailable/);
   assert.match(lifecycle, /libraryCheck\?\.addEventListener\('click'/);
