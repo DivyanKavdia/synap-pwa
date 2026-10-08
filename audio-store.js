@@ -218,6 +218,30 @@
     view.setUint32(40, bytes, true);
     return new Blob([header, ...frames], { type: 'audio/wav' });
   }
+  // Imported SD WAVs are appended through the regular 1600-byte BLE timeline.
+  // That timeline requires a complete final frame. Preserve its zero padding
+  // for processing, but never include those bytes in the exported source WAV.
+  function trimImportedPcm(frames, sourcePcmBytes) {
+    const storedBytes = pcmBytes(frames);
+    if (
+      !Number.isSafeInteger(sourcePcmBytes) ||
+      sourcePcmBytes <= 0 ||
+      sourcePcmBytes % 2 ||
+      sourcePcmBytes > storedBytes ||
+      storedBytes - sourcePcmBytes >= PCM_BYTES_PER_FRAME
+    ) throw audioError('imported PCM length mismatch');
+    const padding = storedBytes - sourcePcmBytes;
+    if (!padding) return frames;
+    const exact = frames.slice(),
+      last = exact[exact.length - 1],
+      tail = new Uint8Array(last.buffer || last, last.byteOffset || 0, last.byteLength);
+    if (
+      padding > tail.byteLength ||
+      tail.subarray(tail.byteLength - padding).some((value) => value !== 0)
+    ) throw audioError('imported PCM padding was modified');
+    exact[exact.length - 1] = tail.subarray(0, tail.byteLength - padding);
+    return exact;
+  }
   function assemble(packets, options = {}) {
     const groups = new Map(),
       complete = new Map();
@@ -885,12 +909,23 @@
         req.onsuccess = () => {
           if (!req.result) return;
           const previous = req.result;
+          const storedBytes = timelineFrames * PCM_BYTES_PER_FRAME;
+          const sourceBytes = previous.sourcePcmBytes;
+          const exactBytes =
+            Number.isSafeInteger(sourceBytes) &&
+            sourceBytes > 0 &&
+            sourceBytes % 2 === 0 &&
+            sourceBytes <= storedBytes &&
+            storedBytes - sourceBytes < PCM_BYTES_PER_FRAME
+              ? sourceBytes : null;
           s.recordings.put({
             ...previous,
             status: complete ? 'saved' : 'empty',
             stopReason: reason,
-            durationMs: lastSequence >= 0 ? (lastSequence + 1) * 50 : 0,
-            sizeBytes: timelineFrames ? 44 + timelineFrames * PCM_BYTES_PER_FRAME : 0,
+            durationMs: exactBytes !== null
+              ? Math.round(exactBytes / 32)
+              : lastSequence >= 0 ? (lastSequence + 1) * 50 : 0,
+            sizeBytes: timelineFrames ? 44 + (exactBytes ?? storedBytes) : 0,
             stats: {
               completeFrames: complete,
               ...(Object.keys(transportFrames).length ? { transportFrames } : {}),
@@ -976,7 +1011,11 @@
         throw new Error(
           'No complete audio frames are available. Raw partial chunks remain stored.',
         );
-      return wav(pcm);
+      return wav(
+        Number.isSafeInteger(record.sourcePcmBytes)
+          ? trimImportedPcm(pcm, record.sourcePcmBytes)
+          : pcm,
+      );
     }
     async remove(id) {
       this.closed.add(id);
@@ -1084,5 +1123,5 @@
   }
 
   root.DKAudioStore = AudioStore;
-  root.DKAudioCodec = { assemble, wav, validateWav, readBlob, SEGMENT_FRAMES, PCM_BYTES_PER_FRAME };
+  root.DKAudioCodec = { assemble, wav, trimImportedPcm, validateWav, readBlob, SEGMENT_FRAMES, PCM_BYTES_PER_FRAME };
 })(globalThis);

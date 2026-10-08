@@ -735,6 +735,9 @@
       ...root.SynapRecordingJournal.options(),
       metadata: () => ({
         ownerUid: scope.owner,
+        // The journal stores 50 ms / 1600-byte frames. Its final imported
+        // packet is zero-padded, but the original WAV's PCM length must survive.
+        sourcePcmBytes: bytes.length - 44,
         rollingTranscription: true,
         transcriptionWindowSeconds: 30,
         uploadAudioProcessing: 'none',
