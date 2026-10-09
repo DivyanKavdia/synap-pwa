@@ -17,7 +17,7 @@ const library=fs.readFileSync(path.join(root,'devices/chakshu/library.js'),'utf8
 assert.match(library,/info = root\.SynapModules\?\.client\?\.module/,'SD library render must bind module capabilities before probe messaging');
 assert(transfer.includes('{0,51}\\.wav'));
 assert.match(transfer,/readPath = image \? '' : op === 8 \? '@catalogue' : path/);
-assert.match(transfer,/this\._request\(readOp, size, readPath, signal\)/);
+assert.match(transfer,/this\._request\(readOp, size, readPath, signal, c3WindowPath\)/);
 assert.match(transfer,/revision: '1\.0\.0-chakshu-core18'/);
 assert.match(media,/Odyssey SD audio/);
 assert.match(media,/schedulePendingSync\(250\)/);
