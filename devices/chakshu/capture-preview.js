@@ -653,6 +653,16 @@
   async function moveSD(path, progress = () => {}) {
     if (busy) throw Error('Another Chakshu transfer is already running.');
     const sourceEntry = api()?.state?.sdFiles?.find?.((file) => file.path === path);
+    // Old catalogue entries can remain visible after a brownout. Avoid
+    // repeatedly issuing doomed SD reads when current C3 status says mount
+    // failed; keep the original on SD for explicit recovery/reselection.
+    const liveModule = root.SynapModules?.client?.module;
+    if (liveModule?.id === 2 && liveModule.sdDetectionState === 2) {
+      reportSDStage(path, 'blocked-sd-unavailable', {
+        sdLiveProbeState: liveModule.sdLiveProbeState,
+      });
+      throw Error('The C3 SD card is unavailable after a reset. Recover the card before syncing; the SD original was kept.');
+    }
     if (sourceEntry && (sourceEntry.syncable === false || Number(sourceEntry.bytes) <= 44)) {
       const bytes = Math.max(0, Number(sourceEntry.bytes) || 0);
       reportSDStage(path, 'blocked-incomplete-source', { bytes });
