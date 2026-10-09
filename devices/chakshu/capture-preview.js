@@ -785,11 +785,20 @@
     busy = true;
     try {
       const reply = await client().request(18);
-      for (let index = localStorage.length - 1; index >= 0; index--) {
-        const key = localStorage.key(index);
-        if (key?.startsWith(RECEIPT_PREFIX + connection.deviceId + ':')) localStorage.removeItem(key);
+      // C3 firmware currently deletes at most 100 files per clear. Never
+      // discard every verified local receipt: undeleted SD originals must
+      // remain marked as synced and must not be imported twice on reconnect.
+      // Old receipts for deleted unique paths are harmless and can be removed
+      // individually through Delete from SD. Refresh observationally; do not
+      // force an unnecessary SD unmount/remount (media op 14) after clearing.
+      try {
+        await api().catalogue();
+      } catch (error) {
+        reportSDStage('@all', 'clear-catalogue-unavailable', {
+          removed: reply.total || 0,
+          message: error?.message || String(error),
+        });
       }
-      await api().refreshSD().catch(() => {});
       return reply.total || 0;
     } finally {
       busy = false;
