@@ -156,3 +156,31 @@ test('a camera click joins pending module discovery instead of racing a false di
   assert.equal(poll, click);assert.equal(client.module, null);
   release();assert.equal(await click, true);assert.equal(client.module.id, 3);assert.equal(reads, 1);
 });
+
+test('optional module discovery backs off after native Bluefy code 2',async()=>{
+ let queueCalls=0,fail=true;
+ const client=new Client({
+   canUse:()=>true,
+   queue:async action=>{
+     queueCalls++;
+     if(fail){const error=Error('Bluetooth request failed.');error.nativeReason=2;throw error;}
+     return action();
+   },
+   service:{getCharacteristic:async()=>({readValue:async()=>descriptor(2)})}
+ });
+ assert.equal(await client.refresh(),false);
+ assert.equal(queueCalls,1);
+ assert.equal(client.optionalReadFailures,1);
+ assert(client.optionalReadRetryAt>Date.now());
+ assert.equal(await client.refresh(),false);
+ assert.equal(queueCalls,1,'native bridge is not polled again during cooldown');
+ client.optionalReadRetryAt=0;
+ assert.equal(await client.refresh(),false);
+ assert.equal(client.optionalReadFailures,2,'repeat failures get exponentially longer pauses');
+ assert.equal(queueCalls,2);
+ client.optionalReadRetryAt=0;fail=false;
+ assert.equal(await client.refresh(),true);
+ assert.equal(client.optionalReadFailures,0);
+ assert.equal(client.optionalReadRetryAt,0);
+ assert.equal(client.module.id,2);
+});
