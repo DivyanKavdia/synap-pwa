@@ -17,7 +17,7 @@ const library=fs.readFileSync(path.join(root,'devices/chakshu/library.js'),'utf8
 assert.match(library,/info = root\.SynapModules\?\.client\?\.module/,'SD library render must bind module capabilities before probe messaging');
 assert(transfer.includes('{0,51}\\.wav'));
 assert.match(transfer,/readPath = image \? '' : op === 8 \? '@catalogue' : path/);
-assert.match(transfer,/this\._request\(readOp, size, readPath, signal, c3WindowPath\)/);
+assert.match(transfer,/this\._request\(readOp, size, readPath, signal\)/);
 assert.match(transfer,/revision: '1\.0\.0-chakshu-core18'/);
 assert.match(media,/Odyssey SD audio/);
 assert.match(media,/schedulePendingSync\(250\)/);
@@ -78,7 +78,7 @@ assert.match(modulesSource,/profile\.id === 2 \? value\.getUint8\(16\) & 7 : 0/,
   'C3 must accept notification-window, Wi-Fi and explicit format media feature bits');
 assert.match(transfer,/if \(this\.features & 1 && !this\.streamDisabled\)/,
   'C3 media-v2 uses the existing notification-window transport');
-assert.match(transfer,/this\.window\(size, first\.total, signal\)/);
+assert.match(transfer,/this\.window\(size, first\.total, signal, c3WindowPath\)/);
 
 assert.match(transfer,/configureC3Wifi\(ssid, password, signal\)/,
   'C3 Wi-Fi credentials must be provisioned through the existing BLE media channel');
