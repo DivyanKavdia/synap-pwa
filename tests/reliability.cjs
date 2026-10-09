@@ -44,7 +44,7 @@ test('PWA receives explicit app-owned GATT service for dedicated EVENT telemetry
   const identity=fs.readFileSync(path.join(root,'devices/identity.js'),'utf8');
   const memoryFix=fs.readFileSync(path.join(root,'memory-ui-fix.js'),'utf8');
   const compat=fs.readFileSync(path.join(root,'runtime-compat.js'),'utf8');
-  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell195-c3-sd-integrity'/);
+  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell197-c3-sd-reliability'/);
   assert.match(sw,/\.\/runtime-compat\.js/);
   assert.match(sw,/\.\/processing-recovery\.js/);
   assert.match(sw,/\.\/ask-synap\.js/);
@@ -104,7 +104,7 @@ test('memory events remain stream-relative and reboot-safe',()=>{
 test('battery v2 retains electrical diagnostics while displaying percentage',()=>{
   const battery=fs.readFileSync(path.join(root,'battery-v2-ui.js'),'utf8');
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
-  assert.match(html,/battery-v2-ui\.js\?v=1\.0\.0-battery5/);
+  assert.match(html,/battery-v2-ui\.js\?v=1\.0\.0-battery6/);
   assert.match(battery,/VERSION=2/);
   assert.match(battery,/v\.byteLength!==12/);
   assert.match(battery,/adcMillivolts:v\.getUint16\(8,true\)/);

@@ -78,7 +78,7 @@ assert.match(modulesSource,/profile\.id === 2 \? value\.getUint8\(16\) & 7 : 0/,
   'C3 must accept notification-window, Wi-Fi and explicit format media feature bits');
 assert.match(transfer,/if \(this\.features & 1 && !this\.streamDisabled\)/,
   'C3 media-v2 uses the existing notification-window transport');
-assert.match(transfer,/this\.window\(size, first\.total, signal\)/);
+assert.match(transfer,/this\.window\(size, first\.total, signal, c3WindowPath\)/);
 
 assert.match(transfer,/configureC3Wifi\(ssid, password, signal\)/,
   'C3 Wi-Fi credentials must be provisioned through the existing BLE media channel');

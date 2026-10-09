@@ -11,6 +11,11 @@
     C3_SD_READ_TIMEOUT_MS = 20000,
     RESPONSE_DEADLINE_MS = 30000;
   const delay = (ms) => new Promise((resolve) => root.setTimeout(resolve, ms));
+  // Every media client on a GATT link shares ONE firmware command/response
+  // slot. Serializing native ATT calls alone cannot protect a multi-step
+  // catalogue/read/notification transaction against a second Client.
+  // Weak keys let old link queues be collected after disconnect.
+  const linkTransactions = new WeakMap();
   const hexText = (value) =>
     Array.from(new TextEncoder().encode(String(value ?? '')), (byte) => byte.toString(16).padStart(2, '0')).join('');
   function decode(value, id) {
@@ -134,12 +139,16 @@
       );
     }
     serialize(action) {
-      // The pendant has one response and one selected image/file. Keep that
-      // source owned through all chunks; status polling waits its turn too.
-      // Native ATT operations still use the shared queue below, so microphone
-      // commands can run between camera chunks.
-      const operation = this.operations.then(action);
-      this.operations = operation.catch(() => {});
+      // Device-scoped transaction lease, shared across ALL Client instances.
+      // Without this, background SD catalogue and foreground verified sync
+      // can reuse request IDs and overwrite the firmware's sole response slot.
+      // Individual ATT calls still use the app's native queue, permitting
+      // high-priority BLE audio/control work between SD read chunks.
+      const previous = linkTransactions.get(this.context) || Promise.resolve();
+      const operation = previous.then(action);
+      const settled = operation.catch(() => {});
+      linkTransactions.set(this.context, settled);
+      this.operations = settled;
       return operation;
     }
     request(op, offset = 0, path = '', signal) {
