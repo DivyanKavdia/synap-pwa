@@ -484,25 +484,50 @@
       });
     if (rebuilt.size !== expectedMain.size || (await digest(rebuilt)) !== (await digest(expectedMain)))
       throw Error('The saved visual did not match the SD source. The SD original was kept.');
+    let verifiedAudio = null;
     if (expectedWav) {
       if (!row.audioId) throw Error('The video soundtrack was not saved. The SD original was kept.');
-      const journal = audioJournal(),
-        record = await journal.get('recordings', row.audioId);
-      if (!record || !record.sealed) throw Error('The video soundtrack is still saving. The SD original was kept.');
-      const saved = await journal.blob(record);
-      if (saved.size !== expectedWav.size || (await digest(saved)) !== (await digest(expectedWav)))
-        throw Error('The saved soundtrack did not match the SD source. The SD original was kept.');
+      verifiedAudio = await verifyAudio(row.audioId, expectedWav);
     }
-    return row;
+    return { ...row, verifiedAudio };
+  }
+  // The journal stores 50ms / 1600-byte PCM frames. ImportAudio pads only
+  // the final incomplete frame with zeroes, then regenerates the WAV lengths.
+  // Verify the ENTIRE journal WAV against that deterministic transformation,
+  // rather than incorrectly comparing its size to the shorter SD original.
+  async function normalizedImportedWav(source) {
+    if (!(source instanceof Blob) || source.size < 44)
+      throw Error('Invalid imported WAV source. The SD original was kept.');
+    const header = new Uint8Array(await source.slice(0, 44).arrayBuffer()),
+      view = new DataView(header.buffer),
+      tag = (at, text) => [...text].every((char, i) => header[at + i] === char.charCodeAt(0)),
+      pcmBytes = source.size - 44;
+    if (!tag(0, 'RIFF') || !tag(8, 'WAVE') || !tag(12, 'fmt ') || !tag(36, 'data') ||
+        view.getUint32(4, true) !== source.size - 8 ||
+        view.getUint32(16, true) !== 16 ||
+        view.getUint16(20, true) !== 1 || view.getUint16(22, true) !== 1 ||
+        view.getUint32(24, true) !== 16000 || view.getUint32(28, true) !== 32000 ||
+        view.getUint16(32, true) !== 2 || view.getUint16(34, true) !== 16 ||
+        view.getUint32(40, true) !== pcmBytes || pcmBytes % 2 !== 0)
+      throw Error('Invalid imported PCM WAV header. The SD original was kept.');
+    const padding = (1600 - (pcmBytes % 1600)) % 1600;
+    if (!padding) return source;
+    view.setUint32(4, pcmBytes + padding + 36, true);
+    view.setUint32(40, pcmBytes + padding, true);
+    return new Blob([header, source.slice(44), new Uint8Array(padding)], { type: 'audio/wav' });
   }
   async function verifyAudio(id, expected) {
     const journal = audioJournal(),
       record = await journal.get('recordings', id);
     if (!record || !record.sealed) throw Error('The imported audio is still saving. The SD original was kept.');
-    const saved = await journal.blob(record);
-    if (saved.size !== expected.size || (await digest(saved)) !== (await digest(expected)))
-      throw Error('The saved audio did not match the SD source. The SD original was kept.');
-    return record;
+    const saved = await journal.blob(record),
+      normalized = await normalizedImportedWav(expected);
+    const savedHash = saved.size === normalized.size ? await digest(saved) : null;
+    if (!savedHash || savedHash !== (await digest(normalized)))
+      throw Error('The saved audio did not match the SD source after frame alignment. The SD original was kept.');
+    // Receipts must track the actual sealed journal WAV, not the shorter SD
+    // bytes: otherwise every reconnect invalidates receipts and reimports.
+    return { record, bytes: saved.size, sha256: savedHash };
   }
   async function verifyReceipt(receipt) {
     if (!receipt || receipt.owner !== api().state.owner || receipt.deviceId !== root.SynapDevices?.connection?.deviceId)
@@ -670,8 +695,7 @@
         const verifiedCrc32 = await verifyFirmwareCrc(source.main, sourceEntry);
         reportSDStage(path, 'integrity-complete', { crc32: verifiedCrc32 });
       }
-      const mainSha = await digest(source.main),
-        wavSha = source.wav ? await digest(source.wav) : null;
+      const mainSha = await digest(source.main);
       if (owner !== api().state.owner || connection !== root.SynapDevices?.connection)
         throw Error('Account or pendant changed during transfer. The SD original was kept.');
       stage = 'import';
@@ -682,7 +706,8 @@
         journal = audioJournal(),
         recordings = await journal.all('recordings');
       let visualId = null,
-        audioId = null;
+        audioId = null,
+        verifiedAudio = null;
       stage = 'verify';
       reportSDStage(path, stage);
       if (/\.(jpg|mjpeg)$/.test(path)) {
@@ -690,7 +715,8 @@
           .filter((item) => !before.visuals.has(item.id) && item.sourceName === basename(path))
           .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
         if (!row) throw Error('The imported visual could not be verified. The SD original was kept.');
-        await verifyVisual(row.id, source.main, source.wav);
+        const verifiedVisual = await verifyVisual(row.id, source.main, source.wav);
+        verifiedAudio = verifiedVisual.verifiedAudio;
         visualId = row.id;
         audioId = row.audioId || null;
       } else if (path.endsWith('.wav')) {
@@ -698,7 +724,7 @@
           .filter((item) => !before.recordings.has(item.id) && item.ownerUid === owner)
           .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
         if (!record) throw Error('The imported audio could not be verified. The SD original was kept.');
-        await verifyAudio(record.id, source.main);
+        verifiedAudio = await verifyAudio(record.id, source.main);
         audioId = record.id;
       } else throw Error('Move the primary photo, video or audio file instead.');
       const receipt = {
@@ -712,11 +738,9 @@
         ...(sourceEntry?.crc32 !== undefined ? { sourceCrc32: sourceEntry.crc32 } : {}),
         ...(sourceEntry?.take ? { take: sourceEntry.take, part: sourceEntry.part ?? null } : {}),
         mainSha256: mainSha,
-        ...(source.wav
-          ? { audioBytes: source.wav.size, audioSha256: wavSha }
-          : path.endsWith('.wav')
-            ? { audioBytes: source.main.size, audioSha256: mainSha }
-            : {}),
+        ...(verifiedAudio
+          ? { audioBytes: verifiedAudio.bytes, audioSha256: verifiedAudio.sha256 }
+          : {}),
         describeRequested: wantsDescribe,
         savedAt: new Date().toISOString(),
       };
