@@ -175,13 +175,18 @@
       signal?.throwIfAborted();
       this.stream = stream;
     }
-    async sendOnly(op, offset, signal, id = ++this.id) {
-      const bytes = new Uint8Array(10),
+    async sendOnly(op, offset, signal, id = ++this.id, path = '') {
+      // C3 notification windows include their WAV path to prevent a background
+      // catalogue/other client from silently switching the selected source.
+      const pathBytes = path ? new TextEncoder().encode(path) : new Uint8Array();
+      if (pathBytes.length > 63) throw Error('Invalid SD transfer path.');
+      const bytes = new Uint8Array(10 + pathBytes.length),
         view = new DataView(bytes.buffer);
       bytes[0] = 0xca;
       bytes[1] = op;
       view.setUint32(2, id, true);
       view.setUint32(6, offset, true);
+      if (pathBytes.length) bytes.set(pathBytes, 10);
       const queue = this.context.mediaQueue || this.context.queue;
       await this.writeCommand(
         (action, label) =>
@@ -193,7 +198,7 @@
       );
       return id;
     }
-    async window(offset, total, signal) {
+    async window(offset, total, signal, path = '') {
       signal?.throwIfAborted();
       try {
         await this.subscribeStream(signal);
@@ -230,7 +235,7 @@
       signal?.addEventListener('abort', abort, { once: true });
       root.addEventListener?.('synap-gatt-disconnected', disconnect, { once: true });
       try {
-        await this.sendOnly(12, offset, signal, id);
+        await this.sendOnly(12, offset, signal, id, path);
         signal?.throwIfAborted();
         timer = setTimeout(finish, 3000);
         await done;
@@ -407,6 +412,10 @@
       let size = 0,
         stalls = 0;
       const readOp = image ? 2 : 4,
+        // Only the C3 uses explicit-path notification requests; Chakshu's
+        // existing 10-byte window protocol is unchanged.
+        c3WindowPath = op === 3 && /\.wav$/i.test(path) &&
+          (this.context.module?.id === 2 || root.SynapModules?.client?.module?.id === 2) ? path : '',
         // SD reads must be self-describing. Multiple Client instances can share
         // one firmware worker; a background catalogue must never replace the
         // foreground file selection between chunks.
@@ -415,7 +424,7 @@
         while (size < first.total) {
           signal?.throwIfAborted();
           if (this.features & 1 && !this.streamDisabled) {
-            const result = await this.window(size, first.total, signal);
+            const result = await this.window(size, first.total, signal, c3WindowPath);
             if (result.next > size) {
               parts.push(...result.parts);
               size = result.next;
