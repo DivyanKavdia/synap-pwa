@@ -35,7 +35,7 @@ test('window receiver validates contiguous positions and detects missing chunks'
 test('C3 fast mode is feature-gated with no-recording and small-MTU fallback',()=>{
  assert.match(source,/if \(this\.features & 1 && !this\.streamDisabled\)/);
  assert.match(source,/this\.window\(size, first\.total, signal, c3WindowPath\)/);
- assert.match(source,/c3WindowPath = op === 3 && \/\\\.wav\$\/i\.test\(path\)/);
+ assert(source.includes('c3WindowPath = op === 3 && /\\.wav$/i.test(path)'));
  assert.match(source,/this\.streamDisabled = true/);
  assert.match(source,/const reply = await this\._request\(readOp, size, readPath, signal\)/);
  assert.match(source,/this\.context\.module\?\.id === 2/);
