@@ -1292,7 +1292,9 @@
       document.getElementById('clearDeviceSD')?.addEventListener('click', async () => {
         if (
           !confirm(
-            'Remove all Synap captures from this device SD card? Unrelated files are kept. This cannot be undone.',
+            root.SynapModules?.client?.module?.id === 2
+              ? 'Remove up to 100 Synap recordings from this device SD card? If more remain, repeat Clear SD Card. Unrelated files are kept. This cannot be undone.'
+              : 'Remove all Synap captures from this device SD card? Unrelated files are kept. This cannot be undone.',
           )
         )
           return;
@@ -1305,7 +1307,10 @@
               count +
               ' Synap capture' +
               (count === 1 ? '' : 's') +
-              ' from the SD card.',
+              ' from the SD card.' +
+              (root.SynapModules?.client?.module?.id === 2 && count >= 100
+                ? ' More files may remain; check the SD list and clear again if needed.'
+                : ''),
           );
           await api().syncPendingSD().catch(() => {});
         } catch (error) {
