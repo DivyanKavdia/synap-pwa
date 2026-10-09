@@ -124,6 +124,8 @@
       this.pathKey = '';
       this.error = '';
       this.available = false;
+      this.optionalReadFailures = 0;
+      this.optionalReadRetryAt = 0;
     }
     get busy() {
       return this.commandPending || Boolean(this.expected) || this.status?.state === 1;
@@ -236,6 +238,7 @@
       if (
         this.pending ||
         this.closed ||
+        Date.now() < this.optionalReadRetryAt ||
         (this.context.canUse?.() === false && !identifyDuringAudio)
       )
         return false;
@@ -245,10 +248,20 @@
         if (capabilities.isChakshu(this.module) && this.context.canUse?.() !== false)
           await this.updateStatus();
         this.error = '';
+        this.optionalReadFailures = 0;
+        this.optionalReadRetryAt = 0;
         return true;
       } catch (error) {
         if (this.closed) return false;
         if (error.code === 'OPTIONAL_GATT_DEFERRED' || error.name === 'AbortError') return false;
+        // Bluefy can leave GATT connected while native requests return code 2.
+        // Limit optional reads rather than hammering the same failing bridge.
+        if (error.nativeReason === 2 || error.nativeReason?.value === 2 ||
+            /Bluetooth request failed|Operation failed \(code 2\)/i.test(error.message || '')) {
+          this.optionalReadFailures = Math.min(6, this.optionalReadFailures + 1);
+          this.optionalReadRetryAt = Date.now() + Math.min(60000,
+            1500 * (2 ** (this.optionalReadFailures - 1)));
+        }
         this.error = error.message;
         return false;
       } finally {
@@ -304,6 +317,9 @@
     schedule(250);
   }
   function schedule(delay = client?.busy ? 750 : !client?.available ? 1000 : 15000) {
+    if (client?.optionalReadRetryAt) {
+      delay = Math.max(delay, Math.max(0, client.optionalReadRetryAt - Date.now()));
+    }
     if (timer) root.clearTimeout(timer);
     timer = root.setTimeout(async () => {
       timer = null;
