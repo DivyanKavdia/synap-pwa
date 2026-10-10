@@ -73,3 +73,18 @@ test('old and unknown descriptors do not claim an SD result; Chakshu ignores the
   assert.equal(nodes.moduleFeatures.children.length, 0);
   assert.equal(nodes.chakshuChecks.hidden, false);
 });
+
+test('C3 only surfaces read-only offline recorder first-fault after catalogue and module refresh',()=>{
+ const fs=require('node:fs');
+ const media=fs.readFileSync('devices/chakshu/media.js','utf8');
+ const app=fs.readFileSync('app.js','utf8');
+ const flow=media.split('async function syncPendingSD() {')[1].split('const apiObject = {')[0];
+ assert.match(flow,/const files = await catalogueNow\(\)/);
+ assert.match(flow,/await root\.SynapModules\?\.refresh\?\.\(\)\.catch/);
+ assert.match(flow,/liveModule\?\.id === 2 && Number\(liveModule\.sdProbeState\) >= 40/);
+ assert.match(flow,/camera\(\)\.request\(27\)/);
+ assert.match(flow,/stage: 'offline-recorder-first-fault'/);
+ assert.match(app,/operation === 27 \? "C3 SD offline recorder diagnostics"/);
+ const src=fs.readFileSync('devices/chakshu/transfer.js','utf8');
+ assert.match(src,/return this\.serialize\(\(\) => this\._request\(op, offset, path, signal\)\)/);
+});

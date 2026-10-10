@@ -332,6 +332,7 @@
     log(operation === 19 ? "C3 SD format failed" :
       operation === 14 ? "C3 SD remount requested" :
       operation === 7 ? (isC3 ? "C3 SD catalogue failed" : "Chakshu SD listing failed") :
+      operation === 27 ? "C3 SD offline recorder diagnostics" :
       (isC3 ? "C3 SD transfer failed" : "Chakshu capture failed"), {
       ...event.detail,
       module: globalThis.SynapModules?.client?.module,
