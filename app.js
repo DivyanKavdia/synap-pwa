@@ -1694,7 +1694,11 @@
   function cleanupCharacteristics() {
     globalThis.SynapDisconnectProtection?.detach();
     globalThis.SynapDevices?.clearService?.();
-    if (globalThis.document?.body) delete document.body.dataset.otaRecovery;
+    if (globalThis.document?.body) {
+      delete document.body.dataset.otaRecovery;
+      delete document.body.dataset.otaCommitted;
+      delete document.body.dataset.otaCommittedLogged;
+    }
     deviceAssociation = null;
     deviceIdentityMessage = "Not connected";
     firmwareUpdater?.reset();
