@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell197-c3-sd-reliability";
+  const APP_SHELL_REVISION = "1.0.0-shell198-c3-ota-restart";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -3874,7 +3874,16 @@
     firmwareUpdater = new globalThis.SynapOTA.Client({
       connected:isGattConnected, queue:firmwareGattOperation,
       getService:()=>firmwareGattOperation(()=>globalThis.SynapDevices?.connection?.service || gattServer.getPrimaryService(SERVICE_UUID),"Find pendant service"),
-      progress:showProgress
+      progress:showProgress,
+      onStatus:info=>{
+        const committed=info.state===5;
+        document.body.dataset.otaCommitted=committed?'true':'false';
+        if(committed && !document.body.dataset.otaCommittedLogged) {
+          document.body.dataset.otaCommittedLogged='true';
+          log('Firmware awaiting reboot',{state:info.state,installedBuild:info.build,session:info.session,offset:info.offset});
+        }
+        if(!committed)delete document.body.dataset.otaCommittedLogged;
+      }
     });
     const lock = value=>{
       if (value) clearReconnectTimer(true);
@@ -3939,6 +3948,15 @@
         const info=await firmwareUpdater.check();
         const id=requireTarget(info),board=await identity(),pending=getPending(id);
         if(epoch!==connectionEpoch || !isGattConnected())throw Error('Pendant connection changed.');
+        if(info.state===5) {
+          // Device has already selected an OTA boot partition. Its SD safety
+          // veto on older firmware can defer the reboot indefinitely.
+          offered=null;offeredDevice=null;bannerButton.hidden=true;latestButton.hidden=true;
+          announce(globalThis.SynapOTA.COMMITTED_MESSAGE);
+          log('Firmware committed but awaiting power restart',
+            {installedBuild:info.build,targetBuild:pending?.build??null,session:info.session,offset:info.offset});
+          return;
+        }
         let verified=false;
         if(pending) {
           verified=info.build===pending.build&&board===pending.identity;
@@ -4024,6 +4042,7 @@
         const board=await identity();
         checkPreparationCancelled();
         if(!releases.compatible(m,info,board))throw Error('This release is already installed or older than the running firmware.');
+        if(info.state===5)throw Error(globalThis.SynapOTA.COMMITTED_MESSAGE);
         if(![1,3,4,6].includes(info.state))throw Error('An update is already pending. Wait for reboot or transfer timeout.');
         const running=releases.targetFromIdentity(board);
         log('Firmware update preflight',{
@@ -4057,10 +4076,18 @@
               if(requireTarget(running)!==id)throw Error('Reconnect the original pendant device ID to verify its update.');
               const runningIdentity=await identity();
               if(running.build===m.build&&runningIdentity===m.identity){verified=true;break;}
-              log('Firmware verification pending',{attempt:attempt+1,runningBuild:running.build,targetBuild:m.build});
+              if(running.state===5) {
+                const pendingRestart=new Error(globalThis.SynapOTA.COMMITTED_MESSAGE);
+                pendingRestart.otaPendingRestart=true;
+                log('Firmware verification blocked by pending restart',
+                  {attempt:attempt+1,runningBuild:running.build,targetBuild:m.build,otaState:running.state,session:running.session});
+                throw pendingRestart;
+              }
+              log('Firmware verification pending',{attempt:attempt+1,runningBuild:running.build,targetBuild:m.build,otaState:running.state});
             }
           } catch(verificationError) {
-            if(/device ID mismatch|original pendant device ID|different pendant/i.test(verificationError.message||''))throw verificationError;
+            if(verificationError.otaPendingRestart ||
+              /device ID mismatch|original pendant device ID|different pendant/i.test(verificationError.message||''))throw verificationError;
             log('Firmware verification retry',{attempt:attempt+1,error:friendlyError(verificationError)});
           }
           await delay(Math.min(3000,1200+attempt*400));
