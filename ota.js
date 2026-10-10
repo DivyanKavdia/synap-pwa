@@ -9,6 +9,7 @@
   const WINDOW_CHUNKS = root.navigator?.bluetooth ? 4 : 1;
   const MIGRATION_MESSAGE = "This pendant uses an older updater. Install the device-ID firmware by USB once during developer/factory provisioning. Future updates need only this app; no key is required.";
   const DISCOVERY_MESSAGE = "This connection is in audio-only recovery mode. Reconnect the pendant to retry full device detection before checking for updates.";
+  const COMMITTED_MESSAGE = "Firmware transfer committed, but the pendant has not restarted into the new build. Turn the pendant OFF, disconnect USB power, then switch ON and reconnect to verify. Do not start another transfer until the installed build has been checked.";
   const errors = ["", "Updater is not available.", "Invalid OTA packet.",
     "Firmware does not fit the inactive slot.", "Chunk order or duplicate mismatch.", "Flash operation failed.",
     "Not a compatible synap application image.", "SHA-256 verification failed.",
@@ -121,7 +122,9 @@
       if (!characteristic) throw new Error("Check the connected pendant first.");
       const value=await this.io.queue(()=>characteristic.readValue(),"Read firmware status");
       if(epoch!==this.epoch) throw new Error("Pendant connection changed.");
-      return (this.status=decode(value));
+      const info=(this.status=decode(value));
+      this.io.onStatus?.(info);
+      return info;
     }
     cancel() { if (!this.committing) this.cancelled=true; }
     ensure(epoch) {
@@ -185,6 +188,7 @@
         if(info.protocol!==3) throw new Error(MIGRATION_MESSAGE);
         if(!validDeviceId(expectedDeviceId)) throw new Error("Connect and identify the intended pendant before updating.");
         if(info.state===0) throw new Error("OTA needs two application slots and a sufficient BLE MTU.");
+        if(info.state===5) throw new Error(COMMITTED_MESSAGE);
         if(![1,3,4,6].includes(info.state)) throw new Error("Another update is pending. Wait for reboot or the transfer timeout.");
         if (info.maxData<64 || info.maxData>503) throw new Error("Unsupported BLE firmware packet size.");
         if (!file || file.size<36 || file.size>info.capacity || file.size>16*1024*1024) throw new Error("Choose an application .bin that fits the available slot.");
@@ -256,6 +260,6 @@
       } finally { this.busy=false; }
     }
   }
-  root.SynapOTA={Client,decode,packet,validateImage,validDeviceId,MIGRATION_MESSAGE,DISCOVERY_MESSAGE,WINDOW_CHUNKS,IMAGE_TARGETS};
+  root.SynapOTA={Client,decode,packet,validateImage,validDeviceId,MIGRATION_MESSAGE,DISCOVERY_MESSAGE,COMMITTED_MESSAGE,WINDOW_CHUNKS,IMAGE_TARGETS};
   if(typeof module!=="undefined" && module.exports) module.exports=root.SynapOTA;
 })(globalThis);

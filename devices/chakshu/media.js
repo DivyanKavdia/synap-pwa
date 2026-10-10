@@ -606,7 +606,8 @@
     // The app marks only a pre-1445 Odyssey C3 connection as OTA recovery.
     // Suppress background SD traffic on that link, then automatically restore
     // normal C3 catalogue discovery once build 1445+ reconnects normally.
-    if (root.document?.body?.dataset.otaRecovery === 'c3') return;
+    if (root.document?.body?.dataset.otaRecovery === 'c3' ||
+      root.document?.body?.dataset.otaCommitted === 'true') return;
     autoSyncTimer = setTimeout(() => {
       autoSyncTimer = null;
       syncPendingSD().catch((e) => {
@@ -687,6 +688,8 @@
     return sdFiles.slice();
   }
   async function catalogueNow(signal) {
+    if (root.document?.body?.dataset.otaCommitted === 'true' && moduleInfo()?.id === 2)
+      throw Object.assign(Error('Odyssey C3 firmware is committed and awaiting restart. SD operations are paused.'), {mediaCode:1});
     const deviceId = connected()?.deviceId || '';
     try {
       const files = await camera().catalogue(signal);
@@ -916,7 +919,8 @@
       offline ||
       wifi?.active ||
       root.SynapChakshuV2?.busy ||
-      root.SynapAppControls?.recordingState?.().active
+      root.SynapAppControls?.recordingState?.().active ||
+      root.document?.body?.dataset.otaCommitted === 'true'
     )
       return 0;
     const expected = owner,
