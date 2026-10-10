@@ -74,12 +74,16 @@ test('old and unknown descriptors do not claim an SD result; Chakshu ignores the
   assert.equal(nodes.chakshuChecks.hidden, false);
 });
 
-test('C3 only surfaces read-only offline recorder first-fault after catalogue and module refresh',()=>{
+test('C3 reads offline recorder first fault even when catalogue fails',()=>{
  const fs=require('node:fs');
  const media=fs.readFileSync('devices/chakshu/media.js','utf8');
  const app=fs.readFileSync('app.js','utf8');
  const flow=media.split('async function syncPendingSD() {')[1].split('const apiObject = {')[0];
- assert.match(flow,/const files = await catalogueNow\(\)/);
+ assert.match(flow,/let files;/);
+ assert.match(flow,/files = await catalogueNow\(\)/);
+ assert.match(flow,/finally \{/);
+ assert(flow.indexOf('camera().request(27)') < flow.indexOf('c3SdRetryCount = 0'));
+
  assert.match(flow,/await root\.SynapModules\?\.refresh\?\.\(\)\.catch/);
  assert.match(flow,/liveModule\?\.id === 2 && Number\(liveModule\.sdProbeState\) >= 40/);
  assert.match(flow,/camera\(\)\.request\(27\)/);
@@ -87,4 +91,47 @@ test('C3 only surfaces read-only offline recorder first-fault after catalogue an
  assert.match(app,/operation === 27 \? "C3 SD offline recorder diagnostics"/);
  const src=fs.readFileSync('devices/chakshu/transfer.js','utf8');
  assert.match(src,/return this\.serialize\(\(\) => this\._request\(op, offset, path, signal\)\)/);
+});
+
+test('C3 read-only recorder fault is reported when SD catalogue rejects NO_SD', async () => {
+ const media=fs.readFileSync('devices/chakshu/media.js','utf8');
+ const implementation='async function syncPendingSD() {' +
+   media.split('async function syncPendingSD() {')[1].split('const apiObject = {')[0];
+ const events=[], operations=[];
+ const cardError=Object.assign(new Error('SD card unavailable.'),{mediaCode:3});
+ const context={
+   owner:'account',autoSyncPromise:null,working:false,session:null,offline:false,wifi:null,
+   error:'',c3SdRetryCount:0,
+   connected:()=>({deviceId:'odyssey-c3'}),
+   ready:()=>true,
+   moduleInfo:()=>({id:2,sdProbeState:72}),
+   sdWorthCataloguing:()=>true,
+   catalogueNow:async()=>{throw cardError;},
+   check:()=>{},
+   camera:()=>({request:async op=>{
+     operations.push(op);
+     return {bytes:new TextEncoder().encode(JSON.stringify({
+       recordStage:72,recordBytes:3980000,wrE:5,wrD:419889408
+     }))};
+   }}),
+   TextDecoder,TextEncoder,
+   CustomEvent:class {constructor(type,init){this.type=type;this.detail=init.detail;}},
+   root:{
+     SynapModules:{refresh:async()=>{}},
+     SynapChakshuV2:{busy:false},
+     SynapAppControls:{recordingState:()=>({active:false})},
+     document:{body:{dataset:{otaCommitted:'false'}}},
+     dispatchEvent:event=>events.push(event),
+     setTimeout:()=>{throw Error('NO_SD must not schedule automatic recovery');}
+   }
+ };
+ vm.createContext(context);
+ vm.runInContext(implementation,context);
+ await assert.rejects(context.syncPendingSD(),/SD card unavailable/);
+ assert.deepEqual(operations,[27]);
+ assert.equal(events.length,1);
+ assert.equal(events[0].type,'synap-capture-diagnostic');
+ assert.equal(events[0].detail.operation,27);
+ assert.equal(events[0].detail.storage.recordStage,72);
+ assert.equal(events[0].detail.storage.wrD,419889408);
 });

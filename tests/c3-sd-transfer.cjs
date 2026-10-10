@@ -80,7 +80,7 @@ test('C3 catalogue discovery is observational and never sends op14',()=>{
 test('C3 failed mounts still reach observational catalogue diagnostics',()=>{
   const sync=source.slice(source.indexOf('async function syncPendingSD()'),source.indexOf('const apiObject ='));
   assert.doesNotMatch(sync,/module\.sdDetectionState === 2/);
-  assert.match(sync,/const files = await catalogueNow\(\)/);
+  assert.match(sync,/files = await catalogueNow\(\)/);
   assert.doesNotMatch(sync,/camera\(\)\.request\(14/);
 });
 

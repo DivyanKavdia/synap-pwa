@@ -938,36 +938,40 @@
       // Discovery is background work. Do not set the foreground
       // 'working' flag or reject a photo/video just because the SD inbox is
       // being refreshed; the transfer client still serializes BLE requests.
-      const files = await catalogueNow();
+      let files;
+      try {
+        files = await catalogueNow();
+      } finally {
+        await root.SynapModules?.refresh?.().catch(() => {});
+        // A verified SD mount can coexist with an offline recorder FAT-write
+        // failure. Firmware op27 is a bounded READ-ONLY failure report, never a
+        // remount or test write. Once per link, surface its first CMD24/CMD25
+        // phase in existing app diagnostics, even when catalogue() returned [].
+        const liveModule = moduleInfo();
+        if (connected()?.deviceId === deviceId && liveModule?.id === 2 && Number(liveModule.sdProbeState) >= 40) {
+          try {
+            const report = await camera().request(27);
+            const detail = JSON.parse(new TextDecoder().decode(report.bytes));
+            check(expected);
+            if (connected()?.deviceId === deviceId && detail && typeof detail === 'object') {
+              root.dispatchEvent(new CustomEvent('synap-capture-diagnostic', {
+                detail: { operation: 27, stage: 'offline-recorder-first-fault', deviceId, storage: detail },
+              }));
+            }
+          } catch (diagnosticFailure) {
+            // A failed observational diagnostic may not hide a readable
+            // catalogue, remount storage, or turn off BLE connection.
+            root.dispatchEvent(new CustomEvent('synap-capture-diagnostic', {
+              detail: { operation: 27, stage: 'offline-recorder-report-unavailable',
+                deviceId, message: String(diagnosticFailure?.message || diagnosticFailure) },
+            }));
+          }
+        }
+      }
       error = '';
       c3SdRetryCount = 0;
       check(expected);
       if (connected()?.deviceId !== deviceId) return 0;
-      await root.SynapModules?.refresh?.().catch(() => {});
-      // A verified SD mount can coexist with an offline recorder FAT-write
-      // failure. Firmware op27 is a bounded READ-ONLY failure report, never a
-      // remount or test write. Once per link, surface its first CMD24/CMD25
-      // phase in existing app diagnostics, even when catalogue() returned [].
-      const liveModule = moduleInfo();
-      if (liveModule?.id === 2 && Number(liveModule.sdProbeState) >= 40) {
-        try {
-          const report = await camera().request(27);
-          const detail = JSON.parse(new TextDecoder().decode(report.bytes));
-          check(expected);
-          if (connected()?.deviceId === deviceId && detail && typeof detail === 'object') {
-            root.dispatchEvent(new CustomEvent('synap-capture-diagnostic', {
-              detail: { operation: 27, stage: 'offline-recorder-first-fault', deviceId, storage: detail },
-            }));
-          }
-        } catch (diagnosticFailure) {
-          // A failed observational diagnostic may not hide a readable
-          // catalogue, remount storage, or turn off BLE connection.
-          root.dispatchEvent(new CustomEvent('synap-capture-diagnostic', {
-            detail: { operation: 27, stage: 'offline-recorder-report-unavailable',
-              deviceId, message: String(diagnosticFailure?.message || diagnosticFailure) },
-          }));
-        }
-      }
       root.dispatchEvent(new CustomEvent('synap-chakshu-sd-pending', {
         detail: { deviceId, count: files.length, files: files.slice() },
       }));
