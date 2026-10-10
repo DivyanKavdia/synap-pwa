@@ -79,7 +79,11 @@ test('C3 only surfaces read-only offline recorder first-fault after catalogue an
  const media=fs.readFileSync('devices/chakshu/media.js','utf8');
  const app=fs.readFileSync('app.js','utf8');
  const flow=media.split('async function syncPendingSD() {')[1].split('const apiObject = {')[0];
- assert.match(flow,/const files = await catalogueNow\(\)/);
+ assert.match(flow,/let files;/);
+ assert.match(flow,/files = await catalogueNow\(\)/);
+ assert.match(flow,/finally \{/);
+ assert(flow.indexOf('camera().request(27)') < flow.indexOf('c3SdRetryCount = 0'));
+
  assert.match(flow,/await root\.SynapModules\?\.refresh\?\.\(\)\.catch/);
  assert.match(flow,/liveModule\?\.id === 2 && Number\(liveModule\.sdProbeState\) >= 40/);
  assert.match(flow,/camera\(\)\.request\(27\)/);
