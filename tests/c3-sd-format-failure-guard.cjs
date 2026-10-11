@@ -30,5 +30,5 @@ test('successful format settles, then observes catalogue before deleting receipt
   assert.match(format,/files\.length !== 0/);
   assert(format.indexOf('const files = await api().catalogue()') <
     format.indexOf('localStorage.removeItem'));
-  assert.match(page,/capture-preview\.js\?v=1\.0\.0-c3-sd-format-guard2063/);
+  assert.match(page,/capture-preview\.js\?v=1\.0\.0-c3-sd-raw-diagnostic2063/);
 });
