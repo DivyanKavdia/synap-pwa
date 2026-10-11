@@ -826,10 +826,12 @@
     try {
       status('Formatting SD card…');
       await client().request(19);
-      await api().refreshSD();
-      const info = root.SynapModules?.client?.module;
-      if (info?.sdDetectionState !== 1 || info?.sdProbeState !== 6)
-        throw Error('Format completed but the SD card did not return ready. Reconnect and check storage.');
+      // The native format helper already remounts/verifies FAT. Do not issue
+      // the destructive operation again, or immediately force a C3 op14
+      // unmount/recovery while the freshly formatted card is settling.
+      const files = await api().catalogue();
+      if (!Array.isArray(files) || files.length)
+        throw Error('Format was not verified: recordings still appear on the card. Do not clear sync receipts.');
       for (let index = localStorage.length - 1; index >= 0; index--) {
         const key = localStorage.key(index);
         if (key?.startsWith(RECEIPT_PREFIX + connection.deviceId + ':')) localStorage.removeItem(key);
