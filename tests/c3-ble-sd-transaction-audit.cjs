@@ -46,7 +46,7 @@ test('independent BLE links cannot block each other',async()=>{
   assert.equal(await waiting,1);
 });
 
-function buildClearScenario(catalogueFailure=false){
+function buildClearScenario(catalogueFailure=false,maintenanceDisabled=false){
   const source=fs.readFileSync(path.join(root,'devices/chakshu/capture-preview.js'),'utf8');
   const begin=source.indexOf('  async function clearSD() {');
   const end=source.indexOf('  async function formatSD() {',begin);
@@ -58,6 +58,8 @@ function buildClearScenario(catalogueFailure=false){
   const events=[];
   const context={
     busy:false,
+    c3MaintenanceWritesBlocked:()=>maintenanceDisabled,
+    C3_SD_WRITE_SAFETY_MESSAGE:'C3 FAT maintenance disabled',
     root:{SynapAppControls:{recordingState:()=>({active:false})}},
     api:()=>({
       state:{offline:false,session:null},
@@ -91,3 +93,10 @@ for(const fail of [false,true]){
       fail?['clear 18','catalogue','diagnostic']:['clear 18','catalogue']);
   });
 }
+
+
+test('C3 maintenance safety gate rejects Clear SD before firmware op18',async()=>{
+  const {context,events}=buildClearScenario(false,true);
+  await assert.rejects(context.clearSD(),/C3 FAT maintenance disabled/);
+  assert.deepEqual(events,[],'a blocked clear must never issue a media command');
+});
