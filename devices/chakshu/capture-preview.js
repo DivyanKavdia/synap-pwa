@@ -1246,6 +1246,7 @@
       clearSettings = document.getElementById('clearDeviceSD'),
       formatSettings = document.getElementById('formatDeviceSD'),
       rawProbeSettings = document.getElementById('diagnoseDeviceSD'),
+      ramProbeSettings = document.getElementById('diagnoseDeviceSDRam'),
       wifiSettings = document.getElementById('deviceWifiSettings'),
       wifiSettingsStatus = document.getElementById('deviceWifiSettingsStatus'),
       wifiSave = document.getElementById('saveDeviceWifi'),
@@ -1291,6 +1292,12 @@
         !state.storageReady ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
       clearSettings.title = c3MaintenanceWritesBlocked() ? C3_SD_WRITE_SAFETY_MESSAGE : 'Remove Synap recordings from SD';
+    }
+    if (ramProbeSettings) {
+      ramProbeSettings.hidden = info?.id !== 2;
+      ramProbeSettings.disabled = info?.id !== 2 || blocked || !state.connected ||
+        Boolean(root.SynapAppControls?.recordingState?.().active);
+      ramProbeSettings.title = 'Read only firmware RAM counters (media op29); no SD card access and works while FAT is unavailable.';
     }
     if (rawProbeSettings) {
       rawProbeSettings.hidden = info?.id !== 2;
@@ -1386,6 +1393,50 @@
         message: error?.message || String(error),
       });
       return null;
+    }
+  }
+  // Available even when FAT is unmounted. Op29 reads only firmware RAM;
+  // unlike raw op28 it never creates an SDSPI session or requests sectors.
+  async function diagnoseC3SdWireReadOnly() {
+    if (busy) throw Error('Finish the active SD operation before reading controller diagnostics.');
+    const connection = context();
+    if (root.SynapModules?.client?.module?.id !== 2)
+      throw Error('SD controller diagnostics are available only for Odyssey C3.');
+    if (api().state.offline || api().state.session ||
+        root.SynapAppControls?.recordingState?.().active)
+      throw Error('Stop recording before reading SD controller diagnostics.');
+    busy = true;
+    renderSDInbox();
+    try {
+      const reply = await client().request(29);
+      if (root.SynapDevices?.connection !== connection)
+        throw Error('Pendant disconnected during diagnostics. Reconnect and read again.');
+      const result = JSON.parse(new TextDecoder().decode(reply.bytes));
+      if (result?.version !== 1 || !Number.isInteger(result?.sdState))
+        throw Error('Invalid firmware SD RAM snapshot.');
+      const fields = ['sdState','sdLiveProbe','ioOp','ioStep','ioErr','reads',
+        'cacheHits','diskFills','faultOffset','wireCmd','wireErr','wireArg','wireMs'];
+      const detail = Object.fromEntries(fields.map((field) => [field,result[field] ?? null]));
+      reportSDStage('@all','c3-controller-ram-snapshot',{readOnly:true,...detail});
+      const hasWireFault = Number.isInteger(result.wireCmd) && result.wireCmd !== 4294967295;
+      const nativeFault = hasWireFault
+        ? ' First SDSPI command failure: CMD' + result.wireCmd +
+          ', ESP error ' + String(result.wireErr ?? '?') +
+          ', sector argument ' + String(result.wireArg ?? '?') +
+          ', elapsed ' + String(result.wireMs ?? '?') + ' ms.'
+        : ' No native SD command failure captured in this boot.';
+      return 'C3 SD RAM diagnosis: state=' + detail.sdState +
+        ', probe=' + detail.sdLiveProbe +
+        ', media op=' + detail.ioOp +
+        ', step=' + detail.ioStep +
+        ', errno=' + detail.ioErr + '.' + nativeFault +
+        ' Read only; no SD sectors, remount, delete, or format were requested.';
+    } catch (error) {
+      reportSDStage('@all','c3-controller-ram-unavailable',{message:error?.message || String(error)});
+      throw error;
+    } finally {
+      busy = false;
+      renderSDInbox();
     }
   }
   // Read-only post-sync diagnostics. Never send another SD catalogue,
@@ -1626,7 +1677,7 @@
       card.innerHTML =
         '<h3 class="settings-card-title">SD card</h3>' +
         '<p id="deviceSDSettingsStatus" class="settings-hint">Connect a supported pendant to manage SD storage.</p>' +
-        '<div class="visual-actions"><button id="retryDeviceSD" type="button">Retry SD card</button><button id="diagnoseDeviceSD" type="button" hidden>Diagnose SD (read-only)</button><button id="clearDeviceSD" type="button">Clear SD Card</button><button id="formatDeviceSD" type="button" hidden>Format SD Card</button></div>' +
+        '<div class="visual-actions"><button id="retryDeviceSD" type="button">Retry SD card</button><button id="diagnoseDeviceSD" type="button" hidden>Diagnose SD (read-only)</button><button id="diagnoseDeviceSDRam" type="button" hidden>SD controller status (RAM-only)</button><button id="clearDeviceSD" type="button">Clear SD Card</button><button id="formatDeviceSD" type="button" hidden>Format SD Card</button></div>' +
         '<p id="deviceSDRawStatus" class="settings-hint" role="status" hidden></p>';
       extras.append(card);
       document.getElementById('retryDeviceSD')?.addEventListener('click', async () => {
@@ -1653,6 +1704,27 @@
         } catch (error) {
           if (settingsStatus) settingsStatus.textContent = 'SD retry failed · ' + error.message;
           status(error.message);
+        } finally {
+          button.disabled = false;
+          renderSDInbox();
+        }
+      });
+      document.getElementById('diagnoseDeviceSDRam')?.addEventListener('click', async () => {
+        const button = document.getElementById('diagnoseDeviceSDRam'),
+          output = document.getElementById('deviceSDRawStatus');
+        button.disabled = true;
+        if (output) {
+          output.hidden = false;
+          output.textContent = 'Reading SD controller RAM (no card access)…';
+        }
+        try {
+          const message = await diagnoseC3SdWireReadOnly();
+          if (output) output.textContent = message;
+          status(message);
+        } catch (error) {
+          const message = 'SD controller RAM diagnostic unavailable · ' + error.message;
+          if (output) output.textContent = message;
+          status(message);
         } finally {
           button.disabled = false;
           renderSDInbox();
