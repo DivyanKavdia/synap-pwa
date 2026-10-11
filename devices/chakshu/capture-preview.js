@@ -1230,13 +1230,13 @@
             ? count
               ? count + ' item' + (count === 1 ? '' : 's') + ' on SD · ' + unsyncedCount + ' waiting to sync.'
               : 'SD card ready · no captures on SD.'
-            : info?.id === 2 && info?.sdProbeState === 1
+            : info?.id === 2 && info?.sdLiveProbeState === 1
             ? 'SD SPI bus setup failed.'
-            : info?.id === 2 && info?.sdProbeState === 2
+            : info?.id === 2 && info?.sdLiveProbeState === 2
               ? 'SD card protocol initialization failed.'
-              : info?.id === 2 && info?.sdProbeState === 3
+              : info?.id === 2 && info?.sdLiveProbeState === 3
                 ? 'SD FAT mount or format failed. The filesystem may be incomplete; do not repeat Format.'
-                : info?.id === 2 && info?.sdProbeState === 4
+                : info?.id === 2 && info?.sdLiveProbeState === 4
                   ? 'SD filesystem mounted, but VFS validation failed.'
                   : 'SD card unavailable. Check the card and retry storage.';
     if (retrySettings)
@@ -1481,14 +1481,16 @@
         try {
           await api().refreshSD();
           const info = root.SynapModules?.client?.module;
-          if (info?.sdDetectionState === 1 && info?.sdProbeState === 6) {
+          if (info?.sdDetectionState === 1 && info?.sdLiveProbeState === 6) {
             if (settingsStatus) settingsStatus.textContent = 'SD card recovered · refreshing offline content…';
             await api().syncPendingSD().catch(() => {});
           } else if (settingsStatus) {
             settingsStatus.textContent =
               'SD retry finished · detection ' +
               String(info?.sdDetectionState ?? 'unknown') +
-              ' / probe ' +
+              ' / live probe ' +
+              String(info?.sdLiveProbeState ?? 'unknown') +
+              ' / historical recorder stage ' +
               String(info?.sdProbeState ?? 'unknown') +
               '.';
           }
