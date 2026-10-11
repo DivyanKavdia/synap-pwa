@@ -308,6 +308,10 @@
     const info = root.SynapModules?.client?.module;
     return Boolean(info?.id === 2 && (info.mediaFeatures & 2));
   }
+  // Field failure: a native full-card FAT format returned I/O failure on an
+  // otherwise mounted Odyssey C3 and left SD unavailable. Keep the UI and
+  // command blocked until the C3 formatter is separately qualified.
+  const C3_FULL_CARD_FORMAT_DISABLED = true;
   function c3FormatSupported() {
     const info = root.SynapModules?.client?.module;
     return Boolean(info?.id === 2 && (info.mediaFeatures & 4));
@@ -962,6 +966,8 @@
     }
   }
   async function formatSD() {
+    if (C3_FULL_CARD_FORMAT_DISABLED)
+      throw Error('Odyssey C3 on-device full-card formatting is temporarily disabled for SD data safety. Power off, remove the card and use a computer for formatting after backing up recordings.');
     if (busy) throw Error('Another SD transfer is already running.');
     const connection = context();
     if (!c3FormatSupported()) throw Error('Update Odyssey C3 firmware to format its SD card.');
@@ -1285,13 +1291,17 @@
     if (formatSettings) {
       formatSettings.hidden = !supportsC3Format;
       formatSettings.disabled =
+        C3_FULL_CARD_FORMAT_DISABLED ||
         !supportsC3Format ||
         blocked ||
         !state.connected ||
         !state.storageReady ||
         c3FormatUnsafe() ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
-      formatSettings.title = c3FormatUnsafe()
+      formatSettings.textContent = C3_FULL_CARD_FORMAT_DISABLED ? 'Format SD (disabled)' : 'Format SD Card';
+      formatSettings.title = C3_FULL_CARD_FORMAT_DISABLED
+        ? 'On-device FAT formatting disabled on Odyssey C3 after field I/O failure. Power off and format on a computer only after backing up data.'
+        : c3FormatUnsafe()
         ? 'Formatting disabled: recorded SD write fault. Preserve the card until the firmware write path is qualified.'
         : !state.storageReady
           ? 'Formatting unavailable: card is not mounted and healthy.'
