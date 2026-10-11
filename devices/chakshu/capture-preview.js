@@ -1374,7 +1374,7 @@
       if (trace?.version !== 1) throw Error('Invalid C3 sync trace response.');
       const fields = ['sdState','sdLiveProbe','ioOp','ioStep','ioErr',
         'reads','cacheHits','diskFills','lastRequestedOffset','lastOkOffset',
-        'faultOffset','windowRequests','mtuFallbacks'];
+        'faultOffset','windowRequests','mtuFallbacks','wireCmd','wireErr','wireArg','wireMs'];
       const detail = Object.fromEntries(fields.map((name) => [name, trace[name] ?? null]));
       reportSDStage(path, 'c3-sync-read-trace', { phase, ...detail });
       return detail;

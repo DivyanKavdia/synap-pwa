@@ -11,7 +11,7 @@ test('post-sync diagnostic uses RAM-only op29 without any FAT command or retry',
   assert.doesNotMatch(trace,/request\((?:4|7|12|14|17|18|19)\)|catalogue\(|refreshSD|formatSD|deleteSD/);
   assert.match(trace,/c3-sync-read-trace/);
   for(const key of ['ioOp','ioStep','ioErr','diskFills','cacheHits',
-    'lastRequestedOffset','lastOkOffset','faultOffset','mtuFallbacks'])
+    'lastRequestedOffset','lastOkOffset','faultOffset','mtuFallbacks','wireCmd','wireErr','wireArg','wireMs'])
     assert(trace.includes("'"+key+"'"),key);
   assert.match(trace,/return null;\s*\}\s*\}/);
 });
