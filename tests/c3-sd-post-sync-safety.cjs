@@ -16,7 +16,7 @@ test('C3 successful SD import saves receipt and checks status without new FAT re
   assert.doesNotMatch(rawDiag,/request\((?:4|7|14|17|18|19)\)|catalogue\(|deleteSDItem\(|refreshSD\(/);
   assert.match(rawDiag,/ioOp: diag\.ioOp/);
   assert.match(rawDiag,/sdLiveProbeState/);
-  assert.match(page,/capture-preview\.js\?v=1\.0\.0-c3-sync-io-trace/);
+  assert.match(page,/capture-preview\.js\?v=1\.0\.0-c3-[a-z0-9-]+/);
 });
 
 test('C3 sync batch stops after first failing read, without post-sync catalogue or implicit deletion',()=>{

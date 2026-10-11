@@ -308,6 +308,18 @@
     const info = root.SynapModules?.client?.module;
     return Boolean(info?.id === 2 && (info.mediaFeatures & 2));
   }
+  // Field failure: a native full-card FAT format returned I/O failure on an
+  // otherwise mounted Odyssey C3 and left SD unavailable. Keep the UI and
+  // command blocked until the C3 formatter is separately qualified.
+  // Until SDSPI/FatFs metadata writes are qualified on real C3 hardware,
+  // never issue BLE unlink, batch clear or FAT format on this target. This
+  // does NOT alter normal offline capture or read-only verified BLE sync.
+  const C3_FULL_CARD_FORMAT_DISABLED = true;
+  const C3_SD_MAINTENANCE_WRITES_DISABLED = true;
+  function c3MaintenanceWritesBlocked() {
+    return C3_SD_MAINTENANCE_WRITES_DISABLED && root.SynapModules?.client?.module?.id === 2;
+  }
+  const C3_SD_WRITE_SAFETY_MESSAGE = 'Odyssey C3 SD deletion and clearing are temporarily disabled: FAT metadata writes have made cards unavailable. Synced recordings remain on SD. Back up data before using a computer to remove files.';
   function c3FormatSupported() {
     const info = root.SynapModules?.client?.module;
     return Boolean(info?.id === 2 && (info.mediaFeatures & 4));
@@ -560,6 +572,7 @@
     }
   }
   async function deleteSD(path, optional = false) {
+    if (c3MaintenanceWritesBlocked()) throw Error(C3_SD_WRITE_SAFETY_MESSAGE);
     try {
       const reply = await client().request(17, 0, path);
       return reply.total;
@@ -578,6 +591,7 @@
     return deleteSD(path);
   }
   async function deleteSDItem(path) {
+    if (c3MaintenanceWritesBlocked()) throw Error(C3_SD_WRITE_SAFETY_MESSAGE);
     if (busy) throw Error('Another SD transfer is already running.');
     const connection = context();
     const originalOwner = api().state.owner;
@@ -850,6 +864,7 @@
     }
   }
   async function clearSD() {
+    if (c3MaintenanceWritesBlocked()) throw Error(C3_SD_WRITE_SAFETY_MESSAGE);
     if (busy) throw Error('Another SD transfer is already running.');
     const connection = context();
     if (api().state.offline || api().state.session || root.SynapAppControls.recordingState().active)
@@ -962,6 +977,8 @@
     }
   }
   async function formatSD() {
+    if (C3_FULL_CARD_FORMAT_DISABLED)
+      throw Error('Odyssey C3 on-device full-card formatting is temporarily disabled for SD data safety. Power off, remove the card and use a computer for formatting after backing up recordings.');
     if (busy) throw Error('Another SD transfer is already running.');
     const connection = context();
     if (!c3FormatSupported()) throw Error('Update Odyssey C3 firmware to format its SD card.');
@@ -1167,7 +1184,9 @@
         });
       }
       remove.type = 'button';
-      remove.textContent = 'Delete from SD';
+      remove.textContent = c3MaintenanceWritesBlocked() ? 'Delete from SD (disabled)' : 'Delete from SD';
+      remove.disabled = c3MaintenanceWritesBlocked();
+      if (remove.disabled) remove.title = C3_SD_WRITE_SAFETY_MESSAGE;
       remove.addEventListener('click', async () => {
         const warning = synced
           ? 'Delete this SD copy? The synced copy in Memories will be kept.'
@@ -1263,13 +1282,16 @@
         blocked ||
         !state.connected ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
-    if (clearSettings)
+    if (clearSettings) {
       clearSettings.disabled =
+        c3MaintenanceWritesBlocked() ||
         !supportsStorage ||
         blocked ||
         !state.connected ||
         !state.storageReady ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
+      clearSettings.title = c3MaintenanceWritesBlocked() ? C3_SD_WRITE_SAFETY_MESSAGE : 'Remove Synap recordings from SD';
+    }
     if (rawProbeSettings) {
       rawProbeSettings.hidden = info?.id !== 2;
       // No FAT read is required. Present this only while the SD is unavailable.
@@ -1285,13 +1307,17 @@
     if (formatSettings) {
       formatSettings.hidden = !supportsC3Format;
       formatSettings.disabled =
+        C3_FULL_CARD_FORMAT_DISABLED ||
         !supportsC3Format ||
         blocked ||
         !state.connected ||
         !state.storageReady ||
         c3FormatUnsafe() ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
-      formatSettings.title = c3FormatUnsafe()
+      formatSettings.textContent = C3_FULL_CARD_FORMAT_DISABLED ? 'Format SD (disabled)' : 'Format SD Card';
+      formatSettings.title = C3_FULL_CARD_FORMAT_DISABLED
+        ? 'On-device FAT formatting disabled on Odyssey C3 after field I/O failure. Power off and format on a computer only after backing up data.'
+        : c3FormatUnsafe()
         ? 'Formatting disabled: recorded SD write fault. Preserve the card until the firmware write path is qualified.'
         : !state.storageReady
           ? 'Formatting unavailable: card is not mounted and healthy.'
@@ -1775,7 +1801,9 @@
       const clear = document.createElement('button');
       clear.id = 'visualClearSD';
       clear.type = 'button';
-      clear.textContent = 'Clear SD';
+      clear.textContent = c3MaintenanceWritesBlocked() ? 'Clear SD (disabled)' : 'Clear SD';
+      clear.disabled = c3MaintenanceWritesBlocked();
+      if (clear.disabled) clear.title = C3_SD_WRITE_SAFETY_MESSAGE;
       clear.addEventListener('click', async () => {
         if (!confirm('Remove all Synap captures from this device SD card? Unrelated files are kept.')) return;
         clear.disabled = true;
