@@ -16,7 +16,12 @@ test('read-only diagnostic performs exactly one media op28 and no SD writes or r
   assert.doesNotMatch(fn,/request\((?:14|17|18|19)\)|refreshSD|clearSD|formatSD\(/);
   assert.match(fn,/raw-sector0-result/);
   assert.match(fn,/firstMountErr/);
+  assert.match(fn,/\[1, 2\]\.includes\(data\.version\)/);
+  assert.match(fn,/partitionBounds/);
+  assert.match(fn,/bpbPlausible/);
+  assert.match(fn,/vbrError/);
+  assert.match(fn,/FAT tables and recordings remain unverified/);
   assert.match(fn,/error\?\.mediaCode === 2/);
   assert.match(fn,/root\.SynapDevices\?\.connection !== connection/);
-  assert.match(html,/capture-preview\.js\?v=1\.0\.0-c3-sd-raw-readonly/);
+  assert.match(html,/capture-preview\.js\?v=1\.0\.0-c3-sd-fat-vbr-diagnostic/);
 });
