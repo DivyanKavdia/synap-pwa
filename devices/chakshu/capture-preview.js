@@ -873,6 +873,60 @@
       busy = false;
     }
   }
+  async function diagnoseC3SdReadOnly() {
+    if (busy) throw Error('Finish the current SD operation before diagnosing storage.');
+    const connection = context();
+    const module = root.SynapModules?.client?.module;
+    if (module?.id !== 2) throw Error('Raw SD diagnosis is available only for Odyssey C3.');
+    if (api().state.storageReady || module.sdDetectionState === 1)
+      throw Error('SD is mounted; raw diagnostics are disabled to avoid interfering with existing recordings.');
+    if (api().state.offline || api().state.session ||
+        root.SynapAppControls?.recordingState?.().active)
+      throw Error('Stop recording before diagnosing the SD controller.');
+    busy = true;
+    renderSDInbox();
+    reportSDStage('@all', 'raw-sector0-requested', { readOnly: true });
+    try {
+      // Firmware media op28 initializes a temporary SDSPI session and reads
+      // LBA0 once per boot. It never mounts, formats, repairs or writes FAT.
+      const reply = await client().request(28);
+      if (root.SynapDevices?.connection !== connection)
+        throw Error('Bluetooth changed during the SD diagnostic. Reconnect before repeating.');
+      const data = JSON.parse(new TextDecoder().decode(reply.bytes));
+      if (!data || data.version !== 1 || !Number.isInteger(data.status) ||
+          data.status < 0 || data.status > 8)
+        throw Error('Firmware returned an invalid SD diagnostic result.');
+      const fields = ['status', 'error', 'sectors', 'sectorBytes', 'signature',
+        'fatHint', 'partitionLba', 'mountErr', 'firstMountErr', 'sdState', 'sdProbe'];
+      const snapshot = Object.fromEntries(fields.map((field) => [field, data[field] ?? null]));
+      reportSDStage('@all', 'raw-sector0-result', { readOnly: true, ...snapshot });
+      const summary = {
+        0: 'No raw SD test completed.',
+        1: 'Raw SD sector 0 is readable. FAT or partition damage is possible; recordings may still be recoverable.',
+        2: 'Diagnostic refused because SD or another device task is not safely idle.',
+        3: 'SD controller appears stuck busy. SPI recovery may require a true SD power cycle.',
+        4: 'SD SPI bus setup or cleanup failed.',
+        5: 'SD host initialization failed.',
+        6: 'SD SPI device initialization failed.',
+        7: 'SD card initialization failed before FAT could be checked.',
+        8: 'SD initialized but the raw sector-0 read failed.',
+      }[data.status];
+      const message = 'Read-only SD result: ' + summary +
+        ' Status=' + data.status + ', error=' + String(data.error ?? '?') +
+        ', firstMountErr=' + String(data.firstMountErr ?? '?') +
+        ', FAT hint=' + String(data.fatHint ?? '?') +
+        '. No repair or format was performed.';
+      return { ...snapshot, message };
+    } catch (error) {
+      reportSDStage('@all', 'raw-sector0-failed', { message: error?.message || String(error) });
+      if (error?.mediaCode === 2)
+        throw Error('The connected firmware does not support read-only SD diagnosis yet. Update Odyssey C3 firmware first; do not format this card.');
+      throw error;
+    } finally {
+      busy = false;
+      renderSDInbox();
+    }
+  }
   async function formatSD() {
     if (busy) throw Error('Another SD transfer is already running.');
     const connection = context();
@@ -1123,6 +1177,7 @@
       retrySettings = document.getElementById('retryDeviceSD'),
       clearSettings = document.getElementById('clearDeviceSD'),
       formatSettings = document.getElementById('formatDeviceSD'),
+      rawProbeSettings = document.getElementById('diagnoseDeviceSD'),
       wifiSettings = document.getElementById('deviceWifiSettings'),
       wifiSettingsStatus = document.getElementById('deviceWifiSettingsStatus'),
       wifiSave = document.getElementById('saveDeviceWifi'),
@@ -1166,6 +1221,18 @@
         !state.connected ||
         !state.storageReady ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
+    if (rawProbeSettings) {
+      rawProbeSettings.hidden = info?.id !== 2;
+      // No FAT read is required. Present this only while the SD is unavailable.
+      rawProbeSettings.disabled =
+        info?.id !== 2 ||
+        blocked ||
+        !state.connected ||
+        state.storageReady ||
+        info?.sdDetectionState === 1 ||
+        Boolean(root.SynapAppControls?.recordingState?.().active);
+      rawProbeSettings.title = 'Read sector 0 once without formatting, deleting or modifying SD files.';
+    }
     if (formatSettings) {
       formatSettings.hidden = !supportsC3Format;
       formatSettings.disabled =
@@ -1372,7 +1439,8 @@
       card.innerHTML =
         '<h3 class="settings-card-title">SD card</h3>' +
         '<p id="deviceSDSettingsStatus" class="settings-hint">Connect a supported pendant to manage SD storage.</p>' +
-        '<div class="visual-actions"><button id="retryDeviceSD" type="button">Retry SD card</button><button id="clearDeviceSD" type="button">Clear SD Card</button><button id="formatDeviceSD" type="button" hidden>Format SD Card</button></div>';
+        '<div class="visual-actions"><button id="retryDeviceSD" type="button">Retry SD card</button><button id="diagnoseDeviceSD" type="button" hidden>Diagnose SD (read-only)</button><button id="clearDeviceSD" type="button">Clear SD Card</button><button id="formatDeviceSD" type="button" hidden>Format SD Card</button></div>' +
+        '<p id="deviceSDRawStatus" class="settings-hint" role="status" hidden></p>';
       extras.append(card);
       document.getElementById('retryDeviceSD')?.addEventListener('click', async () => {
         const button = document.getElementById('retryDeviceSD'),
@@ -1396,6 +1464,27 @@
         } catch (error) {
           if (settingsStatus) settingsStatus.textContent = 'SD retry failed · ' + error.message;
           status(error.message);
+        } finally {
+          button.disabled = false;
+          renderSDInbox();
+        }
+      });
+      document.getElementById('diagnoseDeviceSD')?.addEventListener('click', async () => {
+        const button = document.getElementById('diagnoseDeviceSD'),
+          output = document.getElementById('deviceSDRawStatus');
+        button.disabled = true;
+        if (output) {
+          output.hidden = false;
+          output.textContent = 'Reading SD sector 0 (no writes or format)…';
+        }
+        try {
+          const diagnosis = await diagnoseC3SdReadOnly();
+          if (output) output.textContent = diagnosis.message;
+          status(diagnosis.message);
+        } catch (error) {
+          const message = 'Read-only SD diagnosis unavailable · ' + error.message;
+          if (output) output.textContent = message;
+          status(message);
         } finally {
           button.disabled = false;
           renderSDInbox();
@@ -1553,6 +1642,7 @@
     syncAll,
     clearSD,
     formatSD,
+    diagnoseC3SdReadOnly,
     startOffline,
     startOfflineAudio,
     describeNow,
