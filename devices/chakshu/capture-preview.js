@@ -888,16 +888,19 @@
     reportSDStage('@all', 'raw-sector0-requested', { readOnly: true });
     try {
       // Firmware media op28 initializes a temporary SDSPI session and reads
-      // LBA0 once per boot. It never mounts, formats, repairs or writes FAT.
+      // LBA0 and (for v2) one bounds-checked FAT VBR read, once per boot.
       const reply = await client().request(28);
       if (root.SynapDevices?.connection !== connection)
         throw Error('Bluetooth changed during the SD diagnostic. Reconnect before repeating.');
       const data = JSON.parse(new TextDecoder().decode(reply.bytes));
-      if (!data || data.version !== 1 || !Number.isInteger(data.status) ||
+      if (!data || ![1, 2].includes(data.version) || !Number.isInteger(data.status) ||
           data.status < 0 || data.status > 8)
         throw Error('Firmware returned an invalid SD diagnostic result.');
       const fields = ['status', 'error', 'sectors', 'sectorBytes', 'signature',
-        'fatHint', 'partitionLba', 'mountErr', 'firstMountErr', 'sdState', 'sdProbe'];
+        'fatHint', 'partitionLba', 'mountErr', 'firstMountErr', 'sdState', 'sdProbe',
+        'partitionType', 'partitionIndex', 'partitionSectors', 'partitionBounds',
+        'vbrRead', 'vbrError', 'vbrSignature', 'bpbPlausible', 'fatVariant',
+        'bpbBytesPerSector', 'bpbSectorsPerCluster', 'bpbTotalSectors'];
       const snapshot = Object.fromEntries(fields.map((field) => [field, data[field] ?? null]));
       reportSDStage('@all', 'raw-sector0-result', { readOnly: true, ...snapshot });
       const summary = {
@@ -911,10 +914,38 @@
         7: 'SD card initialization failed before FAT could be checked.',
         8: 'SD initialized but the raw sector-0 read failed.',
       }[data.status];
-      const message = 'Read-only SD result: ' + summary +
+      // A valid BPB only establishes boot-sector plausibility; it does not
+      // establish FAT table integrity or that deleted recordings survived.
+      let partitionSummary = '';
+      if (data.version === 2 && data.status === 1) {
+        if (data.fatHint !== 2 || data.partitionBounds !== 1) {
+          partitionSummary = ' No bounded FAT partition was identified in the MBR.';
+        } else if (data.vbrRead === 2) {
+          partitionSummary = ' The FAT partition boot sector could not be read (error ' +
+            String(data.vbrError ?? '?') + ').';
+        } else if (data.vbrRead === 1 && data.vbrSignature !== 1) {
+          partitionSummary = ' The partition boot sector is readable but its 0x55AA signature is absent.';
+        } else if (data.vbrRead === 1 && data.bpbPlausible !== 1) {
+          partitionSummary = ' The partition boot sector is readable but its FAT parameters are inconsistent.';
+        } else if (data.vbrRead === 1 && data.bpbPlausible === 1) {
+          partitionSummary = ' The FAT' + String(data.fatVariant) +
+            ' boot parameters look internally consistent. FAT tables and recordings remain unverified.';
+        } else {
+          partitionSummary = ' The partition boot sector was not checked.';
+        }
+      }
+      const message = 'Read-only SD result: ' + summary + partitionSummary +
         ' Status=' + data.status + ', error=' + String(data.error ?? '?') +
         ', firstMountErr=' + String(data.firstMountErr ?? '?') +
         ', FAT hint=' + String(data.fatHint ?? '?') +
+        (data.version === 2
+          ? ', partitionLba=' + String(data.partitionLba ?? '?') +
+            ', partitionType=' + String(data.partitionType ?? '?') +
+            ', partitionSectors=' + String(data.partitionSectors ?? '?') +
+            ', VBR=' + String(data.vbrRead ?? '?') +
+            ', VBR error=' + String(data.vbrError ?? '?') +
+            ', BPB plausible=' + String(data.bpbPlausible ?? '?')
+          : '') +
         '. No repair or format was performed.';
       return { ...snapshot, message };
     } catch (error) {
