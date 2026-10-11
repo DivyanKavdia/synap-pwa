@@ -581,14 +581,50 @@
     renderSDInbox();
     try {
       reportSDStage(path, 'delete-user-requested');
-      await deleteSyncedSet(path);
+      const requestedAt = Date.now();
+      try {
+        await deleteSyncedSet(path);
+      } catch (error) {
+        reportSDStage(path, 'delete-command-failed', { message: error.message });
+        throw error;
+      }
+      reportSDStage(path, 'delete-command-confirmed', { elapsedMs: Date.now() - requestedAt });
+      // C3 SDSPI has shown a FAT catalogue EIO immediately after a verified
+      // unlink. Give the card an idle window before any further FAT reads.
+      // This NEVER repeats unlink, remounts, formats or assumes deletion.
+      const isC3 = root.SynapModules?.client?.module?.id === 2;
+      if (isC3) {
+        const settleMs = 6000;
+        reportSDStage(path, 'delete-sd-settling', { settleMs });
+        await new Promise((resolve) => root.setTimeout(resolve, settleMs));
+      }
       // Firmware ACK alone is not enough: only forget the verified sync
       // receipt after a fresh on-card catalogue confirms the exact path gone.
-      // A failed SD remount or BLE drop must not claim deletion success.
+      // A failed SD read or BLE drop must not claim deletion success.
       let fresh;
       try {
         fresh = await api().catalogue();
       } catch (error) {
+        // op27 is a read-only NVS/RAM diagnostic snapshot: it sends NO
+        // additional command to a potentially busy SD card. Capture the
+        // CURRENT media op/step/errno, not only an old recorder CMD25 fault.
+        if (isC3) {
+          try {
+            const reply = await client().request(27);
+            const snapshot = JSON.parse(new TextDecoder().decode(reply.bytes));
+            reportSDStage(path, 'delete-unverified-media-snapshot', {
+              ioOp: snapshot.ioOp ?? null,
+              ioStep: snapshot.ioStep ?? null,
+              ioErr: snapshot.ioErr ?? null,
+              sdState: snapshot.sdState ?? null,
+              sdLiveProbe: snapshot.sdLiveProbe ?? null,
+              // recordStage is historical, not evidence of the current delete.
+              historicRecordStage: snapshot.recordStage ?? null,
+            });
+          } catch (_) {
+            reportSDStage(path, 'delete-media-snapshot-unavailable');
+          }
+        }
         reportSDStage(path, 'delete-unverified', { message: error.message });
         throw Error('SD deletion could not be verified. Keep this entry and check SD card before retrying.');
       }
