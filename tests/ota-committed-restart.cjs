@@ -41,6 +41,6 @@ test('PWA stops automatic SD activity and points the user to physical power rest
   assert.match(media,/dataset\.otaCommitted === 'true'/);
   assert.match(media,/SD operations are paused/);
   assert.match(COMMITTED_MESSAGE,/disconnect USB power/);
-  for(const source of [app,sw,html]) assert(source.includes('1.0.0-shell199-c3-sd-fault-report'));
-  assert(html.includes('ota.js?v=1.0.0-c3-committed-restart1'));
+  for(const source of [app,sw,html]) assert(source.includes('1.0.0-shell200-c3-ota-link'));
+  assert(html.includes('ota.js?v=1.0.0-c3-ota-link2'));
 });
