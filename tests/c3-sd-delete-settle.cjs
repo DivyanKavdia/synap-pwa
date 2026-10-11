@@ -28,7 +28,7 @@ test('uncertain deletion retains receipt and reads only SD-independent diagnosti
   assert.match(method,/historicRecordStage/);
   assert.match(method,/delete-command-failed/);
   assert.match(method,/delete-unverified/);
-  assert.match(page,/devices\/chakshu\/capture-preview\.js\?v=1\.0\.0-c3-sd-delete-linkguard2063/);
+  assert.match(page,/devices\/chakshu\/capture-preview\.js\?v=1\.0\.0-c3-sd-format-guard2063/);
 });
 
 test('verified SD receipt survives BLE reconnection or account change during settle and catalogue',()=>{
