@@ -573,6 +573,17 @@
   async function deleteSDItem(path) {
     if (busy) throw Error('Another SD transfer is already running.');
     const connection = context();
+    const originalOwner = api().state.owner;
+    // The BLE link may change during the C3's post-unlink settle interval.
+    // Never let a different device (or account) prove that the original SD
+    // file is gone: that would drop its durable local sync receipt.
+    const assertSameConnection = () => {
+      if (root.SynapDevices?.connection !== connection ||
+          api()?.state?.owner !== originalOwner) {
+        reportSDStage(path, 'delete-unverified-link-changed');
+        throw Error('SD connection changed before deletion was verified. The sync receipt is preserved. Reconnect to the original pendant and refresh SD.');
+      }
+    };
     if (api().state.offline || api().state.session || root.SynapAppControls?.recordingState?.().active)
       throw Error('Stop recording before deleting from the SD card.');
     if (!api().state.storageReady)
@@ -601,6 +612,7 @@
       // Firmware ACK alone is not enough: only forget the verified sync
       // receipt after a fresh on-card catalogue confirms the exact path gone.
       // A failed SD read or BLE drop must not claim deletion success.
+      assertSameConnection();
       let fresh;
       try {
         fresh = await api().catalogue();
@@ -632,6 +644,9 @@
         reportSDStage(path, 'delete-unverified', { reason: 'file-still-listed' });
         throw Error('SD deletion was not verified: this recording is still on the card.');
       }
+      // The catalogue call is asynchronous: guard the identity again after
+      // its response, before mutating a receipt owned by the original device.
+      assertSameConnection();
       localStorage.removeItem(receiptKey(connection.deviceId, path));
       reportSDStage(path, 'delete-verified');
       root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
