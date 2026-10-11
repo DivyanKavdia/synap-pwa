@@ -6,7 +6,7 @@ const catalog=require('../devices/catalog.json');
 test('PWA device catalogue retains the authoritative Odyssey C3 hardware pin contract',()=>{
   assert.equal(catalog.schema,1);
   const c3=catalog.devices.find(device=>device.id==='esp32c3-supermini-4m');
-  assert.ok(c3,'C3 and C3 + SD intentionally use the same firmware target');
+  assert.ok(c3,'already shipped no-SD C3 keeps its exact existing firmware identity');
   assert.equal(c3.moduleId,2);
   assert.deepEqual(c3.hardware.sdDetection,{cs:0,sck:10,mosi:21,miso:20});
   assert.deepEqual(
@@ -27,4 +27,24 @@ test('the PWA mirrors optional S3 SD detection without enabling S3 offline SD re
   assert.ok(s3);
   assert.deepEqual(s3.hardware.sdDetection,{cs:9,sck:12,mosi:10,miso:11});
   assert.ok(!s3.features.includes('sdAudio'),'S3 remains detection-only');
+});
+
+
+test('new C3+SD has isolated larger-OTA identity and preserves BLE media module protocol',()=>{
+  const newUnit=catalog.devices.find(d=>d.id==='esp32c3-supermini-4m-sd');
+  const old=catalog.devices.find(d=>d.id==='esp32c3-supermini-4m');
+  assert(newUnit);
+  assert.equal(old.partition,'default');
+  assert.equal(old.slotSize,1310720);
+  assert.equal(old.productMarker,'SYNAP-ESP32C3-OTA-ID-V3');
+  assert.equal(newUnit.partition,'c3-sd-dual-ota');
+  assert.equal(newUnit.slotSize,1966080);
+  assert.equal(newUnit.productMarker,'SYNAP-ESP32C3-SD-OTA-ID-V1');
+  assert.notEqual(newUnit.manifestPath,old.manifestPath);
+  assert.equal(newUnit.moduleId,2,'PWA SD/BLE media behavior stays on module 2');
+  assert.deepEqual(newUnit.hardware.sdDetection,old.hardware.sdDetection);
+  assert.equal(newUnit.protocols.media,1);
+  const profiles=require('../devices/profiles.js');
+  assert.equal(profiles.BY_TARGET[newUnit.id].maxSize,1966080);
+  assert.equal(profiles.BY_MODULE[2].target,old.id,'legacy module display stays stable');
 });
