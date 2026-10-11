@@ -126,3 +126,41 @@ test('C3 Wi-Fi BLE control uses operations 23 through 26 and HTTPS cloud tickets
   assert.match(transferSource,/Synap Wi-Fi upload endpoint is invalid/);
   assert.match(preview,/\/v1\/device-uploads/);
 });
+
+
+test('C3 media clients sharing a BLE connection do not accept stale same-ID replies',async()=>{
+  let response=new DataView(new ArrayBuffer(16));
+  const issued=[];
+  const encode=(id,text)=>{
+    const payload=new TextEncoder().encode(text),buffer=new Uint8Array(16+payload.length);
+    buffer[0]=0xcb;buffer[1]=1;buffer[2]=1;
+    const header=new DataView(buffer.buffer);
+    header.setUint32(4,id,true);
+    header.setUint32(8,payload.length,true);
+    buffer.set(payload,16);
+    return header;
+  };
+  const command={
+    properties:{writeWithoutResponse:true},
+    async writeValueWithoutResponse(bytes){
+      const id=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength).getUint32(2,true),
+        op=bytes[1];
+      issued.push({id,op});
+      if(op===29) response=encode(id,'trace-29');
+      else if(op===27) setTimeout(()=>{response=encode(id,'report-27')},20);
+    },
+  };
+  const data={async readValue(){return response}};
+  const context={
+    queue:action=>Promise.resolve().then(action),
+    service:{async getCharacteristic(uuid){return uuid.includes('2354-')?command:data}},
+  };
+  const first=new Client(context);
+  const trace=await first.request(29);
+  assert.equal(new TextDecoder().decode(trace.bytes),'trace-29');
+  const second=new Client(context);
+  const report=await second.request(27);
+  assert.equal(new TextDecoder().decode(report.bytes),'report-27');
+  assert.deepEqual(issued.map(({op})=>op),[29,27]);
+  assert.notEqual(issued[0].id,issued[1].id,'request IDs must remain unique across Client instances');
+});

@@ -15,5 +15,5 @@ test('format waits for slow native FAT and warns on uncertain timeout; no automa
   assert.match(transfer,/C3_SD_FORMAT_DEADLINE_MS = 600000/);
   assert.match(transfer,/op === 19 \? C3_SD_FORMAT_DEADLINE_MS : RESPONSE_DEADLINE_MS/);
   assert.match(transfer,/do not immediately repeat Format/);
-  assert.match(html,/devices\/chakshu\/transfer\.js\?v=1\.0\.0-c3-sd-format-2042/);
+  assert.match(html,/devices\/chakshu\/transfer\.js\?v=1\.0\.0-c3-[a-z0-9-]+/);
 });
