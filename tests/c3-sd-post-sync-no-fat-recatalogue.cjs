@@ -18,7 +18,7 @@ test('C3 Library sync never re-browses FAT after verified download',()=>{
   assert.match(librarySync,/if \(root\.SynapModules\?\.client\?\.module\?\.id !== 2\)\s*await browseSD\('librarySDList'\)/);
   assert.match(single,/if \(root\.SynapModules\?\.client\?\.module\?\.id !== 2\)\s*await browseSD\(list\.id\)/);
   assert.match(batch,/if \(!isC3\) await api\(\)\.catalogue\(\)\.catch/);
-  assert.match(html,/capture-preview\.js\?v=1\.0\.0-c3-sync-no-recatalogue/);
+  assert.match(html,/capture-preview\.js\?v=1\.0\.0-c3-sync-io-trace/);
 });
 
 test('explicit Browse SD remains functional for C3 only on user action',()=>{
