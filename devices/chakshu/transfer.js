@@ -295,7 +295,10 @@
         v.setUint32(6, offset, true);
         bytes.set(name, 10);
         await this.writeCommand(run, bytes);
-        const deadline = Date.now() + RESPONSE_DEADLINE_MS;
+        // A user-confirmed full FAT format can exceed ordinary catalogue
+        // response times. Keep BLE's serialized media request alive without
+        // ever retrying a partially completed destructive command.
+        const deadline = Date.now() + (op === 19 ? 120000 : RESPONSE_DEADLINE_MS);
         while (Date.now() < deadline) {
           signal?.throwIfAborted();
           const reply = decode(
