@@ -9,7 +9,10 @@
   // cancellation never permits Stop to overlap an unresolved native operation.
   const READ_TIMEOUT_MS = 10000,
     C3_SD_READ_TIMEOUT_MS = 20000,
-    RESPONSE_DEADLINE_MS = 30000;
+    RESPONSE_DEADLINE_MS = 30000,
+    // Native FAT full-card format at the C3's conservative SD clock is slow.
+    // Never send a duplicate format when the BLE reply is merely delayed.
+    C3_SD_FORMAT_DEADLINE_MS = 600000;
   const delay = (ms) => new Promise((resolve) => root.setTimeout(resolve, ms));
   // Every media client on a GATT link shares ONE firmware command/response
   // slot. Serializing native ATT calls alone cannot protect a multi-step
@@ -295,7 +298,7 @@
         v.setUint32(6, offset, true);
         bytes.set(name, 10);
         await this.writeCommand(run, bytes);
-        const deadline = Date.now() + RESPONSE_DEADLINE_MS;
+        const deadline = Date.now() + (op === 19 ? C3_SD_FORMAT_DEADLINE_MS : RESPONSE_DEADLINE_MS);
         while (Date.now() < deadline) {
           signal?.throwIfAborted();
           const reply = decode(
@@ -310,9 +313,11 @@
             id,
           );
           if (reply) return reply;
-          await delay(60);
+          await delay(op === 19 ? 750 : 60);
         }
-        throw Error('Camera request timed out. Reconnect and refresh its status.');
+        throw Error(op === 19
+          ? 'SD format confirmation timed out. The device may still be formatting. Reconnect, check SD status, and do not immediately repeat Format.'
+          : 'Camera request timed out. Reconnect and refresh its status.');
       } catch (reason) {
         const error =
           root.SynapBluetoothSession?.normalizeError(reason) ||
