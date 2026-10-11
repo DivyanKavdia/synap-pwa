@@ -23,5 +23,5 @@ test('read-only diagnostic performs exactly one media op28 and no SD writes or r
   assert.match(fn,/FAT tables and recordings remain unverified/);
   assert.match(fn,/error\?\.mediaCode === 2/);
   assert.match(fn,/root\.SynapDevices\?\.connection !== connection/);
-  assert.match(html,/capture-preview\.js\?v=1\.0\.0-c3-sync-no-recatalogue/);
+  assert.match(html,/capture-preview\.js\?v=1\.0\.0-c3-sync-io-trace/);
 });
