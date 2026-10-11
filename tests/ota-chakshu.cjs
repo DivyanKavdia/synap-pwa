@@ -172,13 +172,19 @@ test('new Chakshu and the other targets retain the existing cumulative ACK windo
   for (const options of [
     { build: 1227 },
     { build: 1200, target: 'esp32s3-fh4r2-qspi-4m' },
-    { build: 1200, target: 'esp32c3-supermini-4m' },
   ]) {
     const f = fixture({ ...options, deferred: false });
     await f.client.check();
     assert((await f.client.update(f.file, ID)).committed);
     assert.equal(f.peak, 4);
   }
+});
+test('Odyssey C3 uses smaller two-packet ACK windows despite a 503-byte MTU', async () => {
+  const f=fixture({build:1977,target:'esp32c3-supermini-4m',deferred:false});
+  await f.client.check();
+  assert((await f.client.update(f.file,ID)).committed);
+  assert.equal(f.peak,2);
+  assert.equal(f.state.error,0);
 });
 test('old Chakshu can use read acknowledgements when notifications are unavailable', async () => {
   const f = fixture({ notify: false });
