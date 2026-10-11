@@ -508,7 +508,8 @@
             ? 'Video'
             : 'Photo';
       const syncable = row.sdSyncable !== false && Number(row.byteSize) > 44,
-        synced = syncable && Boolean(row.sdSynced);
+        synced = syncable && Boolean(row.sdSynced),
+        sdReady = Boolean(api().state.connected && api().state.storageReady);
       opener.setAttribute(
         'aria-label',
         synced
@@ -522,13 +523,15 @@
         : syncable
           ? type + ' · Not synced · On device SD · ' + byteLabel(row.byteSize)
           : type + ' · Incomplete SD recording · On device SD · ' + byteLabel(row.byteSize);
-      preview.textContent = synced
-        ? 'Synced · SD copy retained'
-        : syncable
-          ? row.describeRequested ? 'Sync & describe' : 'Sync to Memories'
-          : Number(row.byteSize) > 0
-            ? 'Cannot sync · recording did not finalize'
-            : 'Cannot sync · no audio was written';
+      preview.textContent = !sdReady
+        ? 'SD unavailable · Check SD card in Settings before syncing or deleting'
+        : synced
+          ? 'Synced · SD copy retained'
+          : syncable
+            ? row.describeRequested ? 'Sync & describe' : 'Sync to Memories'
+            : Number(row.byteSize) > 0
+              ? 'Cannot sync · recording did not finalize'
+              : 'Cannot sync · no audio was written';
       preview.hidden = false;
       if (wifi) {
         const module = root.SynapModules?.client?.module,
@@ -542,7 +545,8 @@
       }
       if (discard) {
         discard.hidden = false;
-        discard.disabled = false;
+        discard.disabled = !sdReady;
+        discard.title = sdReady ? '' : 'Connect and use Check SD card in Settings to restore storage first.';
         discard.textContent = 'Delete from SD';
         discard.setAttribute('aria-label', 'Delete from SD: ' + title);
       }

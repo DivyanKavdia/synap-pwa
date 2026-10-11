@@ -575,13 +575,29 @@
     const connection = context();
     if (api().state.offline || api().state.session || root.SynapAppControls?.recordingState?.().active)
       throw Error('Stop recording before deleting from the SD card.');
+    if (!api().state.storageReady)
+      throw Error('SD card is unavailable. Reconnect and use Check SD card in Settings before deleting. Existing recordings were not changed.');
     busy = true;
     renderSDInbox();
     try {
       reportSDStage(path, 'delete-user-requested');
       await deleteSyncedSet(path);
+      // Firmware ACK alone is not enough: only forget the verified sync
+      // receipt after a fresh on-card catalogue confirms the exact path gone.
+      // A failed SD remount or BLE drop must not claim deletion success.
+      let fresh;
+      try {
+        fresh = await api().catalogue();
+      } catch (error) {
+        reportSDStage(path, 'delete-unverified', { message: error.message });
+        throw Error('SD deletion could not be verified. Keep this entry and check SD card before retrying.');
+      }
+      if (fresh.some((file) => file.path === path)) {
+        reportSDStage(path, 'delete-unverified', { reason: 'file-still-listed' });
+        throw Error('SD deletion was not verified: this recording is still on the card.');
+      }
       localStorage.removeItem(receiptKey(connection.deviceId, path));
-      await api().catalogue().catch(() => {});
+      reportSDStage(path, 'delete-verified');
       root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
       return true;
     } finally {
@@ -599,15 +615,10 @@
       throw Error('This SD recording contains audio. Sync it to Memories instead of deleting it.');
     if (api().state.offline || api().state.session || root.SynapAppControls?.recordingState?.().active)
       throw Error('Stop recording before removing the incomplete SD file.');
-    busy = true;
-    try {
-      reportSDStage(path, 'delete-incomplete-source', { bytes });
-      await deleteSD(path);
-    } finally {
-      busy = false;
-    }
-    await api().catalogue().catch(() => {});
-    root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
+    // Reuse the same verified exact-path deletion as the Memories button.
+    // Never assume that a successful BLE command removed an SD entry.
+    reportSDStage(path, 'delete-incomplete-source', { bytes });
+    await deleteSDItem(path);
     return { path, bytes };
   }
   async function describeVisual(visualId, blob, source = 'gemini-offline-voice') {
