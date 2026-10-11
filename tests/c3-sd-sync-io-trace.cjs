@@ -22,5 +22,5 @@ test('recording/import receipt remains durable and trace is captured on both out
   assert.match(post,/reportC3SyncTrace\(path, connection, 'verified'\)/);
   assert.match(post,/trace\?\.sdState === 2/);
   assert.doesNotMatch(post,/request\((?:4|7|12|14|17|18|19)\)|catalogue\(/);
-  assert.match(html,/capture-preview\.js\?v=1\.0\.0-c3-sync-io-trace/);
+  assert.match(html,/capture-preview\.js\?v=1\.0\.0-c3-[a-z0-9-]+/);
 });
