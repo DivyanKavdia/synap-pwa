@@ -312,6 +312,13 @@
     const info = root.SynapModules?.client?.module;
     return Boolean(info?.id === 2 && (info.mediaFeatures & 4));
   }
+  function c3FormatUnsafe() {
+    const info = root.SynapModules?.client?.module;
+    // Firmware retains failed SD recording stages (>=40) across restarts.
+    // A card that has already timed out on CMD25 must not be subjected to
+    // destructive FAT rebuilds until its write reliability is qualified.
+    return Boolean(info?.id === 2 && Number(info?.sdProbeState) >= 40);
+  }
   function audioJournal() {
     return new root.DKAudioStore({ ...root.SynapRecordingJournal.options() });
   }
@@ -870,17 +877,53 @@
     if (busy) throw Error('Another SD transfer is already running.');
     const connection = context();
     if (!c3FormatSupported()) throw Error('Update Odyssey C3 firmware to format its SD card.');
+    if (!api().state.storageReady)
+      throw Error('SD card unavailable. Do not attempt another format on a failed or unmounted card.');
+    if (c3FormatUnsafe())
+      throw Error('SD format disabled: this Odyssey C3 retains an SD recording write timeout. Preserve existing files; full-card formatting is unsafe until SD write reliability is fixed.');
     if (api().state.offline || api().state.session || root.SynapAppControls.recordingState().active)
       throw Error('Stop recording before formatting the SD card.');
     busy = true;
     renderSDInbox();
     try {
       status('Formatting SD card…');
-      await client().request(19);
-      await api().refreshSD();
+      try {
+        await client().request(19);
+      } catch (error) {
+        // Native ESP-IDF format unmounts FAT before f_mkfs. If f_mkfs
+        // returns an error, FAT may be partially overwritten and unmounted.
+        // Query only media operation 27 (RAM/NVS); NEVER auto-remount,
+        // re-format, clear, or discard original sync receipts.
+        reportSDStage('@all', 'format-failed', {
+          message: error?.message || String(error),
+          mediaCode: error?.mediaCode ?? null,
+        });
+        try {
+          const reply = await client().request(27);
+          const snapshot = JSON.parse(new TextDecoder().decode(reply.bytes));
+          reportSDStage('@all', 'format-failed-media-snapshot', {
+            ioOp: snapshot.ioOp ?? null,
+            ioStep: snapshot.ioStep ?? null,
+            ioErr: snapshot.ioErr ?? null,
+            sdState: snapshot.sdState ?? null,
+            sdLiveProbe: snapshot.sdLiveProbe ?? null,
+            historicRecordStage: snapshot.recordStage ?? null,
+          });
+        } catch (_) {
+          reportSDStage('@all', 'format-media-snapshot-unavailable');
+        }
+        throw Error('SD format failed or its result is uncertain. FAT may be partially modified. Do NOT retry Format or Clear SD. Fully power off the device, then reconnect and inspect SD without writing.');
+      }
+      // The ESP-IDF format helper already remounts FAT on success.
+      // An automatic operation 14 here would unmount/remount the card
+      // again needlessly, potentially leaving a busy controller stranded.
+      // Settle, then verify the FAT catalogue without another write.
+      await new Promise((resolve) => root.setTimeout(resolve, 6000));
+      const files = await api().catalogue();
+      await root.SynapModules?.refresh?.();
       const info = root.SynapModules?.client?.module;
-      if (info?.sdDetectionState !== 1 || info?.sdProbeState !== 6)
-        throw Error('Format completed but the SD card did not return ready. Reconnect and check storage.');
+      if (info?.sdDetectionState !== 1 || info?.sdLiveProbeState !== 6 || files.length !== 0)
+        throw Error('SD format result could not be verified. Existing sync receipts were preserved; do not retry formatting.');
       for (let index = localStorage.length - 1; index >= 0; index--) {
         const key = localStorage.key(index);
         if (key?.startsWith(RECEIPT_PREFIX + connection.deviceId + ':')) localStorage.removeItem(key);
@@ -1106,7 +1149,7 @@
             : info?.id === 2 && info?.sdProbeState === 2
               ? 'SD card protocol initialization failed.'
               : info?.id === 2 && info?.sdProbeState === 3
-                ? 'SD card initialized, but the FAT filesystem could not be mounted.'
+                ? 'SD FAT mount or format failed. The filesystem may be incomplete; do not repeat Format.'
                 : info?.id === 2 && info?.sdProbeState === 4
                   ? 'SD filesystem mounted, but VFS validation failed.'
                   : 'SD card unavailable. Check the card and retry storage.';
@@ -1129,7 +1172,14 @@
         !supportsC3Format ||
         blocked ||
         !state.connected ||
+        !state.storageReady ||
+        c3FormatUnsafe() ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
+      formatSettings.title = c3FormatUnsafe()
+        ? 'Formatting disabled: recorded SD write fault. Preserve the card until the firmware write path is qualified.'
+        : !state.storageReady
+          ? 'Formatting unavailable: card is not mounted and healthy.'
+          : 'Permanently erase all SD files.';
     }
     if (wifiSettings) wifiSettings.hidden = !supportsC3Wifi;
     if (wifiSave)
