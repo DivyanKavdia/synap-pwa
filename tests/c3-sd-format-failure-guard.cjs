@@ -32,3 +32,14 @@ test('successful format settles, then observes catalogue before deleting receipt
     format.indexOf('localStorage.removeItem'));
   assert.match(page,/capture-preview\.js\?v=1\.0\.0-c3-[a-z0-9-]+/);
 });
+
+test('C3 full-card on-device format is disabled in the UI and before op19',()=>{
+  assert.match(s,/const C3_FULL_CARD_FORMAT_DISABLED = true/);
+  const guard=format.indexOf('if (C3_FULL_CARD_FORMAT_DISABLED)');
+  const command=format.indexOf('client().request(19)');
+  assert(guard>=0 && command>guard,'safety gate must run before destructive command');
+  assert.match(format,/Odyssey C3 on-device full-card formatting is temporarily disabled/);
+  assert.match(s,/formatSettings\.disabled =[\s\S]*?C3_FULL_CARD_FORMAT_DISABLED/);
+  assert.match(s,/Format SD \(disabled\)/);
+  assert.match(s,/Power off and format on a computer/);
+});
