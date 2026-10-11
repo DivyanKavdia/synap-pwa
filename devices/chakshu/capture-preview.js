@@ -826,7 +826,8 @@
       localStorage.setItem(key, JSON.stringify(receipt));
       reportSDStage(path, 'verify-complete', { audioId, visualId });
       reportSDStage(path, 'complete', { audioId, visualId, keptOnSD: true });
-      if (liveModule?.id === 2) await reportC3PostSync(path, connection);
+      const sdAvailableAfterSync = liveModule?.id === 2
+        ? await reportC3PostSync(path, connection) : null;
       root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
       // Verification completes the sync transaction. The SD original is kept
       // until the user explicitly chooses Delete from SD. Cloud inference is
@@ -838,7 +839,7 @@
           receipt.descriptionError = error.message;
         }
       }
-      return { ...receipt, alreadySynced: false, keptOnSD: true };
+      return { ...receipt, alreadySynced: false, keptOnSD: true, sdAvailableAfterSync };
     } catch (error) {
       reportSDStage(path, 'failed', { failedAt: stage, message: error?.message || String(error) });
       throw error;
@@ -1093,14 +1094,16 @@
           action.disabled = true;
           wifi.disabled = true;
           try {
-            await moveSD(file.path, (fraction) =>
+            const result = await moveSD(file.path, (fraction) =>
               status('Syncing to Memories over Bluetooth · ' + Math.round(fraction * 100) + '%'),
             );
             if (root.SynapModules?.client?.module?.id === 2) {
               // No post-sync FAT reads or unlink on C3. The source survives
               // until a separately requested Delete from SD.
-              status(type.replace(' on SD', '') +
-                ' synced to Memories · SD original kept. Browse SD separately after verifying the recording.');
+              status(result?.sdAvailableAfterSync === false
+                ? 'Recording saved in Memories, but C3 SD became unavailable during sync. Do not retry, delete, or format SD; inspect read-only diagnostics.'
+                : type.replace(' on SD', '') +
+                  ' synced to Memories · SD original kept. Browse SD separately after verifying the recording.');
             } else {
               const deleteNow = confirm(
                 'Synced to Memories successfully. Delete this recording from the device SD card now? The copy in Memories will be kept.',
@@ -1336,10 +1339,12 @@
   // delete, format or remount just to check a completed BLE download.
   async function reportC3PostSync(path, connection) {
     if (root.SynapModules?.client?.module?.id !== 2 ||
-        root.SynapDevices?.connection !== connection) return;
+        root.SynapDevices?.connection !== connection) return null;
+    let cardAvailable = null;
     try {
       const response = await client().request(27);
       const diag = JSON.parse(new TextDecoder().decode(response.bytes));
+      if (diag.sdState === 2) cardAvailable = false;
       reportSDStage(path, 'c3-post-sync-readonly', {
         ioOp: diag.ioOp ?? null,
         ioStep: diag.ioStep ?? null,
@@ -1355,8 +1360,11 @@
     }
     try {
       await root.SynapModules?.refresh?.();
-      if (root.SynapDevices?.connection !== connection) return;
+      if (root.SynapDevices?.connection !== connection) return null;
       const info = root.SynapModules?.client?.module;
+      if (info?.sdDetectionState === 2) cardAvailable = false;
+      else if (info?.sdDetectionState === 1 && info?.sdLiveProbeState === 6 && cardAvailable !== false)
+        cardAvailable = true;
       reportSDStage(path, 'c3-post-sync-link-state', {
         sdDetectionState: info?.sdDetectionState ?? null,
         sdLiveProbeState: info?.sdLiveProbeState ?? null,
@@ -1365,6 +1373,14 @@
     } catch (_) {
       reportSDStage(path, 'c3-post-sync-link-status-unavailable');
     }
+    if (cardAvailable === false) {
+      // The local import and receipt were already durably verified. Only
+      // stop further C3 SD reads: do not remount, format or delete the source.
+      reportSDStage(path, 'c3-sd-unavailable-after-sync', {
+        message: 'Saved in Memories; SD became unavailable during the download.',
+      });
+    }
+    return cardAvailable;
   }
   async function syncAll() {
     if (busy) throw Error('Another Chakshu transfer is already running.');
@@ -1380,15 +1396,21 @@
       (file) => file.syncable !== false && Number(file.bytes) > 44 && !isSDSynced(file.path),
     );
     if (!pending.length) return { synced: 0, failed: 0, paths: [] };
-    let synced = 0, failed = 0, lastError = '';
+    let synced = 0, failed = 0, lastError = '', sdUnavailableAfterSync = false;
     const paths = [];
     for (const file of pending) {
       try {
-        await moveSD(file.path, (fraction) =>
+        const result = await moveSD(file.path, (fraction) =>
           status('Syncing offline captures · ' + (synced + failed + 1) + '/' + pending.length + ' · ' + Math.round(fraction * 100) + '%'),
         );
         synced++;
         paths.push(file.path);
+        if (isC3 && result?.sdAvailableAfterSync === false) {
+          // Verified Memories copy survives; do not request the next WAV.
+          sdUnavailableAfterSync = true;
+          reportSDStage(file.path, 'c3-batch-paused-card-unavailable');
+          break;
+        }
       } catch (error) {
         failed++;
         lastError = error.message;
@@ -1408,7 +1430,7 @@
     if (!isC3) await api().catalogue().catch(() => {});
     if (failed)
       throw Error(synced + ' synced; ' + failed + ' kept on SD because verification failed. ' + lastError);
-    return { synced, failed: 0, paths };
+    return { synced, failed: 0, paths, sdUnavailableAfterSync };
   }
   async function offerDeleteSynced(paths) {
     // C3 read reliability is under investigation. Never chain op17 unlink
@@ -1471,7 +1493,8 @@
         const deleted = await offerDeleteSynced(result.paths);
         status(result.synced
           ? result.synced + ' offline capture' + (result.synced === 1 ? '' : 's') + ' synced to Memories' +
-            (deleted ? ' · ' + deleted + ' SD cop' + (deleted === 1 ? 'y deleted.' : 'ies deleted.') : ' · SD cop' + (result.synced === 1 ? 'y kept.' : 'ies kept.'))
+            (deleted ? ' · ' + deleted + ' SD cop' + (deleted === 1 ? 'y deleted.' : 'ies deleted.') : ' · SD cop' + (result.synced === 1 ? 'y kept.' : 'ies kept.')) + 
+              (result.sdUnavailableAfterSync ? ' C3 SD is now unavailable; batch stopped safely. No further SD reads or format.' : '')
           : 'No unsynced offline captures waiting.');
       } catch (error) {
         status(error.message);
@@ -1504,10 +1527,9 @@
     libraryBrowse?.addEventListener('click', async () => {
       libraryBrowse.disabled = true;
       try {
-        // Explicit C3 browse remains available via Browse SD; don't perform
-        // an additional FAT traversal immediately after audio sync.
-        if (root.SynapModules?.client?.module?.id !== 2)
-          await browseSD('librarySDList');
+        // User-requested inspection only. This button must work on C3 too;
+        // unlike the sync-completion path it is an explicit FAT read.
+        await browseSD('librarySDList');
       } catch (error) {
         status(error.message);
       } finally {
@@ -1524,10 +1546,15 @@
         status(
           result.synced
             ? result.synced + ' offline capture' + (result.synced === 1 ? '' : 's') + ' synced to Memories' +
-              (deleted ? ' · ' + deleted + ' SD cop' + (deleted === 1 ? 'y deleted.' : 'ies deleted.') : ' · SD cop' + (result.synced === 1 ? 'y kept.' : 'ies kept.'))
+              (deleted ? ' · ' + deleted + ' SD cop' + (deleted === 1 ? 'y deleted.' : 'ies deleted.') : ' · SD cop' + (result.synced === 1 ? 'y kept.' : 'ies kept.')) + 
+              (result.sdUnavailableAfterSync ? ' C3 SD is now unavailable; batch stopped safely. No further SD reads or format.' : '')
             : 'No unsynced offline captures waiting.',
         );
-        await browseSD('librarySDList');
+        // Critical Odyssey C3 invariant: a completed BLE WAV import must
+        // NOT immediately issue a new op7 FAT catalogue traversal.
+        // Only an explicit Browse SD click may issue this read.
+        if (root.SynapModules?.client?.module?.id !== 2)
+          await browseSD('librarySDList');
       } catch (error) {
         status(error.message);
       } finally {
