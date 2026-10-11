@@ -689,7 +689,7 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(lifecycle, /getElementById\('retryDeviceSD'\)\?\.addEventListener\('click'/);
   assert.match(lifecycle, /await api\(\)\.refreshSD\(\)/);
   assert.match(media, /await root\.SynapPowerLifecycle\?\.wakeForActivity\?\.\(\)/);
-  assert.match(lifecycle, /sdDetectionState === 1 && info\?\.sdProbeState === 6/);
+  assert.match(lifecycle, /sdDetectionState === 1 && info\?\.sdLiveProbeState === 6/);
   assert.match(lifecycle, /SD retry finished · detection/);
   assert.match(lifecycle, /SD SPI bus setup failed/);
   assert.match(lifecycle, /SD card protocol initialization failed/);
@@ -732,4 +732,15 @@ test('C3 SD sync UI keeps slow Bluefy transfers visible and safely locks storage
  assert.match(transfer,/RESPONSE_DEADLINE_MS = 30000/);
  assert(library.includes("syncPreview.textContent = 'Syncing to Memories · ' + percent + '%'"));
  assert.match(lifecycle,/SD transfer in progress · SD maintenance controls are temporarily disabled/);
+});
+
+test('Odyssey C3 SD retry uses fresh live mount probe; historic recorder stage remains diagnostic-only',()=>{
+  const code=require('node:fs').readFileSync('devices/chakshu/capture-preview.js','utf8');
+  const ui=code.split('function renderSDInbox()')[1].split('async function syncAll()')[0];
+  const retry=code.split("getElementById('retryDeviceSD')?.addEventListener")[1].split("getElementById('diagnoseDeviceSD')?.addEventListener")[0];
+  assert.match(retry,/info\?\.sdDetectionState === 1 && info\?\.sdLiveProbeState === 6/);
+  assert.doesNotMatch(retry,/info\?\.sdProbeState === 6/);
+  assert.match(retry,/historical recorder stage/);
+  for(const i of [1,2,3,4]) assert(ui.includes('info?.sdLiveProbeState === '+i));
+  assert.doesNotMatch(ui,/info\?\.sdProbeState === [1234]/);
 });

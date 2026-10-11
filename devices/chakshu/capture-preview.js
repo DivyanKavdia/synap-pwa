@@ -826,6 +826,7 @@
       localStorage.setItem(key, JSON.stringify(receipt));
       reportSDStage(path, 'verify-complete', { audioId, visualId });
       reportSDStage(path, 'complete', { audioId, visualId, keptOnSD: true });
+      if (liveModule?.id === 2) await reportC3PostSync(path, connection);
       root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
       // Verification completes the sync transaction. The SD original is kept
       // until the user explicitly chooses Delete from SD. Cloud inference is
@@ -1095,21 +1096,29 @@
             await moveSD(file.path, (fraction) =>
               status('Syncing to Memories over Bluetooth · ' + Math.round(fraction * 100) + '%'),
             );
-            const deleteNow = confirm(
-              'Synced to Memories successfully. Delete this recording from the device SD card now? The copy in Memories will be kept.',
-            );
-            if (deleteNow) {
-              await deleteSDItem(file.path);
-              status(type.replace(' on SD', '') + ' synced to Memories · SD copy deleted.');
+            if (root.SynapModules?.client?.module?.id === 2) {
+              // No post-sync FAT reads or unlink on C3. The source survives
+              // until a separately requested Delete from SD.
+              status(type.replace(' on SD', '') +
+                ' synced to Memories · SD original kept. Browse SD separately after verifying the recording.');
             } else {
-              status(type.replace(' on SD', '') + ' synced to Memories · SD copy kept.');
+              const deleteNow = confirm(
+                'Synced to Memories successfully. Delete this recording from the device SD card now? The copy in Memories will be kept.',
+              );
+              if (deleteNow) {
+                await deleteSDItem(file.path);
+                status(type.replace(' on SD', '') + ' synced to Memories · SD copy deleted.');
+              } else {
+                status(type.replace(' on SD', '') + ' synced to Memories · SD copy kept.');
+              }
             }
           } catch (error) {
             status(error.message);
           } finally {
             action.disabled = false;
             wifi.disabled = false;
-            await browseSD(list.id).catch(() => {});
+            if (root.SynapModules?.client?.module?.id !== 2)
+              await browseSD(list.id).catch(() => {});
             renderSDInbox();
           }
         });
@@ -1129,21 +1138,26 @@
             await moveC3Wifi(file.path, file, (fraction) =>
               status('Transferring over Wi-Fi · ' + Math.round(fraction * 100) + '%'),
             );
-            const deleteNow = confirm(
-              'Wi-Fi transfer completed and the recording is safely stored in Synap Cloud. Delete this recording from the device SD card now?',
-            );
-            if (deleteNow) {
-              await deleteSDItem(file.path);
-              status('Wi-Fi transfer complete · SD copy deleted.');
+            if (root.SynapModules?.client?.module?.id === 2) {
+              status('Wi-Fi transfer complete · C3 SD original kept for separate verification and deletion.');
             } else {
-              status('Wi-Fi transfer complete · SD copy kept.');
+              const deleteNow = confirm(
+                'Wi-Fi transfer completed and the recording is safely stored in Synap Cloud. Delete this recording from the device SD card now?',
+              );
+              if (deleteNow) {
+                await deleteSDItem(file.path);
+                status('Wi-Fi transfer complete · SD copy deleted.');
+              } else {
+                status('Wi-Fi transfer complete · SD copy kept.');
+              }
             }
           } catch (error) {
             status(error.message);
           } finally {
             action.disabled = false;
             wifi.disabled = false;
-            await browseSD(list.id).catch(() => {});
+            if (root.SynapModules?.client?.module?.id !== 2)
+              await browseSD(list.id).catch(() => {});
             renderSDInbox();
           }
         });
@@ -1230,13 +1244,13 @@
             ? count
               ? count + ' item' + (count === 1 ? '' : 's') + ' on SD · ' + unsyncedCount + ' waiting to sync.'
               : 'SD card ready · no captures on SD.'
-            : info?.id === 2 && info?.sdProbeState === 1
+            : info?.id === 2 && info?.sdLiveProbeState === 1
             ? 'SD SPI bus setup failed.'
-            : info?.id === 2 && info?.sdProbeState === 2
+            : info?.id === 2 && info?.sdLiveProbeState === 2
               ? 'SD card protocol initialization failed.'
-              : info?.id === 2 && info?.sdProbeState === 3
+              : info?.id === 2 && info?.sdLiveProbeState === 3
                 ? 'SD FAT mount or format failed. The filesystem may be incomplete; do not repeat Format.'
-                : info?.id === 2 && info?.sdProbeState === 4
+                : info?.id === 2 && info?.sdLiveProbeState === 4
                   ? 'SD filesystem mounted, but VFS validation failed.'
                   : 'SD card unavailable. Check the card and retry storage.';
     if (retrySettings)
@@ -1318,8 +1332,45 @@
     if (list && (!state.connected || !state.storageReady)) list.hidden = true;
     else if (list && !list.hidden) renderSDRows(list, state.sdFiles || []);
   }
+  // Read-only post-sync diagnostics. Never send another SD catalogue,
+  // delete, format or remount just to check a completed BLE download.
+  async function reportC3PostSync(path, connection) {
+    if (root.SynapModules?.client?.module?.id !== 2 ||
+        root.SynapDevices?.connection !== connection) return;
+    try {
+      const response = await client().request(27);
+      const diag = JSON.parse(new TextDecoder().decode(response.bytes));
+      reportSDStage(path, 'c3-post-sync-readonly', {
+        ioOp: diag.ioOp ?? null,
+        ioStep: diag.ioStep ?? null,
+        ioErr: diag.ioErr ?? null,
+        sdState: diag.sdState ?? null,
+        sdLiveProbe: diag.sdLiveProbe ?? null,
+        historicRecordStage: diag.recordStage ?? null,
+      });
+    } catch (error) {
+      reportSDStage(path, 'c3-post-sync-diagnostic-unavailable', {
+        message: error?.message || String(error),
+      });
+    }
+    try {
+      await root.SynapModules?.refresh?.();
+      if (root.SynapDevices?.connection !== connection) return;
+      const info = root.SynapModules?.client?.module;
+      reportSDStage(path, 'c3-post-sync-link-state', {
+        sdDetectionState: info?.sdDetectionState ?? null,
+        sdLiveProbeState: info?.sdLiveProbeState ?? null,
+        historicRecordStage: info?.sdProbeState ?? null,
+      });
+    } catch (_) {
+      reportSDStage(path, 'c3-post-sync-link-status-unavailable');
+    }
+  }
   async function syncAll() {
     if (busy) throw Error('Another Chakshu transfer is already running.');
+    const isC3 = root.SynapModules?.client?.module?.id === 2;
+    if (isC3 && !api()?.state?.storageReady)
+      throw Error('C3 SD card is unavailable. Do not repeat BLE reads until storage is recovered.');
     let files = api()?.state?.sdFiles?.slice?.() || [];
     if (!files.length) {
       await api().catalogue();
@@ -1341,14 +1392,34 @@
       } catch (error) {
         failed++;
         lastError = error.message;
+        // Stop at the FIRST C3 read error. A second WAV and a fresh op7
+        // catalogue could further stress an already failing SD controller.
+        // The earlier successfully imported files and receipts are durable.
+        if (isC3) {
+          reportSDStage(file.path, 'c3-batch-stopped-after-read-error', {
+            message: lastError, mediaCode: error?.mediaCode ?? null,
+          });
+          break;
+        }
       }
     }
-    await api().catalogue().catch(() => {});
+    // C3: never traverse FAT again immediately after a verified WAV import.
+    // Retain the existing catalogue snapshot; user may explicitly refresh.
+    if (!isC3) await api().catalogue().catch(() => {});
     if (failed)
       throw Error(synced + ' synced; ' + failed + ' kept on SD because verification failed. ' + lastError);
     return { synced, failed: 0, paths };
   }
   async function offerDeleteSynced(paths) {
+    // C3 read reliability is under investigation. Never chain op17 unlink
+    // onto a just-completed SD download. A separate, explicit Delete from SD
+    // remains available after the user reviews the durable Memory.
+    if (root.SynapModules?.client?.module?.id === 2) {
+      reportSDStage('@all', 'c3-synced-originals-preserved', {
+        count: new Set(paths || []).size,
+      });
+      return 0;
+    }
     const unique = [...new Set(paths || [])];
     if (!unique.length) return 0;
     const message = unique.length === 1
@@ -1433,7 +1504,10 @@
     libraryBrowse?.addEventListener('click', async () => {
       libraryBrowse.disabled = true;
       try {
-        await browseSD('librarySDList');
+        // Explicit C3 browse remains available via Browse SD; don't perform
+        // an additional FAT traversal immediately after audio sync.
+        if (root.SynapModules?.client?.module?.id !== 2)
+          await browseSD('librarySDList');
       } catch (error) {
         status(error.message);
       } finally {
@@ -1481,14 +1555,16 @@
         try {
           await api().refreshSD();
           const info = root.SynapModules?.client?.module;
-          if (info?.sdDetectionState === 1 && info?.sdProbeState === 6) {
+          if (info?.sdDetectionState === 1 && info?.sdLiveProbeState === 6) {
             if (settingsStatus) settingsStatus.textContent = 'SD card recovered · refreshing offline content…';
             await api().syncPendingSD().catch(() => {});
           } else if (settingsStatus) {
             settingsStatus.textContent =
               'SD retry finished · detection ' +
               String(info?.sdDetectionState ?? 'unknown') +
-              ' / probe ' +
+              ' / live probe ' +
+              String(info?.sdLiveProbeState ?? 'unknown') +
+              ' / historical recorder stage ' +
               String(info?.sdProbeState ?? 'unknown') +
               '.';
           }
