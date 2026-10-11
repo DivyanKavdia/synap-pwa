@@ -735,7 +735,7 @@ test('C3 SD sync UI keeps slow Bluefy transfers visible and safely locks storage
 });
 
 test('Odyssey C3 SD retry uses fresh live mount probe; historic recorder stage remains diagnostic-only',()=>{
-  const code=fs.readFileSync('devices/chakshu/capture-preview.js','utf8');
+  const code=require('node:fs').readFileSync('devices/chakshu/capture-preview.js','utf8');
   const ui=code.split('function renderSDInbox()')[1].split('async function syncAll()')[0];
   const retry=code.split("getElementById('retryDeviceSD')?.addEventListener")[1].split("getElementById('diagnoseDeviceSD')?.addEventListener")[0];
   assert.match(retry,/info\?\.sdDetectionState === 1 && info\?\.sdLiveProbeState === 6/);
