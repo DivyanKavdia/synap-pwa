@@ -842,6 +842,7 @@
       return { ...receipt, alreadySynced: false, keptOnSD: true, sdAvailableAfterSync };
     } catch (error) {
       reportSDStage(path, 'failed', { failedAt: stage, message: error?.message || String(error) });
+      if (liveModule?.id === 2) await reportC3SyncTrace(path, connection, 'failed-' + stage);
       throw error;
     } finally {
       busy = false;
@@ -1335,12 +1336,40 @@
     if (list && (!state.connected || !state.storageReady)) list.hidden = true;
     else if (list && !list.hidden) renderSDRows(list, state.sdFiles || []);
   }
+  async function reportC3SyncTrace(path, connection, phase) {
+    if (root.SynapModules?.client?.module?.id !== 2 ||
+        root.SynapDevices?.connection !== connection) return null;
+    try {
+      // Firmware op29 reports RAM-only counters: no FAT, file, raw sector,
+      // remount, format or delete, even when the SD controller is unavailable.
+      const reply = await client().request(29);
+      if (root.SynapDevices?.connection !== connection) return null;
+      const trace = JSON.parse(new TextDecoder().decode(reply.bytes));
+      if (trace?.version !== 1) throw Error('Invalid C3 sync trace response.');
+      const fields = ['sdState','sdLiveProbe','ioOp','ioStep','ioErr',
+        'reads','cacheHits','diskFills','lastRequestedOffset','lastOkOffset',
+        'faultOffset','windowRequests','mtuFallbacks'];
+      const detail = Object.fromEntries(fields.map((name) => [name, trace[name] ?? null]));
+      reportSDStage(path, 'c3-sync-read-trace', { phase, ...detail });
+      return detail;
+    } catch (error) {
+      // Older firmware does not implement op29. Observability can never turn
+      // an otherwise verified Memories import into an apparent sync failure.
+      reportSDStage(path, 'c3-sync-read-trace-unavailable', {
+        phase, mediaCode: error?.mediaCode ?? null,
+        message: error?.message || String(error),
+      });
+      return null;
+    }
+  }
   // Read-only post-sync diagnostics. Never send another SD catalogue,
   // delete, format or remount just to check a completed BLE download.
   async function reportC3PostSync(path, connection) {
     if (root.SynapModules?.client?.module?.id !== 2 ||
         root.SynapDevices?.connection !== connection) return null;
     let cardAvailable = null;
+    const trace = await reportC3SyncTrace(path, connection, 'verified');
+    if (trace?.sdState === 2) cardAvailable = false;
     try {
       const response = await client().request(27);
       const diag = JSON.parse(new TextDecoder().decode(response.bytes));
