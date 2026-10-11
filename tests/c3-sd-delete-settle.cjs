@@ -30,3 +30,13 @@ test('uncertain deletion retains receipt and reads only SD-independent diagnosti
   assert.match(method,/delete-unverified/);
   assert.match(page,/devices\/chakshu\/capture-preview\.js\?v=1\.0\.0-c3-sd-delete-settle2063/);
 });
+
+test('verified SD receipt survives BLE reconnection or account change during settle and catalogue',()=>{
+  const guard = method.split('const assertSameConnection = () => {')[1].split('};')[0];
+  assert.match(guard,/root\.SynapDevices\?\.connection !== connection/);
+  assert.match(guard,/api\(\)\?\.state\?\.owner !== originalOwner/);
+  assert.match(guard,/delete-unverified-link-changed/);
+  assert.equal((method.match(/assertSameConnection\(\)/g)||[]).length,2);
+  assert(method.indexOf('await new Promise')<method.indexOf('assertSameConnection()'));
+  assert(method.lastIndexOf('assertSameConnection()')<method.indexOf('localStorage.removeItem'));
+});
