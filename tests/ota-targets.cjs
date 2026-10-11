@@ -32,3 +32,15 @@ test('Odyssey C3 pre-1445 connection reserves BLE for OTA recovery',()=>{
   assert(recovery>=0 && optional>recovery,'C3 recovery probe must run before optional GATT/media discovery');
   assert.match(app,/document\.body\?\.dataset\.otaRecovery === 'c3' \? 150 : 5000/);
 });
+
+
+test('legacy C3 cannot OTA into new C3+SD generation even with matching ESP32-C3 chip',()=>{
+  const old='esp32c3-supermini-4m',modern='esp32c3-supermini-4m-sd';
+  const original=image(old),next=image(modern);
+  assert.equal(ota.validateImage(original,1310720,3,old),old);
+  assert.equal(ota.validateImage(next,1966080,3,modern),modern);
+  assert.throws(()=>ota.validateImage(next,1966080,3,old),/selected synap hardware target/);
+  assert.throws(()=>ota.validateImage(original,1966080,3,modern),/selected synap hardware target/);
+  assert.equal(ota.validateImage(next,1966080,3),modern);
+  assert.throws(()=>ota.validateImage(new Uint8Array(1516786),1310720,3,old),/exceeds/);
+});
