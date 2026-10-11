@@ -441,7 +441,7 @@
       reportSDStage(path, 'wifi-verified', { recordingId: ticket.recordingId });
       await root.SynapCloudHistory?.restore?.(true, { limit: 100 }).catch?.(() => {});
       root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
-      return { ...receipt, alreadySynced: false, keptOnSD: true, sdAvailableAfterSync };
+      return { ...receipt, alreadySynced: false, keptOnSD: true };
     } catch (error) {
       reportSDStage(path, 'wifi-failed', { message: error?.message || String(error) });
       throw error;
@@ -839,7 +839,7 @@
           receipt.descriptionError = error.message;
         }
       }
-      return { ...receipt, alreadySynced: false, keptOnSD: true };
+      return { ...receipt, alreadySynced: false, keptOnSD: true, sdAvailableAfterSync };
     } catch (error) {
       reportSDStage(path, 'failed', { failedAt: stage, message: error?.message || String(error) });
       throw error;
