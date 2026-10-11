@@ -1418,13 +1418,16 @@
         'cacheHits','diskFills','faultOffset','wireCmd','wireErr','wireArg','wireMs'];
       const detail = Object.fromEntries(fields.map((field) => [field,result[field] ?? null]));
       reportSDStage('@all','c3-controller-ram-snapshot',{readOnly:true,...detail});
-      const hasWireFault = Number.isInteger(result.wireCmd) && result.wireCmd !== 4294967295;
-      const nativeFault = hasWireFault
-        ? ' First SDSPI command failure: CMD' + result.wireCmd +
-          ', ESP error ' + String(result.wireErr ?? '?') +
-          ', sector argument ' + String(result.wireArg ?? '?') +
-          ', elapsed ' + String(result.wireMs ?? '?') + ' ms.'
-        : ' No native SD command failure captured in this boot.';
+      const hasWireFields = Number.isInteger(result.wireCmd);
+      const hasWireFault = hasWireFields && result.wireCmd !== 4294967295;
+      const nativeFault = !hasWireFields
+        ? ' Native SD command diagnostics are unavailable in this firmware; update to build 2091 or later.'
+        : hasWireFault
+          ? ' First SDSPI command failure: CMD' + result.wireCmd +
+            ', ESP error ' + String(result.wireErr ?? '?') +
+            ', sector argument ' + String(result.wireArg ?? '?') +
+            ', elapsed ' + String(result.wireMs ?? '?') + ' ms.'
+          : ' No native SD command failure captured in this boot.';
       return 'C3 SD RAM diagnosis: state=' + detail.sdState +
         ', probe=' + detail.sdLiveProbe +
         ', media op=' + detail.ioOp +
