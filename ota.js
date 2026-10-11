@@ -7,6 +7,19 @@
   const profiles = root.SynapDeviceProfiles || require('./devices/profiles.js');
   const IMAGE_TARGETS = profiles.BY_TARGET;
   const WINDOW_CHUNKS = root.navigator?.bluetooth ? 4 : 1;
+  // Odyssey C3's 4MB BLE+SD hardware has unstable Bluefy/iOS large-frame
+  // transport. A smaller bounded frame avoids flooding the ATT bridge and
+  // leaves room for radio keepalives while the peripheral writes OTA flash.
+  // Only C3 uses this policy; Chakshu and Odyssey S3 remain unchanged.
+  const C3_OTA_MAX_DATA = 240;
+  const C3_OTA_WINDOW_CHUNKS = 2;
+  function transferPlan(target, advertisedMaxData, legacySingle=false) {
+    if (target==='esp32c3-supermini-4m') {
+      return {maxData:Math.min(advertisedMaxData,C3_OTA_MAX_DATA),
+        windowChunks:C3_OTA_WINDOW_CHUNKS,pauseMs:8};
+    }
+    return {maxData:advertisedMaxData,windowChunks:legacySingle?1:WINDOW_CHUNKS,pauseMs:0};
+  }
   const MIGRATION_MESSAGE = "This pendant uses an older updater. Install the device-ID firmware by USB once during developer/factory provisioning. Future updates need only this app; no key is required.";
   const DISCOVERY_MESSAGE = "This connection is in audio-only recovery mode. Reconnect the pendant to retry full device detection before checking for updates.";
   const COMMITTED_MESSAGE = "Firmware transfer committed, but the pendant has not restarted into the new build. Turn the pendant OFF, disconnect USB power, then switch ON and reconnect to verify. Do not start another transfer until the installed build has been checked.";
@@ -199,7 +212,9 @@
         // buffer. A write response acknowledges the radio, not the copied bytes.
         // Wait for the persisted offset before replacing that buffer. Build 1227
         // introduced synchronous, owned callbacks; other targets keep their window.
-        const windowChunks=imageTarget==='xiao-esp32s3-sense-8m' && info.build<1227 ? 1 : WINDOW_CHUNKS;
+        const plan=transferPlan(imageTarget,info.maxData,
+          imageTarget==='xiao-esp32s3-sense-8m' && info.build<1227);
+        const {windowChunks}=plan;
         const digest=new Uint8Array(await crypto.subtle.digest("SHA-256",bytes));
         this.ensure(epoch);
         if(await this.readDeviceId()!==expectedDeviceId) throw new Error("Device ID mismatch. Nothing was flashed.");
@@ -228,7 +243,7 @@
         while(!ready && offset<bytes.length) {
           const start=offset;let target=offset;
           for(let i=0;i<windowChunks && target<bytes.length;i+=1) {
-            const count=Math.min(info.maxData,bytes.length-target),next=target+count;
+            const count=Math.min(plan.maxData,bytes.length-target),next=target+count;
             const chunk=packet(2,session,9+count);new DataView(chunk.buffer).setUint32(5,target,true);
             chunk.set(bytes.subarray(target,next),9);
             await this.send(chunk,epoch,true,true);
@@ -237,6 +252,9 @@
           const confirmed=await this.ackWindow(start,target,epoch,session);
           if(confirmed.offset<start || confirmed.offset>target) throw new Error("Firmware returned an invalid cumulative offset.");
           offset=confirmed.offset;
+          // Yield after each C3 cumulative ACK to let Bluefy/iOS radio events
+          // and the peripheral's flash scheduler run. No blind retransmit.
+          if (plan.pauseMs) await sleep(plan.pauseMs);
           const percent=Math.floor(offset*100/bytes.length),elapsedMs=Math.max(1,Date.now()-transferStartedAt),
             advanced=Math.max(0,offset-transferStartOffset),bytesPerSecond=advanced>0?Math.round(advanced*1000/elapsedMs):0,
             etaSeconds=bytesPerSecond>0?Math.ceil((bytes.length-offset)/bytesPerSecond):null;
@@ -260,6 +278,6 @@
       } finally { this.busy=false; }
     }
   }
-  root.SynapOTA={Client,decode,packet,validateImage,validDeviceId,MIGRATION_MESSAGE,DISCOVERY_MESSAGE,COMMITTED_MESSAGE,WINDOW_CHUNKS,IMAGE_TARGETS};
+  root.SynapOTA={Client,decode,packet,validateImage,validDeviceId,MIGRATION_MESSAGE,DISCOVERY_MESSAGE,COMMITTED_MESSAGE,WINDOW_CHUNKS,transferPlan,IMAGE_TARGETS};
   if(typeof module!=="undefined" && module.exports) module.exports=root.SynapOTA;
 })(globalThis);
