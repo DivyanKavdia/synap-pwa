@@ -19,6 +19,15 @@
   // catalogue/read/notification transaction against a second Client.
   // Weak keys let old link queues be collected after disconnect.
   const linkTransactions = new WeakMap();
+  // The firmware has one response characteristic per link. A newly constructed
+  // Client must not reuse a previous Client's request ID: a delayed command
+  // could otherwise accept the previous reply as if it were its own.
+  const linkRequestIds = new WeakMap();
+  function nextRequestId(context) {
+    const next = ((linkRequestIds.get(context) || 0) + 1) >>> 0 || 1;
+    linkRequestIds.set(context, next);
+    return next;
+  }
   const hexText = (value) =>
     Array.from(new TextEncoder().encode(String(value ?? '')), (byte) => byte.toString(16).padStart(2, '0')).join('');
   function decode(value, id) {
@@ -126,7 +135,6 @@
   class Client {
     constructor(context) {
       this.context = context;
-      this.id = 0;
       this.operations = Promise.resolve();
       this.command = null;
       this.data = null;
@@ -187,7 +195,7 @@
       signal?.throwIfAborted();
       this.stream = stream;
     }
-    async sendOnly(op, offset, signal, id = ++this.id, path = '') {
+    async sendOnly(op, offset, signal, id = nextRequestId(this.context), path = '') {
       // C3 notification windows include their WAV path to prevent a background
       // catalogue/other client from silently switching the selected source.
       const pathBytes = path ? new TextEncoder().encode(path) : new Uint8Array();
@@ -222,7 +230,7 @@
         this.streamDisabled = true;
         return { parts: [], next: offset };
       }
-      const id = ++this.id,
+      const id = nextRequestId(this.context),
         window = new MediaWindow(id, offset, total);
       let timer, finish, fail;
       const done = new Promise((resolve, reject) => {
@@ -291,7 +299,7 @@
         if (name.length > 63) throw Error('Invalid camera file path.');
         const bytes = new Uint8Array(10 + name.length),
           v = new DataView(bytes.buffer);
-        id = ++this.id;
+        id = nextRequestId(this.context);
         bytes[0] = 0xca;
         bytes[1] = op;
         v.setUint32(2, id, true);
