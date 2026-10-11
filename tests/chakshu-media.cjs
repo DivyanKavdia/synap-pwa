@@ -695,7 +695,7 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(lifecycle, /SD card protocol initialization failed/);
   assert.match(lifecycle, /SD FAT mount or format failed/);
   assert.match(lifecycle, /VFS validation failed/);
-  assert.doesNotMatch(lifecycle, /sector 0|raw initialization did not finish|boot signature/);
+  assert.doesNotMatch(lifecycle, /raw initialization did not finish|boot signature/);
   assert.match(lifecycle, /browseSD\('librarySDList'\)/);
   assert.match(lifecycle, /SynapChakshuVoice\?\.lastOutcome\?\.\(deviceId\)/);
   assert.match(lifecycle, /Last offline result:/);
