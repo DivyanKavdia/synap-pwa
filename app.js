@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell199-c3-sd-fault-report";
+  const APP_SHELL_REVISION = "1.0.0-shell200-c3-ota-link";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -3912,9 +3912,15 @@
     const releases=globalThis.SynapReleases;
     let offered=null,offeredDevice=null,lastCheck=0,downloadController=null;
     let autoResume=null,autoResumeTimer=null;
+    // Firmware retains a protocol-3 orphaned session for 15 minutes.
+    // Keep our local resume intent slightly shorter to avoid beginning after
+    // firmware has discarded the flash handle. A Bluefy selection retry can
+    // easily take more than the old two-minute UI window.
+    const C3_OTA_RESUME_GRACE_MS=14*60*1000;
     const clearAutoResume=()=>{autoResume=null;if(autoResumeTimer)window.clearTimeout?.(autoResumeTimer);autoResumeTimer=null;};
     const armAutoResume=(manifest,id)=>{
-      autoResume={manifest,id,expiresAt:Date.now()+120000};
+      autoResume={manifest,id,expiresAt:Date.now()+
+        (manifest?.target==='esp32c3-supermini-4m'?C3_OTA_RESUME_GRACE_MS:120000)};
       log('Firmware auto-resume armed',{deviceId:id,target:manifest?.target||null,build:manifest?.build||null});
     };
     function checkPreparationCancelled() {
@@ -3968,7 +3974,7 @@
           if(verified){savePending(id,null);bannerButton.hidden=true;latestButton.hidden=true;announce(`Update complete · ${releases.versionLabel(pending)}`);}
           else if([3,4].includes(info.state)&&info.session) {
             offered=pending;offeredDevice=id;bannerButton.hidden=false;latestButton.hidden=false;offerLabel(true);
-            announce(`Paused at ${Math.floor(info.offset*100/pending.size)}% · Continue within 2 minutes`);
+            announce(`Paused at ${Math.floor(info.offset*100/pending.size)}% · Reconnect and Continue update`);
             return;
           } else announce(`Update not confirmed · Retry update`);
         }
@@ -4110,6 +4116,9 @@
         preparing=false;downloadController=null;firmwareUpdater.reset();
         void releaseWakeLock();lock(false);
         if((commitSent||resumeInterrupted)&&!isGattConnected())recoverRememberedConnection('firmware-update',true);
+        // Connection can recover before the update's finally block drops the
+        // firmwareBusy lock; reschedule after releasing that lock as well.
+        if(resumeInterrupted&&isGattConnected())void tryAutoResume();
         // Restore the prior selection and leave an explicit later Pause intact.
         if(resumeQueue && queue===processor && queue.pauseVersion===pauseVersion) {
           log('FIFO','Resuming processing after firmware update');
