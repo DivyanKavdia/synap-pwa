@@ -2,7 +2,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');
 const s=fs.readFileSync('devices/chakshu/capture-preview.js','utf8');
 const html=fs.readFileSync('index.html','utf8');
-const trace=s.split('async function reportC3SyncTrace(')[1].split('async function reportC3PostSync(')[0];
+const trace=s.split('async function reportC3SyncTrace(')[1].split('async function diagnoseC3SdWireReadOnly()')[0];
 const move=s.split('async function moveSD(')[1].split('async function discardIncompleteSD(')[0];
 const post=s.split('async function reportC3PostSync(')[1].split('async function syncAll(')[0];
 test('post-sync diagnostic uses RAM-only op29 without any FAT command or retry',()=>{
