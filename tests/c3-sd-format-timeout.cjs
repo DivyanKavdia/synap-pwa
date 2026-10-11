@@ -9,7 +9,7 @@ test('C3 format is explicitly confirmed and capability-gated',()=>{
   assert.match(capture,/mediaFeatures & 4/);
   assert.match(capture,/await client\(\)\.request\(19\)/);
   assert.match(capture,/ALL files on the card will be permanently erased/);
-  assert.match(capture,/info\?\.sdDetectionState !== 1 \|\| info\?\.sdProbeState !== 6/);
+  assert.match(capture,/info\?\.sdDetectionState !== 1 \|\| info\?\.sdLiveProbeState !== 6/);
 });
 test('format waits for slow native FAT and warns on uncertain timeout; no automatic replay',()=>{
   assert.match(transfer,/C3_SD_FORMAT_DEADLINE_MS = 600000/);
