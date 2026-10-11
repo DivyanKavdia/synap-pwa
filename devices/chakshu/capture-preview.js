@@ -1123,6 +1123,7 @@
       retrySettings = document.getElementById('retryDeviceSD'),
       clearSettings = document.getElementById('clearDeviceSD'),
       formatSettings = document.getElementById('formatDeviceSD'),
+      rawDiagnosticSettings = document.getElementById('diagnoseDeviceSD'),
       wifiSettings = document.getElementById('deviceWifiSettings'),
       wifiSettingsStatus = document.getElementById('deviceWifiSettingsStatus'),
       wifiSave = document.getElementById('saveDeviceWifi'),
@@ -1159,6 +1160,12 @@
         blocked ||
         !state.connected ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
+    if (rawDiagnosticSettings) {
+      rawDiagnosticSettings.hidden = info?.id !== 2;
+      rawDiagnosticSettings.disabled =
+        blocked || !state.connected || state.storageReady ||
+        Boolean(root.SynapAppControls?.recordingState?.().active);
+    }
     if (clearSettings)
       clearSettings.disabled =
         !supportsStorage ||
@@ -1372,7 +1379,7 @@
       card.innerHTML =
         '<h3 class="settings-card-title">SD card</h3>' +
         '<p id="deviceSDSettingsStatus" class="settings-hint">Connect a supported pendant to manage SD storage.</p>' +
-        '<div class="visual-actions"><button id="retryDeviceSD" type="button">Retry SD card</button><button id="clearDeviceSD" type="button">Clear SD Card</button><button id="formatDeviceSD" type="button" hidden>Format SD Card</button></div>';
+        '<div class="visual-actions"><button id="retryDeviceSD" type="button">Retry SD card</button><button id="diagnoseDeviceSD" type="button" hidden>Diagnose SD (read-only)</button><button id="clearDeviceSD" type="button">Clear SD Card</button><button id="formatDeviceSD" type="button" hidden>Format SD Card</button></div>';
       extras.append(card);
       document.getElementById('retryDeviceSD')?.addEventListener('click', async () => {
         const button = document.getElementById('retryDeviceSD'),
@@ -1399,6 +1406,39 @@
         } finally {
           button.disabled = false;
           renderSDInbox();
+        }
+      });
+      document.getElementById('diagnoseDeviceSD')?.addEventListener('click', async () => {
+        const button = document.getElementById('diagnoseDeviceSD'),
+          settingsStatus = document.getElementById('deviceSDSettingsStatus');
+        if (root.SynapModules?.client?.module?.id !== 2 || api()?.state?.storageReady) return;
+        button.disabled = true;
+        if (settingsStatus) settingsStatus.textContent = 'Reading SD sector 0 without mounting FAT or writing…';
+        try {
+          // C3 firmware op28: operator-initiated, one raw read per boot,
+          // no format, unlink, write, or SD filesystem modification.
+          const reply = await client().request(28);
+          const detail = JSON.parse(new TextDecoder().decode(reply.bytes));
+          reportSDStage('@all', 'sd-raw-read-only-diagnostic', detail);
+          let message = 'SD raw check status ' + String(detail.status) +
+            ' · error ' + String(detail.error ?? '?') +
+            ' · first mount error ' + String(detail.firstMountErr ?? '?') + '.';
+          if (detail.status === 1)
+            message = 'SD sector 0 is readable, but FAT could not mount. Preserve card; investigate partition/FAT metadata before repair.';
+          else if (detail.status === 3)
+            message = 'SD controller remains busy-low. Firmware cannot reset the SD 3.3 V rail. Preserve card; do not retry.';
+          else if (detail.status === 7 || detail.status === 8)
+            message = 'SD raw card protocol/read failed (' + String(detail.error) + '). Not just a FAT catalogue error.';
+          if (settingsStatus) settingsStatus.textContent = message;
+          status(message);
+        } catch (error) {
+          const message = error?.mediaCode === 2
+            ? 'This firmware lacks read-only SD diagnostics. Use a firmware release supporting operation 28; do not format or clear.'
+            : 'Read-only SD diagnosis unavailable: ' + (error?.message || String(error));
+          if (settingsStatus) settingsStatus.textContent = message;
+          status(message);
+        } finally {
+          button.disabled = false;
         }
       });
       document.getElementById('clearDeviceSD')?.addEventListener('click', async () => {
