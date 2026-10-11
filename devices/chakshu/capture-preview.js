@@ -905,7 +905,7 @@
       reportSDStage('@all', 'raw-sector0-result', { readOnly: true, ...snapshot });
       const summary = {
         0: 'No raw SD test completed.',
-        1: 'Raw SD sector 0 is readable. FAT or partition damage is possible; recordings may still be recoverable.',
+        1: 'Raw SD sector 0 is readable. A FAT filesystem mount and the contents of previous recordings remain unverified.',
         2: 'Diagnostic refused because SD or another device task is not safely idle.',
         3: 'SD controller appears stuck busy. SPI recovery may require a true SD power cycle.',
         4: 'SD SPI bus setup or cleanup failed.',
@@ -946,7 +946,7 @@
             ', VBR error=' + String(data.vbrError ?? '?') +
             ', BPB plausible=' + String(data.bpbPlausible ?? '?')
           : '') +
-        '. No repair or format was performed.';
+        '. No repair or format was performed. Firmware caches this read-only result until the next MCU boot; removing or reformatting the card without restarting the pendant will NOT refresh this result.';
       return { ...snapshot, message };
     } catch (error) {
       reportSDStage('@all', 'raw-sector0-failed', { message: error?.message || String(error) });
@@ -1262,7 +1262,7 @@
         state.storageReady ||
         info?.sdDetectionState === 1 ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
-      rawProbeSettings.title = 'Read sector 0 once without formatting, deleting or modifying SD files.';
+      rawProbeSettings.title = 'Read up to two diagnostic sectors once per pendant boot; subsequent taps show the cached result. Never formats or repairs SD.';
     }
     if (formatSettings) {
       formatSettings.hidden = !supportsC3Format;
