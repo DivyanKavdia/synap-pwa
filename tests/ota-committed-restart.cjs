@@ -2,7 +2,7 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
-const {Client,COMMITTED_MESSAGE}=require('../ota.js');
+const {Client,COMMITTED_MESSAGE,transferPlan}=require('../ota.js');
 const app=fs.readFileSync('app.js','utf8');
 const media=fs.readFileSync('devices/chakshu/media.js','utf8');
 const sw=fs.readFileSync('sw.js','utf8');
@@ -43,4 +43,18 @@ test('PWA stops automatic SD activity and points the user to physical power rest
   assert.match(COMMITTED_MESSAGE,/disconnect USB power/);
   for(const source of [app,sw,html]) assert(source.includes('1.0.0-shell200-c3-ota-link'));
   assert(html.includes('ota.js?v=1.0.0-c3-ota-link2'));
+});
+
+test('Odyssey C3 BLE OTA remains resumable with smaller acknowledged packets',()=>{
+  assert.deepEqual(transferPlan('esp32c3-supermini-4m',503),
+    {maxData:240,windowChunks:2,pauseMs:8});
+  assert.deepEqual(transferPlan('esp32c3-supermini-4m',100),
+    {maxData:100,windowChunks:2,pauseMs:8});
+  assert.deepEqual(transferPlan('esp32s3-fh4r2-qspi-4m',503),
+    {maxData:503,windowChunks:1,pauseMs:0}); // node tests lack Web Bluetooth
+  assert.deepEqual(transferPlan('xiao-esp32s3-sense-8m',173,true),
+    {maxData:173,windowChunks:1,pauseMs:0});
+  assert.match(app,/const C3_OTA_RESUME_GRACE_MS=14\*60\*1000/);
+  assert.match(app,/manifest\?\.target==='esp32c3-supermini-4m'\?C3_OTA_RESUME_GRACE_MS:120000/);
+  assert.match(app,/if\(resumeInterrupted&&isGattConnected\(\)\)void tryAutoResume\(\)/);
 });
