@@ -24,3 +24,22 @@ test('recording/import receipt remains durable and trace is captured on both out
   assert.doesNotMatch(post,/request\((?:4|7|12|14|17|18|19)\)|catalogue\(/);
   assert.match(html,/capture-preview\.js\?v=1\.0\.0-c3-[a-z0-9-]+/);
 });
+
+
+test('standalone C3 RAM diagnosis can inspect native SDSPI failures even after FAT unmount',()=>{
+  const block=s.split('async function diagnoseC3SdWireReadOnly() {')[1]
+    .split('// Read-only post-sync diagnostics.')[0];
+  assert.match(block,/client\(\)\.request\(29\)/);
+  assert.equal((block.match(/client\(\)\.request\(29\)/g)||[]).length,1);
+  assert.doesNotMatch(block,/request\((?:4|7|12|14|17|18|19|28)\)|catalogue\(|refreshSD|formatSD|deleteSD|unlink\(|readValue\(/);
+  for(const field of ['sdState','sdLiveProbe','ioOp','ioStep','ioErr',
+    'wireCmd','wireErr','wireArg','wireMs'])
+    assert(block.includes("'"+field+"'"),field);
+  assert.match(block,/4294967295/);
+  assert.match(block,/c3-controller-ram-snapshot/);
+  assert.match(s,/id="diagnoseDeviceSDRam"/);
+  assert.match(s,/ramProbeSettings\.hidden = info\?\.id !== 2/);
+  assert.match(s,/ramProbeSettings\.disabled = info\?\.id !== 2 \|\| blocked \|\| !state\.connected/);
+  assert.match(s,/await diagnoseC3SdWireReadOnly\(\)/);
+  assert.match(html,/capture-preview\.js\?v=1\.0\.0-c3-sd-ram-health4/);
+});
