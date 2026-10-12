@@ -1802,7 +1802,9 @@
     // Bluetooth bridges. Keep control writes/reads on their shorter deadline.
     // Media can supply its own read budget without extending Stop/control writes.
     return bluetoothSession.run(action, label, {
-      timeoutMs: options.timeoutMs ?? (label.startsWith("Find ") ? 10000 : COMMAND_TIMEOUT_MS)
+      timeoutMs: options.timeoutMs ?? (label.startsWith("Find ") ? 10000 :
+        (firmwareBusy && /^(Write firmware packet|Read firmware status|Read update target identity)$/.test(label))
+          ? 15000 : COMMAND_TIMEOUT_MS)
     });
   }
 
