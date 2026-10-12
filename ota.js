@@ -16,7 +16,7 @@
   function transferPlan(target, advertisedMaxData, legacySingle=false) {
     if (target==='esp32c3-supermini-4m') {
       return {maxData:Math.min(advertisedMaxData,C3_OTA_MAX_DATA),
-        windowChunks:C3_OTA_WINDOW_CHUNKS,pauseMs:8};
+        windowChunks:advertisedMaxData<64 ? 1 : C3_OTA_WINDOW_CHUNKS,pauseMs:8};
     }
     return {maxData:advertisedMaxData,windowChunks:legacySingle?1:WINDOW_CHUNKS,pauseMs:0};
   }
@@ -203,7 +203,8 @@
         if(info.state===0) throw new Error("OTA needs two application slots and a sufficient BLE MTU.");
         if(info.state===5) throw new Error(COMMITTED_MESSAGE);
         if(![1,3,4,6].includes(info.state)) throw new Error("Another update is pending. Wait for reboot or the transfer timeout.");
-        if (info.maxData<64 || info.maxData>503) throw new Error("Unsupported BLE firmware packet size.");
+        const bootstrapC3 = expectedTarget === 'esp32c3-supermini-4m' && info.build === 0;
+        if (info.maxData<(bootstrapC3 ? 11 : 64) || info.maxData>503) throw new Error("Unsupported BLE firmware packet size.");
         if (!file || file.size<36 || file.size>info.capacity || file.size>16*1024*1024) throw new Error("Choose an application .bin that fits the available slot.");
         this.io.progress("Preparing update…",0,false,{phase:"prepare",offset:0,total:file.size||0});
         const bytes=new Uint8Array(await file.arrayBuffer());
