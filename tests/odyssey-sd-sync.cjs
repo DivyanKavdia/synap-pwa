@@ -92,7 +92,7 @@ assert.match(preview,/async function moveC3Wifi\(path, sourceEntry, progress/);
 assert.doesNotMatch(preview,/wifiState\?\.configured\) return moveC3Wifi/,
   'ordinary Sync to Memories must remain Bluetooth; Wi-Fi transfer is an explicit user action');
 assert.match(preview,/Start private Wi-Fi downloads/,'C3 SD rows must expose direct private AP download action');
-assert.match(preview,/id = 'deviceWifiSettings'/);
+assert.match(preview,/id\s*=\s*'deviceWifiSettings'/);
 assert.match(preview,/Start pendant Wi-Fi/);
 assert.match(preview,/Stop pendant Wi-Fi/);
 assert.match(preview,/\/v1\/device-uploads/);
