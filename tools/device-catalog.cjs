@@ -21,7 +21,7 @@ function generate(catalog) {
     features: d.features,
     protocols: d.protocols || {},
   }));
-  return `// Generated from devices/catalog.json by tools/device-catalog.cjs.\n(function(root) {\n  'use strict';\n  const catalog = ${JSON.stringify({ primaryTarget: catalog.primaryTarget, flags: catalog.flags, devices }, null, 2)};\n  function freeze(value) {\n    if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }\n    return value;\n  }\n  const api = freeze({\n    PRIMARY_TARGET: catalog.primaryTarget, FLAGS: catalog.flags,\n    BY_TARGET: Object.fromEntries(catalog.devices.map(d => [d.target, d])),\n    BY_MODULE: Object.fromEntries(catalog.devices.map(d => [d.id, d]))\n  });\n  root.SynapDeviceProfiles = api;\n  if (typeof module !== 'undefined') module.exports = api;\n})(globalThis);\n`;
+  return `// Generated from devices/catalog.json by tools/device-catalog.cjs.\n(function(root) {\n  'use strict';\n  const catalog = ${JSON.stringify({ primaryTarget: catalog.primaryTarget, flags: catalog.flags, devices }, null, 2)};\n  function freeze(value) {\n    if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }\n    return value;\n  }\n  const api = freeze({\n    PRIMARY_TARGET: catalog.primaryTarget, FLAGS: catalog.flags,\n    BY_TARGET: Object.fromEntries(catalog.devices.map(d => [d.target, d])),\n    BY_MODULE: Object.fromEntries(catalog.devices.map(d => [d.id, d]).reverse())\n  });\n  root.SynapDeviceProfiles = api;\n  if (typeof module !== 'undefined') module.exports = api;\n})(globalThis);\n`;
 }
 if (require.main === module) {
   const args = process.argv.slice(2);
