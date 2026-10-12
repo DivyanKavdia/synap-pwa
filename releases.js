@@ -86,7 +86,11 @@
   async function verifyManifest(m,fetcher){const manifest=validateManifest(m);if(manifest.schema===1)return manifest;if(manifest.schema===2)await verifyLegacySignature(manifest);else await verifyGitHubProvenance(manifest,fetcher);return manifest;}
 
   function targetFromIdentity(identity){
-    if(typeof identity!=='string')return null;const parts=identity.split(':');
+    if(typeof identity!=='string')return null;
+    // The USB-provisioned C3 bootstrap is the only valid build-zero identity.
+    if(identity==='SYNAP-FW:esp32c3-supermini-4m:synap-os1-build0:0')
+      return {target:'esp32c3-supermini-4m',version:'synap-os1-build0',build:0,bootstrap:true};
+    const parts=identity.split(':');
     if(parts.length!==4||parts[0]!=='SYNAP-FW'||!configFor(parts[1])||!validVersion(parts[2],Number(parts[3]))||!integer(Number(parts[3]),504,65535)||String(Number(parts[3]))!==parts[3])return null;
     return {target:parts[1],version:parts[2],build:Number(parts[3])};
   }
@@ -96,9 +100,10 @@
   function materializeCatalog(value,identity){const selected=selectCatalogManifest(value,identity);for(const key of Object.keys(value))delete value[key];Object.assign(value,selected);return value;}
   function compatible(m,info,identity){
     if(isCatalog(m))materializeCatalog(m,identity);const manifest=validateManifest(m);
-    if(info.protocol!==3)throw Error(root.SynapOTA.MIGRATION_MESSAGE);
-    if(info.state===0||info.capacity<manifest.size||info.maxData<64)throw Error('This pendant needs compatible OTA slots and BLE MTU before updating.');
     const running=targetFromIdentity(identity);if(!running)throw Error('Unknown pendant hardware. Reconnect and check the firmware identity.');
+    if(info.protocol!==3)throw Error(root.SynapOTA.MIGRATION_MESSAGE);
+    if(info.state===0||info.capacity<manifest.size||info.maxData<(running.bootstrap?11:64))
+      throw Error('This pendant needs compatible OTA slots and BLE MTU before updating.');
     if(running.target!==manifest.target||running.build!==info.build)throw Error('The connected pendant is a different hardware target.');
     return manifest.build>info.build;
   }
