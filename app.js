@@ -1337,7 +1337,7 @@
             if (globalThis.document?.body) document.body.dataset.otaRecovery = "c3";
             setReconnectCapability(
               "Odyssey C3 firmware recovery mode",
-              "Bluetooth is reserved for firmware update. SD and media checks are paused until compatible full firmware is installed.",
+              "Bluetooth is reserved for firmware update. SD and media checks are paused until build 1445 is installed.",
             );
             setAppState(
               "idle",
