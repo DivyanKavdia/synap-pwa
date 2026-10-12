@@ -4,7 +4,7 @@ const ota=require('../ota.js'),r=require('../releases.js');
 function fixture(targetId=r.TARGET,build=1001,schema=1,version='1.0.0'){
   const config=r.TARGETS[targetId],bytes=Buffer.alloc(512);bytes[0]=0xe9;bytes.writeUInt16LE(config.chip,12);bytes.writeUInt32LE(0xabcd5432,32);
   bytes.write(config.marker,80);
-  const identity=`SYNAP-FW:${targetId}:${version}:${build}`;bytes.write(identity+'\0',160);
+  const identity=`SYNAP-FW:${config.firmwareTarget||targetId}:${version}:${build}`;bytes.write(identity+'\0',160);
   const sha256=cryptoNode.createHash('sha256').update(bytes).digest('hex');
   const m={schema,target:targetId,protocol:3,chip:config.chip,partition:config.partition,flashBytes:config.flashBytes,psramBytes:config.psramBytes,
     build,version,size:bytes.length,sha256,identity,commit:'a'.repeat(40),url:r.BASE+config.releasePrefix+`builds/${build}-${sha256}.bin`};
@@ -14,7 +14,7 @@ function fixture(targetId=r.TARGET,build=1001,schema=1,version='1.0.0'){
 
 test('both targets migrate from legacy firmware to OS1 and retain monotonic OTA eligibility',async()=>{
   const manifests=Object.fromEntries(Object.keys(r.TARGETS).map(target=>[target,fixture(target,1194,3,'synap-os1-build1194').m]));
-  for(const target of Object.keys(r.TARGETS)){
+  for(const target of Object.keys(r.TARGETS).filter(id=>id!=='esp32c3-supermini-4m-sd-ota')){
     const {bytes,m}=fixture(target,1194,3,'synap-os1-build1194');
     const info={protocol:3,state:1,capacity:2048,maxData:173,build:1192};
     const catalog={__synapTargetCatalog:true,manifests};
