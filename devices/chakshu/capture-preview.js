@@ -344,6 +344,31 @@
     if (!c3WifiSupported()) return null;
     return client().c3WifiStatus();
   }
+  // SoftAP downloads do not require stored router/hotspot credentials.
+  async function c3ApStatus() {
+    if (!c3WifiSupported()) return null;
+    return client().c3ApStatus();
+  }
+  async function startC3Ap() {
+    if (!c3WifiSupported()) throw Error('Update Odyssey C3 firmware for private Wi-Fi downloads.');
+    return client().startC3Ap();
+  }
+  async function stopC3Ap() {
+    if (!c3WifiSupported()) return null;
+    return client().stopC3Ap();
+  }
+  function showC3ApInfo(next) {
+    const node=document.getElementById('deviceApInfo');
+    const link=document.getElementById('deviceApOpen');
+    if(!node || !link)return;
+    node.hidden=!next?.active;
+    link.hidden=!next?.active;
+    if(!next?.active){node.textContent='';link.removeAttribute('href');return;}
+    node.textContent='Network: '+next.ssid+' · Password: '+next.password+
+      ' · Join this Wi-Fi in iPhone Settings, then open the private page.';
+    link.href=next.url;
+    link.textContent='Open private recording downloads';
+  }
   async function configureC3Wifi(ssid, password) {
     if (!c3WifiSupported()) throw Error('Update Odyssey C3 firmware for direct Wi-Fi sync.');
     return client().configureC3Wifi(ssid, password);
@@ -1145,7 +1170,7 @@
         });
       }
       wifi.type = 'button';
-      wifi.textContent = 'Transfer over Wi-Fi';
+      wifi.textContent = 'Start private Wi-Fi downloads';
       wifi.hidden = !wifiEligible;
       wifi.disabled = !wifiEligible;
       if (wifiEligible) {
@@ -1153,32 +1178,17 @@
           action.disabled = true;
           wifi.disabled = true;
           try {
-            const network = await c3WifiStatus().catch(() => null);
-            if (!network?.configured)
-              throw Error('Save a 2.4 GHz Wi-Fi or phone hotspot in Settings → Wi-Fi sync first.');
-            await moveC3Wifi(file.path, file, (fraction) =>
-              status('Transferring over Wi-Fi · ' + Math.round(fraction * 100) + '%'),
-            );
-            if (root.SynapModules?.client?.module?.id === 2) {
-              status('Wi-Fi transfer complete · C3 SD original kept for separate verification and deletion.');
-            } else {
-              const deleteNow = confirm(
-                'Wi-Fi transfer completed and the recording is safely stored in Synap Cloud. Delete this recording from the device SD card now?',
-              );
-              if (deleteNow) {
-                await deleteSDItem(file.path);
-                status('Wi-Fi transfer complete · SD copy deleted.');
-              } else {
-                status('Wi-Fi transfer complete · SD copy kept.');
-              }
-            }
-          } catch (error) {
+            const ap=await startC3Ap();
+            showC3ApInfo(ap);
+            status('Private Wi-Fi ready: '+ap.ssid+'. Password and download link are in Settings → Wi-Fi downloads. Existing SD recordings are untouched.');
+            alert('Join '+ap.ssid+' in iPhone Wi-Fi Settings.\nPassword: '+ap.password+
+              '\nThen open this link in Safari:\n'+ap.url+
+              '\nDownloaded WAVs can be imported into Synap after reconnecting to the internet.');
+          } catch(error) {
             status(error.message);
           } finally {
             action.disabled = false;
             wifi.disabled = false;
-            if (root.SynapModules?.client?.module?.id !== 2)
-              await browseSD(list.id).catch(() => {});
             renderSDInbox();
           }
         });
@@ -1249,8 +1259,8 @@
       ramProbeSettings = document.getElementById('diagnoseDeviceSDRam'),
       wifiSettings = document.getElementById('deviceWifiSettings'),
       wifiSettingsStatus = document.getElementById('deviceWifiSettingsStatus'),
-      wifiSave = document.getElementById('saveDeviceWifi'),
-      wifiForget = document.getElementById('forgetDeviceWifi'),
+      wifiSave = document.getElementById('startDeviceAp'),
+      wifiForget = document.getElementById('stopDeviceAp'),
       info = root.SynapModules?.client?.module,
       supportsC3Wifi = Boolean(info?.id === 2 && (info?.mediaFeatures & 2)),
       supportsC3Format = Boolean(info?.id === 2 && (info?.mediaFeatures & 4)),
@@ -1344,7 +1354,7 @@
         !state.connected ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
     if (wifiSettingsStatus && supportsC3Wifi && !state.connected)
-      wifiSettingsStatus.textContent = 'Connect Odyssey C3 to manage its saved Wi-Fi network.';
+      wifiSettingsStatus.textContent = 'Connect Odyssey C3 to start private SD downloads.';
     if (!panel) return;
     if (toggle) {
       toggle.hidden = !state.available;
@@ -1809,68 +1819,47 @@
       });
     }
     if (extras && !document.getElementById('deviceWifiSettings')) {
-      const card = document.createElement('section');
-      card.id = 'deviceWifiSettings';
-      card.className = 'settings-card';
-      card.hidden = true;
-      card.innerHTML =
-        '<h3 class="settings-card-title">Wi-Fi sync</h3>' +
-        '<p id="deviceWifiSettingsStatus" class="settings-hint">Save a 2.4 GHz Wi-Fi network once. Odyssey C3 will join it directly when syncing SD audio; your phone stays on its normal network.</p>' +
-        '<label class="settings-field">Wi-Fi name (SSID)<input id="deviceWifiSsid" type="text" maxlength="32" autocomplete="off" autocapitalize="none" spellcheck="false"></label>' +
-        '<label class="settings-field">Wi-Fi password<input id="deviceWifiPassword" type="password" maxlength="63" autocomplete="new-password"></label>' +
-        '<div class="visual-actions"><button id="saveDeviceWifi" type="button">Save Wi-Fi</button><button id="forgetDeviceWifi" type="button">Forget Wi-Fi</button></div>';
+      const card=document.createElement('section');
+      card.id='deviceWifiSettings';card.className='settings-card';card.hidden=true;
+      card.innerHTML=
+        '<h3 class="settings-card-title">Private Wi-Fi downloads</h3>'+
+        '<p id="deviceWifiSettingsStatus" class="settings-hint">No saved Wi-Fi password needed. Start a temporary C3 access point, join it from iPhone Settings, then open the private download link. Cloud sync can be completed after restoring internet access.</p>'+
+        '<p id="deviceApInfo" class="settings-hint" hidden></p>'+
+        '<p><a id="deviceApOpen" target="_blank" rel="noopener noreferrer" hidden>Open private recording downloads</a></p>'+
+        '<div class="visual-actions"><button id="startDeviceAp" type="button">Start pendant Wi-Fi</button><button id="stopDeviceAp" type="button">Stop pendant Wi-Fi</button></div>';
       extras.append(card);
-      document.getElementById('saveDeviceWifi')?.addEventListener('click', async () => {
-        const button = document.getElementById('saveDeviceWifi'),
-          statusNode = document.getElementById('deviceWifiSettingsStatus'),
-          ssid = document.getElementById('deviceWifiSsid')?.value || '',
-          password = document.getElementById('deviceWifiPassword')?.value || '';
-        button.disabled = true;
-        if (statusNode) statusNode.textContent = 'Saving Wi-Fi to Odyssey C3…';
+      document.getElementById('startDeviceAp')?.addEventListener('click',async()=>{
+        const button=document.getElementById('startDeviceAp'),
+          statusNode=document.getElementById('deviceWifiSettingsStatus');
+        button.disabled=true;
+        statusNode.textContent='Starting private Wi-Fi on Odyssey C3…';
         try {
-          const next = await configureC3Wifi(ssid, password);
-          document.getElementById('deviceWifiPassword').value = '';
-          card.dataset.configured = String(Boolean(next?.configured));
-          if (statusNode)
-            statusNode.textContent = next?.configured
-              ? 'Wi-Fi saved on Odyssey C3. SD audio will prefer direct Wi-Fi sync.'
-              : 'Wi-Fi was not saved. Check the network name and retry.';
-        } catch (error) {
-          if (statusNode) statusNode.textContent = 'Could not save Wi-Fi · ' + error.message;
+          const ap=await startC3Ap();
+          showC3ApInfo(ap);
+          statusNode.textContent='Hotspot ready. Join '+ap.ssid+' in iPhone Wi-Fi Settings. Open its private download page after connecting.';
+        } catch(error) {
+          statusNode.textContent='Wi-Fi hotspot unavailable · '+error.message;
           status(error.message);
-        } finally {
-          button.disabled = false;
-          renderSDInbox();
-        }
+        } finally {button.disabled=false;renderSDInbox();}
       });
-      document.getElementById('forgetDeviceWifi')?.addEventListener('click', async () => {
-        const button = document.getElementById('forgetDeviceWifi'),
-          statusNode = document.getElementById('deviceWifiSettingsStatus');
-        button.disabled = true;
+      document.getElementById('stopDeviceAp')?.addEventListener('click',async()=>{
+        const button=document.getElementById('stopDeviceAp'),
+          statusNode=document.getElementById('deviceWifiSettingsStatus');
+        button.disabled=true;
         try {
-          const next = await forgetC3Wifi();
-          card.dataset.configured = String(Boolean(next?.configured));
-          if (statusNode) statusNode.textContent = 'Saved Wi-Fi removed. SD sync will use Bluetooth.';
-        } catch (error) {
-          if (statusNode) statusNode.textContent = 'Could not forget Wi-Fi · ' + error.message;
-          status(error.message);
-        } finally {
-          button.disabled = false;
-          renderSDInbox();
-        }
+          await stopC3Ap();showC3ApInfo(null);
+          statusNode.textContent='Hotspot stopping. Reconnect to your usual Wi-Fi or cellular connection.';
+        } catch(error) {statusNode.textContent='Could not stop Wi-Fi · '+error.message;}
+        finally {button.disabled=false;renderSDInbox();}
       });
-      root.setTimeout(async () => {
-        if (!c3WifiSupported() || !root.SynapDevices?.connection) return;
-        const statusNode = document.getElementById('deviceWifiSettingsStatus');
+      root.setTimeout(async()=>{
+        if(!c3WifiSupported() || !root.SynapDevices?.connection)return;
         try {
-          const next = await c3WifiStatus();
-          card.dataset.configured = String(Boolean(next?.configured));
-          if (statusNode)
-            statusNode.textContent = next?.configured
-              ? 'Wi-Fi is saved on Odyssey C3. SD audio will prefer direct Wi-Fi sync.'
-              : 'No Wi-Fi network is saved. Add one to enable direct cloud sync.';
-        } catch (_) {}
-      }, 500);
+          const ap=await c3ApStatus();showC3ApInfo(ap);
+          if(ap?.active)document.getElementById('deviceWifiSettingsStatus').textContent=
+            'Private Wi-Fi is active. Connect iPhone to '+ap.ssid+' and open the private page.';
+        } catch(_) {}
+      },500);
     }
     if (browse?.parentNode && !document.getElementById('visualClearSD')) {
       const clear = document.createElement('button');
@@ -1898,6 +1887,9 @@
   const exposed = {
     moveSD,
     moveC3Wifi,
+    c3ApStatus,
+    startC3Ap,
+    stopC3Ap,
     c3WifiStatus,
     configureC3Wifi,
     forgetC3Wifi,
