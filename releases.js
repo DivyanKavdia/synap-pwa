@@ -32,7 +32,7 @@
     const legacy=m?.schema===1&&m?.target===TARGET&&m.build<=LEGACY_UNSIGNED_MAX_BUILD&&m.channel===undefined;
     const signed=m?.schema===2&&m.channel==='production';
     const github=m?.schema===3&&m.channel==='production';
-    if(!config||(!legacy&&!signed&&!github)||m.protocol!==3||m.chip!==config.chip||m.partition!==config.partition||m.flashBytes!==config.flashBytes||m.psramBytes!==config.psramBytes||!integer(m.build,504,65535)||!integer(m.size,288,config.maxSize)||!validVersion(m.version,m.build)||!/^[a-f0-9]{64}$/.test(m.sha256)||!/^[a-f0-9]{40}$/.test(m.commit)||m.identity!==`SYNAP-FW:${config.target}:${m.version}:${m.build}`||m.url!==expectedUrl(config,m.build,m.sha256)) throw Error('Invalid or incompatible firmware release manifest.');
+    if(!config||(!legacy&&!signed&&!github)||m.protocol!==3||m.chip!==config.chip||m.partition!==config.partition||m.flashBytes!==config.flashBytes||m.psramBytes!==config.psramBytes||!integer(m.build,504,65535)||!integer(m.size,288,config.maxSize)||!validVersion(m.version,m.build)||!/^[a-f0-9]{64}$/.test(m.sha256)||!/^[a-f0-9]{40}$/.test(m.commit)||m.identity!==`SYNAP-FW:${config.firmwareTarget||config.target}:${m.version}:${m.build}`||m.url!==expectedUrl(config,m.build,m.sha256)) throw Error('Invalid or incompatible firmware release manifest.');
     if(signed&&(!m.signing||m.signing.alg!=='ES256'||m.signing.keyId!==SIGNING_KEY_ID||!/^[A-Za-z0-9+/]{86}==$/.test(m.signing.value))) throw Error('Production firmware manifest is not signed by synap.');
     if(github&&(m.signing||m.provenance?.provider!=='github-actions'||m.provenance?.repository!==REPOSITORY||m.provenance?.workflow!==WORKFLOW)) throw Error('Production firmware manifest has invalid GitHub provenance metadata.');
     if(legacy&&(m.signing||m.provenance)) throw Error('Legacy firmware manifest must not contain trust metadata.');
@@ -96,10 +96,17 @@
   }
   function isCatalog(value){return Boolean(value&&value.__synapTargetCatalog===true&&value.manifests);}
   function catalog(manifests){return {__synapTargetCatalog:true,manifests:Object.freeze({...manifests})};}
-  function selectCatalogManifest(value,identity){const running=targetFromIdentity(identity);if(!running)throw Error('Unknown pendant hardware. Reconnect and check the firmware identity.');const selected=value.manifests[running.target];if(!selected)throw Error(`No production firmware is published for ${running.target}.`);return selected;}
-  function materializeCatalog(value,identity){const selected=selectCatalogManifest(value,identity);for(const key of Object.keys(value))delete value[key];Object.assign(value,selected);return value;}
+  function selectCatalogManifest(value,identity,info=null){const running=targetFromIdentity(identity);if(!running)throw Error('Unknown pendant hardware. Reconnect and check the firmware identity.');
+    // A physically pre-provisioned large OTA C3 still reports its original C3
+    // identity. Only the live reported inactive slot may route to the Wi-Fi build.
+    // The sealed 1.25MiB C3 never receives this 1.5MiB variant.
+    const largeSlot=running.target==='esp32c3-supermini-4m' && Number(info?.capacity)>=1966080;
+    const upgrade=largeSlot?value.manifests['esp32c3-supermini-4m-sd-ota']:null;
+    const selected=upgrade || value.manifests[running.target];
+    if(!selected)throw Error(`No production firmware is published for ${running.target}.`);return selected;}
+  function materializeCatalog(value,identity,info){const selected=selectCatalogManifest(value,identity,info);for(const key of Object.keys(value))delete value[key];Object.assign(value,selected);return value;}
   function compatible(m,info,identity){
-    if(isCatalog(m))materializeCatalog(m,identity);const manifest=validateManifest(m);
+    if(isCatalog(m))materializeCatalog(m,identity,info);const manifest=validateManifest(m);
     const running=targetFromIdentity(identity);if(!running)throw Error('Unknown pendant hardware. Reconnect and check the firmware identity.');
     if(info.protocol!==3)throw Error(root.SynapOTA.MIGRATION_MESSAGE);
     const minimumPacket=running.bootstrap?11:64;
@@ -114,7 +121,7 @@
         ' bytes, minimum packet='+minimumPacket+', protocol='+info.protocol+
         ', firmware build='+info.build+'. No update was started.');
     }
-    if(running.target!==manifest.target||running.build!==info.build)throw Error('The connected pendant is a different hardware target.');
+    if(running.target!==(configFor(manifest.target)?.firmwareTarget||manifest.target)||running.build!==info.build)throw Error('The connected pendant is a different hardware target.');
     return manifest.build>info.build;
   }
 

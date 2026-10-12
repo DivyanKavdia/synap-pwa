@@ -94,6 +94,34 @@
       }
     },
     {
+      "id": 2,
+      "target": "esp32c3-supermini-4m-sd-ota",
+      "name": "Synap Odyssey C3+SD",
+      "board": "ESP32-C3 existing large-slot + microSD",
+      "adapter": "esp32c3",
+      "chip": 5,
+      "flashBytes": 4194304,
+      "psramBytes": 0,
+      "partition": "large-ota-preprovisioned",
+      "maxSize": 1966080,
+      "marker": "SYNAP-ESP32C3-OTA-ID-V3",
+      "manifestPath": "targets/esp32c3-supermini-4m-sd-ota/latest.json",
+      "releasePrefix": "targets/esp32c3-supermini-4m-sd-ota/",
+      "features": [
+        "audio",
+        "sd",
+        "settings",
+        "touch",
+        "battery",
+        "standby",
+        "sdAudio"
+      ],
+      "protocols": {
+        "media": 1
+      },
+      "firmwareTarget": "esp32c3-supermini-4m"
+    },
+    {
       "id": 3,
       "target": "xiao-esp32s3-sense-8m",
       "name": "Chakshu",

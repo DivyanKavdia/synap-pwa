@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell201-c3-sd-wifi";
+  const APP_SHELL_REVISION = "1.0.0-shell202-c3-large-wifi-ota";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -3940,7 +3940,7 @@
     const clearAutoResume=()=>{autoResume=null;if(autoResumeTimer)window.clearTimeout?.(autoResumeTimer);autoResumeTimer=null;};
     const armAutoResume=(manifest,id)=>{
       autoResume={manifest,id,expiresAt:Date.now()+
-        (manifest?.target==='esp32c3-supermini-4m'?C3_OTA_RESUME_GRACE_MS:120000)};
+        (['esp32c3-supermini-4m','esp32c3-supermini-4m-sd-ota'].includes(manifest?.target)?C3_OTA_RESUME_GRACE_MS:120000)};
       log('Firmware auto-resume armed',{deviceId:id,target:manifest?.target||null,build:manifest?.build||null});
     };
     function checkPreparationCancelled() {
