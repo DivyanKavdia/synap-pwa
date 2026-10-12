@@ -410,6 +410,38 @@
     c3WifiStatus(signal) {
       return this.serialize(() => this._c3WifiStatus(signal));
     }
+    // Private C3+SD SoftAP: these calls exchange only control/status over BLE.
+    // Actual WAV downloads happen in the phone browser on the temporary AP.
+    _c3ApStatus(signal) {
+      return this._request(21, 0, '', signal).then(reply => {
+        let state;
+        try { state = JSON.parse(new TextDecoder().decode(reply.bytes)); }
+        catch (_) { throw Error('C3 access point status is invalid.'); }
+        if (!state || typeof state.active !== 'boolean') throw Error('C3 access point status is invalid.');
+        if (state.active && (!/^Synap-C3-[0-9A-F]{4}$/.test(state.ssid) ||
+            !/^[a-f0-9]{32}$/.test(state.password) ||
+            !/^http:\/\/192\.168\.4\.1\/\?key=[a-f0-9]{32}$/.test(state.url)))
+          throw Error('C3 hotspot details failed validation.');
+        return state;
+      });
+    }
+    c3ApStatus(signal) { return this.serialize(() => this._c3ApStatus(signal)); }
+    startC3Ap(signal) {
+      return this.serialize(async () => {
+        const current=await this._c3ApStatus(signal);
+        if(current.active)return current;
+        await this._request(20, 0, '', signal);
+        const next=await this._c3ApStatus(signal);
+        if(!next.active)throw Error('C3 hotspot did not start. Check SD mount and battery.');
+        return next;
+      });
+    }
+    stopC3Ap(signal) {
+      return this.serialize(async () => {
+        await this._request(22, 0, '', signal);
+        return {active:false,stopping:true};
+      });
+    }
     forgetC3Wifi(signal) {
       return this.serialize(async () => {
         await this._request(26, 0, '', signal);

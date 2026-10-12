@@ -105,10 +105,10 @@ test('C3 optional integrity/session catalogue fields survive into SD state',()=>
 test('C3 Wi-Fi transfer is explicit, firmware-gated, and retains SD source after verified cloud upload',()=>{
   assert.match(modules,/profile\.id === 2 \? value\.getUint8\(16\) & 7 : 0/);
   assert.match(preview,/info\?\.id === 2 && \(info\.mediaFeatures & 2\)/);
-  assert.match(preview,/Transfer over Wi-Fi/);
+  assert.match(preview,/Start private Wi-Fi downloads/);
   assert.match(library,/library-sd-wifi/);
-  assert.match(library,/moveC3Wifi/);
-  assert.match(preview,/Save a 2\.4 GHz Wi-Fi or phone hotspot in Settings/);
+  assert.match(library,/startC3Ap/);
+  assert.match(preview,/No saved Wi-Fi password needed/);
   assert.match(preview,/startC3WifiUpload/);
   assert.match(preview,/c3WifiStatus/);
   assert.match(preview,/localStorage\.setItem\(receiptKey\(connection\.deviceId, path\), JSON\.stringify\(receipt\)\)/);
@@ -163,4 +163,17 @@ test('C3 media clients sharing a BLE connection do not accept stale same-ID repl
   assert.equal(new TextDecoder().decode(report.bytes),'report-27');
   assert.deepEqual(issued.map(({op})=>op),[29,27]);
   assert.notEqual(issued[0].id,issued[1].id,'request IDs must remain unique across Client instances');
+});
+
+test('C3 private AP uses BLE start/status/stop and never asks for router passwords',()=>{
+  assert.match(transferSource,/this\._request\(20, 0, '', signal\)/);
+  assert.match(transferSource,/this\._request\(21, 0, '', signal\)/);
+  assert.match(transferSource,/this\._request\(22, 0, '', signal\)/);
+  assert.match(preview,/startDeviceAp/);
+  assert.match(preview,/stopDeviceAp/);
+  assert.match(preview,/deviceApInfo/);
+  assert.match(transferSource,/192/);
+  assert.match(library,/Start Wi-Fi downloads/);
+  assert.doesNotMatch(preview,/id="deviceWifiPassword"/);
+  assert.doesNotMatch(preview,/id="deviceWifiSsid"/);
 });
