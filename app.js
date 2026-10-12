@@ -3940,7 +3940,7 @@
     const clearAutoResume=()=>{autoResume=null;if(autoResumeTimer)window.clearTimeout?.(autoResumeTimer);autoResumeTimer=null;};
     const armAutoResume=(manifest,id)=>{
       autoResume={manifest,id,expiresAt:Date.now()+
-        (manifest?.target==='esp32c3-supermini-4m'?C3_OTA_RESUME_GRACE_MS:120000)};
+        (['esp32c3-supermini-4m','esp32c3-supermini-4m-sd-ota'].includes(manifest?.target)?C3_OTA_RESUME_GRACE_MS:120000)};
       log('Firmware auto-resume armed',{deviceId:id,target:manifest?.target||null,build:manifest?.build||null});
     };
     function checkPreparationCancelled() {
