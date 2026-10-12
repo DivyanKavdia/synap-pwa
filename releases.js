@@ -102,8 +102,18 @@
     if(isCatalog(m))materializeCatalog(m,identity);const manifest=validateManifest(m);
     const running=targetFromIdentity(identity);if(!running)throw Error('Unknown pendant hardware. Reconnect and check the firmware identity.');
     if(info.protocol!==3)throw Error(root.SynapOTA.MIGRATION_MESSAGE);
-    if(info.state===0||info.capacity<manifest.size||info.maxData<(running.bootstrap?11:64))
-      throw Error('This pendant needs compatible OTA slots and BLE MTU before updating.');
+    const minimumPacket=running.bootstrap?11:64;
+    if(info.state===0||info.capacity<manifest.size||info.maxData<minimumPacket) {
+      const problems=[];
+      if(info.state===0)problems.push('OTA is disabled (state 0)');
+      if(info.capacity<manifest.size)problems.push('inactive slot too small');
+      if(info.maxData<minimumPacket)problems.push('BLE OTA packet too small');
+      throw Error('OTA readiness failed: '+problems.join('; ')+
+        '. State='+info.state+', inactive capacity='+info.capacity+
+        ' bytes, required image='+manifest.size+' bytes, maxData='+info.maxData+
+        ' bytes, minimum packet='+minimumPacket+', protocol='+info.protocol+
+        ', firmware build='+info.build+'. No update was started.');
+    }
     if(running.target!==manifest.target||running.build!==info.build)throw Error('The connected pendant is a different hardware target.');
     return manifest.build>info.build;
   }
