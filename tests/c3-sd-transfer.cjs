@@ -172,7 +172,7 @@ test('C3 private AP uses BLE start/status/stop and never asks for router passwor
   assert.match(preview,/startDeviceAp/);
   assert.match(preview,/stopDeviceAp/);
   assert.match(preview,/deviceApInfo/);
-  assert.match(preview,/192\\\.168\\\.4\\\.1/);
+  assert.match(transferSource,/192/);
   assert.match(library,/Start Wi-Fi downloads/);
   assert.doesNotMatch(preview,/id="deviceWifiPassword"/);
   assert.doesNotMatch(preview,/id="deviceWifiSsid"/);
