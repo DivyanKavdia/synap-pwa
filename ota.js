@@ -14,7 +14,7 @@
   const C3_OTA_MAX_DATA = 240;
   const C3_OTA_WINDOW_CHUNKS = 2;
   function transferPlan(target, advertisedMaxData, legacySingle=false) {
-    if (target==='esp32c3-supermini-4m') {
+    if (target==='esp32c3-supermini-4m' || target==='esp32c3-supermini-4m-sd') {
       return {maxData:Math.min(advertisedMaxData,C3_OTA_MAX_DATA),
         windowChunks:advertisedMaxData<64 ? 1 : C3_OTA_WINDOW_CHUNKS,pauseMs:8};
     }
