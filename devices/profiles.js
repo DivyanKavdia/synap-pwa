@@ -67,6 +67,33 @@
       }
     },
     {
+      "id": 2,
+      "target": "esp32c3-supermini-4m-sd",
+      "name": "Synap Odyssey C3+SD",
+      "board": "ESP32-C3 SuperMini + microSD",
+      "adapter": "esp32c3",
+      "chip": 5,
+      "flashBytes": 4194304,
+      "psramBytes": 0,
+      "partition": "c3-sd-dual-ota",
+      "maxSize": 1966080,
+      "marker": "SYNAP-ESP32C3-SD-OTA-ID-V1",
+      "manifestPath": "targets/esp32c3-supermini-4m-sd/latest.json",
+      "releasePrefix": "targets/esp32c3-supermini-4m-sd/",
+      "features": [
+        "audio",
+        "sd",
+        "settings",
+        "touch",
+        "battery",
+        "standby",
+        "sdAudio"
+      ],
+      "protocols": {
+        "media": 1
+      }
+    },
+    {
       "id": 3,
       "target": "xiao-esp32s3-sense-8m",
       "name": "Chakshu",
@@ -106,7 +133,7 @@
   const api = freeze({
     PRIMARY_TARGET: catalog.primaryTarget, FLAGS: catalog.flags,
     BY_TARGET: Object.fromEntries(catalog.devices.map(d => [d.target, d])),
-    BY_MODULE: Object.fromEntries(catalog.devices.map(d => [d.id, d]))
+    BY_MODULE: Object.fromEntries(catalog.devices.map(d => [d.id, d]).reverse())
   });
   root.SynapDeviceProfiles = api;
   if (typeof module !== 'undefined') module.exports = api;
