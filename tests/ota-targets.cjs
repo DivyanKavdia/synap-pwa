@@ -32,3 +32,13 @@ test('Odyssey C3 pre-1445 connection reserves BLE for OTA recovery',()=>{
   assert(recovery>=0 && optional>recovery,'C3 recovery probe must run before optional GATT/media discovery');
   assert.match(app,/document\.body\?\.dataset\.otaRecovery === 'c3' \? 150 : 5000/);
 });
+
+test('build-zero recovery identity remains limited to exact C3 bootstrap',()=>{
+  const releases=require('../releases.js');
+  assert.deepEqual(releases.targetFromIdentity('SYNAP-FW:esp32c3-supermini-4m:synap-os1-build0:0'),
+    {target:'esp32c3-supermini-4m',version:'synap-os1-build0',build:0,bootstrap:true});
+  assert.equal(releases.targetFromIdentity('SYNAP-FW:esp32c3-supermini-4m:1.0.0:0'),null);
+  assert.equal(releases.targetFromIdentity('SYNAP-FW:esp32c3-supermini-4m:synap-os1-build0:1'),null);
+  assert.equal(releases.targetFromIdentity('SYNAP-FW:esp32c3-supermini-4m:synap-os1-build0:999'),null);
+  assert.equal(ota.transferPlan('esp32c3-supermini-4m',11).windowChunks,1);
+});
