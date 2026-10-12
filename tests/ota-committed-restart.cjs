@@ -55,6 +55,7 @@ test('Odyssey C3 BLE OTA remains resumable with smaller acknowledged packets',()
   assert.deepEqual(transferPlan('xiao-esp32s3-sense-8m',173,true),
     {maxData:173,windowChunks:1,pauseMs:0});
   assert.match(app,/const C3_OTA_RESUME_GRACE_MS=14\*60\*1000/);
-  assert.match(app,/manifest\?\.target==='esp32c3-supermini-4m'\?C3_OTA_RESUME_GRACE_MS:120000/);
+  assert.match(app,/includes\(manifest\?\.target\)\?C3_OTA_RESUME_GRACE_MS:120000/);
+  assert.match(app,/esp32c3-supermini-4m-sd-ota/);
   assert.match(app,/if\(resumeInterrupted&&isGattConnected\(\)\)void tryAutoResume\(\)/);
 });
