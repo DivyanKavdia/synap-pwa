@@ -1295,7 +1295,24 @@
           const c3RecoveryMatch =
             /^SYNAP-FW:esp32c3-supermini-4m:[^:]+:(\d+)$/.exec(recoveryIdentity);
           const recoveryBuild = c3RecoveryMatch ? Number(c3RecoveryMatch[1]) : 0;
-          if (recoveryBuild > 0 && recoveryBuild < 1445) {
+          // The standalone C3 SD bootstrap intentionally identifies as build 0.
+          // Only its exact marker is eligible for the OTA-only connection path;
+          // never treat arbitrary build-0 devices as recovery firmware.
+          const standaloneBootstrap =
+            recoveryIdentity === "SYNAP-FW:esp32c3-supermini-4m:synap-os1-build0:0";
+          if (standaloneBootstrap || (recoveryBuild > 0 && recoveryBuild < 1445)) {
+            if (standaloneBootstrap) {
+              // Require both OTA endpoints before bypassing audio validation.
+              await queueGattOperation(
+                () => nativeService.getCharacteristic("4fa12348-0000-1000-8000-00805f9b34fb"),
+                "Verify C3 bootstrap OTA write",
+              );
+              await queueGattOperation(
+                () => nativeService.getCharacteristic("4fa12349-0000-1000-8000-00805f9b34fb"),
+                "Verify C3 bootstrap OTA status",
+              );
+              assertConnection();
+            }
             const recoveryDeviceCharacteristic = await queueGattOperation(
               () => nativeService.getCharacteristic(globalThis.SynapDevices.UUID),
               "Find C3 recovery device identity",
@@ -1320,7 +1337,7 @@
             if (globalThis.document?.body) document.body.dataset.otaRecovery = "c3";
             setReconnectCapability(
               "Odyssey C3 firmware recovery mode",
-              "Bluetooth is reserved for firmware update. SD and media checks are paused until build 1445 is installed.",
+              "Bluetooth is reserved for firmware update. SD and media checks are paused until compatible full firmware is installed.",
             );
             setAppState(
               "idle",
@@ -1328,6 +1345,7 @@
             );
             log("C3 OTA recovery connection ready", {
               build: recoveryBuild,
+              standaloneBootstrap,
               target: "esp32c3-supermini-4m",
               deviceId: recoveryDeviceId,
             });
