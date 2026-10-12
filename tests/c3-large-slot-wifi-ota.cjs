@@ -56,3 +56,11 @@ test('BLE updater uses C3 pacing and only validates requested OTA image marker',
   assert.throws(()=>ota.validateImage(image,1966080,3,fresh),/selected synap hardware target/);
   assert.equal(ota.transferPlan(upgrade,503).windowChunks,ota.transferPlan(old,503).windowChunks);
 });
+
+test('enhanced C3 never falls back to legacy firmware if the Wi-Fi feed is absent',()=>{
+  const value=catalog();
+  delete value.manifests[upgrade];
+  assert.throws(()=>releases.selectCatalogManifest(value,identity,status(1966080)),/Wi-Fi firmware feed is missing/);
+  assert.throws(()=>releases.compatible(manifest(old,865000),status(1966080),identity),/only the large-slot Wi-Fi firmware/);
+  assert.doesNotThrow(()=>releases.compatible(manifest(old,865000),status(1310720),identity));
+});

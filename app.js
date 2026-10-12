@@ -3979,6 +3979,12 @@
         const info=await firmwareUpdater.check();
         const id=requireTarget(info),board=await identity(),pending=getPending(id);
         if(epoch!==connectionEpoch || !isGattConnected())throw Error('Pendant connection changed.');
+        // The module descriptor contains a static legacy partition label.
+        // The updater status capacity is the authoritative physical slot size.
+        const enhancedC3=board?.startsWith('SYNAP-FW:esp32c3-supermini-4m:') && info.capacity>=1966080;
+        log('Firmware OTA slot detected',{deviceId:id,capacity:info.capacity,
+          enhancedC3:Boolean(enhancedC3),track:enhancedC3?'esp32c3-supermini-4m-sd-ota':
+            releases.targetFromIdentity(board)?.target||null});
         if(info.state===5) {
           // Device has already selected an OTA boot partition. Its SD safety
           // veto on older firmware can defer the reboot indefinitely.
@@ -4006,7 +4012,7 @@
           const running=releases.targetFromIdentity(board);
           offered=m;offeredDevice=id;bannerButton.hidden=false;latestButton.hidden=false;
           offerLabel(false);
-          announce(`Update ${releases.versionLabel(m)} available${running && running.build !== m.build ? ` · build ${running.build} → ${m.build}` : ''}`);
+          announce(`Update ${releases.versionLabel(m)} available${running && running.build !== m.build ? ` · build ${running.build} → ${m.build}` : ''}${enhancedC3 ? ' · enhanced OTA 1.875 MiB · Wi-Fi firmware' : ''}`);
         } else {
           offered=null;bannerButton.hidden=true;latestButton.hidden=true;
           if(!pending&&!verified)status.textContent=`Up to date · ${releases.versionLabel(releases.targetFromIdentity(board)||info)}`;
