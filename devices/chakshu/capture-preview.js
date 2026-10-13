@@ -1144,7 +1144,7 @@
       const summary = {
         0: 'No raw SD test completed.',
         1: 'Raw SD sector 0 is readable. A FAT filesystem mount and the contents of previous recordings remain unverified.',
-        2: 'Diagnostic refused because SD or another device task is not safely idle.',
+        2: 'Raw-sector diagnosis refused: the SD driver may still own the SPI bus after a failed write. No sectors were read; zero FAT fields are not evidence of corruption.',
         3: 'SD controller appears stuck busy. SPI recovery may require a true SD power cycle.',
         4: 'SD SPI bus setup or cleanup failed.',
         5: 'SD host initialization failed.',
