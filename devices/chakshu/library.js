@@ -685,8 +685,8 @@
         try {
           const ap=await transfer.startC3Ap();
           alert('Join '+ap.ssid+' in iPhone Wi-Fi Settings.\nPassword: '+ap.password+
-            '\nOpen in Safari after joining:\n'+ap.url+
-            '\nDownload WAV files locally, then reconnect to internet to import into Synap.');
+            '\nReturn to Synap → Settings → Private Wi-Fi and tap Open & sync directly into Synap.\n'+
+            'Select WAVs on the private page; downloaded WAVs remain a fallback.');
           return 'Private C3 Wi-Fi ready · '+ap.ssid+' · SD originals retained.';
         } finally {wifi.disabled=false;opener.disabled=false;}
       });
