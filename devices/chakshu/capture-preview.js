@@ -954,7 +954,7 @@
     );
   }
   async function moveSD(path, progress = () => {}) {
-    if (busy) throw Error('Another Chakshu transfer is already running.');
+    if (busy) throw Error('Another device media transfer is already running.');
     const sourceEntry = api()?.state?.sdFiles?.find?.((file) => file.path === path);
     // Old catalogue entries can remain visible after a brownout. Avoid
     // repeatedly issuing doomed SD reads when current C3 status says mount
@@ -1441,7 +1441,7 @@
     if (!list) return [];
     list.hidden = false;
     list.replaceChildren();
-    list.textContent = 'Checking Chakshu SD…';
+    list.textContent = 'Checking pendant SD…';
     const files = await api().catalogue();
     renderSDRows(list, files);
     renderSDInbox();
@@ -1718,7 +1718,7 @@
     return cardAvailable;
   }
   async function syncAll() {
-    if (busy) throw Error('Another Chakshu transfer is already running.');
+    if (busy) throw Error('Another device media transfer is already running.');
     const isC3 = root.SynapModules?.client?.module?.id === 2;
     if (isC3 && !api()?.state?.storageReady)
       throw Error('C3 SD card is unavailable. Do not repeat BLE reads until storage is recovered.');
@@ -1848,7 +1848,7 @@
     libraryCheck?.addEventListener('click', async () => {
       libraryCheck.disabled = true;
       try {
-        status('Checking Chakshu SD…');
+        status('Checking pendant SD…');
         await api().refreshSD();
         await api().syncPendingSD().catch(() => {});
       } catch (error) {
