@@ -430,8 +430,24 @@
       return this.serialize(async () => {
         const current=await this._c3ApStatus(signal);
         if(current.active)return current;
-        await this._request(20, 0, '', signal);
-        const next=await this._c3ApStatus(signal);
+        // New C3 firmware returns hotspot credentials in op20 itself,
+        // BEFORE Wi-Fi shares radio/heap with BLE. Never require an op21
+        // GATT round trip after initiating radio handoff.
+        const started=await this._request(20, 0, '', signal);
+        let next=null;
+        try { next=JSON.parse(new TextDecoder().decode(started.bytes)); }
+        catch (_) { /* Earlier firmware returned only an empty op20 ACK. */ }
+        if(next?.active) {
+          if(!/^Synap-C3-[0-9A-F]{4}$/.test(next.ssid) ||
+             !/^[a-f0-9]{32}$/.test(next.password) ||
+             !/^http:\/\/192\.168\.4\.1\/\?key=[a-f0-9]{32}$/.test(next.url))
+            throw Error('C3 hotspot credentials are invalid.');
+          return next;
+        }
+        try { next=await this._c3ApStatus(signal); }
+        catch (_) {
+          throw Error('Bluetooth dropped during legacy hotspot start before Wi-Fi credentials arrived. Install firmware with staged C3 Wi-Fi handoff.');
+        }
         if(!next.active)throw Error('C3 hotspot did not start. Check SD mount and battery.');
         return next;
       });

@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell204-c3-sd-safe-probe";
+  const APP_SHELL_REVISION = "1.0.0-shell205-c3-ap-handoff";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -1697,14 +1697,21 @@
       );
     }
 
+    // On ESP32-C3 SoftAP, Wi-Fi/BLE coexistence is not guaranteed to keep
+    // the GATT link. The AP credentials were delivered before radio startup.
+    // Don't fight its Wi-Fi transfer with repeated background BLE reconnects.
+    const privateWifiHandoff=Boolean(
+      globalThis.SynapChakshuV2?.isC3ApHandoffActive?.());
     setAppState(
       "disconnected",
       manualDisconnect
         ? "Pendant disconnected."
-        : "Connection was lost. Tap Reconnect to continue."
+        : privateWifiHandoff
+          ? "Private pendant Wi-Fi starting. Join its network and use the saved link in Synap Settings. Bluetooth may disconnect during Wi-Fi transfer."
+          : "Connection was lost. Tap Reconnect to continue."
     );
 
-    if (!manualDisconnect) {
+    if (!manualDisconnect && !privateWifiHandoff) {
       toast("Pendant connection lost", "error");
       scheduleAutoReconnect();
     }

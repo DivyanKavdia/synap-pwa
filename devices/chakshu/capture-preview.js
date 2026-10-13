@@ -360,18 +360,26 @@
     return client().stopC3Ap();
   }
   function showC3ApInfo(next) {
+    // Cache BLE-delivered AP credentials BEFORE DOM lookup: the user may
+    // start from Library, and Bluefy may drop GATT as the C3 starts Wi-Fi.
+    // Continue showing the secured local URL in the same Synap tab.
+    if(!next?.active) {
+      c3BridgeAp=null;
+      c3BridgeIdentity=null;
+    } else {
+      c3BridgeAp=next;
+      const current=root.SynapDevices?.connection;
+      if(current?.deviceId && api()?.state?.owner)
+        c3BridgeIdentity={deviceId:current.deviceId,owner:api().state.owner};
+    }
     const node=document.getElementById('deviceApInfo');
     const link=document.getElementById('deviceApOpen');
     if(!node || !link)return;
     node.hidden=!next?.active;
     link.hidden=!next?.active;
-    if(!next?.active){c3BridgeAp=null;node.textContent='';link.removeAttribute('href');return;}
+    if(!next?.active){node.textContent='';link.removeAttribute('href');return;}
     node.textContent='Network: '+next.ssid+' · Password: '+next.password+
       ' · Join this Wi-Fi in iPhone Settings, then open the private page.';
-    c3BridgeAp=next;
-    const current=root.SynapDevices?.connection;
-    if(current?.deviceId && api()?.state?.owner)
-      c3BridgeIdentity={deviceId:current.deviceId,owner:api().state.owner};
     link.href=next.url;
     link.textContent='Open & sync directly into Synap';
     link.removeAttribute('rel');
@@ -1478,7 +1486,10 @@
       wifiSave = document.getElementById('startDeviceAp'),
       wifiForget = document.getElementById('stopDeviceAp'),
       info = root.SynapModules?.client?.module,
-      supportsC3Wifi = Boolean(info?.id === 2 && (info?.mediaFeatures & 2)),
+      // Keep the handoff panel available after BLE drops: its credentials
+      // were authenticated on the original connection before Wi-Fi started.
+      supportsC3Wifi = Boolean((info?.id === 2 && (info?.mediaFeatures & 2)) ||
+        c3BridgeAp?.active),
       supportsC3Format = Boolean(info?.id === 2 && (info?.mediaFeatures & 4)),
       supportsStorage =
         Boolean(info) &&
@@ -1570,7 +1581,10 @@
         !state.connected ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
     if (wifiSettingsStatus && supportsC3Wifi && !state.connected)
-      wifiSettingsStatus.textContent = 'Connect Odyssey C3 to start private SD downloads.';
+      wifiSettingsStatus.textContent = c3BridgeAp?.active
+        ? 'Private pendant Wi-Fi handoff · Bluetooth may disconnect on ESP32-C3. Join '+
+          c3BridgeAp.ssid+' in iPhone Wi-Fi Settings, return to this Synap tab, and open the private page.'
+        : 'Connect Odyssey C3 to start private SD downloads.';
     if (!panel) return;
     if (toggle) {
       toggle.hidden = !state.available;
@@ -2052,7 +2066,8 @@
         try {
           const ap=await startC3Ap();
           showC3ApInfo(ap);
-          statusNode.textContent='Hotspot ready. Join '+ap.ssid+' in iPhone Wi-Fi Settings. Open its private download page after connecting.';
+          statusNode.textContent='Hotspot starting. Join '+ap.ssid+
+            ' in iPhone Wi-Fi Settings after a few seconds. Bluetooth may disconnect; return to this Synap tab to open the private page.';
         } catch(error) {
           statusNode.textContent='Wi-Fi hotspot unavailable · '+error.message;
           status(error.message);
@@ -2122,6 +2137,7 @@
     describeNow,
     browseSD,
     renderSDInbox,
+    isC3ApHandoffActive: () => Boolean(c3BridgeAp?.active),
     get busy() { return busy; },
   };
   root.SynapChakshuV2 = exposed;
