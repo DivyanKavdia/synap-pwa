@@ -4850,14 +4850,21 @@
 
     startupReady=true;
     showRecoveryNotice();
+    // Historical "chakshu" component revision identifiers came from shared
+    // Synap libraries used by Odyssey C3 as well as Chakshu. They were
+    // misleading in the start log: firmware identity comes from the later
+    // connected module/target capability, not a JavaScript package filename.
+    const sharedRevision = value => String(value || "unknown")
+      .replace(/chakshu-/gi, "synap-shared-");
     log("Application started", {
       version: APP_VERSION,
       shellRevision: APP_SHELL_REVISION,
+      componentScope: "shared Synap libraries; hardware target reported after connection",
       components: {
-        bluetooth: globalThis.SynapBluetoothSession?.revision || "unknown",
-        camera: globalThis.SynapChakshuTransfer?.revision || "unknown",
-        localVoice: globalThis.SynapChakshuVoice?.revision || "disabled",
-        capture: globalThis.SynapCaptureUIRevision || "unknown"
+        bluetooth: sharedRevision(globalThis.SynapBluetoothSession?.revision),
+        mediaTransfer: sharedRevision(globalThis.SynapChakshuTransfer?.revision),
+        localVoice: sharedRevision(globalThis.SynapChakshuVoice?.revision || "disabled"),
+        capture: sharedRevision(globalThis.SynapCaptureUIRevision)
       },
       protocol: PROTOCOL_VERSION,
       secureContext: window.isSecureContext,
