@@ -954,7 +954,7 @@
     );
   }
   async function moveSD(path, progress = () => {}) {
-    if (busy) throw Error('Another Chakshu transfer is already running.');
+    if (busy) throw Error('Another device media transfer is already running.');
     const sourceEntry = api()?.state?.sdFiles?.find?.((file) => file.path === path);
     // Old catalogue entries can remain visible after a brownout. Avoid
     // repeatedly issuing doomed SD reads when current C3 status says mount
@@ -1123,8 +1123,27 @@
       throw Error('Stop recording before diagnosing the SD controller.');
     busy = true;
     renderSDInbox();
-    reportSDStage('@all', 'raw-sector0-requested', { readOnly: true });
     try {
+      // RAM op29 precedes a raw-sector probe. CMD24/25 timeout means the
+      // SD rail can still be busy; don't issue more card commands.
+      let trace=null;
+      try {
+        const reply=await client().request(29);
+        trace=JSON.parse(new TextDecoder().decode(reply.bytes));
+      } catch (_) { /* Legacy firmware: keep the existing guarded op28. */ }
+      if (root.SynapDevices?.connection !== connection)
+        throw Error('Pendant changed during diagnosis. Reconnect.');
+      if (trace?.version===1 && trace.sdState===2 && trace.wireErr===263 &&
+          (trace.wireCmd===24 || trace.wireCmd===25)) {
+        const message='SD controller unavailable after CMD'+trace.wireCmd+
+          ' timeout ('+String(trace.wireMs)+' ms, sector '+
+          String(trace.wireArg)+'). No raw-sector read was attempted. '+
+          'Preserve SD originals and power-cycle the SD supply before testing.';
+        reportSDStage('@all','raw-sector0-skipped-write-timeout',
+          {readOnly:true,wireCmd:trace.wireCmd,wireArg:trace.wireArg});
+        return {status:null,error:null,skipped:true,message};
+      }
+      reportSDStage('@all', 'raw-sector0-requested', { readOnly: true });
       // Firmware media op28 initializes a temporary SDSPI session and reads
       // LBA0 and (for v2) one bounds-checked FAT VBR read, once per boot.
       const reply = await client().request(28);
@@ -1144,7 +1163,7 @@
       const summary = {
         0: 'No raw SD test completed.',
         1: 'Raw SD sector 0 is readable. A FAT filesystem mount and the contents of previous recordings remain unverified.',
-        2: 'Diagnostic refused because SD or another device task is not safely idle.',
+        2: 'Raw-sector diagnosis refused: the SD driver may still own the SPI bus after a failed write. No sectors were read; zero FAT fields are not evidence of corruption.',
         3: 'SD controller appears stuck busy. SPI recovery may require a true SD power cycle.',
         4: 'SD SPI bus setup or cleanup failed.',
         5: 'SD host initialization failed.',
@@ -1184,7 +1203,9 @@
             ', VBR error=' + String(data.vbrError ?? '?') +
             ', BPB plausible=' + String(data.bpbPlausible ?? '?')
           : '') +
-        '. No repair or format was performed. Firmware caches this read-only result until the next MCU boot; removing or reformatting the card without restarting the pendant will NOT refresh this result.';
+        (data.status===2
+          ? '. No repair, format or raw-sector read occurred. Error 259 means an invalid driver state, not a FAT failure. Restarting the MCU does not necessarily power-cycle the SD card.'
+          : '. No repair or format occurred. The firmware caches a completed raw-sector attempt for this MCU boot; a genuine SD power cycle may also be required.');
       return { ...snapshot, message };
     } catch (error) {
       reportSDStage('@all', 'raw-sector0-failed', { message: error?.message || String(error) });
@@ -1420,7 +1441,7 @@
     if (!list) return [];
     list.hidden = false;
     list.replaceChildren();
-    list.textContent = 'Checking Chakshu SD…';
+    list.textContent = 'Checking pendant SD…';
     const files = await api().catalogue();
     renderSDRows(list, files);
     renderSDInbox();
@@ -1697,7 +1718,7 @@
     return cardAvailable;
   }
   async function syncAll() {
-    if (busy) throw Error('Another Chakshu transfer is already running.');
+    if (busy) throw Error('Another device media transfer is already running.');
     const isC3 = root.SynapModules?.client?.module?.id === 2;
     if (isC3 && !api()?.state?.storageReady)
       throw Error('C3 SD card is unavailable. Do not repeat BLE reads until storage is recovered.');
@@ -1827,7 +1848,7 @@
     libraryCheck?.addEventListener('click', async () => {
       libraryCheck.disabled = true;
       try {
-        status('Checking Chakshu SD…');
+        status('Checking pendant SD…');
         await api().refreshSD();
         await api().syncPendingSD().catch(() => {});
       } catch (error) {

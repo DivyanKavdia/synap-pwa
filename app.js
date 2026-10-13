@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell203-c3-ap-direct-sync";
+  const APP_SHELL_REVISION = "1.0.0-shell204-c3-sd-safe-probe";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -4850,14 +4850,21 @@
 
     startupReady=true;
     showRecoveryNotice();
+    // Historical "chakshu" component revision identifiers came from shared
+    // Synap libraries used by Odyssey C3 as well as Chakshu. They were
+    // misleading in the start log: firmware identity comes from the later
+    // connected module/target capability, not a JavaScript package filename.
+    const sharedRevision = value => String(value || "unknown")
+      .replace(/chakshu-/gi, "synap-shared-");
     log("Application started", {
       version: APP_VERSION,
       shellRevision: APP_SHELL_REVISION,
+      componentScope: "shared Synap libraries; hardware target reported after connection",
       components: {
-        bluetooth: globalThis.SynapBluetoothSession?.revision || "unknown",
-        camera: globalThis.SynapChakshuTransfer?.revision || "unknown",
-        localVoice: globalThis.SynapChakshuVoice?.revision || "disabled",
-        capture: globalThis.SynapCaptureUIRevision || "unknown"
+        bluetooth: sharedRevision(globalThis.SynapBluetoothSession?.revision),
+        mediaTransfer: sharedRevision(globalThis.SynapChakshuTransfer?.revision),
+        localVoice: sharedRevision(globalThis.SynapChakshuVoice?.revision || "disabled"),
+        capture: sharedRevision(globalThis.SynapCaptureUIRevision)
       },
       protocol: PROTOCOL_VERSION,
       secureContext: window.isSecureContext,
