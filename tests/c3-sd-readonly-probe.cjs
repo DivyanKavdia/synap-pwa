@@ -35,3 +35,11 @@ test('C3 live write timeout is checked in RAM before issuing a raw-sector reques
   assert.match(fn,/Error 259 means an invalid driver state/);
   assert(fn.indexOf('await client().request(29)')<fn.indexOf('await client().request(28)'));
 });
+
+test('Odyssey C3 startup reports shared Synap transport revisions, not a Chakshu device identity',()=>{
+  const app=fs.readFileSync('app.js','utf8');
+  assert.match(app,/componentScope: "shared Synap libraries; hardware target reported after connection"/);
+  assert.match(app,/replace\(\/chakshu-\/gi, "synap-shared-"\)/);
+  assert.match(code,/Checking pendant SD…/);
+  assert.doesNotMatch(code,/Checking Chakshu SD…/);
+});
