@@ -351,26 +351,47 @@
   }
   async function startC3Ap() {
     if (!c3WifiSupported()) throw Error('Update Odyssey C3 firmware for private Wi-Fi downloads.');
+    // Capture the authenticated BLE device and owner BEFORE op20. The radio
+    // can drop GATT after the ACK but before this async continuation resumes.
+    const connection=context(), owner=api()?.state?.owner;
     const ap=await client().startC3Ap();
-    showC3ApInfo(ap);
+    showC3ApInfo(ap,{deviceId:connection.deviceId,owner});
     return ap;
   }
   async function stopC3Ap() {
     if (!c3WifiSupported()) return null;
     return client().stopC3Ap();
   }
-  function showC3ApInfo(next) {
-    // Cache BLE-delivered AP credentials BEFORE DOM lookup: the user may
-    // start from Library, and Bluefy may drop GATT as the C3 starts Wi-Fi.
-    // Continue showing the secured local URL in the same Synap tab.
+  function showC3ApInfo(next, trustedIdentity=null) {
+    // Cache BLE-delivered credentials BEFORE querying DOM. Keep the verified
+    // BLE identity from the op20 request even when GATT drops immediately.
     if(!next?.active) {
       c3BridgeAp=null;
       c3BridgeIdentity=null;
+      c3BridgeHandoffStartedAt=0;
+      if(c3BridgeExpiryTimer!==null)root.clearTimeout(c3BridgeExpiryTimer);
+      c3BridgeExpiryTimer=null;
     } else {
+      const differentSession=!c3BridgeAp?.active || c3BridgeAp.url!==next.url;
       c3BridgeAp=next;
       const current=root.SynapDevices?.connection;
-      if(current?.deviceId && api()?.state?.owner)
-        c3BridgeIdentity={deviceId:current.deviceId,owner:api().state.owner};
+      const identity=trustedIdentity || (current?.deviceId && api()?.state?.owner
+        ? {deviceId:current.deviceId,owner:api().state.owner}:null);
+      if(identity?.deviceId && identity?.owner)c3BridgeIdentity={...identity};
+      if(differentSession) {
+        c3BridgeHandoffStartedAt=Date.now();
+        if(c3BridgeExpiryTimer!==null)root.clearTimeout(c3BridgeExpiryTimer);
+        const url=next.url;
+        // Firmware shuts its AP down 900 seconds after going live, 4 seconds
+        // after op20. Expire the retained handoff state after a small margin:
+        // no stale link and no indefinitely disabled BLE autoreconnect.
+        c3BridgeExpiryTimer=root.setTimeout(()=>{
+          if(c3BridgeAp?.url!==url)return;
+          showC3ApInfo(null);
+          root.dispatchEvent(new CustomEvent('synap-c3-ap-handoff-ended'));
+          renderSDInbox();
+        },C3_AP_HANDOFF_MAX_MS);
+      }
     }
     const node=document.getElementById('deviceApInfo');
     const link=document.getElementById('deviceApOpen');
@@ -397,6 +418,9 @@
   let c3Bridge=null;
   let c3BridgeIdentity=null;
   let c3BridgeAp=null;
+  let c3BridgeHandoffStartedAt=0;
+  let c3BridgeExpiryTimer=null;
+  const C3_AP_HANDOFF_MAX_MS=925000; // 4 s startup + 900 s AP + 21 s margin
   const C3_AP_ORIGIN='http://192.168.4.1';
   const C3_AP_MAX_BYTES=64*1024*1024;
   function c3BridgeToken() {
@@ -2137,7 +2161,8 @@
     describeNow,
     browseSD,
     renderSDInbox,
-    isC3ApHandoffActive: () => Boolean(c3BridgeAp?.active),
+    isC3ApHandoffActive: () => Boolean(c3BridgeAp?.active && c3BridgeHandoffStartedAt &&
+      Date.now()-c3BridgeHandoffStartedAt<C3_AP_HANDOFF_MAX_MS),
     get busy() { return busy; },
   };
   root.SynapChakshuV2 = exposed;
