@@ -68,7 +68,7 @@ async function workerTests(){
   async function fetch(url,mode='navigate',method='GET'){let result;handlers.fetch({request:{url,mode,method},respondWith:p=>result=p});return result;}
   assert.equal(await fetch(scope+'?from=home'),'./index.html');
   let reply;handlers.message({data:{type:'GET_VERSION'},source:{postMessage:d=>reply=d}});
-  assert.equal(reply.type,'APP_VERSION');assert.equal(reply.version,'1.0.0');assert.equal(reply.release,'1.0.0');assert.equal(reply.revision,'1.0.0-audio6');assert.equal(reply.shellRevision,'1.0.0-shell204-c3-sd-safe-probe');
+  assert.equal(reply.type,'APP_VERSION');assert.equal(reply.version,'1.0.0');assert.equal(reply.release,'1.0.0');assert.equal(reply.revision,'1.0.0-audio6');assert.equal(reply.shellRevision,'1.0.0-shell205-c3-ap-handoff');
 }
 
 (async()=>{
