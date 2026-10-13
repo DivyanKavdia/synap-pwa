@@ -351,7 +351,9 @@
   }
   async function startC3Ap() {
     if (!c3WifiSupported()) throw Error('Update Odyssey C3 firmware for private Wi-Fi downloads.');
-    return client().startC3Ap();
+    const ap=await client().startC3Ap();
+    showC3ApInfo(ap);
+    return ap;
   }
   async function stopC3Ap() {
     if (!c3WifiSupported()) return null;
@@ -363,12 +365,205 @@
     if(!node || !link)return;
     node.hidden=!next?.active;
     link.hidden=!next?.active;
-    if(!next?.active){node.textContent='';link.removeAttribute('href');return;}
+    if(!next?.active){c3BridgeAp=null;node.textContent='';link.removeAttribute('href');return;}
     node.textContent='Network: '+next.ssid+' · Password: '+next.password+
       ' · Join this Wi-Fi in iPhone Settings, then open the private page.';
+    c3BridgeAp=next;
+    const current=root.SynapDevices?.connection;
+    if(current?.deviceId && api()?.state?.owner)
+      c3BridgeIdentity={deviceId:current.deviceId,owner:api().state.owner};
     link.href=next.url;
-    link.textContent='Open private recording downloads';
+    link.textContent='Open & sync directly into Synap';
+    link.removeAttribute('rel');
+    link.onclick=(event)=>{
+      event.preventDefault();
+      try{openC3Bridge();}
+      catch(error){status(error.message);}
+    };
   }
+
+  // Verified same-window-family bridge for an HTTP-only local SoftAP page.
+  // HTTPS Synap MUST NOT fetch HTTP 192.168.4.1 directly (mixed content).
+  // The local AP page owns its same-origin fetch and transfers bounded
+  // ArrayBuffers to this PWA via a strictly bound opener/origin/session.
+  let c3Bridge=null;
+  let c3BridgeIdentity=null;
+  let c3BridgeAp=null;
+  const C3_AP_ORIGIN='http://192.168.4.1';
+  const C3_AP_MAX_BYTES=64*1024*1024;
+  function c3BridgeToken() {
+    const bytes=new Uint8Array(16);
+    root.crypto.getRandomValues(bytes);
+    return [...bytes].map(v=>v.toString(16).padStart(2,'0')).join('');
+  }
+  function c3BridgeUrl(ap,channel) {
+    const url=new URL(ap.url);
+    if(url.origin!==C3_AP_ORIGIN || !/^[a-f0-9]{32}$/.test(url.searchParams.get('key')||''))
+      throw Error('The pendant private Wi-Fi link is invalid.');
+    url.searchParams.set('bridge',channel);
+    url.searchParams.set('origin',root.location.origin);
+    return url.href;
+  }
+  function openC3Bridge() {
+    if(!c3BridgeAp?.active || !c3BridgeIdentity?.deviceId || !c3BridgeIdentity?.owner)
+      throw Error('Connect the pendant in Synap and start its private Wi-Fi first.');
+    if(c3Bridge?.working)throw Error('Finish the previous Wi-Fi import first.');
+    const channel=c3BridgeToken();
+    const target=c3BridgeUrl(c3BridgeAp,channel);
+    // window.open runs synchronously inside the user's click gesture; iOS
+    // otherwise blocks delayed/asynchronous popups. No rel=noopener is used.
+    const popup=root.open(target,'synapC3Direct');
+    if(!popup)throw Error('Browser blocked the private page. Allow popups and open it again from Synap.');
+    c3Bridge={channel,popup,identity:{...c3BridgeIdentity},ready:false,working:false,transfer:null};
+    status('Direct Wi-Fi import page opened. Select a WAV there. Keep Synap open in its original tab.');
+  }
+  function c3BridgeAck(event,session,action,seq,ok,error='') {
+    try {
+      event.source.postMessage({
+        type:'synap:c3-ack',version:1,channel:session.channel,
+        action,seq,ok,...(error?{error}:{}),
+      },C3_AP_ORIGIN);
+    } catch (_) {}
+  }
+  function c3BridgeAccountMatches(session) {
+    const owner=api()?.state?.owner;
+    const activeUid=root.SynapAuth?.session?.()?.profile?.uid;
+    return Boolean(owner && owner===session.identity.owner &&
+      activeUid===session.identity.owner);
+  }
+  async function importC3BridgedWav(session,path,source) {
+    const owner=session.identity.owner;
+    if(!c3BridgeAccountMatches(session))
+      throw Error('Synap account changed. The SD original was kept.');
+    if(source.size<44 || source.size>C3_AP_MAX_BYTES)
+      throw Error('Invalid SD WAV size.');
+    const normalized=await normalizedImportedWav(source);
+    const entry=api()?.state?.sdFiles?.find?.(item=>item.path===path);
+    if(entry && Number.isSafeInteger(entry.bytes) && entry.bytes!==source.size)
+      throw Error('Wi-Fi recording length does not match the original SD catalogue.');
+    if(entry?.crc32!==undefined)await verifyFirmwareCrc(source,entry);
+    if(!c3BridgeAccountMatches(session))throw Error('Synap account changed.');
+    const key=receiptKey(session.identity.deviceId,path);
+    const stored=JSON.parse(localStorage.getItem(key)||'null');
+    const originalSha=await digest(source);
+    const journal=audioJournal();
+    if(stored?.owner===owner && stored.deviceId===session.identity.deviceId &&
+       stored.path===path && stored.mainSha256===originalSha && stored.audioId) {
+      const record=await journal.get('recordings',stored.audioId);
+      if(record?.sealed) {
+        const saved=await journal.blob(record);
+        if(saved.size===stored.audioBytes && await digest(saved)===stored.audioSha256)
+          return {audioId:stored.audioId,alreadySynced:true};
+      }
+    }
+    // This is the existing Odyssey SD PCM journal pipeline, reused without
+    // any BLE GATT dependency during the disconnected SoftAP session.
+    const bytes=new Uint8Array(await source.arrayBuffer());
+    const id=await journal.begin('Odyssey SD audio',{deviceId:session.identity.deviceId});
+    try {
+      for(let at=44,sequence=0;at<bytes.length;at+=1600) {
+        if(!c3BridgeAccountMatches(session))throw Error('Account changed during import.');
+        const payload=new Uint8Array(1600);
+        payload.set(bytes.subarray(at,Math.min(at+1600,bytes.length)));
+        journal.append(id,{sequence:sequence++,chunk:0,total:1,payload});
+        if(sequence%100===0)await journal.flush();
+      }
+      await journal.close(id);
+      const verified=await verifyAudio(id,source);
+      if(!c3BridgeAccountMatches(session))throw Error('Account changed during verification.');
+      const receipt={
+        schema:1,owner,deviceId:session.identity.deviceId,path,
+        audioId:id,visualId:null,mainBytes:source.size,
+        mainSha256:originalSha,audioBytes:verified.bytes,
+        audioSha256:verified.sha256,transport:'c3-softap-direct',
+        savedAt:new Date().toISOString(),
+      };
+      localStorage.setItem(key,JSON.stringify(receipt));
+      root.dispatchEvent(new CustomEvent('synap-recording-saved',{
+        detail:{recordingId:id,source:'c3-softap-direct'},
+      }));
+      root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
+      return {audioId:id,alreadySynced:false};
+    }catch(error){
+      await journal.close(id,'import-interrupted').catch(()=>{});
+      throw error;
+    }
+  }
+  root.addEventListener('message',event=>{
+    const session=c3Bridge,packet=event.data;
+    if(!session || event.origin!==C3_AP_ORIGIN || event.source!==session.popup ||
+       !packet || packet.type!=='synap:c3-ap' || packet.version!==1 ||
+       packet.channel!==session.channel)return;
+    const {action,seq,path}=packet;
+    const reply=(ok,error='')=>c3BridgeAck(event,session,action,seq,ok,error);
+    if(action==='hello'){
+      if(!c3BridgeAccountMatches(session)){reply(false,'Sign in to the original Synap account.');return;}
+      session.ready=true;
+      try{event.source.postMessage({type:'synap:c3-ack',version:1,channel:session.channel,
+        action:'ready',seq:0,ok:true},C3_AP_ORIGIN);}catch(_){}
+      status('Wi-Fi connected to Synap. Tap WAV recordings on the private page to sync them.');
+      return;
+    }
+    if(!session.ready || !c3BridgeAccountMatches(session)){reply(false,'Synap account or bridge changed.');return;}
+    if(action==='cancel'){
+      session.transfer=null;session.working=false;
+      status('Wi-Fi transfer interrupted; SD original retained.');
+      return;
+    }
+    if(action==='begin'){
+      const size=Number(packet.size);
+      if(session.working || !pathOk(path) || !path.toLowerCase().endsWith('.wav') ||
+         !Number.isSafeInteger(size) || size<44 || size>C3_AP_MAX_BYTES) {
+        reply(false,'Invalid file or another import is active.');return;
+      }
+      session.working=true;
+      session.transfer={path,size,received:0,chunks:[],nextSeq:seq+1};
+      reply(true);return;
+    }
+    const transfer=session.transfer;
+    if(!session.working || !transfer || transfer.path!==path){
+      reply(false,'Start a valid WAV transfer first.');return;
+    }
+    if(action==='chunk'){
+      const chunk=packet.buffer;
+      if(seq!==transfer.nextSeq || !(chunk instanceof ArrayBuffer) ||
+         chunk.byteLength===0 || chunk.byteLength>16384 ||
+         packet.offset!==transfer.received ||
+         transfer.received+chunk.byteLength>transfer.size){
+        session.transfer=null;session.working=false;
+        reply(false,'Invalid or out-of-order Wi-Fi chunk.');return;
+      }
+      transfer.chunks.push(chunk);
+      transfer.received+=chunk.byteLength;
+      transfer.nextSeq++;
+      reply(true);
+      status('Receiving SD recording over Wi-Fi · '+Math.floor(transfer.received/transfer.size*100)+'%');
+      return;
+    }
+    if(action==='end'){
+      if(seq!==transfer.nextSeq || transfer.received!==transfer.size){
+        session.transfer=null;session.working=false;
+        reply(false,'Incomplete or out-of-order WAV.');return;
+      }
+      session.transfer=null;
+      (async()=>{
+        try{
+          const source=new Blob(transfer.chunks,{type:'audio/wav'});
+          const result=await importC3BridgedWav(session,path,source);
+          status(result.alreadySynced?
+            'Recording already verified in Synap; SD original retained.':
+            'Recording verified in Synap Memories. Cloud processing resumes with internet; SD original retained.');
+          reply(true);
+        }catch(error){
+          status('Wi-Fi import not saved: '+error.message+'. SD original retained.');
+          reply(false,error.message);
+        }finally{session.working=false;}
+      })();
+      return;
+    }
+    reply(false,'Unsupported Wi-Fi bridge message.');
+  });
+
   async function configureC3Wifi(ssid, password) {
     if (!c3WifiSupported()) throw Error('Update Odyssey C3 firmware for direct Wi-Fi sync.');
     return client().configureC3Wifi(ssid, password);
@@ -1182,8 +1377,8 @@
             showC3ApInfo(ap);
             status('Private Wi-Fi ready: '+ap.ssid+'. Password and download link are in Settings → Wi-Fi downloads. Existing SD recordings are untouched.');
             alert('Join '+ap.ssid+' in iPhone Wi-Fi Settings.\nPassword: '+ap.password+
-              '\nThen open this link in Safari:\n'+ap.url+
-              '\nDownloaded WAVs can be imported into Synap after reconnecting to the internet.');
+              '\nThen return to Synap → Settings → Private Wi-Fi and tap Open & sync directly into Synap.\n' +
+              'Select recordings there; downloads are only the backup option.');
           } catch(error) {
             status(error.message);
           } finally {
@@ -1822,10 +2017,10 @@
       const card=document.createElement('section');
       card.id='deviceWifiSettings';card.className='settings-card';card.hidden=true;
       card.innerHTML=
-        '<h3 class="settings-card-title">Private Wi-Fi downloads</h3>'+
-        '<p id="deviceWifiSettingsStatus" class="settings-hint">No saved Wi-Fi password needed. Start a temporary C3 access point, join it from iPhone Settings, then open the private download link. Cloud sync can be completed after restoring internet access.</p>'+
+        '<h3 class="settings-card-title">Direct Wi-Fi sync to Synap</h3>'+
+        '<p id="deviceWifiSettingsStatus" class="settings-hint">Start the private C3 hotspot; no router password needed. Join its Wi-Fi in iPhone Settings, return to Synap and tap Open & sync directly into Synap. Tap WAV recordings on the private page to import and verify them automatically. Keep the original Synap tab open. If iOS blocks the browser bridge, WAV downloads remain available as fallback.</p>'+
         '<p id="deviceApInfo" class="settings-hint" hidden></p>'+
-        '<p><a id="deviceApOpen" target="_blank" rel="noopener noreferrer" hidden>Open private recording downloads</a></p>'+
+        '<p><a id="deviceApOpen" target="_blank" hidden>Open &amp; sync directly into Synap</a></p>'+
         '<div class="visual-actions"><button id="startDeviceAp" type="button">Start pendant Wi-Fi</button><button id="stopDeviceAp" type="button">Stop pendant Wi-Fi</button></div>';
       extras.append(card);
       document.getElementById('startDeviceAp')?.addEventListener('click',async()=>{
