@@ -438,6 +438,10 @@
     if(source.size<44 || source.size>C3_AP_MAX_BYTES)
       throw Error('Invalid SD WAV size.');
     const normalized=await normalizedImportedWav(source);
+    const entry=api()?.state?.sdFiles?.find?.(item=>item.path===path);
+    if(entry && Number.isSafeInteger(entry.bytes) && entry.bytes!==source.size)
+      throw Error('Wi-Fi recording length does not match the original SD catalogue.');
+    if(entry?.crc32!==undefined)await verifyFirmwareCrc(source,entry);
     if(!c3BridgeAccountMatches(session))throw Error('Synap account changed.');
     const key=receiptKey(session.identity.deviceId,path);
     const stored=JSON.parse(localStorage.getItem(key)||'null');
