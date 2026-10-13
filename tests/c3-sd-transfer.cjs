@@ -177,3 +177,22 @@ test('C3 private AP uses BLE start/status/stop and never asks for router passwor
   assert.doesNotMatch(preview,/id="deviceWifiPassword"/);
   assert.doesNotMatch(preview,/id="deviceWifiSsid"/);
 });
+
+test('C3 Wi-Fi AP bridges WAV chunks into the verified offline Synap audio journal',()=>{
+  const src=fs.readFileSync(path.join(__dirname,'../devices/chakshu/capture-preview.js'),'utf8');
+  assert.match(src,/root\.open\(target,'synapC3Direct'\)/);
+  assert.match(src,/event\.origin!==C3_AP_ORIGIN/);
+  assert.match(src,/event\.source!==session\.popup/);
+  assert.match(src,/packet\.channel!==session\.channel/);
+  assert.match(src,/action==='begin'/);
+  assert.match(src,/action==='chunk'/);
+  assert.match(src,/action==='end'/);
+  assert.match(src,/chunk\.byteLength>16384/);
+  assert.match(src,/journal\.begin\('Odyssey SD audio'/);
+  assert.match(src,/await verifyAudio\(id,source\)/);
+  assert.match(src,/localStorage\.setItem\(key,JSON\.stringify\(receipt\)\)/);
+  assert.match(src,/transport:'c3-softap-direct'/);
+  assert.match(src,/SD original retained/);
+  const bridge=src.slice(src.indexOf('async function importC3BridgedWav'),src.indexOf('async function configureC3Wifi'));
+  assert.doesNotMatch(bridge,/deleteSDItem\(|request\(17/);
+});
