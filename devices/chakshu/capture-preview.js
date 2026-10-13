@@ -1123,8 +1123,27 @@
       throw Error('Stop recording before diagnosing the SD controller.');
     busy = true;
     renderSDInbox();
-    reportSDStage('@all', 'raw-sector0-requested', { readOnly: true });
     try {
+      // RAM op29 precedes a raw-sector probe. CMD24/25 timeout means the
+      // SD rail can still be busy; don't issue more card commands.
+      let trace=null;
+      try {
+        const reply=await client().request(29);
+        trace=JSON.parse(new TextDecoder().decode(reply.bytes));
+      } catch (_) { /* Legacy firmware: keep the existing guarded op28. */ }
+      if (root.SynapDevices?.connection !== connection)
+        throw Error('Pendant changed during diagnosis. Reconnect.');
+      if (trace?.version===1 && trace.sdState===2 && trace.wireErr===263 &&
+          (trace.wireCmd===24 || trace.wireCmd===25)) {
+        const message='SD controller unavailable after CMD'+trace.wireCmd+
+          ' timeout ('+String(trace.wireMs)+' ms, sector '+
+          String(trace.wireArg)+'). No raw-sector read was attempted. '+
+          'Preserve SD originals and power-cycle the SD supply before testing.';
+        reportSDStage('@all','raw-sector0-skipped-write-timeout',
+          {readOnly:true,wireCmd:trace.wireCmd,wireArg:trace.wireArg});
+        return {status:null,error:null,skipped:true,message};
+      }
+      reportSDStage('@all', 'raw-sector0-requested', { readOnly: true });
       // Firmware media op28 initializes a temporary SDSPI session and reads
       // LBA0 and (for v2) one bounds-checked FAT VBR read, once per boot.
       const reply = await client().request(28);
