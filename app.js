@@ -642,6 +642,12 @@
     device.gatt.disconnect();
   }
 
+  // Hotspot expiry clears its temporary guard; ordinary remembered-device
+  // recovery resumes only after the private AP session has ended.
+  globalThis.addEventListener?.("synap-c3-ap-handoff-ended", function () {
+    if (!c3PrivateWifiHandoffActive()) syncRememberedMonitoring();
+  });
+
   const REMEMBERED_RECOVERY_INTERVAL_MS = 30000;
   let rememberedRecoveryTimer = null;
   let advertisementWatch = null;
@@ -651,7 +657,16 @@
   let reconnectPageHidden = false;
   const advertisementUnavailable = new WeakSet();
 
+  function c3PrivateWifiHandoffActive() {
+    // The C3 shares one radio between SoftAP and BLE. The verified op20
+    // response already delivered the short-lived SSID/key; continuing
+    // background Bluetooth discovery/reconnect would contend with Wi-Fi.
+    // User-initiated Connect is never blocked by this automatic-only gate.
+    return Boolean(globalThis.SynapChakshuV2?.isC3ApHandoffActive?.());
+  }
+
   function reconnectRequested() {
+    if (c3PrivateWifiHandoffActive() && !recordingReconnectPending) return false;
     const guard = globalThis.SynapSleepStateGuard;
     if (guard?.locked || document.body?.dataset.intentionalSleep === "1") return guard?.reconnectOnWake === true;
     return autoReconnectEnabled();
@@ -1107,6 +1122,7 @@
       manualDisconnect ||
       reconnectSelectionRequired ||
       !autoReconnectEnabled() ||
+      (c3PrivateWifiHandoffActive() && !recordingReconnectPending) ||
       !bluetoothDevice ||
       reconnectTimer
     ) {
@@ -1135,7 +1151,8 @@
 
     reconnectTimer = window.setTimeout(function () {
       reconnectTimer = null;
-      if (document.visibilityState === "hidden" || manualDisconnect || !autoReconnectEnabled() || firmwareBusy || isGattConnected()) return;
+      if (document.visibilityState === "hidden" || manualDisconnect || !autoReconnectEnabled() ||
+          c3PrivateWifiHandoffActive() || firmwareBusy || isGattConnected()) return;
       connectPendant({ silent: true, autoReconnect: true, recoveryAttempt: true });
     }, wait);
   }
@@ -1675,6 +1692,9 @@
     }
 
     cleanupCharacteristics();
+    // monitorAllowed() now observes the same private Wi-Fi handoff as the
+    // immediate reconnect branch below. Do not start advertisement watching
+    // while the ESP32-C3 SoftAP is using the single 2.4 GHz radio.
     syncRememberedMonitoring();
 
     // The connection attempt owns its failure UI and retry scheduling when no
