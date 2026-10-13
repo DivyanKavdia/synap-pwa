@@ -105,7 +105,9 @@ test('firmware without EVENT falls back once without a subscription retry loop',
 });
 test('recording retries cover the recovery window while idle retries remain bounded',()=>{
   const timers=[],c={manualDisconnect:false,reconnectSelectionRequired:false,rapidNativeLinkFailures:0,autoReconnectEnabled:()=>true,bluetoothDevice:{},reconnectAttempts:8,reconnectNotBefore:0,MAX_AUTO_RECONNECT_ATTEMPTS:8,reconnectTimer:null,recordingReconnectPending:false,AUTO_RECONNECT_DELAYS_MS:[1200,2600,5200,10000,15000,20000,30000,30000],log(){},window:{setTimeout(fn,ms){timers.push({fn,ms});return 1}}};
-  vm.createContext(c);vm.runInContext(slice('  function scheduleAutoReconnect()', '  async function connectPendant('),c);
+  vm.createContext(c);vm.runInContext(
+    slice('  function c3PrivateWifiHandoffActive()', '  function reconnectRequested()')+
+    slice('  function scheduleAutoReconnect()', '  async function connectPendant('),c);
   c.scheduleAutoReconnect();assert.equal(timers.length,0);
   assert(c.reconnectNotBefore>Date.now(),'exhausted automatic retries also quiet advertising recovery');
   c.recordingReconnectPending=true;c.scheduleAutoReconnect();assert.equal(timers[0].ms,30000);
@@ -119,7 +121,9 @@ test('advertisements cannot cancel backoff or reset the failed-connection attemp
     connectInProgress:false,reloadRecoveryRunning:false,reconnectPageHidden:false,currentRecordingId:null,
     reconnectRequested:()=>true,isGattConnected:()=>false,finalizing:false,document:{visibilityState:'visible'},
     connectPendant:()=>{connections++;},window:{setTimeout(fn,ms){timers.push({fn,ms});return timers.length;}}};
-  vm.createContext(c);vm.runInContext(slice('  function scheduleAutoReconnect()', '  async function connectPendant('),c);
+  vm.createContext(c);vm.runInContext(
+    slice('  function c3PrivateWifiHandoffActive()', '  function reconnectRequested()')+
+    slice('  function scheduleAutoReconnect()', '  async function connectPendant('),c);
   vm.runInContext(slice('  async function recoverRememberedConnection(', '  function bindReconnectRecovery('),c);
   for(let attempt=1;attempt<=3;attempt++) {
     c.scheduleAutoReconnect();assert.equal(c.reconnectAttempts,attempt);
@@ -148,6 +152,7 @@ test('early link drops retain reconnect backoff; thirty seconds ready resets it'
   };
   vm.createContext(c);
   vm.runInContext(slice('  async function handleGattDisconnected(', '  function cleanupCharacteristics(')+
+    slice('  function c3PrivateWifiHandoffActive()', '  function reconnectRequested()')+
     slice('  function scheduleAutoReconnect()', '  async function connectPendant('),c);
   for(let n=0;n<3;n++){
     c.connectionReadyAt=now-1000;c.reconnectTimer=null;

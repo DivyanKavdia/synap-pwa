@@ -12,12 +12,12 @@ test('SoftAP startup does not depend on post-Wi-Fi Bluetooth op21',()=>{
  assert(fn.indexOf('if(next?.active)')<fn.indexOf('try { next=await this._c3ApStatus(signal); }'));
 });
 test('Wi-Fi credentials remain usable after BLE disconnect, including Library-initiated start',()=>{
- const fn=preview.split('  function showC3ApInfo(next) {')[1]
+ const fn=preview.split('  function showC3ApInfo(next, trustedIdentity=null) {')[1]
   .split('  // Verified same-window-family bridge')[0];
  assert(fn.indexOf('c3BridgeAp=next')<fn.indexOf('if(!node || !link)return'));
  assert.match(preview,/supportsC3Wifi = Boolean\(\(info\?\.id === 2/);
  assert.match(preview,/c3BridgeAp\?\.active\)/);
- assert.match(preview,/isC3ApHandoffActive: \(\) => Boolean\(c3BridgeAp\?\.active\)/);
+ assert.match(preview,/isC3ApHandoffActive: \(\) => Boolean\(c3BridgeAp\?\.active && c3BridgeHandoffStartedAt/);
  assert.match(preview,/Bluetooth may disconnect/);
 });
 test('GATT disconnect due to active AP does not schedule recursive BLE retries',()=>{
