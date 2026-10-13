@@ -351,7 +351,9 @@
   }
   async function startC3Ap() {
     if (!c3WifiSupported()) throw Error('Update Odyssey C3 firmware for private Wi-Fi downloads.');
-    return client().startC3Ap();
+    const ap=await client().startC3Ap();
+    showC3ApInfo(ap);
+    return ap;
   }
   async function stopC3Ap() {
     if (!c3WifiSupported()) return null;
@@ -1371,8 +1373,8 @@
             showC3ApInfo(ap);
             status('Private Wi-Fi ready: '+ap.ssid+'. Password and download link are in Settings → Wi-Fi downloads. Existing SD recordings are untouched.');
             alert('Join '+ap.ssid+' in iPhone Wi-Fi Settings.\nPassword: '+ap.password+
-              '\nThen open this link in Safari:\n'+ap.url+
-              '\nDownloaded WAVs can be imported into Synap after reconnecting to the internet.');
+              '\nThen return to Synap → Settings → Private Wi-Fi and tap Open & sync directly into Synap.\n' +
+              'Select recordings there; downloads are only the backup option.');
           } catch(error) {
             status(error.message);
           } finally {
