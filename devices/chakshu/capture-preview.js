@@ -1203,7 +1203,9 @@
             ', VBR error=' + String(data.vbrError ?? '?') +
             ', BPB plausible=' + String(data.bpbPlausible ?? '?')
           : '') +
-        '. No repair or format was performed. Firmware caches this read-only result until the next MCU boot; removing or reformatting the card without restarting the pendant will NOT refresh this result.';
+        (data.status===2
+          ? '. No repair, format or raw-sector read occurred. Error 259 means an invalid driver state, not a FAT failure. Restarting the MCU does not necessarily power-cycle the SD card.'
+          : '. No repair or format occurred. The firmware caches a completed raw-sector attempt for this MCU boot; a genuine SD power cycle may also be required.');
       return { ...snapshot, message };
     } catch (error) {
       reportSDStage('@all', 'raw-sector0-failed', { message: error?.message || String(error) });
