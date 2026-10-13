@@ -108,7 +108,7 @@ test('C3 Wi-Fi transfer is explicit, firmware-gated, and retains SD source after
   assert.match(preview,/Start private Wi-Fi downloads/);
   assert.match(library,/library-sd-wifi/);
   assert.match(library,/startC3Ap/);
-  assert.match(preview,/No saved Wi-Fi password needed/);
+  assert.match(preview,/no router password needed/i);
   assert.match(preview,/startC3WifiUpload/);
   assert.match(preview,/c3WifiStatus/);
   assert.match(preview,/localStorage\.setItem\(receiptKey\(connection\.deviceId, path\), JSON\.stringify\(receipt\)\)/);
