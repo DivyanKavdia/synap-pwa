@@ -25,3 +25,13 @@ test('read-only diagnostic performs exactly one media op28 and no SD writes or r
   assert.match(fn,/root\.SynapDevices\?\.connection !== connection/);
   assert.match(html,/capture-preview\.js\?v=1\.0\.0-c3-[a-z0-9-]+/);
 });
+
+test('C3 live write timeout is checked in RAM before issuing a raw-sector request',()=>{
+  assert.match(fn,/await client\(\)\.request\(29\)/);
+  assert.match(fn,/trace\.wireErr===263/);
+  assert.match(fn,/trace\.sdState===2/);
+  assert.match(fn,/raw-sector0-skipped-write-timeout/);
+  assert.match(fn,/skipped:true,message/);
+  assert.match(fn,/Error 259 means an invalid driver state/);
+  assert(fn.indexOf('await client().request(29)')<fn.indexOf('await client().request(28)'));
+});
