@@ -2092,7 +2092,7 @@
         '<p id="deviceWifiSettingsStatus" class="settings-hint">Start the private C3 hotspot; no router password needed. Join its Wi-Fi in iPhone Settings, return to Synap and tap Open & sync directly into Synap. Tap WAV recordings on the private page to import and verify them automatically. Keep the original Synap tab open. If iOS blocks the browser bridge, WAV downloads remain available as fallback.</p>'+
         '<p id="deviceApInfo" class="settings-hint" hidden></p>'+
         '<p><a id="deviceApOpen" target="_blank" hidden>Open &amp; sync directly into Synap</a></p>'+
-        '<div class="visual-actions"><button id="startDeviceAp" type="button">Start pendant Wi-Fi</button><button id="stopDeviceAp" type="button">Stop pendant Wi-Fi</button></div>';
+        '<div class="visual-actions"><button id="startDeviceAp" type="button">Start pendant Wi-Fi</button><button id="stopDeviceAp" type="button">Stop pendant Wi-Fi</button><button id="diagnoseDeviceAp" type="button">Check hotspot</button></div>';
       extras.append(card);
       document.getElementById('startDeviceAp')?.addEventListener('click',async()=>{
         const button=document.getElementById('startDeviceAp'),
@@ -2118,6 +2118,45 @@
           statusNode.textContent='Hotspot stopping. Reconnect to your usual Wi-Fi or cellular connection.';
         } catch(error) {statusNode.textContent='Could not stop Wi-Fi · '+error.message;}
         finally {button.disabled=false;renderSDInbox();}
+      });
+      // op21 is read-only. After an AP startup failure firmware restores BLE
+      // advertising, and this action exposes the retained failure stage
+      // without touching SD or automatically starting another Wi-Fi session.
+      document.getElementById('diagnoseDeviceAp')?.addEventListener('click',async()=>{
+        const button=document.getElementById('diagnoseDeviceAp'),
+          statusNode=document.getElementById('deviceWifiSettingsStatus');
+        if(!c3WifiSupported() || !root.SynapDevices?.connection) {
+          statusNode.textContent='Reconnect the pendant over Bluetooth to check the last Wi-Fi startup failure.';
+          return;
+        }
+        button.disabled=true;
+        try {
+          const ap=await c3ApStatus();
+          if(ap?.active) {
+            showC3ApInfo(ap);
+            statusNode.textContent=ap.starting
+              ? 'Hotspot credentials were staged; the radio is still starting. Check iPhone Wi-Fi shortly.'
+              : 'Firmware reports the hotspot serving. Join '+ap.ssid+' in iPhone Settings → Wi-Fi.';
+          } else {
+            showC3ApInfo(null);
+            const names={
+              1:'startup cancelled',2:'SD, battery or recording state blocked startup',
+              3:'BLE did not disconnect cleanly',4:'Wi-Fi radio could not initialize',
+              5:'Wi-Fi hotspot creation failed',6:'hotspot IP was unavailable',
+              7:'HTTP server memory allocation failed',8:'SD reader was busy or unavailable',
+              9:'hotspot task could not be allocated'
+            };
+            const code=Number(ap?.failure)||0,available=Number(ap?.freeHeap)||0,
+              contiguous=Number(ap?.largestBlock)||0;
+            statusNode.textContent=code
+              ? 'Hotspot failed: stage '+code+' · '+(names[code]||'startup problem')+
+                ' · free heap '+available+' B · largest block '+contiguous+
+                ' B. No SD data was changed.'
+              : 'No hotspot is currently running. Start pendant Wi-Fi again; check within 30 seconds.';
+          }
+        }catch(error){
+          statusNode.textContent='Could not read hotspot diagnostics over Bluetooth · '+error.message;
+        }finally{button.disabled=false;renderSDInbox();}
       });
       root.setTimeout(async()=>{
         if(!c3WifiSupported() || !root.SynapDevices?.connection)return;
