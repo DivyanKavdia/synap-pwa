@@ -354,9 +354,20 @@
     // Capture the authenticated BLE device and owner BEFORE op20. The radio
     // can drop GATT after the ACK but before this async continuation resumes.
     const connection=context(), owner=api()?.state?.owner;
-    const ap=await client().startC3Ap();
-    showC3ApInfo(ap,{deviceId:connection.deviceId,owner});
-    return ap;
+    // Mark the radio handoff BEFORE the op20 BLE round trip. iOS may emit a
+    // GATT disconnect while the response is being read, before credentials
+    // have been returned to this caller.
+    c3BridgeHandoffPendingAt=Date.now();
+    try {
+      const ap=await client().startC3Ap();
+      showC3ApInfo(ap,{deviceId:connection.deviceId,owner});
+      return ap;
+    } finally {
+      c3BridgeHandoffPendingAt=0;
+      // An unsuccessful handoff must never suppress future BLE reconnection.
+      if(!c3BridgeAp?.active)
+        root.dispatchEvent(new CustomEvent('synap-c3-ap-handoff-ended'));
+    }
   }
   async function stopC3Ap() {
     if (!c3WifiSupported()) return null;
@@ -418,6 +429,7 @@
   let c3Bridge=null;
   let c3BridgeIdentity=null;
   let c3BridgeAp=null;
+  let c3BridgeHandoffPendingAt=0;
   let c3BridgeHandoffStartedAt=0;
   let c3BridgeExpiryTimer=null;
   const C3_AP_HANDOFF_MAX_MS=925000; // 4 s startup + 900 s AP + 21 s margin
@@ -1513,7 +1525,7 @@
       // Keep the handoff panel available after BLE drops: its credentials
       // were authenticated on the original connection before Wi-Fi started.
       supportsC3Wifi = Boolean((info?.id === 2 && (info?.mediaFeatures & 2)) ||
-        c3BridgeAp?.active),
+        c3BridgeAp?.active || c3BridgeHandoffPendingAt),
       supportsC3Format = Boolean(info?.id === 2 && (info?.mediaFeatures & 4)),
       supportsStorage =
         Boolean(info) &&
@@ -2162,7 +2174,9 @@
     browseSD,
     renderSDInbox,
     isC3ApHandoffActive: () => Boolean(c3BridgeAp?.active && c3BridgeHandoffStartedAt &&
-      Date.now()-c3BridgeHandoffStartedAt<C3_AP_HANDOFF_MAX_MS),
+      Date.now()-c3BridgeHandoffStartedAt<C3_AP_HANDOFF_MAX_MS) ||
+      Boolean(c3BridgeHandoffPendingAt &&
+        Date.now()-c3BridgeHandoffPendingAt<60000),
     get busy() { return busy; },
   };
   root.SynapChakshuV2 = exposed;
