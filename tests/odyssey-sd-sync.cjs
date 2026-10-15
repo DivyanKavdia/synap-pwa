@@ -74,31 +74,15 @@ assert.match(library,/Sync paused · tap again to retry/);
 assert.match(preview,/SD transfer in progress · SD maintenance controls are temporarily disabled/);
 
 const modulesSource=fs.readFileSync(path.join(root,'devices/modules.js'),'utf8');
-assert.match(modulesSource,/profile\.id === 2 \? value\.getUint8\(16\) & 7 : 0/,
-  'C3 must accept notification-window, Wi-Fi and explicit format media feature bits');
+assert.match(modulesSource,/profile\.id === 2 \? value\.getUint8\(16\) & 0x47 : 0/,
+  'C3 supports legacy + fast BLE capabilities with Wi-Fi bit disabled');
 assert.match(transfer,/if \(this\.features & 1 && !this\.streamDisabled\)/,
-  'C3 media-v2 uses the existing notification-window transport');
+  'C3 retains safe legacy notification windows');
 assert.match(transfer,/this\.window\(size, first\.total, signal, c3WindowPath\)/);
-
-assert.match(transfer,/configureC3Wifi\(ssid, password, signal\)/,
-  'C3 Wi-Fi credentials must be provisioned through the existing BLE media channel');
-assert.match(transfer,/startC3WifiUpload\(options, signal\)/);
-assert.match(transfer,/c3WifiStatus\(signal\)/);
-assert.match(transfer,/forgetC3Wifi\(signal\)/);
-assert.match(media,/moduleInfo\(\)\?\.id === 2[\s\S]*moduleInfo\(\)\?\.mediaFeatures & 2/,
-  'C3 direct Wi-Fi capability must use bit 1 without changing Chakshu hotspot bit 2');
-assert.match(preview,/WIFI_UPLOAD_PREFIX = 'synap-c3-wifi-upload-v1:'/);
-assert.match(preview,/async function moveC3Wifi\(path, sourceEntry, progress/);
-assert.doesNotMatch(preview,/wifiState\?\.configured\) return moveC3Wifi/,
-  'ordinary Sync to Memories must remain Bluetooth; Wi-Fi transfer is an explicit user action');
-assert.match(preview,/Start private Wi-Fi downloads/,'C3 SD rows must expose direct private AP download action');
-assert.match(preview,/id\s*=\s*'deviceWifiSettings'/);
-assert.match(preview,/Start pendant Wi-Fi/);
-assert.match(preview,/Stop pendant Wi-Fi/);
-assert.match(preview,/\/v1\/device-uploads/);
-assert.match(preview,/SynapCloudHistory\?\.restore/);
-assert.match(preview,/localStorage\.removeItem\(ticket\.key\)/);
-assert.match(preview,/wifi-verified/);
+assert.match(transfer,/this\.sendOnly\(fast \? 30 : 12/,
+  'new firmware uses credit-based op30, old firmware still uses op12');
+assert.doesNotMatch(preview,/Start pendant Wi-Fi|Start private Wi-Fi downloads/);
+assert.doesNotMatch(library,/Start Wi-Fi downloads/);
 
 assert.match(media,/crc32 = Number\(file\?\.crc32\)/,'C3 catalogue must preserve optional firmware CRC metadata');
 assert.match(media,/pcmBytes \+ 44 === bytes/,'C3 catalogue must validate firmware PCM length metadata');
