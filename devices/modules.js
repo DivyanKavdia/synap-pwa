@@ -43,11 +43,11 @@
       flashMiB: value.getUint8(12),
       psramMiB: value.getUint8(13),
       mediaVersion: value.getUint8(14),
-      // Byte 16 is additive media capability bits. Chakshu owns the full set;
-      // Odyssey C3 uses bit 0 (notification-window transfer), bit 1 (direct
-      // Wi-Fi cloud sync), and bit 2 (explicit destructive SD formatting).
+      // C3: 0=legacy BLE window, 2=existing explicit-format ABI,
+      // 6=credit-based fast BLE window. Bit 1 (former Wi-Fi) is unadvertised.
+      // Exclude status/probe/validation bits 3-5 and 7.
       mediaFeatures: profile.id === 3 ? value.getUint8(16) :
-        profile.id === 2 ? value.getUint8(16) & 7 : 0,
+        profile.id === 2 ? value.getUint8(16) & 0x47 : 0,
       voiceVersion: profile.id === 2 ? 0 : value.getUint8(15),
       // New C3 validation firmware marks byte 15's 8 KiB progress semantics
       // with bit 7 of byte 16. Older builds used byte 15 for another purpose.
