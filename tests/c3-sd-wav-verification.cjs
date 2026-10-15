@@ -70,3 +70,18 @@ test('brownout leaves old catalogue copies visible but blocks further doomed BLE
  assert.match(source,/Recover the card before syncing; the SD original was kept/);
  assert.match(source,/reportSDStage\(path, 'download-complete'/);
 });
+
+test('C3 FAT uppercase WAV names take verified audio route and emit durable receipt',()=>{
+ const line=source.split('\n').find(line=>line.includes('const isWavPath = (path) =>'));
+ assert(line,'WAV suffix classifier must exist');
+ const sandbox={};vm.createContext(sandbox);
+ vm.runInContext(line+'\nthis.isWavPath=isWavPath;',sandbox);
+ assert.equal(sandbox.isWavPath('/synap/R7FDB319.WAV'),true);
+ assert.equal(sandbox.isWavPath('/synap/R01BE3E3.WAV'),true);
+ assert.equal(sandbox.isWavPath('/synap/PHOTO.JPG'),false);
+ assert.match(source,/else if \(isWavPath\(path\)\)/);
+ assert.match(source,/sourceEntry\?\.crc32 !== undefined && isWavPath\(path\)/);
+ assert.match(source,/isWavPath\(name\) \? 'audio\/wav'/);
+ assert.match(source,/audioId = record\.id;/);
+ assert.match(source,/localStorage\.setItem\(key, JSON\.stringify\(receipt\)\)/);
+});

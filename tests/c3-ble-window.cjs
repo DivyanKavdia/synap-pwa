@@ -59,3 +59,21 @@ test('C3 SD notification errors are explicit while Chakshu errors keep legacy co
  const legacy=new MediaWindow(99,0,480);
  assert.throws(()=>legacy.accept(v),e=>e.mediaCode===7 && !e.sdReadFailure);
 });
+
+test('C3 contiguous full credits finish without END; a missing packet cannot advance',()=>{
+ const state=new MediaWindow(777,0,5760,12,true);
+ const pkt=offset=>{
+  const b=new Uint8Array(496),v=new DataView(b.buffer);
+  b[0]=0xcc;b[1]=1;b[2]=1;
+  v.setUint32(4,777,true);v.setUint32(8,5760,true);v.setUint32(12,offset,true);
+  return v;
+ };
+ for(let i=0;i<12;i++)if(i!==4)state.accept(pkt(i*480));
+ assert.equal(state.creditComplete(12),false);
+ state.accept(pkt(4*480));
+ assert.equal(state.creditComplete(12),true);
+ assert.equal(state.contiguous().next,5760);
+ assert.equal(state.ended,false);
+ assert.match(source,/window\.ended \|\| \(fast && window\.creditComplete\(credits\)\)/);
+ assert.match(source,/notificationWaitMs/);
+});
