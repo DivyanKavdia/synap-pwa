@@ -287,6 +287,9 @@
   }
   const basename = (path) => path.split('/').pop();
   const stem = (path) => path.replace(/\.[^.]+$/, '');
+  // FAT-generated C3 WAV names are uppercase; validate every stage consistently.
+  const isWavPath = (path) => /\.wav$/i.test(path);
+  const isMjpegPath = (path) => /\.mjpeg$/i.test(path);
   const receiptKey = (deviceId, path) => RECEIPT_PREFIX + deviceId + ':' + path;
   function storedReceipt(path) {
     const connection = root.SynapDevices?.connection,
@@ -741,7 +744,7 @@
     const add = async (name, required = true) => {
       try {
         const blob = await c.file(name, signal, progress);
-        const type = name.endsWith('.jpg') ? 'image/jpeg' : name.endsWith('.wav') ? 'audio/wav' : name.endsWith('.json') ? 'application/json' : 'video/x-motion-jpeg';
+        const type = /\.jpg$/i.test(name) ? 'image/jpeg' : isWavPath(name) ? 'audio/wav' : /\.json$/i.test(name) ? 'application/json' : 'video/x-motion-jpeg';
         files.push(new File([blob], basename(name), { type }));
         return blob;
       } catch (error) {
@@ -751,7 +754,7 @@
     };
     const main = await add(path);
     let wav = null;
-    if (path.endsWith('.mjpeg')) {
+    if (isMjpegPath(path)) {
       await add(stem(path) + '.json', false);
       wav = await add(stem(path) + '.wav', false);
     }
@@ -848,7 +851,7 @@
   async function deleteSyncedSet(path) {
     // Delete video companions first. If cleanup is interrupted, keeping the
     // MJPEG primary prevents its soundtrack from surfacing as standalone audio.
-    if (path.endsWith('.mjpeg')) {
+    if (isMjpegPath(path)) {
       await deleteSD(stem(path) + '.json', true);
       await deleteSD(stem(path) + '.wav', true);
     }
@@ -1046,7 +1049,7 @@
       const before = await localSnapshot(),
         source = await download(path, undefined, progress);
       reportSDStage(path, 'download-complete', { bytes: source.main.size });
-      if (sourceEntry?.crc32 !== undefined && path.endsWith('.wav')) {
+      if (sourceEntry?.crc32 !== undefined && isWavPath(path)) {
         stage = 'integrity';
         reportSDStage(path, stage, { expectedCrc32: sourceEntry.crc32 });
         const verifiedCrc32 = await verifyFirmwareCrc(source.main, sourceEntry);
@@ -1067,7 +1070,7 @@
         verifiedAudio = null;
       stage = 'verify';
       reportSDStage(path, stage);
-      if (/\.(jpg|mjpeg)$/.test(path)) {
+      if (/\.(jpg|mjpeg)$/i.test(path)) {
         const row = rows
           .filter((item) => !before.visuals.has(item.id) && item.sourceName === basename(path))
           .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
@@ -1076,7 +1079,7 @@
         verifiedAudio = verifiedVisual.verifiedAudio;
         visualId = row.id;
         audioId = row.audioId || null;
-      } else if (path.endsWith('.wav')) {
+      } else if (isWavPath(path)) {
         const record = recordings
           .filter((item) => !before.recordings.has(item.id) && item.ownerUid === owner)
           .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
@@ -1376,9 +1379,9 @@
         name = basename(file.path),
         type = file.describe
           ? 'Explain photo on SD'
-          : file.path.endsWith('.wav')
+          : isWavPath(file.path)
             ? 'Audio on SD'
-            : file.path.endsWith('.mjpeg')
+            : isMjpegPath(file.path)
               ? 'Video on SD'
               : 'Photo on SD',
         incomplete = file.syncable === false || Number(file.bytes) <= 44,

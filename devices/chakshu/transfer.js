@@ -128,6 +128,11 @@
       this.chunks.set(offset, bytes);
       return true;
     }
+    creditComplete(credits) {
+      // Each notification is offset-verified. A full contiguous credit grant
+      // may finish without waiting for the additional END notification.
+      return this.chunks.size === credits && this.contiguous().parts.length === credits;
+    }
     contiguous() {
       let next = this.offset;
       const parts = [];
@@ -255,6 +260,7 @@
       const id = nextRequestId(this.context),
         window = new MediaWindow(id, offset, total, fast ? 12 : 8, Boolean(path));
       let timer, finish, fail;
+      let commandMs = 0, notificationWaitMs = 0;
       const done = new Promise((resolve, reject) => {
         finish = resolve;
         fail = reject;
@@ -265,7 +271,8 @@
       done.catch(() => {});
       const receive = (event) => {
         try {
-          if (window.accept(event.target.value) && window.ended) finish();
+          if (window.accept(event.target.value) &&
+              (window.ended || (fast && window.creditComplete(credits)))) finish();
         } catch (error) {
           fail(error);
         }
@@ -277,13 +284,18 @@
       signal?.addEventListener('abort', abort, { once: true });
       root.addEventListener?.('synap-gatt-disconnected', disconnect, { once: true });
       try {
+        const commandStarted = Date.now();
         await this.sendOnly(fast ? 30 : 12, offset, signal, id, path, credits);
+        commandMs = Date.now() - commandStarted;
         signal?.throwIfAborted();
+        const notificationsStarted = Date.now();
         timer = setTimeout(finish, 3000);
         await done;
+        notificationWaitMs = Date.now() - notificationsStarted;
         const result = window.contiguous();
         if (fast) {
-          const complete = window.ended && result.parts.length === window.chunks.size;
+          const complete = (window.ended || window.creditComplete(credits)) &&
+            result.parts.length === window.chunks.size;
           const short = result.next < total && result.parts.length < credits;
           if (!complete || short) {
             // Incomplete packets NEVER advance beyond the contiguous prefix.
@@ -301,7 +313,10 @@
             root.dispatchEvent?.(new CustomEvent('synap-capture-diagnostic', {
               detail: { operation: 30, stage: 'BLE SD window backpressure',
                 offset, next: result.next, credits, received: result.parts.length,
-                elapsedMs: Date.now() - began, interrupted: !complete || short,
+                elapsedMs: Date.now() - began, commandMs, notificationWaitMs,
+                payloadBytes: result.next - offset,
+                rateBytesPerSecond: Math.round((result.next - offset) * 1000 / Math.max(1, Date.now() - began)),
+                interrupted: !complete || short,
                 fallbackToLegacy: this.fastDisabled },
             }));
         }
