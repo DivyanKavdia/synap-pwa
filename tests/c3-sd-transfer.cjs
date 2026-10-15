@@ -151,6 +151,6 @@ test('C3 media clients sharing a BLE connection do not accept stale same-ID repl
 
 test('C3 BLE media transfers retain the source and use capped credits',()=>{
  assert.match(transferSource,/Math\.max\(6, Math\.min\(12, credits\)\)/);
- assert.match(transferSource,/new MediaWindow\(id, offset, total, fast \? 12 : 8\)/);
+ assert.match(transferSource,/new MediaWindow\(id, offset, total, fast \? 12 : 8, Boolean\(path\)\)/);
  assert.match(preview,/SD original kept/);
 });
