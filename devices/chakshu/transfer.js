@@ -281,11 +281,14 @@
             if (Date.now() - began < 1500 && result.next < total)
               this.fastCredits = Math.min(20, credits + 2);
           }
-          root.dispatchEvent?.(new CustomEvent('synap-capture-diagnostic', {
-            detail: { operation: 30, stage: 'Fast BLE WAV window',
-              offset, next: result.next, credits, received: result.parts.length,
-              elapsedMs: Date.now() - began, interrupted: !complete },
-          }));
+          // Keep Bluefy's main thread responsive; log at 256 KiB boundaries
+          // or on recovery instead of one diagnostic for every 4–10 KiB.
+          if (!complete || Math.floor(offset / 262144) !== Math.floor(result.next / 262144))
+            root.dispatchEvent?.(new CustomEvent('synap-capture-diagnostic', {
+              detail: { operation: 30, stage: 'Fast BLE WAV window',
+                offset, next: result.next, credits, received: result.parts.length,
+                elapsedMs: Date.now() - began, interrupted: !complete },
+            }));
         }
         return result;
       } finally {
