@@ -1524,8 +1524,7 @@
       info = root.SynapModules?.client?.module,
       // Keep the handoff panel available after BLE drops: its credentials
       // were authenticated on the original connection before Wi-Fi started.
-      supportsC3Wifi = Boolean((info?.id === 2 && (info?.mediaFeatures & 2)) ||
-        c3BridgeAp?.active || c3BridgeHandoffPendingAt),
+      supportsC3Wifi = false, // Odyssey C3 Wi-Fi removed; Chakshu unchanged.
       supportsC3Format = Boolean(info?.id === 2 && (info?.mediaFeatures & 4)),
       supportsStorage =
         Boolean(info) &&
@@ -2084,89 +2083,7 @@
         }
       });
     }
-    if (extras && !document.getElementById('deviceWifiSettings')) {
-      const card=document.createElement('section');
-      card.id='deviceWifiSettings';card.className='settings-card';card.hidden=true;
-      card.innerHTML=
-        '<h3 class="settings-card-title">Direct Wi-Fi sync to Synap</h3>'+
-        '<p id="deviceWifiSettingsStatus" class="settings-hint">Start the private C3 hotspot; no router password needed. Join its Wi-Fi in iPhone Settings, return to Synap and tap Open & sync directly into Synap. Tap WAV recordings on the private page to import and verify them automatically. Keep the original Synap tab open. If iOS blocks the browser bridge, WAV downloads remain available as fallback.</p>'+
-        '<p id="deviceApInfo" class="settings-hint" hidden></p>'+
-        '<p><a id="deviceApOpen" target="_blank" hidden>Open &amp; sync directly into Synap</a></p>'+
-        '<div class="visual-actions"><button id="startDeviceAp" type="button">Start pendant Wi-Fi</button><button id="stopDeviceAp" type="button">Stop pendant Wi-Fi</button><button id="diagnoseDeviceAp" type="button">Check hotspot</button></div>';
-      extras.append(card);
-      document.getElementById('startDeviceAp')?.addEventListener('click',async()=>{
-        const button=document.getElementById('startDeviceAp'),
-          statusNode=document.getElementById('deviceWifiSettingsStatus');
-        button.disabled=true;
-        statusNode.textContent='Starting private Wi-Fi on Odyssey C3…';
-        try {
-          const ap=await startC3Ap();
-          showC3ApInfo(ap);
-          statusNode.textContent='Hotspot starting. Join '+ap.ssid+
-            ' in iPhone Wi-Fi Settings after a few seconds. Bluetooth may disconnect; return to this Synap tab to open the private page.';
-        } catch(error) {
-          statusNode.textContent='Wi-Fi hotspot unavailable · '+error.message;
-          status(error.message);
-        } finally {button.disabled=false;renderSDInbox();}
-      });
-      document.getElementById('stopDeviceAp')?.addEventListener('click',async()=>{
-        const button=document.getElementById('stopDeviceAp'),
-          statusNode=document.getElementById('deviceWifiSettingsStatus');
-        button.disabled=true;
-        try {
-          await stopC3Ap();showC3ApInfo(null);
-          statusNode.textContent='Hotspot stopping. Reconnect to your usual Wi-Fi or cellular connection.';
-        } catch(error) {statusNode.textContent='Could not stop Wi-Fi · '+error.message;}
-        finally {button.disabled=false;renderSDInbox();}
-      });
-      // op21 is read-only. After an AP startup failure firmware restores BLE
-      // advertising, and this action exposes the retained failure stage
-      // without touching SD or automatically starting another Wi-Fi session.
-      document.getElementById('diagnoseDeviceAp')?.addEventListener('click',async()=>{
-        const button=document.getElementById('diagnoseDeviceAp'),
-          statusNode=document.getElementById('deviceWifiSettingsStatus');
-        if(!c3WifiSupported() || !root.SynapDevices?.connection) {
-          statusNode.textContent='Reconnect the pendant over Bluetooth to check the last Wi-Fi startup failure.';
-          return;
-        }
-        button.disabled=true;
-        try {
-          const ap=await c3ApStatus();
-          if(ap?.active) {
-            showC3ApInfo(ap);
-            statusNode.textContent=ap.starting
-              ? 'Hotspot credentials were staged; the radio is still starting. Check iPhone Wi-Fi shortly.'
-              : 'Firmware reports the hotspot serving. Join '+ap.ssid+' in iPhone Settings → Wi-Fi.';
-          } else {
-            showC3ApInfo(null);
-            const names={
-              1:'startup cancelled',2:'SD, battery or recording state blocked startup',
-              3:'BLE did not disconnect cleanly',4:'Wi-Fi radio could not initialize',
-              5:'Wi-Fi hotspot creation failed',6:'hotspot IP was unavailable',
-              7:'HTTP server memory allocation failed',8:'SD reader was busy or unavailable',
-              9:'hotspot task could not be allocated'
-            };
-            const code=Number(ap?.failure)||0,available=Number(ap?.freeHeap)||0,
-              contiguous=Number(ap?.largestBlock)||0;
-            statusNode.textContent=code
-              ? 'Hotspot failed: stage '+code+' · '+(names[code]||'startup problem')+
-                ' · free heap '+available+' B · largest block '+contiguous+
-                ' B. No SD data was changed.'
-              : 'No hotspot is currently running. Start pendant Wi-Fi again; check within 30 seconds.';
-          }
-        }catch(error){
-          statusNode.textContent='Could not read hotspot diagnostics over Bluetooth · '+error.message;
-        }finally{button.disabled=false;renderSDInbox();}
-      });
-      root.setTimeout(async()=>{
-        if(!c3WifiSupported() || !root.SynapDevices?.connection)return;
-        try {
-          const ap=await c3ApStatus();showC3ApInfo(ap);
-          if(ap?.active)document.getElementById('deviceWifiSettingsStatus').textContent=
-            'Private Wi-Fi is active. Connect iPhone to '+ap.ssid+' and open the private page.';
-        } catch(_) {}
-      },500);
-    }
+    // Odyssey C3 is BLE-only: no Wi-Fi settings or hotspot controls.
     if (browse?.parentNode && !document.getElementById('visualClearSD')) {
       const clear = document.createElement('button');
       clear.id = 'visualClearSD';
