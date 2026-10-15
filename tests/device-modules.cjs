@@ -49,11 +49,11 @@ test('C3 diagnostics preserve recorder failure and expose the independent live m
   assert.equal(recovered.lastRecordKiB,0);
 });
 
-test('optional media features are profile-scoped; C3 may use notification-window, Wi-Fi and format bits',()=>{
+test('optional media features are profile-scoped; C3 supports BLE window and legacy format bits, not Wi-Fi',()=>{
   const old=descriptor();assert.equal(decode(old).mediaFeatures,0);
   const current=descriptor();current.setUint8(16,15);assert.equal(decode(current).mediaFeatures,15);
   const s3=descriptor(1);s3.setUint8(16,15);assert.equal(decode(s3).mediaFeatures,0);
-  const c3=descriptor(2);c3.setUint8(16,15);assert.equal(decode(c3).mediaFeatures,7);
+  const c3=descriptor(2);c3.setUint8(16,15);assert.equal(decode(c3).mediaFeatures,5);
 });
 test('all requests use the connection queue and cannot run during audio or another SD job',async()=>{
   let allowed=true,writes=0,queueCalls=0,current=status();

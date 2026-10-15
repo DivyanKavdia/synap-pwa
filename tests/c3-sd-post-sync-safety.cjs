@@ -28,9 +28,9 @@ test('C3 sync batch stops after first failing read, without post-sync catalogue 
   assert.doesNotMatch(deleteOffer.split('if (root.SynapModules?.client?.module?.id === 2)')[1].split('const unique =')[0],/confirm\(|deleteSDItem\(/);
 });
 
-test('C3 single-file and Wi-Fi sync retain originals; no automatic catalogue after verified transfer',()=>{
+test('C3 single-file BLE sync retains originals; no automatic catalogue after verified transfer',()=>{
   assert.match(rows,/SD original kept/);
-  assert.match(rows,/Existing SD recordings are untouched/);
+  assert.match(rows,/SD original kept/);
   assert.equal((rows.match(/if \(root\.SynapModules\?\.client\?\.module\?\.id !== 2\)\s+await browseSD\(list\.id\)\.catch/g)||[]).length,1);
   assert.match(code,/if \(root\.SynapModules\?\.client\?\.module\?\.id !== 2\)\s+await browseSD\('librarySDList'\)/);
 });

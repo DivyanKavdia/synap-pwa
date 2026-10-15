@@ -235,7 +235,7 @@
       (row.previewOnly
         ? 'Preview only. Original on SD: ' +
           row.sourcePath +
-          '. Use Browse SD card or Wi-Fi downloads to retrieve it. '
+          '. Use Browse SD card to retrieve it. '
         : '') +
       'Saved in this browser on this device. Export a copy before clearing browser data.';
     renderDescriptions();
@@ -393,7 +393,7 @@
             : state.offlineStatus?.path
               ? 'SD recording saved' +
                 sdQuality(state.offlineStatus) +
-                '. Choose Browse SD card or Wi-Fi downloads.'
+                '. Choose Browse SD card.'
               : '');
     if (!state.available) return;
     const store = api().store,
@@ -497,7 +497,7 @@
     const title = row.name || (row.mediaKind === 'audio' ? 'Audio' : row.mediaKind === 'video' ? 'Video' : 'Photo'),
       opener = card.querySelector('.library-media-open'), image = card.querySelector('img'),
       preview = card.querySelector('.recording-row-preview'),
-      wifi = card.querySelector('.library-sd-wifi'), discard = card.querySelector('.library-sd-discard');
+      discard = card.querySelector('.library-sd-discard');
     card.querySelector('.recording-row-name').textContent = title;
     if (row.sdOnly) {
       const type = row.describeRequested
@@ -533,16 +533,6 @@
               ? 'Cannot sync · recording did not finalize'
               : 'Cannot sync · no audio was written';
       preview.hidden = false;
-      if (wifi) {
-        const module = root.SynapModules?.client?.module,
-          wifiSupported = Boolean(
-            syncable && !synced && row.mediaKind === 'audio' &&
-            module?.id === 2 && (module.mediaFeatures & 2)
-          );
-        wifi.hidden = !wifiSupported;
-        wifi.disabled = !wifiSupported;
-        wifi.setAttribute('aria-label', 'Transfer over Wi-Fi: ' + title);
-      }
       if (discard) {
         discard.hidden = false;
         discard.disabled = !sdReady;
@@ -555,7 +545,6 @@
       image.hidden = true;
       return;
     }
-    if (wifi) wifi.hidden = true;
     if (discard) discard.hidden = true;
     opener.setAttribute('aria-label', (row.mediaKind === 'video' ? 'Play video: ' : 'Open photo: ') + title);
     card.querySelector('.recording-row-meta').textContent =
@@ -671,26 +660,6 @@
       }
       return open(item.mediaId);
     }));
-    const wifi=document.createElement('button');
-    wifi.type='button';wifi.className='library-sd-wifi';
-    wifi.textContent='Start Wi-Fi downloads';wifi.hidden=true;
-    wifi.addEventListener('click',event=>{
-      event.stopPropagation();
-      action(async()=>{
-        const item=card.synapRecording,transfer=root.SynapChakshuV2;
-        if(!item?.sdOnly || item.mediaKind!=='audio' || item.sdSyncable===false)
-          throw Error('Select a complete C3 SD recording first.');
-        if(!transfer?.startC3Ap)throw Error('Private Wi-Fi downloads are not available yet.');
-        wifi.disabled=true;opener.disabled=true;
-        try {
-          const ap=await transfer.startC3Ap();
-          alert('Join '+ap.ssid+' in iPhone Wi-Fi Settings.\nPassword: '+ap.password+
-            '\nReturn to Synap → Settings → Private Wi-Fi and tap Open & sync directly into Synap.\n'+
-            'Select WAVs on the private page; downloaded WAVs remain a fallback.');
-          return 'Private C3 Wi-Fi ready · '+ap.ssid+' · SD originals retained.';
-        } finally {wifi.disabled=false;opener.disabled=false;}
-      });
-    });
     const discard = document.createElement('button');
     discard.type = 'button';
     discard.className = 'library-sd-discard';
@@ -719,7 +688,7 @@
         }
       });
     });
-    header.append(opener, wifi, discard);
+    header.append(opener, discard);
     card.append(header);
     updateCard(card, row);
     return card;

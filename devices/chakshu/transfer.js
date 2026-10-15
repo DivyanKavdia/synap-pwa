@@ -28,8 +28,6 @@
     linkRequestIds.set(context, next);
     return next;
   }
-  const hexText = (value) =>
-    Array.from(new TextEncoder().encode(String(value ?? '')), (byte) => byte.toString(16).padStart(2, '0')).join('');
   function decode(value, id) {
     // Released firmware starts with a zeroed 16-byte response. Its worker (and
     // Arduino's deferred write callback) may not have answered the first read.
@@ -55,7 +53,7 @@
           'SD write/read failed.',
           'Capture failed.',
           'The SD card could not keep up. The partial recording was kept.',
-          'Wi-Fi downloads could not start. Stop other activity and retry.',
+          'Unsupported media transfer request.',
           'SD file unavailable.',
         ][value.getUint8(3)] || 'Camera transfer failed.',
       );
@@ -351,118 +349,6 @@
           );
         throw error;
       }
-    }
-    async _sendC3Config(text, mode, signal) {
-      const ascii = String(text || '');
-      if (!ascii || ascii.length > 2200) throw Error('Wi-Fi configuration is too large.');
-      let offset = 0;
-      while (offset < ascii.length) {
-        signal?.throwIfAborted();
-        const chunk = ascii.slice(offset, offset + 60);
-        const reply = await this._request(23, offset, chunk, signal);
-        if (reply.total !== offset + chunk.length) throw Error('Wi-Fi configuration transfer changed.');
-        offset += chunk.length;
-      }
-      return this._request(24, mode, '', signal);
-    }
-    configureC3Wifi(ssid, password, signal) {
-      return this.serialize(async () => {
-        const ssidBytes = new TextEncoder().encode(String(ssid || '')),
-          passwordBytes = new TextEncoder().encode(String(password || ''));
-        if (!ssidBytes.length || ssidBytes.length > 32) throw Error('Wi-Fi name must be 1–32 bytes.');
-        if (passwordBytes.length > 63) throw Error('Wi-Fi password must be 63 bytes or fewer.');
-        await this._sendC3Config('S=' + hexText(ssid) + '\nP=' + hexText(password) + '\n', 1, signal);
-        return this._c3WifiStatus(signal);
-      });
-    }
-    startC3WifiUpload(options, signal) {
-      return this.serialize(async () => {
-        const endpoint = String(options?.endpoint || '').replace(/\/+$/, ''),
-          token = String(options?.token || ''),
-          recordingId = String(options?.recordingId || ''),
-          path = String(options?.path || '');
-        if (!/^https:\/\/[^/?#@]+(?::\d+)?$/i.test(endpoint))
-          throw Error('Synap Wi-Fi upload endpoint is invalid.');
-        if (!token || token.length > 800) throw Error('Synap Wi-Fi upload ticket is invalid.');
-        if (!/^[0-9a-f-]{36}$/i.test(recordingId)) throw Error('Synap recording ID is invalid.');
-        if (!/^\/synap\/[a-z0-9][a-z0-9._-]{0,51}\.wav$/i.test(path))
-          throw Error('Invalid SD recording path.');
-        const text =
-          'E=' + hexText(endpoint) + '\n' +
-          'T=' + hexText(token) + '\n' +
-          'R=' + hexText(recordingId) + '\n' +
-          'F=' + hexText(path) + '\n';
-        await this._sendC3Config(text, 2, signal);
-        return this._c3WifiStatus(signal);
-      });
-    }
-    _c3WifiStatus(signal) {
-      return this._request(25, 0, '', signal).then((reply) => {
-        try {
-          const status = JSON.parse(new TextDecoder().decode(reply.bytes));
-          if (!status || typeof status !== 'object') throw Error();
-          return status;
-        } catch (_) {
-          throw Error('Pendant Wi-Fi status could not be read.');
-        }
-      });
-    }
-    c3WifiStatus(signal) {
-      return this.serialize(() => this._c3WifiStatus(signal));
-    }
-    // Private C3+SD SoftAP: these calls exchange only control/status over BLE.
-    // Actual WAV downloads happen in the phone browser on the temporary AP.
-    _c3ApStatus(signal) {
-      return this._request(21, 0, '', signal).then(reply => {
-        let state;
-        try { state = JSON.parse(new TextDecoder().decode(reply.bytes)); }
-        catch (_) { throw Error('C3 access point status is invalid.'); }
-        if (!state || typeof state.active !== 'boolean') throw Error('C3 access point status is invalid.');
-        if (state.active && (!/^Synap-C3-[0-9A-F]{4}$/.test(state.ssid) ||
-            !/^[a-f0-9]{32}$/.test(state.password) ||
-            !/^http:\/\/192\.168\.4\.1\/\?key=[a-f0-9]{32}$/.test(state.url)))
-          throw Error('C3 hotspot details failed validation.');
-        return state;
-      });
-    }
-    c3ApStatus(signal) { return this.serialize(() => this._c3ApStatus(signal)); }
-    startC3Ap(signal) {
-      return this.serialize(async () => {
-        const current=await this._c3ApStatus(signal);
-        if(current.active)return current;
-        // New C3 firmware returns hotspot credentials in op20 itself,
-        // BEFORE Wi-Fi shares radio/heap with BLE. Never require an op21
-        // GATT round trip after initiating radio handoff.
-        const started=await this._request(20, 0, '', signal);
-        let next=null;
-        try { next=JSON.parse(new TextDecoder().decode(started.bytes)); }
-        catch (_) { /* Earlier firmware returned only an empty op20 ACK. */ }
-        if(next?.active) {
-          if(!/^Synap-C3-[0-9A-F]{4}$/.test(next.ssid) ||
-             !/^[a-f0-9]{32}$/.test(next.password) ||
-             !/^http:\/\/192\.168\.4\.1\/\?key=[a-f0-9]{32}$/.test(next.url))
-            throw Error('C3 hotspot credentials are invalid.');
-          return next;
-        }
-        try { next=await this._c3ApStatus(signal); }
-        catch (_) {
-          throw Error('Bluetooth dropped during legacy hotspot start before Wi-Fi credentials arrived. Install firmware with staged C3 Wi-Fi handoff.');
-        }
-        if(!next.active)throw Error('C3 hotspot did not start. Check SD mount and battery.');
-        return next;
-      });
-    }
-    stopC3Ap(signal) {
-      return this.serialize(async () => {
-        await this._request(22, 0, '', signal);
-        return {active:false,stopping:true};
-      });
-    }
-    forgetC3Wifi(signal) {
-      return this.serialize(async () => {
-        await this._request(26, 0, '', signal);
-        return this._c3WifiStatus(signal);
-      });
     }
     bytes(op, path, signal, progress = () => {}, preview = false) {
       return this.serialize(() => this._bytes(op, path, signal, progress, preview));
