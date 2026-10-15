@@ -45,9 +45,9 @@
       mediaVersion: value.getUint8(14),
       // C3: 0=legacy BLE window, 2=existing explicit-format ABI,
       // 6=credit-based fast BLE window. Bit 1 (former Wi-Fi) is unadvertised.
-      // Exclude status/probe/validation bits 3-5 and 7.
+      // Explicitly discard Wi-Fi bit 1, status/probe bits 3-5 and validation bit 7.
       mediaFeatures: profile.id === 3 ? value.getUint8(16) :
-        profile.id === 2 ? value.getUint8(16) & 0x47 : 0,
+        profile.id === 2 ? value.getUint8(16) & 0x45 : 0,
       voiceVersion: profile.id === 2 ? 0 : value.getUint8(15),
       // New C3 validation firmware marks byte 15's 8 KiB progress semantics
       // with bit 7 of byte 16. Older builds used byte 15 for another purpose.
