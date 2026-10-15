@@ -85,7 +85,7 @@ test('C3 failed mounts still reach observational catalogue diagnostics',()=>{
 });
 
 test('C3 format is firmware-gated and uses explicit destructive op19',()=>{
-  assert.match(modules,/profile\.id === 2 \? value\.getUint8\(16\) & 0x47 : 0/);
+  assert.match(modules,/profile\.id === 2 \? value\.getUint8\(16\) & 0x45 : 0/);
   assert.match(preview,/info\?\.id === 2 && \(info\.mediaFeatures & 4\)/);
   assert.match(preview,/await client\(\)\.request\(19\)/);
   assert.match(preview,/ALL files on the card will be permanently erased/);
@@ -103,7 +103,7 @@ test('C3 optional integrity/session catalogue fields survive into SD state',()=>
 
 
 test('C3 BLE only advertises fast read capability; Wi-Fi UI is gone',()=>{
-  assert.match(modules,/profile\.id === 2 \? value\.getUint8\(16\) & 0x47 : 0/);
+  assert.match(modules,/profile\.id === 2 \? value\.getUint8\(16\) & 0x45 : 0/);
   assert.match(preview,/supportsC3Wifi = false/);
   assert.doesNotMatch(preview,/id="startDeviceAp"|id="stopDeviceAp"/);
   assert.doesNotMatch(library,/Start Wi-Fi downloads/);
