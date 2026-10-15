@@ -85,7 +85,7 @@ test('C3 failed mounts still reach observational catalogue diagnostics',()=>{
 });
 
 test('C3 format is firmware-gated and uses explicit destructive op19',()=>{
-  assert.match(modules,/profile\.id === 2 \? value\.getUint8\(16\) & 7 : 0/);
+  assert.match(modules,/profile\.id === 2 \? value\.getUint8\(16\) & 5 : 0/);
   assert.match(preview,/info\?\.id === 2 && \(info\.mediaFeatures & 4\)/);
   assert.match(preview,/await client\(\)\.request\(19\)/);
   assert.match(preview,/ALL files on the card will be permanently erased/);
