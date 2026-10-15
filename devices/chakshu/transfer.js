@@ -418,7 +418,7 @@
             }),
             id,
           );
-          if (reply) return op === 3 && this.context.module?.id === 2
+          if (reply) return op === 3 && this.compactSupported
             ? { ...reply, sessionToken: id } : reply;
           await delay(op === 19 ? 750 : 60);
         }
