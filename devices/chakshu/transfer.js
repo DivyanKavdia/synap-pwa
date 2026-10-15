@@ -219,7 +219,7 @@
       bytes[1] = op;
       view.setUint32(2, id, true);
       view.setUint32(6, offset, true);
-      if (fast) bytes[10] = Math.max(6, Math.min(20, credits));
+      if (fast) bytes[10] = Math.max(6, Math.min(12, credits));
       if (pathBytes.length) bytes.set(pathBytes, prefix);
       const queue = this.context.mediaQueue || this.context.queue;
       await this.writeCommand(
