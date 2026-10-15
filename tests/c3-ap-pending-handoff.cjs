@@ -9,6 +9,6 @@ test('Odyssey C3 no longer exposes hotspot or Wi-Fi Settings buttons',()=>{
 });
 test('Odyssey C3 BLE SD file windows are explicit path and bounded',()=>{
   assert.match(transfer,/const fast = op === 30 && Boolean\(path\)/);
-  assert.match(transfer,/Math\.max\(6, Math\.min\(20, credits\)\)/);
+  assert.match(transfer,/Math\.max\(6, Math\.min\(12, credits\)\)/);
   assert.match(transfer,/this\.sendOnly\(fast \? 30 : 12/);
 });
