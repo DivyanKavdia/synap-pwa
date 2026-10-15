@@ -642,12 +642,6 @@
     device.gatt.disconnect();
   }
 
-  // Hotspot expiry clears its temporary guard; ordinary remembered-device
-  // recovery resumes only after the private AP session has ended.
-  globalThis.addEventListener?.("synap-c3-ap-handoff-ended", function () {
-    if (!c3PrivateWifiHandoffActive()) syncRememberedMonitoring();
-  });
-
   const REMEMBERED_RECOVERY_INTERVAL_MS = 30000;
   let rememberedRecoveryTimer = null;
   let advertisementWatch = null;
@@ -657,16 +651,7 @@
   let reconnectPageHidden = false;
   const advertisementUnavailable = new WeakSet();
 
-  function c3PrivateWifiHandoffActive() {
-    // The C3 shares one radio between SoftAP and BLE. The verified op20
-    // response already delivered the short-lived SSID/key; continuing
-    // background Bluetooth discovery/reconnect would contend with Wi-Fi.
-    // User-initiated Connect is never blocked by this automatic-only gate.
-    return Boolean(globalThis.SynapChakshuV2?.isC3ApHandoffActive?.());
-  }
-
   function reconnectRequested() {
-    if (c3PrivateWifiHandoffActive() && !recordingReconnectPending) return false;
     const guard = globalThis.SynapSleepStateGuard;
     if (guard?.locked || document.body?.dataset.intentionalSleep === "1") return guard?.reconnectOnWake === true;
     return autoReconnectEnabled();
@@ -1122,7 +1107,6 @@
       manualDisconnect ||
       reconnectSelectionRequired ||
       !autoReconnectEnabled() ||
-      (c3PrivateWifiHandoffActive() && !recordingReconnectPending) ||
       !bluetoothDevice ||
       reconnectTimer
     ) {
@@ -1152,7 +1136,7 @@
     reconnectTimer = window.setTimeout(function () {
       reconnectTimer = null;
       if (document.visibilityState === "hidden" || manualDisconnect || !autoReconnectEnabled() ||
-          c3PrivateWifiHandoffActive() || firmwareBusy || isGattConnected()) return;
+          firmwareBusy || isGattConnected()) return;
       connectPendant({ silent: true, autoReconnect: true, recoveryAttempt: true });
     }, wait);
   }
@@ -1717,21 +1701,14 @@
       );
     }
 
-    // On ESP32-C3 SoftAP, Wi-Fi/BLE coexistence is not guaranteed to keep
-    // the GATT link. The AP credentials were delivered before radio startup.
-    // Don't fight its Wi-Fi transfer with repeated background BLE reconnects.
-    const privateWifiHandoff=Boolean(
-      globalThis.SynapChakshuV2?.isC3ApHandoffActive?.());
     setAppState(
       "disconnected",
       manualDisconnect
         ? "Pendant disconnected."
-        : privateWifiHandoff
-          ? "Private pendant Wi-Fi starting. Join its network and use the saved link in Synap Settings. Bluetooth may disconnect during Wi-Fi transfer."
-          : "Connection was lost. Tap Reconnect to continue."
+        : "Connection was lost. Tap Reconnect to continue."
     );
 
-    if (!manualDisconnect && !privateWifiHandoff) {
+    if (!manualDisconnect) {
       toast("Pendant connection lost", "error");
       scheduleAutoReconnect();
     }
@@ -4039,7 +4016,7 @@
           const running=releases.targetFromIdentity(board);
           offered=m;offeredDevice=id;bannerButton.hidden=false;latestButton.hidden=false;
           offerLabel(false);
-          announce(`Update ${releases.versionLabel(m)} available${running && running.build !== m.build ? ` · build ${running.build} → ${m.build}` : ''}${enhancedC3 ? ' · enhanced OTA 1.875 MiB · Wi-Fi firmware' : ''}`);
+          announce(`Update ${releases.versionLabel(m)} available${running && running.build !== m.build ? ` · build ${running.build} → ${m.build}` : ''}${enhancedC3 ? ' · enhanced OTA 1.875 MiB · BLE-only firmware' : ''}`);
         } else {
           offered=null;bannerButton.hidden=true;latestButton.hidden=true;
           if(!pending&&!verified)status.textContent=`Up to date · ${releases.versionLabel(releases.targetFromIdentity(board)||info)}`;

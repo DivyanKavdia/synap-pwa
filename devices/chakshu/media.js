@@ -1044,11 +1044,7 @@
         offlineStatus,
         wifi,
         wifiSupported: Boolean(
-          moduleInfo()?.id === 3
-            ? moduleInfo()?.mediaFeatures & 4
-            : moduleInfo()?.id === 2
-              ? moduleInfo()?.mediaFeatures & 2
-              : false,
+          moduleInfo()?.id === 3 ? moduleInfo()?.mediaFeatures & 4 : false,
         ),
         sdVideoPreferred: false,
         session: session ? { id: session.id, phase: session.phase } : null,

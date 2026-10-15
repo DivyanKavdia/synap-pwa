@@ -135,7 +135,7 @@
         ? 'Finishing the recording and saving received frames and audio…'
         : 'Closing this preview keeps recording. Use Stop & save video to finish.'
       : sd
-        ? 'Open Photos & video in Library to move this recording to the app or download it over Wi-Fi.'
+        ? 'Open Photos & video in Library to sync this recording over Bluetooth.'
         : row
           ? 'You can review this capture in your library.'
           : '';
@@ -234,8 +234,7 @@
   'use strict';
   const api = () => root.SynapChakshu;
   const RECEIPT_PREFIX = 'synap-chakshu-move-v2:';
-  const WIFI_UPLOAD_PREFIX = 'synap-c3-wifi-upload-v1:';
-  const pause = (ms) => new Promise((resolve) => root.setTimeout(resolve, ms));
+
   let busy = false;
   const status = (message) => {
     const node = document.getElementById('visualConnectionStatus'),
@@ -302,12 +301,6 @@
     }
   }
   const isSDSynced = (path) => Boolean(storedReceipt(path));
-  const wifiUploadKey = (owner, deviceId, path) =>
-    WIFI_UPLOAD_PREFIX + owner + ':' + deviceId + ':' + path;
-  function c3WifiSupported() {
-    const info = root.SynapModules?.client?.module;
-    return Boolean(info?.id === 2 && (info.mediaFeatures & 2));
-  }
   // Field failure: a native full-card FAT format returned I/O failure on an
   // otherwise mounted Odyssey C3 and left SD unavailable. Keep the UI and
   // command blocked until the C3 formatter is separately qualified.
@@ -333,398 +326,6 @@
   }
   function audioJournal() {
     return new root.DKAudioStore({ ...root.SynapRecordingJournal.options() });
-  }
-  async function responseJson(response, fallback) {
-    let data = null;
-    try { data = await response.json(); } catch (_) {}
-    if (!response.ok) throw Error(data?.error?.message || fallback || ('HTTP ' + response.status));
-    return data || {};
-  }
-  async function c3WifiStatus() {
-    if (!c3WifiSupported()) return null;
-    return client().c3WifiStatus();
-  }
-  // SoftAP downloads do not require stored router/hotspot credentials.
-  async function c3ApStatus() {
-    if (!c3WifiSupported()) return null;
-    return client().c3ApStatus();
-  }
-  async function startC3Ap() {
-    if (!c3WifiSupported()) throw Error('Update Odyssey C3 firmware for private Wi-Fi downloads.');
-    // Capture the authenticated BLE device and owner BEFORE op20. The radio
-    // can drop GATT after the ACK but before this async continuation resumes.
-    const connection=context(), owner=api()?.state?.owner;
-    // Mark the radio handoff BEFORE the op20 BLE round trip. iOS may emit a
-    // GATT disconnect while the response is being read, before credentials
-    // have been returned to this caller.
-    c3BridgeHandoffPendingAt=Date.now();
-    try {
-      const ap=await client().startC3Ap();
-      showC3ApInfo(ap,{deviceId:connection.deviceId,owner});
-      return ap;
-    } finally {
-      c3BridgeHandoffPendingAt=0;
-      // An unsuccessful handoff must never suppress future BLE reconnection.
-      if(!c3BridgeAp?.active)
-        root.dispatchEvent(new CustomEvent('synap-c3-ap-handoff-ended'));
-    }
-  }
-  async function stopC3Ap() {
-    if (!c3WifiSupported()) return null;
-    return client().stopC3Ap();
-  }
-  function showC3ApInfo(next, trustedIdentity=null) {
-    // Cache BLE-delivered credentials BEFORE querying DOM. Keep the verified
-    // BLE identity from the op20 request even when GATT drops immediately.
-    if(!next?.active) {
-      c3BridgeAp=null;
-      c3BridgeIdentity=null;
-      c3BridgeHandoffStartedAt=0;
-      if(c3BridgeExpiryTimer!==null)root.clearTimeout(c3BridgeExpiryTimer);
-      c3BridgeExpiryTimer=null;
-    } else {
-      const differentSession=!c3BridgeAp?.active || c3BridgeAp.url!==next.url;
-      c3BridgeAp=next;
-      const current=root.SynapDevices?.connection;
-      const identity=trustedIdentity || (current?.deviceId && api()?.state?.owner
-        ? {deviceId:current.deviceId,owner:api().state.owner}:null);
-      if(identity?.deviceId && identity?.owner)c3BridgeIdentity={...identity};
-      if(differentSession) {
-        c3BridgeHandoffStartedAt=Date.now();
-        if(c3BridgeExpiryTimer!==null)root.clearTimeout(c3BridgeExpiryTimer);
-        const url=next.url;
-        // Firmware shuts its AP down 900 seconds after going live, 4 seconds
-        // after op20. Expire the retained handoff state after a small margin:
-        // no stale link and no indefinitely disabled BLE autoreconnect.
-        c3BridgeExpiryTimer=root.setTimeout(()=>{
-          if(c3BridgeAp?.url!==url)return;
-          showC3ApInfo(null);
-          root.dispatchEvent(new CustomEvent('synap-c3-ap-handoff-ended'));
-          renderSDInbox();
-        },C3_AP_HANDOFF_MAX_MS);
-      }
-    }
-    const node=document.getElementById('deviceApInfo');
-    const link=document.getElementById('deviceApOpen');
-    if(!node || !link)return;
-    node.hidden=!next?.active;
-    link.hidden=!next?.active;
-    if(!next?.active){node.textContent='';link.removeAttribute('href');return;}
-    node.textContent='Network: '+next.ssid+' · Password: '+next.password+
-      ' · Join this Wi-Fi in iPhone Settings, then open the private page.';
-    link.href=next.url;
-    link.textContent='Open & sync directly into Synap';
-    link.removeAttribute('rel');
-    link.onclick=(event)=>{
-      event.preventDefault();
-      try{openC3Bridge();}
-      catch(error){status(error.message);}
-    };
-  }
-
-  // Verified same-window-family bridge for an HTTP-only local SoftAP page.
-  // HTTPS Synap MUST NOT fetch HTTP 192.168.4.1 directly (mixed content).
-  // The local AP page owns its same-origin fetch and transfers bounded
-  // ArrayBuffers to this PWA via a strictly bound opener/origin/session.
-  let c3Bridge=null;
-  let c3BridgeIdentity=null;
-  let c3BridgeAp=null;
-  let c3BridgeHandoffPendingAt=0;
-  let c3BridgeHandoffStartedAt=0;
-  let c3BridgeExpiryTimer=null;
-  const C3_AP_HANDOFF_MAX_MS=925000; // 4 s startup + 900 s AP + 21 s margin
-  const C3_AP_ORIGIN='http://192.168.4.1';
-  const C3_AP_MAX_BYTES=64*1024*1024;
-  function c3BridgeToken() {
-    const bytes=new Uint8Array(16);
-    root.crypto.getRandomValues(bytes);
-    return [...bytes].map(v=>v.toString(16).padStart(2,'0')).join('');
-  }
-  function c3BridgeUrl(ap,channel) {
-    const url=new URL(ap.url);
-    if(url.origin!==C3_AP_ORIGIN || !/^[a-f0-9]{32}$/.test(url.searchParams.get('key')||''))
-      throw Error('The pendant private Wi-Fi link is invalid.');
-    url.searchParams.set('bridge',channel);
-    url.searchParams.set('origin',root.location.origin);
-    return url.href;
-  }
-  function openC3Bridge() {
-    if(!c3BridgeAp?.active || !c3BridgeIdentity?.deviceId || !c3BridgeIdentity?.owner)
-      throw Error('Connect the pendant in Synap and start its private Wi-Fi first.');
-    if(c3Bridge?.working)throw Error('Finish the previous Wi-Fi import first.');
-    const channel=c3BridgeToken();
-    const target=c3BridgeUrl(c3BridgeAp,channel);
-    // window.open runs synchronously inside the user's click gesture; iOS
-    // otherwise blocks delayed/asynchronous popups. No rel=noopener is used.
-    const popup=root.open(target,'synapC3Direct');
-    if(!popup)throw Error('Browser blocked the private page. Allow popups and open it again from Synap.');
-    c3Bridge={channel,popup,identity:{...c3BridgeIdentity},ready:false,working:false,transfer:null};
-    status('Direct Wi-Fi import page opened. Select a WAV there. Keep Synap open in its original tab.');
-  }
-  function c3BridgeAck(event,session,action,seq,ok,error='') {
-    try {
-      event.source.postMessage({
-        type:'synap:c3-ack',version:1,channel:session.channel,
-        action,seq,ok,...(error?{error}:{}),
-      },C3_AP_ORIGIN);
-    } catch (_) {}
-  }
-  function c3BridgeAccountMatches(session) {
-    const owner=api()?.state?.owner;
-    const activeUid=root.SynapAuth?.session?.()?.profile?.uid;
-    return Boolean(owner && owner===session.identity.owner &&
-      activeUid===session.identity.owner);
-  }
-  async function importC3BridgedWav(session,path,source) {
-    const owner=session.identity.owner;
-    if(!c3BridgeAccountMatches(session))
-      throw Error('Synap account changed. The SD original was kept.');
-    if(source.size<44 || source.size>C3_AP_MAX_BYTES)
-      throw Error('Invalid SD WAV size.');
-    const normalized=await normalizedImportedWav(source);
-    const entry=api()?.state?.sdFiles?.find?.(item=>item.path===path);
-    if(entry && Number.isSafeInteger(entry.bytes) && entry.bytes!==source.size)
-      throw Error('Wi-Fi recording length does not match the original SD catalogue.');
-    if(entry?.crc32!==undefined)await verifyFirmwareCrc(source,entry);
-    if(!c3BridgeAccountMatches(session))throw Error('Synap account changed.');
-    const key=receiptKey(session.identity.deviceId,path);
-    const stored=JSON.parse(localStorage.getItem(key)||'null');
-    const originalSha=await digest(source);
-    const journal=audioJournal();
-    if(stored?.owner===owner && stored.deviceId===session.identity.deviceId &&
-       stored.path===path && stored.mainSha256===originalSha && stored.audioId) {
-      const record=await journal.get('recordings',stored.audioId);
-      if(record?.sealed) {
-        const saved=await journal.blob(record);
-        if(saved.size===stored.audioBytes && await digest(saved)===stored.audioSha256)
-          return {audioId:stored.audioId,alreadySynced:true};
-      }
-    }
-    // This is the existing Odyssey SD PCM journal pipeline, reused without
-    // any BLE GATT dependency during the disconnected SoftAP session.
-    const bytes=new Uint8Array(await source.arrayBuffer());
-    const id=await journal.begin('Odyssey SD audio',{deviceId:session.identity.deviceId});
-    try {
-      for(let at=44,sequence=0;at<bytes.length;at+=1600) {
-        if(!c3BridgeAccountMatches(session))throw Error('Account changed during import.');
-        const payload=new Uint8Array(1600);
-        payload.set(bytes.subarray(at,Math.min(at+1600,bytes.length)));
-        journal.append(id,{sequence:sequence++,chunk:0,total:1,payload});
-        if(sequence%100===0)await journal.flush();
-      }
-      await journal.close(id);
-      const verified=await verifyAudio(id,source);
-      if(!c3BridgeAccountMatches(session))throw Error('Account changed during verification.');
-      const receipt={
-        schema:1,owner,deviceId:session.identity.deviceId,path,
-        audioId:id,visualId:null,mainBytes:source.size,
-        mainSha256:originalSha,audioBytes:verified.bytes,
-        audioSha256:verified.sha256,transport:'c3-softap-direct',
-        savedAt:new Date().toISOString(),
-      };
-      localStorage.setItem(key,JSON.stringify(receipt));
-      root.dispatchEvent(new CustomEvent('synap-recording-saved',{
-        detail:{recordingId:id,source:'c3-softap-direct'},
-      }));
-      root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
-      return {audioId:id,alreadySynced:false};
-    }catch(error){
-      await journal.close(id,'import-interrupted').catch(()=>{});
-      throw error;
-    }
-  }
-  root.addEventListener('message',event=>{
-    const session=c3Bridge,packet=event.data;
-    if(!session || event.origin!==C3_AP_ORIGIN || event.source!==session.popup ||
-       !packet || packet.type!=='synap:c3-ap' || packet.version!==1 ||
-       packet.channel!==session.channel)return;
-    const {action,seq,path}=packet;
-    const reply=(ok,error='')=>c3BridgeAck(event,session,action,seq,ok,error);
-    if(action==='hello'){
-      if(!c3BridgeAccountMatches(session)){reply(false,'Sign in to the original Synap account.');return;}
-      session.ready=true;
-      try{event.source.postMessage({type:'synap:c3-ack',version:1,channel:session.channel,
-        action:'ready',seq:0,ok:true},C3_AP_ORIGIN);}catch(_){}
-      status('Wi-Fi connected to Synap. Tap WAV recordings on the private page to sync them.');
-      return;
-    }
-    if(!session.ready || !c3BridgeAccountMatches(session)){reply(false,'Synap account or bridge changed.');return;}
-    if(action==='cancel'){
-      session.transfer=null;session.working=false;
-      status('Wi-Fi transfer interrupted; SD original retained.');
-      return;
-    }
-    if(action==='begin'){
-      const size=Number(packet.size);
-      if(session.working || !pathOk(path) || !path.toLowerCase().endsWith('.wav') ||
-         !Number.isSafeInteger(size) || size<44 || size>C3_AP_MAX_BYTES) {
-        reply(false,'Invalid file or another import is active.');return;
-      }
-      session.working=true;
-      session.transfer={path,size,received:0,chunks:[],nextSeq:seq+1};
-      reply(true);return;
-    }
-    const transfer=session.transfer;
-    if(!session.working || !transfer || transfer.path!==path){
-      reply(false,'Start a valid WAV transfer first.');return;
-    }
-    if(action==='chunk'){
-      const chunk=packet.buffer;
-      if(seq!==transfer.nextSeq || !(chunk instanceof ArrayBuffer) ||
-         chunk.byteLength===0 || chunk.byteLength>16384 ||
-         packet.offset!==transfer.received ||
-         transfer.received+chunk.byteLength>transfer.size){
-        session.transfer=null;session.working=false;
-        reply(false,'Invalid or out-of-order Wi-Fi chunk.');return;
-      }
-      transfer.chunks.push(chunk);
-      transfer.received+=chunk.byteLength;
-      transfer.nextSeq++;
-      reply(true);
-      status('Receiving SD recording over Wi-Fi · '+Math.floor(transfer.received/transfer.size*100)+'%');
-      return;
-    }
-    if(action==='end'){
-      if(seq!==transfer.nextSeq || transfer.received!==transfer.size){
-        session.transfer=null;session.working=false;
-        reply(false,'Incomplete or out-of-order WAV.');return;
-      }
-      session.transfer=null;
-      (async()=>{
-        try{
-          const source=new Blob(transfer.chunks,{type:'audio/wav'});
-          const result=await importC3BridgedWav(session,path,source);
-          status(result.alreadySynced?
-            'Recording already verified in Synap; SD original retained.':
-            'Recording verified in Synap Memories. Cloud processing resumes with internet; SD original retained.');
-          reply(true);
-        }catch(error){
-          status('Wi-Fi import not saved: '+error.message+'. SD original retained.');
-          reply(false,error.message);
-        }finally{session.working=false;}
-      })();
-      return;
-    }
-    reply(false,'Unsupported Wi-Fi bridge message.');
-  });
-
-  async function configureC3Wifi(ssid, password) {
-    if (!c3WifiSupported()) throw Error('Update Odyssey C3 firmware for direct Wi-Fi sync.');
-    return client().configureC3Wifi(ssid, password);
-  }
-  async function forgetC3Wifi() {
-    if (!c3WifiSupported()) return null;
-    return client().forgetC3Wifi();
-  }
-  async function beginC3CloudUpload(path, sourceEntry, connection, owner) {
-    if (!root.SynapAuth?.isSignedIn?.()) throw Error('Sign in with Google before using Wi-Fi sync.');
-    const bytes = Math.max(0, Number(sourceEntry?.bytes) || 0);
-    if (bytes <= 44) throw Error('This SD recording contains no audio to sync.');
-    const durationMs = Math.max(1, Math.floor((bytes - 44) / 32));
-    const key = wifiUploadKey(owner, connection.deviceId, path);
-    let saved = null;
-    try { saved = JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) {}
-    const validId = /^[0-9a-f-]{36}$/i.test(String(saved?.recordingId || ''));
-    const recordingId = validId ? saved.recordingId : crypto.randomUUID();
-    const firstSeen = Date.parse(sourceEntry?.seenAt || '');
-    const endedAtMs = Number.isFinite(firstSeen) ? firstSeen : Date.now();
-    const startedAt = new Date(Math.max(0, endedAtMs - durationMs)).toISOString();
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
-    const response = await root.SynapAuth.authedFetch('/v1/device-uploads', {
-      method: 'POST',
-      expectedUid: owner,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        recording_id: recordingId,
-        device_id: connection.deviceId,
-        started_at: startedAt,
-        language: 'auto',
-        timezone,
-      }),
-    });
-    const ticket = await responseJson(response, 'Synap Cloud could not prepare Wi-Fi sync.');
-    if (!ticket.upload_token || ticket.recording_id !== recordingId)
-      throw Error('Synap Cloud returned an invalid Wi-Fi upload ticket.');
-    localStorage.setItem(key, JSON.stringify({ recordingId, createdAt: new Date().toISOString() }));
-    return {
-      key,
-      recordingId,
-      endpoint: root.SynapAuth.config().backendUrl,
-      token: ticket.upload_token,
-      durationMs,
-    };
-  }
-  async function moveC3Wifi(path, sourceEntry, progress = () => {}) {
-    if (busy) throw Error('Another SD transfer is already running.');
-    const connection = context(), owner = api().state.owner;
-    busy = true;
-    renderSDInbox();
-    reportSDStage(path, 'wifi-ticket');
-    try {
-      const ticket = await beginC3CloudUpload(path, sourceEntry, connection, owner);
-      if (owner !== api().state.owner || connection !== root.SynapDevices?.connection)
-        throw Error('Account or pendant changed before Wi-Fi sync started.');
-      reportSDStage(path, 'wifi-start', { recordingId: ticket.recordingId });
-      const transfer = client();
-      let state = await transfer.startC3WifiUpload({
-        endpoint: ticket.endpoint,
-        token: ticket.token,
-        recordingId: ticket.recordingId,
-        path,
-      });
-      for (;;) {
-        const total = Math.max(0, Number(state?.total) || Number(sourceEntry?.bytes) || 0);
-        const uploaded = Math.max(0, Number(state?.uploaded) || 0);
-        if (total > 44) progress(Math.min(1, uploaded / Math.max(1, total - 44)));
-        status(
-          state?.message ||
-          (state?.active
-            ? 'Syncing over Wi-Fi · ' + Math.round(Math.min(1, uploaded / Math.max(1, total - 44)) * 100) + '%'
-            : 'Checking Wi-Fi sync…'),
-        );
-        if (Number(state?.phase) === 6) {
-          throw Error(
-            String(state?.message || 'Wi-Fi sync failed.') +
-              (state?.http ? ' HTTP ' + state.http + '.' : ''),
-          );
-        }
-        if (!state?.active) {
-          if (Number(state?.phase) === 5) break;
-          throw Error(state?.message || 'Wi-Fi sync stopped before cloud verification.');
-        }
-        await pause(750);
-        if (owner !== api().state.owner || connection !== root.SynapDevices?.connection)
-          throw Error('Wi-Fi sync is continuing on the pendant. Reconnect to refresh Memories.');
-        state = await transfer.c3WifiStatus();
-      }
-      progress(1);
-      localStorage.removeItem(ticket.key);
-      const receipt = {
-        schema: 1,
-        owner,
-        deviceId: connection.deviceId,
-        path,
-        audioId: ticket.recordingId,
-        visualId: null,
-        mainBytes: Math.max(0, Number(sourceEntry?.bytes) || 0),
-        ...(sourceEntry?.crc32 !== undefined ? { sourceCrc32: sourceEntry.crc32 } : {}),
-        ...(sourceEntry?.take ? { take: sourceEntry.take, part: sourceEntry.part ?? null } : {}),
-        wifi: true,
-        cloud: true,
-        savedAt: new Date().toISOString(),
-      };
-      localStorage.setItem(receiptKey(connection.deviceId, path), JSON.stringify(receipt));
-      reportSDStage(path, 'wifi-verified', { recordingId: ticket.recordingId });
-      await root.SynapCloudHistory?.restore?.(true, { limit: 100 }).catch?.(() => {});
-      root.dispatchEvent(new CustomEvent('synap-chakshu-changed'));
-      return { ...receipt, alreadySynced: false, keptOnSD: true };
-    } catch (error) {
-      reportSDStage(path, 'wifi-failed', { message: error?.message || String(error) });
-      throw error;
-    } finally {
-      busy = false;
-      renderSDInbox();
-    }
   }
   async function localSnapshot() {
     const visuals = api().store ? await api().store.list() : [];
@@ -1372,7 +973,6 @@
       const row = document.createElement('div'),
         label = document.createElement('span'),
         action = document.createElement('button'),
-        wifi = document.createElement('button'),
         remove = document.createElement('button'),
         name = basename(file.path),
         type = file.describe
@@ -1383,8 +983,7 @@
               ? 'Video on SD'
               : 'Photo on SD',
         incomplete = file.syncable === false || Number(file.bytes) <= 44,
-        synced = !incomplete && isSDSynced(file.path),
-        wifiEligible = !incomplete && !synced && file.path.endsWith('.wav') && c3WifiSupported();
+        synced = !incomplete && isSDSynced(file.path);
       row.className = 'visual-sd-row';
       label.textContent =
         type + ' · ' + name + ' · ' + Math.max(1, Math.round((file.bytes || 0) / 1024)) + ' KB' +
@@ -1395,7 +994,6 @@
       if (!action.disabled) {
         action.addEventListener('click', async () => {
           action.disabled = true;
-          wifi.disabled = true;
           try {
             const result = await moveSD(file.path, (fraction) =>
               status('Syncing to Memories over Bluetooth · ' + Math.round(fraction * 100) + '%'),
@@ -1422,33 +1020,8 @@
             status(error.message);
           } finally {
             action.disabled = false;
-            wifi.disabled = false;
             if (root.SynapModules?.client?.module?.id !== 2)
               await browseSD(list.id).catch(() => {});
-            renderSDInbox();
-          }
-        });
-      }
-      wifi.type = 'button';
-      wifi.textContent = 'Start private Wi-Fi downloads';
-      wifi.hidden = !wifiEligible;
-      wifi.disabled = !wifiEligible;
-      if (wifiEligible) {
-        wifi.addEventListener('click', async () => {
-          action.disabled = true;
-          wifi.disabled = true;
-          try {
-            const ap=await startC3Ap();
-            showC3ApInfo(ap);
-            status('Private Wi-Fi ready: '+ap.ssid+'. Password and download link are in Settings → Wi-Fi downloads. Existing SD recordings are untouched.');
-            alert('Join '+ap.ssid+' in iPhone Wi-Fi Settings.\nPassword: '+ap.password+
-              '\nThen return to Synap → Settings → Private Wi-Fi and tap Open & sync directly into Synap.\n' +
-              'Select recordings there; downloads are only the backup option.');
-          } catch(error) {
-            status(error.message);
-          } finally {
-            action.disabled = false;
-            wifi.disabled = false;
             renderSDInbox();
           }
         });
@@ -1476,7 +1049,7 @@
           renderSDInbox();
         }
       });
-      row.append(label, action, wifi, remove);
+      row.append(label, action, remove);
       list.append(row);
     }
   }
@@ -1517,15 +1090,7 @@
       formatSettings = document.getElementById('formatDeviceSD'),
       rawProbeSettings = document.getElementById('diagnoseDeviceSD'),
       ramProbeSettings = document.getElementById('diagnoseDeviceSDRam'),
-      wifiSettings = document.getElementById('deviceWifiSettings'),
-      wifiSettingsStatus = document.getElementById('deviceWifiSettingsStatus'),
-      wifiSave = document.getElementById('startDeviceAp'),
-      wifiForget = document.getElementById('stopDeviceAp'),
       info = root.SynapModules?.client?.module,
-      // Keep the handoff panel available after BLE drops: its credentials
-      // were authenticated on the original connection before Wi-Fi started.
-      supportsC3Wifi = Boolean((info?.id === 2 && (info?.mediaFeatures & 2)) ||
-        c3BridgeAp?.active || c3BridgeHandoffPendingAt),
       supportsC3Format = Boolean(info?.id === 2 && (info?.mediaFeatures & 4)),
       supportsStorage =
         Boolean(info) &&
@@ -1603,24 +1168,6 @@
           ? 'Formatting unavailable: card is not mounted and healthy.'
           : 'Permanently erase all SD files.';
     }
-    if (wifiSettings) wifiSettings.hidden = !supportsC3Wifi;
-    if (wifiSave)
-      wifiSave.disabled =
-        !supportsC3Wifi ||
-        blocked ||
-        !state.connected ||
-        Boolean(root.SynapAppControls?.recordingState?.().active);
-    if (wifiForget)
-      wifiForget.disabled =
-        !supportsC3Wifi ||
-        blocked ||
-        !state.connected ||
-        Boolean(root.SynapAppControls?.recordingState?.().active);
-    if (wifiSettingsStatus && supportsC3Wifi && !state.connected)
-      wifiSettingsStatus.textContent = c3BridgeAp?.active
-        ? 'Private pendant Wi-Fi handoff · Bluetooth may disconnect on ESP32-C3. Join '+
-          c3BridgeAp.ssid+' in iPhone Wi-Fi Settings, return to this Synap tab, and open the private page.'
-        : 'Connect Odyssey C3 to start private SD downloads.';
     if (!panel) return;
     if (toggle) {
       toggle.hidden = !state.available;
@@ -2084,89 +1631,6 @@
         }
       });
     }
-    if (extras && !document.getElementById('deviceWifiSettings')) {
-      const card=document.createElement('section');
-      card.id='deviceWifiSettings';card.className='settings-card';card.hidden=true;
-      card.innerHTML=
-        '<h3 class="settings-card-title">Direct Wi-Fi sync to Synap</h3>'+
-        '<p id="deviceWifiSettingsStatus" class="settings-hint">Start the private C3 hotspot; no router password needed. Join its Wi-Fi in iPhone Settings, return to Synap and tap Open & sync directly into Synap. Tap WAV recordings on the private page to import and verify them automatically. Keep the original Synap tab open. If iOS blocks the browser bridge, WAV downloads remain available as fallback.</p>'+
-        '<p id="deviceApInfo" class="settings-hint" hidden></p>'+
-        '<p><a id="deviceApOpen" target="_blank" hidden>Open &amp; sync directly into Synap</a></p>'+
-        '<div class="visual-actions"><button id="startDeviceAp" type="button">Start pendant Wi-Fi</button><button id="stopDeviceAp" type="button">Stop pendant Wi-Fi</button><button id="diagnoseDeviceAp" type="button">Check hotspot</button></div>';
-      extras.append(card);
-      document.getElementById('startDeviceAp')?.addEventListener('click',async()=>{
-        const button=document.getElementById('startDeviceAp'),
-          statusNode=document.getElementById('deviceWifiSettingsStatus');
-        button.disabled=true;
-        statusNode.textContent='Starting private Wi-Fi on Odyssey C3…';
-        try {
-          const ap=await startC3Ap();
-          showC3ApInfo(ap);
-          statusNode.textContent='Hotspot starting. Join '+ap.ssid+
-            ' in iPhone Wi-Fi Settings after a few seconds. Bluetooth may disconnect; return to this Synap tab to open the private page.';
-        } catch(error) {
-          statusNode.textContent='Wi-Fi hotspot unavailable · '+error.message;
-          status(error.message);
-        } finally {button.disabled=false;renderSDInbox();}
-      });
-      document.getElementById('stopDeviceAp')?.addEventListener('click',async()=>{
-        const button=document.getElementById('stopDeviceAp'),
-          statusNode=document.getElementById('deviceWifiSettingsStatus');
-        button.disabled=true;
-        try {
-          await stopC3Ap();showC3ApInfo(null);
-          statusNode.textContent='Hotspot stopping. Reconnect to your usual Wi-Fi or cellular connection.';
-        } catch(error) {statusNode.textContent='Could not stop Wi-Fi · '+error.message;}
-        finally {button.disabled=false;renderSDInbox();}
-      });
-      // op21 is read-only. After an AP startup failure firmware restores BLE
-      // advertising, and this action exposes the retained failure stage
-      // without touching SD or automatically starting another Wi-Fi session.
-      document.getElementById('diagnoseDeviceAp')?.addEventListener('click',async()=>{
-        const button=document.getElementById('diagnoseDeviceAp'),
-          statusNode=document.getElementById('deviceWifiSettingsStatus');
-        if(!c3WifiSupported() || !root.SynapDevices?.connection) {
-          statusNode.textContent='Reconnect the pendant over Bluetooth to check the last Wi-Fi startup failure.';
-          return;
-        }
-        button.disabled=true;
-        try {
-          const ap=await c3ApStatus();
-          if(ap?.active) {
-            showC3ApInfo(ap);
-            statusNode.textContent=ap.starting
-              ? 'Hotspot credentials were staged; the radio is still starting. Check iPhone Wi-Fi shortly.'
-              : 'Firmware reports the hotspot serving. Join '+ap.ssid+' in iPhone Settings → Wi-Fi.';
-          } else {
-            showC3ApInfo(null);
-            const names={
-              1:'startup cancelled',2:'SD, battery or recording state blocked startup',
-              3:'BLE did not disconnect cleanly',4:'Wi-Fi radio could not initialize',
-              5:'Wi-Fi hotspot creation failed',6:'hotspot IP was unavailable',
-              7:'HTTP server memory allocation failed',8:'SD reader was busy or unavailable',
-              9:'hotspot task could not be allocated'
-            };
-            const code=Number(ap?.failure)||0,available=Number(ap?.freeHeap)||0,
-              contiguous=Number(ap?.largestBlock)||0;
-            statusNode.textContent=code
-              ? 'Hotspot failed: stage '+code+' · '+(names[code]||'startup problem')+
-                ' · free heap '+available+' B · largest block '+contiguous+
-                ' B. No SD data was changed.'
-              : 'No hotspot is currently running. Start pendant Wi-Fi again; check within 30 seconds.';
-          }
-        }catch(error){
-          statusNode.textContent='Could not read hotspot diagnostics over Bluetooth · '+error.message;
-        }finally{button.disabled=false;renderSDInbox();}
-      });
-      root.setTimeout(async()=>{
-        if(!c3WifiSupported() || !root.SynapDevices?.connection)return;
-        try {
-          const ap=await c3ApStatus();showC3ApInfo(ap);
-          if(ap?.active)document.getElementById('deviceWifiSettingsStatus').textContent=
-            'Private Wi-Fi is active. Connect iPhone to '+ap.ssid+' and open the private page.';
-        } catch(_) {}
-      },500);
-    }
     if (browse?.parentNode && !document.getElementById('visualClearSD')) {
       const clear = document.createElement('button');
       clear.id = 'visualClearSD';
@@ -2192,13 +1656,6 @@
   }
   const exposed = {
     moveSD,
-    moveC3Wifi,
-    c3ApStatus,
-    startC3Ap,
-    stopC3Ap,
-    c3WifiStatus,
-    configureC3Wifi,
-    forgetC3Wifi,
     discardIncompleteSD,
     deleteSDItem,
     isSDSynced,
@@ -2212,10 +1669,6 @@
     describeNow,
     browseSD,
     renderSDInbox,
-    isC3ApHandoffActive: () => Boolean(c3BridgeAp?.active && c3BridgeHandoffStartedAt &&
-      Date.now()-c3BridgeHandoffStartedAt<C3_AP_HANDOFF_MAX_MS) ||
-      Boolean(c3BridgeHandoffPendingAt &&
-        Date.now()-c3BridgeHandoffPendingAt<60000),
     get busy() { return busy; },
   };
   root.SynapChakshuV2 = exposed;
