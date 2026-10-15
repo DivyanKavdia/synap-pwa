@@ -1372,7 +1372,6 @@
       const row = document.createElement('div'),
         label = document.createElement('span'),
         action = document.createElement('button'),
-        wifi = document.createElement('button'),
         remove = document.createElement('button'),
         name = basename(file.path),
         type = file.describe
@@ -1384,7 +1383,7 @@
               : 'Photo on SD',
         incomplete = file.syncable === false || Number(file.bytes) <= 44,
         synced = !incomplete && isSDSynced(file.path),
-        wifiEligible = !incomplete && !synced && file.path.endsWith('.wav') && c3WifiSupported();
+        bleOnly = true;
       row.className = 'visual-sd-row';
       label.textContent =
         type + ' · ' + name + ' · ' + Math.max(1, Math.round((file.bytes || 0) / 1024)) + ' KB' +
@@ -1395,7 +1394,6 @@
       if (!action.disabled) {
         action.addEventListener('click', async () => {
           action.disabled = true;
-          wifi.disabled = true;
           try {
             const result = await moveSD(file.path, (fraction) =>
               status('Syncing to Memories over Bluetooth · ' + Math.round(fraction * 100) + '%'),
@@ -1422,33 +1420,8 @@
             status(error.message);
           } finally {
             action.disabled = false;
-            wifi.disabled = false;
             if (root.SynapModules?.client?.module?.id !== 2)
               await browseSD(list.id).catch(() => {});
-            renderSDInbox();
-          }
-        });
-      }
-      wifi.type = 'button';
-      wifi.textContent = 'Start private Wi-Fi downloads';
-      wifi.hidden = !wifiEligible;
-      wifi.disabled = !wifiEligible;
-      if (wifiEligible) {
-        wifi.addEventListener('click', async () => {
-          action.disabled = true;
-          wifi.disabled = true;
-          try {
-            const ap=await startC3Ap();
-            showC3ApInfo(ap);
-            status('Private Wi-Fi ready: '+ap.ssid+'. Password and download link are in Settings → Wi-Fi downloads. Existing SD recordings are untouched.');
-            alert('Join '+ap.ssid+' in iPhone Wi-Fi Settings.\nPassword: '+ap.password+
-              '\nThen return to Synap → Settings → Private Wi-Fi and tap Open & sync directly into Synap.\n' +
-              'Select recordings there; downloads are only the backup option.');
-          } catch(error) {
-            status(error.message);
-          } finally {
-            action.disabled = false;
-            wifi.disabled = false;
             renderSDInbox();
           }
         });
@@ -1476,7 +1449,7 @@
           renderSDInbox();
         }
       });
-      row.append(label, action, wifi, remove);
+      row.append(label, action, remove);
       list.append(row);
     }
   }
