@@ -1628,7 +1628,8 @@
       if (trace?.version !== 1) throw Error('Invalid C3 sync trace response.');
       const fields = ['sdState','sdLiveProbe','ioOp','ioStep','ioErr',
         'reads','cacheHits','diskFills','lastRequestedOffset','lastOkOffset',
-        'faultOffset','windowRequests','mtuFallbacks','wireCmd','wireErr','wireArg','wireMs'];
+        'faultOffset','windowRequests','mtuFallbacks','wireCmd','wireErr','wireArg','wireMs',
+        'readGot','readWant','readFlags'];
       const detail = Object.fromEntries(fields.map((name) => [name, trace[name] ?? null]));
       reportSDStage(path, 'c3-sync-read-trace', { phase, ...detail });
       return detail;
@@ -1662,7 +1663,8 @@
       if (result?.version !== 1 || !Number.isInteger(result?.sdState))
         throw Error('Invalid firmware SD RAM snapshot.');
       const fields = ['sdState','sdLiveProbe','ioOp','ioStep','ioErr','reads',
-        'cacheHits','diskFills','faultOffset','wireCmd','wireErr','wireArg','wireMs'];
+        'cacheHits','diskFills','faultOffset','wireCmd','wireErr','wireArg','wireMs',
+        'readGot','readWant','readFlags'];
       const detail = Object.fromEntries(fields.map((field) => [field,result[field] ?? null]));
       reportSDStage('@all','c3-controller-ram-snapshot',{readOnly:true,...detail});
       const hasWireFields = Number.isInteger(result.wireCmd);
