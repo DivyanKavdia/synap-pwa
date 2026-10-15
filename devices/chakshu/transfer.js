@@ -172,8 +172,14 @@
         (root.SynapModules?.client?.context === this.context ? root.SynapModules.client.module : null);
       return info?.id === 2 && info.mediaVersion >= 2 && Boolean(this.features & 0x40);
     }
-    // Read-only media-v2 is a capability-gated extension. Older C3 builds
-    // continue using their existing opcode30 unchanged.
+    get compactSupported() {
+      // Media-v3 only. The firmware validates the original file selection
+      // token and BLE connection before serving any compact read.
+      const info = this.context.module ||
+        (root.SynapModules?.client?.context === this.context ? root.SynapModules.client.module : null);
+      return info?.id === 2 && info.mediaVersion >= 3 && Boolean(this.features & 0x40);
+    }
+    // Media-v2/3 remains read-only; older C3 builds use opcode30 unchanged.
     adaptWindow(complete, short, credits, elapsedMs, hasMore, adaptive) {
       if (!complete || short) {
         this.fastCredits = Math.max(6, Math.floor(credits / 2));
@@ -242,14 +248,15 @@
       signal?.throwIfAborted();
       this.stream = stream;
     }
-    async sendOnly(op, offset, signal, id = nextRequestId(this.context), path = '', credits = 6, paceMs = 15) {
+    async sendOnly(op, offset, signal, id = nextRequestId(this.context), path = '', credits = 6, paceMs = 15, sessionToken = 0) {
       // Op30 uses the existing credit byte. Optional op31 adds a second
       // 8-15ms pacing byte. Legacy op12 and Chakshu remain unchanged.
       const pathBytes = path ? new TextEncoder().encode(path) : new Uint8Array();
       if (pathBytes.length > 63) throw Error('Invalid SD transfer path.');
-      const adaptive = op === 31 && Boolean(path);
-      const fast = (op === 30 || adaptive) && Boolean(path);
-      const prefix = adaptive ? 12 : fast ? 11 : 10;
+      const compact = op === 31 && !path && Number.isInteger(sessionToken) && sessionToken > 0;
+      const adaptive = op === 31 && Boolean(path || compact);
+      const fast = (op === 30 && Boolean(path)) || adaptive;
+      const prefix = compact ? 16 : adaptive ? 12 : fast ? 11 : 10;
       const bytes = new Uint8Array(prefix + pathBytes.length),
         view = new DataView(bytes.buffer);
       bytes[0] = 0xca;
@@ -258,6 +265,7 @@
       view.setUint32(6, offset, true);
       if (fast) bytes[10] = Math.max(6, Math.min(12, credits));
       if (adaptive) bytes[11] = Math.max(8, Math.min(15, paceMs));
+      if (compact) view.setUint32(12, sessionToken, true);
       if (pathBytes.length) bytes.set(pathBytes, prefix);
       const queue = this.context.mediaQueue || this.context.queue;
       await this.writeCommand(
@@ -270,7 +278,7 @@
       );
       return id;
     }
-    async window(offset, total, signal, path = '') {
+    async window(offset, total, signal, path = '', sessionToken = 0) {
       signal?.throwIfAborted();
       try {
         await this.subscribeStream(signal);
@@ -284,6 +292,7 @@
       }
       const fast = Boolean(path) && Boolean(this.features & 0x40) && !this.fastDisabled;
       const adaptive = fast && this.adaptiveSupported;
+      const compact = adaptive && this.compactSupported && Number.isInteger(sessionToken) && sessionToken > 0;
       const paceMs = adaptive ? this.fastPaceMs : 15;
       const credits = fast ? Math.max(6, Math.min(12, this.fastCredits)) : 6;
       const began = Date.now();
@@ -315,10 +324,11 @@
       root.addEventListener?.('synap-gatt-disconnected', disconnect, { once: true });
       try {
         const commandStarted = Date.now();
-        await this.sendOnly(fast ? (adaptive ? 31 : 30) : 12, offset, signal, id, path, credits, paceMs);
+        await this.sendOnly(fast ? (adaptive ? 31 : 30) : 12, offset, signal, id, compact ? '' : path, credits, paceMs, compact ? sessionToken : 0);
         commandMs = Date.now() - commandStarted;
         signal?.throwIfAborted();
         const notificationsStarted = Date.now();
+        const timeoutDueAt = Date.now() + 3000;
         timer = setTimeout(finish, 3000);
         await done;
         notificationWaitMs = Date.now() - notificationsStarted;
@@ -336,7 +346,9 @@
           if (!complete || short || Math.floor(offset / 262144) !== Math.floor(result.next / 262144))
             root.dispatchEvent?.(new CustomEvent('synap-capture-diagnostic', {
               detail: { operation: adaptive ? 31 : 30, stage: 'BLE SD window backpressure',
-                paceMs, nextPaceMs: this.fastPaceMs, mediaVersion: adaptive ? 2 : 1,
+                paceMs, nextPaceMs: this.fastPaceMs, mediaVersion: adaptive ? (compact ? 3 : 2) : 1,
+                compact, visibility: root.document?.visibilityState || 'unknown',
+                timeoutOvershootMs: Math.max(0, Date.now() - timeoutDueAt),
                 offset, next: result.next, credits, received: result.parts.length,
                 elapsedMs: Date.now() - began, commandMs, notificationWaitMs,
                 payloadBytes: result.next - offset,
@@ -406,7 +418,8 @@
             }),
             id,
           );
-          if (reply) return reply;
+          if (reply) return op === 3 && this.compactSupported
+            ? { ...reply, sessionToken: id } : reply;
           await delay(op === 19 ? 750 : 60);
         }
         throw Error(op === 19
@@ -580,7 +593,7 @@
         while (size < first.total) {
           signal?.throwIfAborted();
           if (this.features & 1 && !this.streamDisabled) {
-            const result = await this.window(size, first.total, signal, c3WindowPath);
+            const result = await this.window(size, first.total, signal, c3WindowPath, first.sessionToken || 0);
             if (result.next > size) {
               parts.push(...result.parts);
               size = result.next;

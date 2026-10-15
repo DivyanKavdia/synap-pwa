@@ -34,7 +34,7 @@ test('window receiver validates contiguous positions and detects missing chunks'
 });
 test('C3 fast mode is feature-gated with no-recording and small-MTU fallback',()=>{
  assert.match(source,/if \(this\.features & 1 && !this\.streamDisabled\)/);
- assert.match(source,/this\.window\(size, first\.total, signal, c3WindowPath\)/);
+ assert.match(source,/this\.window\(size, first\.total, signal, c3WindowPath, first\.sessionToken \|\| 0\)/);
  assert(source.includes('c3WindowPath = op === 3 && /\\.wav$/i.test(path)'));
  assert.match(source,/this\.streamDisabled = true/);
  assert.match(source,/const reply = await this\._request\(readOp, size, readPath, signal\)/);
@@ -107,4 +107,31 @@ test('C3 adaptive pacing ramps up only after clean windows and resets on loss',(
  assert.equal(client.fastWindowFailures,0);
  for(let i=0;i<3;i++)client.adaptWindow(false,true,12,3000,true,true);
  assert.equal(client.fastDisabled,true);
+});
+
+test('C3 media-v3 compact opcode31 uses token-bound 16-byte no-response command',async()=>{
+ const writes=[];
+ const client=new Client({mediaFeatures:0x41,module:{id:2,mediaVersion:3},queue:async action=>action(),service:{}});
+ client.command={properties:{writeWithoutResponse:true,write:true},
+   async writeValueWithoutResponse(data){writes.push(['no-response',new Uint8Array(data)]);},
+   async writeValueWithResponse(data){writes.push(['with-response',new Uint8Array(data)]);}};
+ await client.sendOnly(31,960,undefined,70,'',12,12,91);
+ assert.equal(writes.length,1);
+ assert.equal(writes[0][0],'no-response');
+ const packet=writes[0][1],v=new DataView(packet.buffer);
+ assert.equal(packet.length,16);
+ assert.equal(packet[0],0xca);assert.equal(packet[1],31);
+ assert.equal(v.getUint32(2,true),70);
+ assert.equal(v.getUint32(6,true),960);
+ assert.equal(packet[10],12);assert.equal(packet[11],12);
+ assert.equal(v.getUint32(12,true),91);
+ assert.equal(client.compactSupported,true);
+ const v2=new Client({mediaFeatures:0x41,module:{id:2,mediaVersion:2}});
+ assert.equal(v2.compactSupported,false);
+ assert.equal(v2.adaptiveSupported,true);
+ const other=new Client({mediaFeatures:0x41,module:{id:3,mediaVersion:3}});
+ assert.equal(other.compactSupported,false);
+ assert.match(source,/compact \? '' : path, credits, paceMs, compact \? sessionToken : 0/);
+ assert.match(source,/first\.sessionToken \|\| 0/);
+ assert.match(source,/op === 3 && this\.compactSupported/);
 });

@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell215-c3-media-v2-sd-controls";
+  const APP_SHELL_REVISION = "1.0.0-shell216-c3-compact-ble-sync";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -333,7 +333,7 @@
       operation === 14 ? "C3 SD remount requested" :
       operation === 7 ? (isC3 ? "C3 SD catalogue failed" : "Chakshu SD listing failed") :
       operation === 27 ? "C3 SD offline recorder diagnostics" :
-      operation === 30 ? "C3 BLE SD window flow-control" :
+      (operation === 30 || operation === 31) ? "C3 BLE SD window flow-control" :
       (isC3 ? "C3 SD transfer failed" : "Chakshu capture failed"), {
       ...event.detail,
       module: globalThis.SynapModules?.client?.module,

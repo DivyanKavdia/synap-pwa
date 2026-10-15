@@ -40,7 +40,7 @@
   // Chakshu and all other modules retain exact-version matching.
   const hasMedia = (info) => protocol(info, 'media') ||
     Boolean(info?.id === 2 && profile(info) &&
-      info.mediaVersion === 2 && (info.mediaFeatures & 0x40) &&
+      [2, 3].includes(info.mediaVersion) && (info.mediaFeatures & 0x40) &&
       supports(info, 'sd'));
   const hasVoice = (info) => protocol(info, 'voice') && supports(info, 'audio');
   function canCapture(info, kind, offline = false) {

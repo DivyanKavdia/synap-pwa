@@ -33,9 +33,9 @@ test('desktop navigation accounts for side rail and keyboard focus', () => {
 test('fresh and cached shells share the refresh generation without changing BLE compatibility', () => {
   const sw=read('sw.js');
   const revision=sw.match(/const CACHE_REVISION='([^']+)'/)[1];
-  assert.equal(revision,'1.0.0-shell215-c3-media-v2-sd-controls');
+  assert.equal(revision,'1.0.0-shell216-c3-compact-ble-sync');
   assert(read('enhancements.js').includes(`SHELL_REVISION='${revision}'`));
-  assert.match(read('index.html'), /devices\/capabilities\.js\?v=1\.0\.0-c3-media-v2-sd-controls1/);
+  assert.match(read('index.html'), /devices\/capabilities\.js\?v=1\.0\.0-c3-media-v3-compact1/);
   assert.match(sw,/CLIENT_REVISION='1\.0\.0-audio6'/);
   assert.match(sw,/'\.\/compact\.css'/);
   assert.match(read('index.html'),/compact\.css\?v=/);

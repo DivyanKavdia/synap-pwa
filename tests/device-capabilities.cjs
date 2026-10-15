@@ -68,11 +68,13 @@ test('profile-scoped protocols give C3 SD media without unlocking Chakshu camera
   // catalogue/read ABI plus opt-in opcode31. This must expose SD controls.
   const c3v2 = { ...c3, mediaVersion: 2, mediaFeatures: 0x45 };
   assert.equal(caps.hasMedia(c3v2), true, 'C3 media-v2 retains SD catalogue and settings');
+  assert.equal(caps.hasMedia({ ...c3v2, mediaVersion: 3 }), true,
+    'media-v3 compact BLE transfer preserves C3 SD controls and catalogue');
   assert.equal(caps.supports(c3v2, 'sd'), true);
   assert.equal(caps.ready(c3v2, 'sd'), true);
   assert.equal(caps.hasMedia({ ...c3v2, mediaFeatures: 0x05 }), false,
     'unadvertised C3 protocol-v2 is not assumed compatible');
-  assert.equal(caps.hasMedia({ ...c3v2, mediaVersion: 3 }), false,
+  assert.equal(caps.hasMedia({ ...c3v2, mediaVersion: 4 }), false,
     'unknown C3 media protocol is rejected');
   assert.equal(caps.hasMedia({ ...c3v2, target: 'unknown' }), false,
     'unrecognized board identity is rejected');
