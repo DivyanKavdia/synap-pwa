@@ -10,6 +10,6 @@ test('Odyssey C3 no longer displays private hotspot diagnostic controls',()=>{
 test('fast BLE transfer remains bounded with user-visible progress and failure recovery',()=>{
  assert.match(modules,/value\.getUint8\(16\) & 0x45/);
  assert.match(transfer,/this\.fastCredits = Math\.max\(6/);
- assert.match(transfer,/this\.fastCredits = Math\.min\(20/);
+ assert.match(transfer,/this\.fastCredits = Math\.min\(12/);
  assert.match(transfer,/if \(this\.features & 1 && !this\.streamDisabled\)/);
 });

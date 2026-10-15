@@ -40,3 +40,22 @@ test('C3 fast mode is feature-gated with no-recording and small-MTU fallback',()
  assert.match(source,/const reply = await this\._request\(readOp, size, readPath, signal\)/);
  assert.match(source,/this\.context\.module\?\.id === 2/);
 });
+
+test('C3 slow-start credits cap at 12 and repeated losses use legacy op12 without SD writes',()=>{
+ assert.match(source,/this\.fastCredits = 8/);
+ assert.match(source,/Math\.min\(12, this\.fastCredits\)/);
+ assert.match(source,/Math\.min\(12, credits \+ 1\)/);
+ assert.match(source,/if \(\+\+this\.fastWindowFailures >= 3\) this\.fastDisabled = true/);
+ assert.match(source,/this\.sendOnly\(fast \? 30 : 12/);
+ assert.match(source,/fallbackToLegacy: this\.fastDisabled/);
+});
+test('C3 SD notification errors are explicit while Chakshu errors keep legacy compatibility',()=>{
+ const state=new MediaWindow(99,0,480,12,true);
+ const bytes=new Uint8Array(16),v=new DataView(bytes.buffer);
+ bytes[0]=0xcc;bytes[1]=1;bytes[2]=2;bytes[3]=7;
+ v.setUint32(4,99,true);v.setUint32(8,480,true);v.setUint32(12,0,true);
+ assert.throws(()=>state.accept(v),e=>e.mediaCode===7 && e.sdReadFailure===true &&
+   /do not format or delete/.test(e.message));
+ const legacy=new MediaWindow(99,0,480);
+ assert.throws(()=>legacy.accept(v),e=>e.mediaCode===7 && !e.sdReadFailure);
+});
