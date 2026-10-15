@@ -11,6 +11,6 @@ test('C3 user-facing transfer stays BLE-only without a SoftAP handoff',()=>{
 test('fast C3 media windows keep bounded credits and legacy op12 fallback',()=>{
  assert.match(tx,/this\.sendOnly\(fast \? 30 : 12/);
  assert.match(tx,/const prefix = fast \? 11 : 10/);
- assert.match(tx,/new MediaWindow\(id, offset, total, fast \? 20 : 8\)/);
+ assert.match(tx,/new MediaWindow\(id, offset, total, fast \? 12 : 8\)/);
  assert.match(tx,/this\.streamDisabled = true/);
 });
