@@ -80,8 +80,8 @@
     };
   }
   class MediaWindow {
-    constructor(id, offset, total, maxChunks = 8) {
-      Object.assign(this, { id, offset, total, maxChunks, ended: false, chunks: new Map() });
+    constructor(id, offset, total, maxChunks = 8, sdWindow = false) {
+      Object.assign(this, { id, offset, total, maxChunks, sdWindow, ended: false, chunks: new Map() });
     }
     accept(value) {
       if (
@@ -97,7 +97,14 @@
         total = value.getUint32(8, true),
         offset = value.getUint32(12, true),
         size = value.byteLength - 16;
-      if (error) throw Error('SD or camera data became unavailable during transfer.');
+      if (error) {
+        const failure = Error(this.sdWindow
+          ? 'SD read failed during Bluetooth sync. Preserve the original recording; do not format or delete the card.'
+          : 'SD or camera data became unavailable during transfer.');
+        failure.mediaCode = error;
+        if (this.sdWindow) failure.sdReadFailure = true;
+        throw failure;
+      }
       // An empty window can yield to audio before the firmware reads the file.
       if (kind === 2 && total === 0 && offset === this.offset && size === 0) {
         this.ended = true;
@@ -143,6 +150,7 @@
       // Per-link receiver credits, never persisted across BLE reconnections.
       this.fastCredits = 8;
       this.fastWindowFailures = 0;
+      this.fastDisabled = false; // Older six-credit op12 after repeated packet loss.
     }
     get features() {
       return (
@@ -236,11 +244,11 @@
         this.streamDisabled = true;
         return { parts: [], next: offset };
       }
-      const fast = Boolean(path) && Boolean(this.features & 0x40);
-      const credits = fast ? Math.max(6, Math.min(20, this.fastCredits)) : 6;
+      const fast = Boolean(path) && Boolean(this.features & 0x40) && !this.fastDisabled;
+      const credits = fast ? Math.max(6, Math.min(12, this.fastCredits)) : 6;
       const began = Date.now();
       const id = nextRequestId(this.context),
-        window = new MediaWindow(id, offset, total, fast ? 20 : 8);
+        window = new MediaWindow(id, offset, total, fast ? 12 : 8, Boolean(path));
       let timer, finish, fail;
       const done = new Promise((resolve, reject) => {
         finish = resolve;
@@ -273,21 +281,23 @@
           const complete = window.ended && result.parts.length === window.chunks.size;
           const short = result.next < total && result.parts.length < credits;
           if (!complete || short) {
-            // Incomplete windows never advance beyond contiguous verified data.
+            // Incomplete packets NEVER advance beyond the contiguous prefix.
+            // Three lossy windows, even nonconsecutive, select legacy op12;
+            // unlike op4 it still batches six SD notifications per request.
             this.fastCredits = Math.max(6, Math.floor(credits / 2));
-            this.fastWindowFailures++;
-          } else {
-            this.fastWindowFailures = 0;
-            if (Date.now() - began < 1500 && result.next < total)
-              this.fastCredits = Math.min(20, credits + 2);
+            if (++this.fastWindowFailures >= 3) this.fastDisabled = true;
+          } else if (Date.now() - began < 1500 && result.next < total) {
+            // Avoid slow-start overshoot and iOS callback queue saturation.
+            this.fastCredits = Math.min(12, credits + 1);
           }
           // Keep Bluefy's main thread responsive; log at 256 KiB boundaries
           // or on recovery instead of one diagnostic for every 4–10 KiB.
-          if (!complete || Math.floor(offset / 262144) !== Math.floor(result.next / 262144))
+          if (!complete || short || Math.floor(offset / 262144) !== Math.floor(result.next / 262144))
             root.dispatchEvent?.(new CustomEvent('synap-capture-diagnostic', {
-              detail: { operation: 30, stage: 'Fast BLE WAV window',
+              detail: { operation: 30, stage: 'BLE SD window backpressure',
                 offset, next: result.next, credits, received: result.parts.length,
-                elapsedMs: Date.now() - began, interrupted: !complete },
+                elapsedMs: Date.now() - began, interrupted: !complete || short,
+                fallbackToLegacy: this.fastDisabled },
             }));
         }
         return result;
