@@ -64,6 +64,20 @@ test('profile-scoped protocols give C3 SD media without unlocking Chakshu camera
   assert.equal(caps.hasVoice(c3), false);
   assert.equal(caps.hardwareCheck(c3, 1), false);
   assert.equal(caps.hasMedia(descriptor(2, 1023, 1023, 0)), false, 'wrong media version stays locked');
+  // Firmware build 2200 now reports mediaVersion=2 with the existing SD
+  // catalogue/read ABI plus opt-in opcode31. This must expose SD controls.
+  const c3v2 = { ...c3, mediaVersion: 2, mediaFeatures: 0x45 };
+  assert.equal(caps.hasMedia(c3v2), true, 'C3 media-v2 retains SD catalogue and settings');
+  assert.equal(caps.supports(c3v2, 'sd'), true);
+  assert.equal(caps.ready(c3v2, 'sd'), true);
+  assert.equal(caps.hasMedia({ ...c3v2, mediaFeatures: 0x05 }), false,
+    'unadvertised C3 protocol-v2 is not assumed compatible');
+  assert.equal(caps.hasMedia({ ...c3v2, mediaVersion: 3 }), false,
+    'unknown C3 media protocol is rejected');
+  assert.equal(caps.hasMedia({ ...c3v2, target: 'unknown' }), false,
+    'unrecognized board identity is rejected');
+  assert.equal(caps.hasMedia({ ...descriptor(3, 1023, 1023), mediaVersion: 2, mediaFeatures: 0x40 }), false,
+    'Chakshu v2 must not bypass its v1 protocol contract');
 
   const chakshuMask = mask(profiles.BY_MODULE[3].features);
   const wrong = { ...descriptor(3, chakshuMask, chakshuMask), target: profiles.BY_MODULE[1].target };
