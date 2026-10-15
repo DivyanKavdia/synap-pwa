@@ -80,8 +80,8 @@
     };
   }
   class MediaWindow {
-    constructor(id, offset, total) {
-      Object.assign(this, { id, offset, total, ended: false, chunks: new Map() });
+    constructor(id, offset, total, maxChunks = 8) {
+      Object.assign(this, { id, offset, total, maxChunks, ended: false, chunks: new Map() });
     }
     accept(value) {
       if (
@@ -114,7 +114,7 @@
         previous = this.chunks.get(offset);
       if (previous && (previous.length !== size || previous.some((v, i) => v !== bytes[i])))
         throw Error('Conflicting camera notification.');
-      if (!previous && this.chunks.size >= 8) throw Error('Camera credit window exceeded.');
+      if (!previous && this.chunks.size >= this.maxChunks) throw Error('Camera credit window exceeded.');
       for (const [start, data] of this.chunks)
         if (start !== offset && start < offset + size && offset < start + data.length)
           throw Error('Overlapping camera notification.');
@@ -140,6 +140,9 @@
       this.data = null;
       this.stream = null;
       this.streamDisabled = false;
+      // Per-link receiver credits, never persisted across BLE reconnections.
+      this.fastCredits = 8;
+      this.fastWindowFailures = 0;
     }
     get features() {
       return (
@@ -195,18 +198,21 @@
       signal?.throwIfAborted();
       this.stream = stream;
     }
-    async sendOnly(op, offset, signal, id = nextRequestId(this.context), path = '') {
-      // C3 notification windows include their WAV path to prevent a background
-      // catalogue/other client from silently switching the selected source.
+    async sendOnly(op, offset, signal, id = nextRequestId(this.context), path = '', credits = 6) {
+      // Op30 grants 6-20 notifications with one extra byte before the WAV
+      // path. Original op12 and Chakshu command frames remain unchanged.
       const pathBytes = path ? new TextEncoder().encode(path) : new Uint8Array();
       if (pathBytes.length > 63) throw Error('Invalid SD transfer path.');
-      const bytes = new Uint8Array(10 + pathBytes.length),
+      const fast = op === 30 && Boolean(path);
+      const prefix = fast ? 11 : 10;
+      const bytes = new Uint8Array(prefix + pathBytes.length),
         view = new DataView(bytes.buffer);
       bytes[0] = 0xca;
       bytes[1] = op;
       view.setUint32(2, id, true);
       view.setUint32(6, offset, true);
-      if (pathBytes.length) bytes.set(pathBytes, 10);
+      if (fast) bytes[10] = Math.max(6, Math.min(20, credits));
+      if (pathBytes.length) bytes.set(pathBytes, prefix);
       const queue = this.context.mediaQueue || this.context.queue;
       await this.writeCommand(
         (action, label) =>
@@ -230,8 +236,11 @@
         this.streamDisabled = true;
         return { parts: [], next: offset };
       }
+      const fast = Boolean(path) && Boolean(this.features & 0x40);
+      const credits = fast ? Math.max(6, Math.min(20, this.fastCredits)) : 6;
+      const began = Date.now();
       const id = nextRequestId(this.context),
-        window = new MediaWindow(id, offset, total);
+        window = new MediaWindow(id, offset, total, fast ? 20 : 8);
       let timer, finish, fail;
       const done = new Promise((resolve, reject) => {
         finish = resolve;
@@ -255,11 +264,30 @@
       signal?.addEventListener('abort', abort, { once: true });
       root.addEventListener?.('synap-gatt-disconnected', disconnect, { once: true });
       try {
-        await this.sendOnly(12, offset, signal, id, path);
+        await this.sendOnly(fast ? 30 : 12, offset, signal, id, path, credits);
         signal?.throwIfAborted();
         timer = setTimeout(finish, 3000);
         await done;
-        return window.contiguous();
+        const result = window.contiguous();
+        if (fast) {
+          const complete = window.ended && result.parts.length === window.chunks.size;
+          const short = result.next < total && result.parts.length < credits;
+          if (!complete || short) {
+            // Incomplete windows never advance beyond contiguous verified data.
+            this.fastCredits = Math.max(6, Math.floor(credits / 2));
+            this.fastWindowFailures++;
+          } else {
+            this.fastWindowFailures = 0;
+            if (Date.now() - began < 1500 && result.next < total)
+              this.fastCredits = Math.min(20, credits + 2);
+          }
+          root.dispatchEvent?.(new CustomEvent('synap-capture-diagnostic', {
+            detail: { operation: 30, stage: 'Fast BLE WAV window',
+              offset, next: result.next, credits, received: result.parts.length,
+              elapsedMs: Date.now() - began, interrupted: !complete },
+          }));
+        }
+        return result;
       } finally {
         clearTimeout(timer);
         this.stream.removeEventListener('characteristicvaluechanged', receive);
