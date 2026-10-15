@@ -81,7 +81,18 @@ const server = createStaticServer(path.resolve(__dirname, '..'));
           assert.equal(rows.length,++saved);
           const latest=rows.sort((a,b)=>a.createdAt.localeCompare(b.createdAt)).at(-1);
           assert.equal(latest.status,'saved');
-          assert.equal(latest.stats.completeFrames,mode==='retained'?captured:before.received);
+          if (mode === 'retained') {
+            assert.equal(latest.stats.completeFrames, captured,
+              'retained microphone frames must all survive reconnect');
+          } else {
+            // A frame can arrive between the snapshot and BLE disconnection.
+            // The expired buffer must preserve that valid prefix without
+            // inventing more frames than the microphone actually captured.
+            assert(latest.stats.completeFrames >= before.received,
+              'buffer expiry must preserve all frames received before disconnection');
+            assert(latest.stats.completeFrames <= captured,
+              'buffer expiry must not fabricate frames after disconnection');
+          }
           assert.equal(await page.evaluate(() => bleFixture.captured),captured,'microphone remains stopped');
           assert.equal(await page.evaluate(() => window.qaHardwareReady),saved-3,'recovered idle connection publishes readiness');
           console.log('PASS physical Stop while disconnected: '+query+' · '+mode);
