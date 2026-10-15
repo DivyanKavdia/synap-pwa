@@ -178,7 +178,12 @@
     }
     async writeCommand(run, bytes) {
       const characteristic = this.command,
-        properties = characteristic.properties || {};
+        properties = characteristic.properties || {},
+        // C3 reuses the historical camera media UUIDs; diagnostic names must
+        // identify the actual target when a native Bluefy write fails.
+        label = (this.context.module?.id === 2 ||
+          root.SynapModules?.client?.module?.id === 2)
+          ? 'Send C3 SD media request' : 'Send Chakshu camera request';
       // The matching response ID confirms execution. Short commands fit even
       // MTU23 and do not need a separate ATT write acknowledgement. File paths
       // can exceed that limit; retain long-write support for those requests.
@@ -189,10 +194,10 @@
       )
         return run(
           () => characteristic.writeValueWithoutResponse(bytes),
-          'Send Chakshu camera request',
+          label,
         );
       // An ambiguous write failure must not repeat a photo exposure or start.
-      return run(() => characteristic.writeValueWithResponse(bytes), 'Send Chakshu camera request');
+      return run(() => characteristic.writeValueWithResponse(bytes), label);
     }
     async subscribeStream(signal) {
       if (this.stream) return;
