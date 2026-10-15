@@ -1676,9 +1676,7 @@
     }
 
     cleanupCharacteristics();
-    // monitorAllowed() now observes the same private Wi-Fi handoff as the
-    // immediate reconnect branch below. Do not start advertisement watching
-    // while the ESP32-C3 SoftAP is using the single 2.4 GHz radio.
+      // while the ESP32-C3 SoftAP is using the single 2.4 GHz radio.
     syncRememberedMonitoring();
 
     // The connection attempt owns its failure UI and retry scheduling when no
@@ -2031,7 +2029,7 @@
 
   async function startRecording(captureOptions = {}) {
     const hardwareStarted = captureOptions.hardwareStarted === true;
-    if (globalThis.SynapModules?.busy || globalThis.SynapChakshu?.state?.offline || globalThis.SynapChakshu?.state?.wifi?.active) { toast("Finish the SD recording or Wi-Fi downloads before starting audio.", "error"); return; }
+    if (globalThis.SynapModules?.busy || globalThis.SynapChakshu?.state?.offline || globalThis.SynapChakshu?.state?.wifi?.active) { toast("Finish SD recording or device media transfer before starting audio.", "error"); return; }
     if (firmwareBusy) return;
     if (globalThis.SynapDesktopCapture?.state?.().active) {
       toast("Stop the online meeting capture before starting the pendant.", "error");

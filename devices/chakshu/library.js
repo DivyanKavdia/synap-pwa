@@ -235,7 +235,7 @@
       (row.previewOnly
         ? 'Preview only. Original on SD: ' +
           row.sourcePath +
-          '. Use Browse SD card or Wi-Fi downloads to retrieve it. '
+          '. Use Browse SD card to retrieve it. '
         : '') +
       'Saved in this browser on this device. Export a copy before clearing browser data.';
     renderDescriptions();
@@ -393,7 +393,7 @@
             : state.offlineStatus?.path
               ? 'SD recording saved' +
                 sdQuality(state.offlineStatus) +
-                '. Choose Browse SD card or Wi-Fi downloads.'
+                '. Choose Browse SD card.'
               : '');
     if (!state.available) return;
     const store = api().store,

@@ -34,7 +34,7 @@ test('small legacy C3 always stays on original 1.25MiB update feed',()=>{
   const tooSmall=catalog().manifests[upgrade];
   assert.throws(()=>releases.compatible(tooSmall,status(1310720),identity),/inactive slot too small/);
 });
-test('pre-provisioned existing C3 with 1.875MiB OTA can select Wi-Fi OTA with original identity',()=>{
+test('pre-provisioned existing C3 with 1.875MiB OTA can select BLE-only OTA with original identity',()=>{
   const c=catalog();
   assert(releases.compatible(c,status(1966080),identity));
   assert.equal(c.target,upgrade);
@@ -57,10 +57,10 @@ test('BLE updater uses C3 pacing and only validates requested OTA image marker',
   assert.equal(ota.transferPlan(upgrade,503).windowChunks,ota.transferPlan(old,503).windowChunks);
 });
 
-test('enhanced C3 never falls back to legacy firmware if the Wi-Fi feed is absent',()=>{
+test('enhanced C3 never falls back to legacy firmware if the large-slot BLE feed is absent',()=>{
   const value=catalog();
   delete value.manifests[upgrade];
-  assert.throws(()=>releases.selectCatalogManifest(value,identity,status(1966080)),/Wi-Fi firmware feed is missing/);
-  assert.throws(()=>releases.compatible(manifest(old,865000),status(1966080),identity),/only the large-slot Wi-Fi firmware/);
+  assert.throws(()=>releases.selectCatalogManifest(value,identity,status(1966080)),/large-slot BLE firmware feed is missing/);
+  assert.throws(()=>releases.compatible(manifest(old,865000),status(1966080),identity),/only firmware for its large OTA slot/);
   assert.doesNotThrow(()=>releases.compatible(manifest(old,865000),status(1310720),identity));
 });
