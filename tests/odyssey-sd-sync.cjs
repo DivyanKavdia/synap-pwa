@@ -79,7 +79,7 @@ assert.match(modulesSource,/profile\.id === 2 \? value\.getUint8\(16\) & 0x45 : 
 assert.match(transfer,/if \(this\.features & 1 && !this\.streamDisabled\)/,
   'C3 retains safe legacy notification windows');
 assert.match(transfer,/this\.window\(size, first\.total, signal, c3WindowPath\)/);
-assert.match(transfer,/this\.sendOnly\(fast \? 30 : 12/,
+assert.match(transfer,/this\.sendOnly\(fast \? \(adaptive \? 31 : 30\) : 12/,
   'new firmware uses credit-based op30, old firmware still uses op12');
 assert.doesNotMatch(preview,/Start pendant Wi-Fi|Start private Wi-Fi downloads/);
 assert.doesNotMatch(library,/Start Wi-Fi downloads/);

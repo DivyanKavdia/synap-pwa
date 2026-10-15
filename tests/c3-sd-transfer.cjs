@@ -107,7 +107,7 @@ test('C3 BLE only advertises fast read capability; Wi-Fi UI is gone',()=>{
   assert.match(preview,/supportsC3Wifi = false/);
   assert.doesNotMatch(preview,/id="startDeviceAp"|id="stopDeviceAp"/);
   assert.doesNotMatch(library,/Start Wi-Fi downloads/);
-  assert.match(transferSource,/this\.sendOnly\(fast \? 30 : 12/);
+  assert.match(transferSource,/this\.sendOnly\(fast \? \(adaptive \? 31 : 30\) : 12/);
   const normal=preview.slice(preview.indexOf('async function moveSD'),preview.indexOf('async function clearSD'));
   assert.doesNotMatch(normal,/return moveC3Wifi/);
 });
