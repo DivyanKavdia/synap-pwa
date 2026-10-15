@@ -1382,8 +1382,7 @@
               ? 'Video on SD'
               : 'Photo on SD',
         incomplete = file.syncable === false || Number(file.bytes) <= 44,
-        synced = !incomplete && isSDSynced(file.path),
-        bleOnly = true;
+        synced = !incomplete && isSDSynced(file.path);
       row.className = 'visual-sd-row';
       label.textContent =
         type + ' · ' + name + ' · ' + Math.max(1, Math.round((file.bytes || 0) / 1024)) + ' KB' +
