@@ -333,6 +333,7 @@
       operation === 14 ? "C3 SD remount requested" :
       operation === 7 ? (isC3 ? "C3 SD catalogue failed" : "Chakshu SD listing failed") :
       operation === 27 ? "C3 SD offline recorder diagnostics" :
+      operation === 30 ? "C3 BLE SD window flow-control" :
       (isC3 ? "C3 SD transfer failed" : "Chakshu capture failed"), {
       ...event.detail,
       module: globalThis.SynapModules?.client?.module,
