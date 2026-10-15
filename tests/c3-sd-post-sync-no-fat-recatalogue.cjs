@@ -7,7 +7,7 @@ function section(first,last) {
   assert(start>=0&&end>start,'missing target section '+first);
   return src.slice(start,end);
 }
-const single=section("action.addEventListener('click', async () => {","wifi.type = 'button'");
+const single=section("action.addEventListener('click', async () => {","remove.type = 'button'");
 const libraryBrowse=section("const libraryBrowse = document.getElementById('libraryBrowseSD')","const librarySync = document.getElementById('librarySyncSD')");
 const librarySync=section("const librarySync = document.getElementById('librarySyncSD')","const extras = document.getElementById('settingsDeviceExtras')");
 const batch=section("async function syncAll() {","async function offerDeleteSynced(paths) {");

@@ -98,13 +98,13 @@
   function catalog(manifests){return {__synapTargetCatalog:true,manifests:Object.freeze({...manifests})};}
   function selectCatalogManifest(value,identity,info=null){const running=targetFromIdentity(identity);if(!running)throw Error('Unknown pendant hardware. Reconnect and check the firmware identity.');
     // A physically pre-provisioned large OTA C3 still reports its original C3
-    // identity. Only the live reported inactive slot may route to the Wi-Fi build.
+    // identity. Only the live reported inactive slot may route to the enhanced C3+SD build.
     // The sealed 1.25MiB C3 never receives this 1.5MiB variant.
     const largeSlot=running.target==='esp32c3-supermini-4m' && Number(info?.capacity)>=1966080;
     const upgrade=largeSlot?value.manifests['esp32c3-supermini-4m-sd-ota']:null;
     // Fail closed: a missing large-slot feed must never silently install the
-    // legacy 864 KiB image on a pre-provisioned Wi-Fi-capable C3+SD unit.
-    if(largeSlot && !upgrade)throw Error('Enhanced C3 OTA detected, but the Wi-Fi firmware feed is missing. Legacy C3 firmware was not selected.');
+    // legacy 864 KiB image on a pre-provisioned enhanced-slot C3+SD unit.
+    if(largeSlot && !upgrade)throw Error('Enhanced C3 OTA detected, but the enhanced C3+SD firmware feed is missing. Legacy C3 firmware was not selected.');
     const selected=upgrade || value.manifests[running.target];
     if(!selected)throw Error(`No production firmware is published for ${running.target}.`);return selected;}
   function materializeCatalog(value,identity,info){const selected=selectCatalogManifest(value,identity,info);for(const key of Object.keys(value))delete value[key];Object.assign(value,selected);return value;}
@@ -115,7 +115,7 @@
     // 1.875 MiB C3 slot; catalog selection alone is not a sufficient guard.
     if(running.target==='esp32c3-supermini-4m' && Number(info?.capacity)>=1966080 &&
        manifest.target!=='esp32c3-supermini-4m-sd-ota')
-      throw Error('Enhanced C3 OTA detected: only the large-slot Wi-Fi firmware can be installed.');
+      throw Error('Enhanced C3 OTA detected: only the large-slot C3+SD BLE firmware can be installed.');
     if(info.protocol!==3)throw Error(root.SynapOTA.MIGRATION_MESSAGE);
     const minimumPacket=running.bootstrap?11:64;
     if(info.state===0||info.capacity<manifest.size||info.maxData<minimumPacket) {

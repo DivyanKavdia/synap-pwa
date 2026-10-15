@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell208-c3-ap-ssid-diagnostics";
+  const APP_SHELL_REVISION = "1.0.0-shell209-c3-ble-fast";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -658,11 +658,8 @@
   const advertisementUnavailable = new WeakSet();
 
   function c3PrivateWifiHandoffActive() {
-    // The C3 shares one radio between SoftAP and BLE. The verified op20
-    // response already delivered the short-lived SSID/key; continuing
-    // background Bluetooth discovery/reconnect would contend with Wi-Fi.
-    // User-initiated Connect is never blocked by this automatic-only gate.
-    return Boolean(globalThis.SynapChakshuV2?.isC3ApHandoffActive?.());
+    // C3 Wi-Fi removed; legacy cached handoff must never suppress BLE recovery.
+    return false;
   }
 
   function reconnectRequested() {

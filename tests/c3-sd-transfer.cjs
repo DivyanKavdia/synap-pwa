@@ -85,7 +85,7 @@ test('C3 failed mounts still reach observational catalogue diagnostics',()=>{
 });
 
 test('C3 format is firmware-gated and uses explicit destructive op19',()=>{
-  assert.match(modules,/profile\.id === 2 \? value\.getUint8\(16\) & 7 : 0/);
+  assert.match(modules,/profile\.id === 2 \? value\.getUint8\(16\) & 0x45 : 0/);
   assert.match(preview,/info\?\.id === 2 && \(info\.mediaFeatures & 4\)/);
   assert.match(preview,/await client\(\)\.request\(19\)/);
   assert.match(preview,/ALL files on the card will be permanently erased/);
@@ -102,31 +102,15 @@ test('C3 optional integrity/session catalogue fields survive into SD state',()=>
 });
 
 
-test('C3 Wi-Fi transfer is explicit, firmware-gated, and retains SD source after verified cloud upload',()=>{
-  assert.match(modules,/profile\.id === 2 \? value\.getUint8\(16\) & 7 : 0/);
-  assert.match(preview,/info\?\.id === 2 && \(info\.mediaFeatures & 2\)/);
-  assert.match(preview,/Start private Wi-Fi downloads/);
-  assert.match(library,/library-sd-wifi/);
-  assert.match(library,/startC3Ap/);
-  assert.match(preview,/no router password needed/i);
-  assert.match(preview,/startC3WifiUpload/);
-  assert.match(preview,/c3WifiStatus/);
-  assert.match(preview,/localStorage\.setItem\(receiptKey\(connection\.deviceId, path\), JSON\.stringify\(receipt\)\)/);
-  const move=preview.slice(preview.indexOf('async function moveC3Wifi'),preview.indexOf('async function localSnapshot'));
-  assert.doesNotMatch(move,/deleteSDItem\(|request\(17/,'Wi-Fi completion must retain SD source until explicit user deletion');
+test('C3 BLE only advertises fast read capability; Wi-Fi UI is gone',()=>{
+  assert.match(modules,/profile\.id === 2 \? value\.getUint8\(16\) & 0x45 : 0/);
+  assert.match(preview,/supportsC3Wifi = false/);
+  assert.doesNotMatch(preview,/id="startDeviceAp"|id="stopDeviceAp"/);
+  assert.doesNotMatch(library,/Start Wi-Fi downloads/);
+  assert.match(transferSource,/this\.sendOnly\(fast \? 30 : 12/);
   const normal=preview.slice(preview.indexOf('async function moveSD'),preview.indexOf('async function clearSD'));
-  assert.doesNotMatch(normal,/return moveC3Wifi/,'normal Sync to Memories must remain a distinct Bluetooth action');
+  assert.doesNotMatch(normal,/return moveC3Wifi/);
 });
-
-test('C3 Wi-Fi BLE control uses operations 23 through 26 and HTTPS cloud tickets',()=>{
-  assert.match(transferSource,/this\._request\(23, offset, chunk, signal\)/);
-  assert.match(transferSource,/this\._request\(24, mode, '', signal\)/);
-  assert.match(transferSource,/this\._request\(25, 0, '', signal\)/);
-  assert.match(transferSource,/this\._request\(26, 0, '', signal\)/);
-  assert.match(transferSource,/Synap Wi-Fi upload endpoint is invalid/);
-  assert.match(preview,/\/v1\/device-uploads/);
-});
-
 
 test('C3 media clients sharing a BLE connection do not accept stale same-ID replies',async()=>{
   let response=new DataView(new ArrayBuffer(16));
@@ -165,34 +149,8 @@ test('C3 media clients sharing a BLE connection do not accept stale same-ID repl
   assert.notEqual(issued[0].id,issued[1].id,'request IDs must remain unique across Client instances');
 });
 
-test('C3 private AP uses BLE start/status/stop and never asks for router passwords',()=>{
-  assert.match(transferSource,/this\._request\(20, 0, '', signal\)/);
-  assert.match(transferSource,/this\._request\(21, 0, '', signal\)/);
-  assert.match(transferSource,/this\._request\(22, 0, '', signal\)/);
-  assert.match(preview,/startDeviceAp/);
-  assert.match(preview,/stopDeviceAp/);
-  assert.match(preview,/deviceApInfo/);
-  assert.match(transferSource,/192/);
-  assert.match(library,/Start Wi-Fi downloads/);
-  assert.doesNotMatch(preview,/id="deviceWifiPassword"/);
-  assert.doesNotMatch(preview,/id="deviceWifiSsid"/);
-});
-
-test('C3 Wi-Fi AP bridges WAV chunks into the verified offline Synap audio journal',()=>{
-  const src=fs.readFileSync(path.join(__dirname,'../devices/chakshu/capture-preview.js'),'utf8');
-  assert.match(src,/root\.open\(target,'synapC3Direct'\)/);
-  assert.match(src,/event\.origin!==C3_AP_ORIGIN/);
-  assert.match(src,/event\.source!==session\.popup/);
-  assert.match(src,/packet\.channel!==session\.channel/);
-  assert.match(src,/action==='begin'/);
-  assert.match(src,/action==='chunk'/);
-  assert.match(src,/action==='end'/);
-  assert.match(src,/chunk\.byteLength>16384/);
-  assert.match(src,/journal\.begin\('Odyssey SD audio'/);
-  assert.match(src,/await verifyAudio\(id,source\)/);
-  assert.match(src,/localStorage\.setItem\(key,JSON\.stringify\(receipt\)\)/);
-  assert.match(src,/transport:'c3-softap-direct'/);
-  assert.match(src,/SD original retained/);
-  const bridge=src.slice(src.indexOf('async function importC3BridgedWav'),src.indexOf('async function configureC3Wifi'));
-  assert.doesNotMatch(bridge,/deleteSDItem\(|request\(17/);
+test('C3 BLE media transfers retain the source and use capped credits',()=>{
+ assert.match(transferSource,/Math\.max\(6, Math\.min\(20, credits\)\)/);
+ assert.match(transferSource,/new MediaWindow\(id, offset, total, fast \? 20 : 8\)/);
+ assert.match(preview,/SD original kept/);
 });
