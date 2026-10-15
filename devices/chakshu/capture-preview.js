@@ -2102,10 +2102,7 @@
     describeNow,
     browseSD,
     renderSDInbox,
-    isC3ApHandoffActive: () => Boolean(c3BridgeAp?.active && c3BridgeHandoffStartedAt &&
-      Date.now()-c3BridgeHandoffStartedAt<C3_AP_HANDOFF_MAX_MS) ||
-      Boolean(c3BridgeHandoffPendingAt &&
-        Date.now()-c3BridgeHandoffPendingAt<60000),
+    isC3ApHandoffActive: () => false, // Retired C3 Wi-Fi must not veto BLE reconnect.
     get busy() { return busy; },
   };
   root.SynapChakshuV2 = exposed;
