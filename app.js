@@ -1836,6 +1836,28 @@
   function handleGattFailure(error, { label, owner, started, current, blockedBy, blockedByTimedOut }) {
     log("GATT operation failed", { operation: label, name: error.name, message: error.message,
       nativeReason: error.nativeReason, connected: isGattConnected(), queued: !started, blockedBy, blockedByTimedOut, session: recordingSessionId });
+    // Bluefy can reject an ATT request with native code 2 while its Web
+    // Bluetooth wrapper still reports gatt.connected=true. A successful link
+    // handshake does not make that stale wrapper usable again: repeated SD
+    // requests would fail immediately and can starve reconnection. Only an
+    // idle Odyssey C3 SD media request may initiate this recovery; never tear
+    // down an active recording or firmware update because of an optional read.
+    const nativeCode = error.nativeReason?.type === "number"
+      ? Number(error.nativeReason.value) : error.code;
+    const failedC3MediaRequest = /^(Send C3 SD media request|Read C3 SD catalogue response|Read Chakshu camera response)$/.test(label);
+    if (error.name !== "TimeoutError" && current && started &&
+        nativeCode === 2 && failedC3MediaRequest &&
+        globalThis.SynapModules?.client?.module?.id === 2 &&
+        !connectInProgress && !firmwareBusy && appState === "idle" &&
+        !recordingConfirmed && !recordingReconnectPending && !currentRecordingId) {
+      reconnectNotBefore = Math.max(reconnectNotBefore, Date.now() + 2500);
+      log("C3 SD BLE native request rejected; resetting stale GATT link", {
+        operation: label, nativeCode, recordingId: currentRecordingId,
+        reconnectNotBefore
+      });
+      disconnectGatt("C3 SD native Bluetooth request rejected", owner.device);
+      return;
+    }
     if (error.name !== "TimeoutError" || !current) return;
     if (!started && !blockedByTimedOut) {
       log("Bluetooth queue busy; preserving connection", { operation: label, blockedBy });
