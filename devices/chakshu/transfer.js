@@ -53,7 +53,7 @@
           'SD write/read failed.',
           'Capture failed.',
           'The SD card could not keep up. The partial recording was kept.',
-          'Unsupported media transfer request.'
+          'Unsupported media transfer request.',
           'SD file unavailable.',
         ][value.getUint8(3)] || 'Camera transfer failed.',
       );
