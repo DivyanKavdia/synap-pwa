@@ -46,7 +46,7 @@ test('C3 slow-start credits cap at 12 and repeated losses use legacy op12 withou
  assert.match(source,/Math\.min\(12, this\.fastCredits\)/);
  assert.match(source,/Math\.min\(12, credits \+ 1\)/);
  assert.match(source,/if \(\+\+this\.fastWindowFailures >= 3\) this\.fastDisabled = true/);
- assert.match(source,/this\.sendOnly\(fast \? 30 : 12/);
+ assert.match(source,/this\.sendOnly\(fast \? \(adaptive \? 31 : 30\) : 12/);
  assert.match(source,/fallbackToLegacy: this\.fastDisabled/);
 });
 test('C3 SD notification errors are explicit while Chakshu errors keep legacy compatibility',()=>{
@@ -76,4 +76,35 @@ test('C3 contiguous full credits finish without END; a missing packet cannot adv
  assert.equal(state.ended,false);
  assert.match(source,/window\.ended \|\| \(fast && window\.creditComplete\(credits\)\)/);
  assert.match(source,/notificationWaitMs/);
+});
+
+test('C3 v2 opcode31 includes bounded credit, pacing and explicit WAV path',async()=>{
+ const writes=[],client=new Client({mediaFeatures:0x41,module:{id:2,mediaVersion:2},queue:async action=>action(),service:{}});
+ client.command={properties:{writeWithoutResponse:false},async writeValueWithResponse(data){writes.push(new Uint8Array(data));}};
+ await client.sendOnly(31,480,undefined,41,'/synap/R01BE3E3.WAV',12,8);
+ const command=writes[0],v=new DataView(command.buffer);
+ assert.equal(command[1],31);assert.equal(v.getUint32(6,true),480);
+ assert.equal(command[10],12);assert.equal(command[11],8);
+ assert.equal(new TextDecoder().decode(command.slice(12)),'/synap/R01BE3E3.WAV');
+ assert.equal(client.adaptiveSupported,true);
+ const old=new Client({mediaFeatures:0x41,module:{id:2,mediaVersion:1}});
+ assert.equal(old.adaptiveSupported,false);
+ const chakshu=new Client({mediaFeatures:0x41,module:{id:3,mediaVersion:2}});
+ assert.equal(chakshu.adaptiveSupported,false);
+});
+test('C3 adaptive pacing ramps up only after clean windows and resets on loss',()=>{
+ const client=new Client({mediaFeatures:0x41,module:{id:2,mediaVersion:2}});
+ client.fastCredits=12;
+ for(let i=0;i<8;i++)client.adaptWindow(true,false,12,350,true,true);
+ assert.equal(client.fastPaceMs,12);
+ for(let i=0;i<8;i++)client.adaptWindow(true,false,12,300,true,true);
+ assert.equal(client.fastPaceMs,10);
+ for(let i=0;i<8;i++)client.adaptWindow(true,false,12,250,true,true);
+ assert.equal(client.fastPaceMs,8);
+ client.adaptWindow(false,true,12,350,true,true);
+ assert.equal(client.fastPaceMs,15);assert.equal(client.fastCredits,6);
+ client.adaptWindow(true,false,6,320,true,true);
+ assert.equal(client.fastWindowFailures,0);
+ for(let i=0;i<3;i++)client.adaptWindow(false,true,12,3000,true,true);
+ assert.equal(client.fastDisabled,true);
 });

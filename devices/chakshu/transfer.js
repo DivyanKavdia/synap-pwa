@@ -156,6 +156,8 @@
       this.fastCredits = 8;
       this.fastWindowFailures = 0;
       this.fastDisabled = false; // Older six-credit op12 after repeated packet loss.
+      this.fastPaceMs = 15;
+      this.fastGoodWindows = 0;
     }
     get features() {
       return (
@@ -164,6 +166,30 @@
           ? root.SynapModules.client.module?.mediaFeatures || 0
           : 0)
       );
+    }
+    get adaptiveSupported() {
+      const info = this.context.module ||
+        (root.SynapModules?.client?.context === this.context ? root.SynapModules.client.module : null);
+      return info?.id === 2 && info.mediaVersion >= 2 && Boolean(this.features & 0x40);
+    }
+    // Read-only media-v2 is a capability-gated extension. Older C3 builds
+    // continue using their existing opcode30 unchanged.
+    adaptWindow(complete, short, credits, elapsedMs, hasMore, adaptive) {
+      if (!complete || short) {
+        this.fastCredits = Math.max(6, Math.floor(credits / 2));
+        this.fastGoodWindows = 0;
+        this.fastPaceMs = 15;
+        if (++this.fastWindowFailures >= 3) this.fastDisabled = true;
+        return;
+      }
+      this.fastWindowFailures = 0;
+      if (elapsedMs < 1500 && hasMore)
+        this.fastCredits = Math.min(12, credits + 1);
+      if (adaptive && this.fastCredits >= 12 && elapsedMs < 1500 && hasMore &&
+          ++this.fastGoodWindows >= 8) {
+        this.fastPaceMs = this.fastPaceMs >= 15 ? 12 : this.fastPaceMs >= 12 ? 10 : 8;
+        this.fastGoodWindows = 0;
+      }
     }
     serialize(action) {
       // Device-scoped transaction lease, shared across ALL Client instances.
@@ -216,13 +242,14 @@
       signal?.throwIfAborted();
       this.stream = stream;
     }
-    async sendOnly(op, offset, signal, id = nextRequestId(this.context), path = '', credits = 6) {
-      // Op30 grants 6-20 notifications with one extra byte before the WAV
-      // path. Original op12 and Chakshu command frames remain unchanged.
+    async sendOnly(op, offset, signal, id = nextRequestId(this.context), path = '', credits = 6, paceMs = 15) {
+      // Op30 uses the existing credit byte. Optional op31 adds a second
+      // 8-15ms pacing byte. Legacy op12 and Chakshu remain unchanged.
       const pathBytes = path ? new TextEncoder().encode(path) : new Uint8Array();
       if (pathBytes.length > 63) throw Error('Invalid SD transfer path.');
-      const fast = op === 30 && Boolean(path);
-      const prefix = fast ? 11 : 10;
+      const adaptive = op === 31 && Boolean(path);
+      const fast = (op === 30 || adaptive) && Boolean(path);
+      const prefix = adaptive ? 12 : fast ? 11 : 10;
       const bytes = new Uint8Array(prefix + pathBytes.length),
         view = new DataView(bytes.buffer);
       bytes[0] = 0xca;
@@ -230,6 +257,7 @@
       view.setUint32(2, id, true);
       view.setUint32(6, offset, true);
       if (fast) bytes[10] = Math.max(6, Math.min(12, credits));
+      if (adaptive) bytes[11] = Math.max(8, Math.min(15, paceMs));
       if (pathBytes.length) bytes.set(pathBytes, prefix);
       const queue = this.context.mediaQueue || this.context.queue;
       await this.writeCommand(
@@ -255,6 +283,8 @@
         return { parts: [], next: offset };
       }
       const fast = Boolean(path) && Boolean(this.features & 0x40) && !this.fastDisabled;
+      const adaptive = fast && this.adaptiveSupported;
+      const paceMs = adaptive ? this.fastPaceMs : 15;
       const credits = fast ? Math.max(6, Math.min(12, this.fastCredits)) : 6;
       const began = Date.now();
       const id = nextRequestId(this.context),
@@ -285,7 +315,7 @@
       root.addEventListener?.('synap-gatt-disconnected', disconnect, { once: true });
       try {
         const commandStarted = Date.now();
-        await this.sendOnly(fast ? 30 : 12, offset, signal, id, path, credits);
+        await this.sendOnly(fast ? (adaptive ? 31 : 30) : 12, offset, signal, id, path, credits, paceMs);
         commandMs = Date.now() - commandStarted;
         signal?.throwIfAborted();
         const notificationsStarted = Date.now();
@@ -297,21 +327,16 @@
           const complete = (window.ended || window.creditComplete(credits)) &&
             result.parts.length === window.chunks.size;
           const short = result.next < total && result.parts.length < credits;
-          if (!complete || short) {
-            // Incomplete packets NEVER advance beyond the contiguous prefix.
-            // Three lossy windows, even nonconsecutive, select legacy op12;
-            // unlike op4 it still batches six SD notifications per request.
-            this.fastCredits = Math.max(6, Math.floor(credits / 2));
-            if (++this.fastWindowFailures >= 3) this.fastDisabled = true;
-          } else if (Date.now() - began < 1500 && result.next < total) {
-            // Avoid slow-start overshoot and iOS callback queue saturation.
-            this.fastCredits = Math.min(12, credits + 1);
-          }
+          // Missing offsets immediately restore 15ms; three consecutive
+          // failures disable fast mode, preserving the legacy SD read path.
+          this.adaptWindow(complete, short, credits, Date.now() - began,
+            result.next < total, adaptive);
           // Keep Bluefy's main thread responsive; log at 256 KiB boundaries
           // or on recovery instead of one diagnostic for every 4–10 KiB.
           if (!complete || short || Math.floor(offset / 262144) !== Math.floor(result.next / 262144))
             root.dispatchEvent?.(new CustomEvent('synap-capture-diagnostic', {
-              detail: { operation: 30, stage: 'BLE SD window backpressure',
+              detail: { operation: adaptive ? 31 : 30, stage: 'BLE SD window backpressure',
+                paceMs, nextPaceMs: this.fastPaceMs, mediaVersion: adaptive ? 2 : 1,
                 offset, next: result.next, credits, received: result.parts.length,
                 elapsedMs: Date.now() - began, commandMs, notificationWaitMs,
                 payloadBytes: result.next - offset,
