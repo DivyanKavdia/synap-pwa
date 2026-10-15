@@ -74,7 +74,7 @@ assert.match(library,/Sync paused · tap again to retry/);
 assert.match(preview,/SD transfer in progress · SD maintenance controls are temporarily disabled/);
 
 const modulesSource=fs.readFileSync(path.join(root,'devices/modules.js'),'utf8');
-assert.match(modulesSource,/profile\.id === 2 \? value\.getUint8\(16\) & 0x47 : 0/,
+assert.match(modulesSource,/profile\.id === 2 \? value\.getUint8\(16\) & 0x45 : 0/,
   'C3 supports legacy + fast BLE capabilities with Wi-Fi bit disabled');
 assert.match(transfer,/if \(this\.features & 1 && !this\.streamDisabled\)/,
   'C3 retains safe legacy notification windows');
