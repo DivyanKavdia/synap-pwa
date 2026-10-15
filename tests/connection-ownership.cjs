@@ -233,3 +233,41 @@ for (const [id, supportsStandby] of [[1,true],[2,true],[3,true]]) {
     assert.equal(h.calls.includes('standby:3,2'),supportsStandby);
   });
 }
+
+
+test('idle C3 native Bluefy code 2 invalidates stale media link without dropping live recording or OTA',()=>{
+  const script=slice('  function handleGattFailure(', '  async function writeCommand(');
+  function exercise({moduleId=2,appState='idle',firmwareBusy=false,recordingConfirmed=false,
+                     current=true,started=true,nativeCode=2,label='Send C3 SD media request'}={}){
+    const calls=[],owner={device:{id:'selected'}};
+    const c={Date,Math,Number,console,appState,firmwareBusy,recordingConfirmed,
+      reconnectNotBefore:0,connectInProgress:false,recordingReconnectPending:false,
+      currentRecordingId:null,recordingSessionId:0,lastAudioAt:0,AUDIO_STALL_TIMEOUT_MS:5000,
+      document:{visibilityState:'visible'},performance:{now:()=>0},
+      SynapModules:{client:{module:{id:moduleId}}},
+      isGattConnected:()=>true,
+      log:(message,details)=>calls.push({message,details}),
+      disconnectGatt:(reason,device)=>calls.push({reason,device})};
+    vm.createContext(c);
+    vm.runInContext(script,c);
+    c.handleGattFailure({name:'Error',message:'Bluetooth request failed.',
+      nativeReason:{type:'number',value:String(nativeCode)}},
+      {label,owner,started,current,blockedBy:null,blockedByTimedOut:false});
+    return {calls,reconnectNotBefore:c.reconnectNotBefore};
+  }
+  const failed=exercise();
+  assert.equal(failed.calls.filter(x=>x.reason).length,1,
+    'native code 2 must retire the stale idle media GATT session');
+  assert(failed.reconnectNotBefore>=Date.now(),
+    'reconnect attempts should not hammer the native adapter immediately');
+  for(const options of [
+    {moduleId:3},{appState:'recording',recordingConfirmed:true},
+    {firmwareBusy:true},{current:false},{started:false},{nativeCode:3},
+    {label:'Read firmware status'}]){
+    assert.equal(exercise(options).calls.filter(x=>x.reason).length,0,
+      'must protect OTA, recording, other devices and unrelated errors');
+  }
+  const transfer=read('devices/chakshu/transfer.js');
+  assert.match(transfer,/Send C3 SD media request/);
+  assert.match(transfer,/Send Chakshu camera request/);
+});
