@@ -135,3 +135,15 @@ test('C3 read-only recorder fault is reported when SD catalogue rejects NO_SD', 
  assert.equal(events[0].detail.storage.recordStage,72);
  assert.equal(events[0].detail.storage.wrD,419889408);
 });
+
+
+test('C3 SD read and VFS faults preserve originals and never encourage formatting',()=>{
+ const library=fs.readFileSync('devices/chakshu/library.js','utf8');
+ const relevant=library.split("const c3SdReadOrVfsFault =")[1].split("if (syncNotice)")[0];
+ assert.match(relevant,/info\?\.sdLiveProbeState === 4/);
+ assert.match(relevant,/info\?\.sdProbeState === 4/);
+ assert.match(relevant,/Original recordings retained\. Do not format or delete/);
+ assert.doesNotMatch(relevant,/SD filesystem mounted but VFS validation failed/);
+ assert.doesNotMatch(relevant,/FAT mount failed\. Check formatting and retry/);
+ assert.match(library,/SD unavailable · Original recordings preserved · Do not format or delete/);
+});
