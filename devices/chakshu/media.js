@@ -608,7 +608,8 @@
     // normal C3 catalogue discovery once build 1445+ reconnects normally.
     if (root.document?.body?.dataset.otaRecovery === 'c3' ||
       root.document?.body?.dataset.otaCommitted === 'true' ||
-      root.document?.body?.dataset.otaTransferring === 'true') return;
+      root.document?.body?.dataset.otaTransferring === 'true' ||
+      root.document?.body?.dataset.otaResumePending === 'true') return;
     autoSyncTimer = setTimeout(() => {
       autoSyncTimer = null;
       syncPendingSD().catch((e) => {
@@ -922,7 +923,8 @@
       root.SynapChakshuV2?.busy ||
       root.SynapAppControls?.recordingState?.().active ||
       root.document?.body?.dataset.otaCommitted === 'true' ||
-      root.document?.body?.dataset.otaTransferring === 'true'
+      root.document?.body?.dataset.otaTransferring === 'true' ||
+      root.document?.body?.dataset.otaResumePending === 'true'
     )
       return 0;
     const expected = owner,
@@ -993,6 +995,7 @@
         root.setTimeout(() => {
           if (connected()?.deviceId === deviceId && owner === expected &&
               root.document?.body?.dataset.otaTransferring !== 'true' &&
+              root.document?.body?.dataset.otaResumePending !== 'true' &&
               !root.SynapAppControls?.recordingState?.().active)
             schedulePendingSync(0);
         }, retryMs);

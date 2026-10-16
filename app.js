@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell222-c3-sd-safe-sync";
+  const APP_SHELL_REVISION = "1.0.0-shell223-c3-ota-sd-isolation";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -3987,10 +3987,11 @@
     // firmware has discarded the flash handle. A Bluefy selection retry can
     // easily take more than the old two-minute UI window.
     const C3_OTA_RESUME_GRACE_MS=14*60*1000;
-    const clearAutoResume=()=>{autoResume=null;if(autoResumeTimer)window.clearTimeout?.(autoResumeTimer);autoResumeTimer=null;};
+    const clearAutoResume=()=>{autoResume=null;if(document.body)document.body.dataset.otaResumePending='false';if(autoResumeTimer)window.clearTimeout?.(autoResumeTimer);autoResumeTimer=null;};
     const armAutoResume=(manifest,id)=>{
       autoResume={manifest,id,expiresAt:Date.now()+
         (['esp32c3-supermini-4m','esp32c3-supermini-4m-sd-ota'].includes(manifest?.target)?C3_OTA_RESUME_GRACE_MS:120000)};
+      if(document.body)document.body.dataset.otaResumePending='true';
       log('Firmware auto-resume armed',{deviceId:id,target:manifest?.target||null,build:manifest?.build||null});
     };
     function checkPreparationCancelled() {
