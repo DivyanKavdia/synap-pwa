@@ -3962,7 +3962,7 @@
     });
     const lock = value=>{
       if (value) clearReconnectTimer(true);
-      firmwareBusy=value;document.body.dataset.otaTransferring=value?'true':'false';cancel.disabled=true;cancel.hidden=!value;progress.hidden=!value;
+      firmwareBusy=value;if(document.body)document.body.dataset.otaTransferring=value?'true':'false';cancel.disabled=true;cancel.hidden=!value;progress.hidden=!value;
       ui.chooseDeviceButton.disabled=value;
       for (const id of ["otaLatest","otaReleaseCheck","firmwareUpdateButton"]) {
         const control=document.getElementById(id);if(control)control.disabled=value;
