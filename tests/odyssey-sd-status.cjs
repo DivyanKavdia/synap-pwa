@@ -143,6 +143,8 @@ test('C3 SD read and VFS faults preserve originals and never encourage formattin
  assert.match(relevant,/info\?\.sdLiveProbeState === 4/);
  assert.match(relevant,/info\?\.sdProbeState === 4/);
  assert.match(relevant,/Original recordings retained\. Do not format or delete/);
+ assert.match(library,/!state\.mediaSupported \|\| c3SdReadOrVfsFault/);
+ assert.match(library,/SD read\/VFS fault: power-cycle the SD card/);
  assert.doesNotMatch(relevant,/SD filesystem mounted but VFS validation failed/);
  assert.doesNotMatch(relevant,/FAT mount failed\. Check formatting and retry/);
  assert.match(library,/SD unavailable · Original recordings preserved · Do not format or delete/);
