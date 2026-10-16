@@ -1034,6 +1034,7 @@
           (s.etaSeconds!==null&&s.percent<100?' · ~'+s.etaSeconds+'s remaining':'')
         :'Preparing BLE download…';
       for(const node of sinks()) {node.hidden=false;node.textContent='BLE SD sync · '+detail;}
+      status('Syncing SD audio over Bluetooth · '+detail);
     }
     function onVisibility(){
       const now=Date.now();
