@@ -44,7 +44,7 @@ test('PWA receives explicit app-owned GATT service for dedicated EVENT telemetry
   const identity=fs.readFileSync(path.join(root,'devices/identity.js'),'utf8');
   const memoryFix=fs.readFileSync(path.join(root,'memory-ui-fix.js'),'utf8');
   const compat=fs.readFileSync(path.join(root,'runtime-compat.js'),'utf8');
-  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell216-c3-compact-ble-sync'/);
+  assert.match(sw,/CACHE_REVISION='1\.0\.0-shell217-c3-speed-meter'/);
   assert.match(sw,/\.\/runtime-compat\.js/);
   assert.match(sw,/\.\/processing-recovery\.js/);
   assert.match(sw,/\.\/ask-synap\.js/);

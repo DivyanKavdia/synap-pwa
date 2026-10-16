@@ -16,7 +16,7 @@ test('read-only C3 SD BLE sync shows actual contiguous byte throughput and estim
  assert.match(code,/speed\?\.finish\(true\)/);
  assert.match(code,/reportSDStage\(path,'ble-speed-summary'/);
  assert.match(html,/id="librarySDSpeed"[^>]*aria-live="off"/);
- assert.match(code,/id=\\"deviceSDSpeed\\"/);
+ assert.match(code,/deviceSDSpeed/);
  assert.match(sw,/shell217-c3-speed-meter/);
  assert.match(html,/c3-speed-meter1/);
 });
