@@ -20,5 +20,5 @@ test('C3 SD delete only acknowledges fresh catalogue-verified removal',()=>{
     .split('async function describeVisual(')[0];
   assert.match(incomplete,/await deleteSDItem\(path\)/);
   assert.match(library,/discard\.disabled = !sdReady/);
-  assert.match(library,/SD unavailable · Check SD card in Settings before syncing or deleting/);
+  assert.match(library,/SD unavailable · Original recordings preserved · Do not format or delete/);
 });
