@@ -158,6 +158,7 @@
       this.fastDisabled = false; // Older six-credit op12 after repeated packet loss.
       this.fastPaceMs = 15;
       this.fastGoodWindows = 0;
+      this.fastLossHoldWindows = 0;
     }
     get features() {
       return (
@@ -185,13 +186,21 @@
         this.fastCredits = Math.max(6, Math.floor(credits / 2));
         this.fastGoodWindows = 0;
         this.fastPaceMs = 15;
+        // Avoid returning to lossy 8ms after just a few clean windows.
+        if (adaptive && this.compactSupported) this.fastLossHoldWindows = 24;
         if (++this.fastWindowFailures >= 3) this.fastDisabled = true;
         return;
       }
       this.fastWindowFailures = 0;
+      if (adaptive && this.compactSupported && this.fastLossHoldWindows > 0) {
+        --this.fastLossHoldWindows;
+        this.fastPaceMs = 15;
+        this.fastGoodWindows = 0;
+      }
       if (elapsedMs < 1500 && hasMore)
         this.fastCredits = Math.min(12, credits + 1);
-      if (adaptive && this.fastCredits >= 12 && elapsedMs < 1500 && hasMore &&
+      if (adaptive && (!this.compactSupported || this.fastLossHoldWindows === 0) &&
+          this.fastCredits >= 12 && elapsedMs < 1500 && hasMore &&
           ++this.fastGoodWindows >= 8) {
         this.fastPaceMs = this.fastPaceMs >= 15 ? 12 : this.fastPaceMs >= 12 ? 10 : 8;
         this.fastGoodWindows = 0;
@@ -328,8 +337,13 @@
         commandMs = Date.now() - commandStarted;
         signal?.throwIfAborted();
         const notificationsStarted = Date.now();
-        const timeoutDueAt = Date.now() + 3000;
-        timer = setTimeout(finish, 3000);
+        // An incomplete foreground v3 window can otherwise burn three seconds
+        // waiting for an END packet that the phone never received. Legacy
+        // firmware and backgrounded browsers retain the generous watchdog.
+        const timeoutMs = compact && root.document?.visibilityState === 'visible'
+          ? 1600 : 3000;
+        const timeoutDueAt = Date.now() + timeoutMs;
+        timer = setTimeout(finish, timeoutMs);
         await done;
         notificationWaitMs = Date.now() - notificationsStarted;
         const result = window.contiguous();
@@ -348,6 +362,7 @@
               detail: { operation: adaptive ? 31 : 30, stage: 'BLE SD window backpressure',
                 paceMs, nextPaceMs: this.fastPaceMs, mediaVersion: adaptive ? (compact ? 3 : 2) : 1,
                 compact, visibility: root.document?.visibilityState || 'unknown',
+                timeoutMs, speedHoldWindows: this.fastLossHoldWindows,
                 timeoutOvershootMs: Math.max(0, Date.now() - timeoutDueAt),
                 offset, next: result.next, credits, received: result.parts.length,
                 elapsedMs: Date.now() - began, commandMs, notificationWaitMs,

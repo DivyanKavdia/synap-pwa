@@ -44,3 +44,12 @@ test('BLE SD sync temporarily acquires shared screen-awake lease without affecti
  assert.match(app,/void screenWakeLock\.release\(\)\.catch/);
  assert.match(app,/beginSDTransferWake,shellRevision/);
 });
+
+test('denied SD wake locks cool down separately from recording and OTA',()=>{
+ const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
+ assert.match(app,/let sdBleWakeRetryAfter = 0/);
+ assert.match(app,/Date\.now\(\) >= sdBleWakeRetryAfter/);
+ assert.match(app,/sdBleWakeRetryAfter = Date\.now\(\) \+ 300000/);
+ assert.match(app,/screenWakeLock\.owner\?\.scope !== 'sd-ble-sync'/);
+ assert.match(app,/screenWakeLock\.owner\?\.scope === 'sd-ble-sync'/);
+});
