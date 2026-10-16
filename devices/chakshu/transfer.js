@@ -164,6 +164,9 @@
       this.compactLossEvents = 0;
       this.compactCleanWindows = 0;
       this.compactCreditGoodWindows = 0;
+      // Field Bluefy: 12 credits at 8 ms repeatedly loses notifications.
+      // Keep media-v3 <=10 credits and >=10 ms; media-v2 is unchanged.
+      this.compactCreditCeiling = 10;
     }
     get features() {
       return (
@@ -220,15 +223,18 @@
           // Slow-start at four clean windows per extra credit. Jumping from
           // 8 to 12 credits in four windows previously outran Bluefy.
           if (++this.compactCreditGoodWindows >= 4) {
-            this.fastCredits = Math.min(12, credits + 1);
+            this.fastCredits = Math.min(this.compactCreditCeiling, credits + 1);
             this.compactCreditGoodWindows = 0;
           }
         } else this.fastCredits = Math.min(12, credits + 1);
       }
       if (adaptive && (!this.compactSupported || this.fastLossHoldWindows === 0) &&
-          this.fastCredits >= 12 && elapsedMs < 1500 && hasMore &&
-          ++this.fastGoodWindows >= 8) {
-        this.fastPaceMs = this.fastPaceMs >= 15 ? 12 : this.fastPaceMs >= 12 ? 10 : 8;
+          this.fastCredits >= (this.compactSupported ? this.compactCreditCeiling : 12) &&
+          elapsedMs < 1500 && hasMore && ++this.fastGoodWindows >= 8) {
+        // Media-v3 stabilizes at 10 ms: 8 ms repeatedly outran Bluefy.
+        this.fastPaceMs = this.compactSupported
+          ? (this.fastPaceMs >= 15 ? 12 : 10)
+          : (this.fastPaceMs >= 15 ? 12 : this.fastPaceMs >= 12 ? 10 : 8);
         this.fastGoodWindows = 0;
       }
     }
@@ -329,7 +335,7 @@
       const adaptive = fast && this.adaptiveSupported;
       const compact = adaptive && this.compactSupported && Number.isInteger(sessionToken) && sessionToken > 0;
       const paceMs = adaptive ? this.fastPaceMs : 15;
-      const credits = fast ? Math.max(6, Math.min(12, this.fastCredits)) : 6;
+      const credits = fast ? Math.max(6, Math.min(compact ? this.compactCreditCeiling : 12, this.fastCredits)) : 6;
       const began = Date.now();
       const id = nextRequestId(this.context),
         window = new MediaWindow(id, offset, total, fast ? 12 : 8, Boolean(path));
