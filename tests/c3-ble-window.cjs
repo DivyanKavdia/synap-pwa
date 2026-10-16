@@ -190,3 +190,20 @@ test('C3 media-v3 raises credits slowly on clean windows and decays old losses',
  assert.equal(newer.compactLossEvents,0);
  assert.equal(newer.fastDisabled,false);
 });
+
+test('C3 media-v3 limits Bluefy packets before radio queue loss, v2 unchanged',()=>{
+ const c3=new Client({mediaFeatures:0x41,module:{id:2,mediaVersion:3}});
+ for(let i=0;i<80;i++)c3.adaptWindow(true,false,Math.min(c3.compactCreditCeiling,c3.fastCredits),250,true,true);
+ assert.equal(c3.fastCredits,10);
+ assert.equal(c3.fastPaceMs,10);
+ assert.equal(c3.compactCreditCeiling,10);
+ // Even after a long run, the v3 controller must not return to 8ms.
+ for(let i=0;i<80;i++)c3.adaptWindow(true,false,10,250,true,true);
+ assert.equal(c3.fastPaceMs,10);
+ const v2=new Client({mediaFeatures:0x41,module:{id:2,mediaVersion:2}});
+ v2.fastCredits=12;
+ for(let i=0;i<24;i++)v2.adaptWindow(true,false,12,250,true,true);
+ assert.equal(v2.fastPaceMs,8);
+ assert.match(source,/Math\.min\(compact \? this\.compactCreditCeiling : 12, this\.fastCredits\)/);
+ assert.match(source,/this\.fastDisabled = true/);
+});
