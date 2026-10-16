@@ -1000,6 +1000,83 @@
       }),
     );
   }
+
+  // Throughput counts only verified contiguous bytes handed to the client.
+  // Whole-file speed includes background stalls; live speed uses a 6s window.
+  function startSDSpeed(path, notifyProgress = () => {}) {
+    const started=Date.now(), samples=[{at:started,bytes:0}];
+    let bytes=0,total=0,lastAdvanced=started,lastDraw=0,hiddenAt=null,hiddenMs=0,finished=false;
+    const sinks=() => ['librarySDSpeed','deviceSDSpeed'].map((id)=>document.getElementById(id)).filter(Boolean);
+    function snapshot() {
+      const now=Date.now(),span=Math.max(1,now-started),anchor=samples[0];
+      const live=hiddenAt===null && now-lastAdvanced<3000 && now-anchor.at>=250
+        ?Math.round((bytes-anchor.bytes)*1000/Math.max(1,now-anchor.at)):0;
+      return {bytes,total,percent:total?Math.floor(bytes*100/total):0,
+        liveBytesPerSecond:live,averageBytesPerSecond:Math.round(bytes*1000/span),
+        elapsedMs:span,hiddenMs:hiddenMs+(hiddenAt===null?0:now-hiddenAt),
+        etaSeconds:live?Math.ceil((total-bytes)/live):null,
+        background:hiddenAt!==null,stalled:bytes>0&&hiddenAt===null&&now-lastAdvanced>=3000};
+    }
+    const mb=(n)=>(n/1000000).toFixed(2)+' MB';
+    const rate=(n)=>(n/1000).toFixed(1)+' KB/s';
+    function render(force=false) {
+      if(finished)return;
+      const now=Date.now();
+      if(!force && now-lastDraw<400)return;
+      lastDraw=now;
+      const s=snapshot();
+      const state=s.background?'Paused by iOS background · open Bluefy':
+        s.stalled?'No BLE data arriving · keep Bluefy visible':
+        s.liveBytesPerSecond?rate(s.liveBytesPerSecond)+' live':'Measuring live speed';
+      const detail=s.total
+        ?s.percent+'% · '+mb(s.bytes)+' / '+mb(s.total)+' · '+state+
+          ' · '+rate(s.averageBytesPerSecond)+' overall'+
+          (s.etaSeconds!==null&&s.percent<100?' · ~'+s.etaSeconds+'s remaining':'')
+        :'Preparing BLE download…';
+      for(const node of sinks()) {node.hidden=false;node.textContent='BLE SD sync · '+detail;}
+      status('Syncing SD audio over Bluetooth · '+detail);
+    }
+    function onVisibility(){
+      const now=Date.now();
+      if(document.visibilityState==='hidden')hiddenAt??=now;
+      else if(hiddenAt!==null) {
+        hiddenMs+=Math.max(0,now-hiddenAt);
+        hiddenAt=null;
+        samples.splice(0,samples.length,{at:now,bytes});
+      }
+      render(true);
+    }
+    document.addEventListener('visibilitychange',onVisibility);
+    onVisibility();
+    const ticker=root.setInterval(()=>render(),1000);
+    return {
+      progress(fraction,totalBytes){
+        const newTotal=Number(totalBytes);
+        if(Number.isFinite(newTotal)&&newTotal>0)total=Math.max(total,newTotal);
+        if(total){
+          const next=Math.max(bytes,Math.min(total,Math.floor(total*Math.max(0,Math.min(1,Number(fraction)||0)))));
+          if(next>bytes){
+            bytes=next;lastAdvanced=Date.now();samples.push({at:lastAdvanced,bytes});
+            while(samples.length>2&&samples[1].at<lastAdvanced-6000)samples.shift();
+          }
+        }
+        if(Date.now()-lastDraw>=400||fraction>=1){notifyProgress(fraction,totalBytes);render(true);}
+      },
+      finish(failed=false){
+        if(finished)return snapshot();
+        const s=snapshot();finished=true;root.clearInterval(ticker);
+        document.removeEventListener('visibilitychange',onVisibility);
+        for(const node of sinks()){
+          node.hidden=false;
+          node.textContent=(failed?'BLE sync interrupted · SD original preserved · ':'BLE download complete · ')+
+            mb(s.bytes)+' · '+rate(s.averageBytesPerSecond)+' overall'+
+            (s.hiddenMs>1000?' · '+Math.round(s.hiddenMs/1000)+'s in background':'');
+        }
+        reportSDStage(path,'ble-speed-summary',{...s,complete:!failed});
+        return s;
+      },
+    };
+  }
   async function moveSD(path, progress = () => {}) {
     if (busy) throw Error('Another device media transfer is already running.');
     const sourceEntry = api()?.state?.sdFiles?.find?.((file) => file.path === path);
@@ -1026,7 +1103,9 @@
       owner = api().state.owner,
       wantsDescribe = Boolean(api().state.sdFiles?.find((file) => file.path === path)?.describe),
       key = receiptKey(connection.deviceId, path);
-    let stage = 'receipt-check';
+    let stage = 'receipt-check', speed = null;
+    const releaseWake = liveModule?.id === 2
+      ? root.SynapAppControls?.beginSDTransferWake?.() : null;
     busy = true;
     renderSDInbox();
     reportSDStage(path, stage);
@@ -1046,8 +1125,10 @@
       localStorage.removeItem(key);
       stage = 'download';
       reportSDStage(path, stage);
+      speed = startSDSpeed(path,progress);
       const before = await localSnapshot(),
-        source = await download(path, undefined, progress);
+        source = await download(path, undefined, speed.progress);
+      speed.finish();
       reportSDStage(path, 'download-complete', { bytes: source.main.size });
       if (sourceEntry?.crc32 !== undefined && isWavPath(path)) {
         stage = 'integrity';
@@ -1122,10 +1203,12 @@
       }
       return { ...receipt, alreadySynced: false, keptOnSD: true, sdAvailableAfterSync };
     } catch (error) {
+      speed?.finish(true);
       reportSDStage(path, 'failed', { failedAt: stage, message: error?.message || String(error) });
       if (liveModule?.id === 2) await reportC3SyncTrace(path, connection, 'failed-' + stage);
       throw error;
     } finally {
+      releaseWake?.();
       busy = false;
       renderSDInbox();
     }
@@ -1932,6 +2015,7 @@
       card.innerHTML =
         '<h3 class="settings-card-title">SD card</h3>' +
         '<p id="deviceSDSettingsStatus" class="settings-hint">Connect a supported pendant to manage SD storage.</p>' +
+         '<p id="deviceSDSpeed" class="settings-hint" aria-live="off" hidden></p>' +
         '<div class="visual-actions"><button id="retryDeviceSD" type="button">Retry SD card</button><button id="diagnoseDeviceSD" type="button" hidden>Diagnose SD (read-only)</button><button id="diagnoseDeviceSDRam" type="button" hidden>SD controller status (RAM-only)</button><button id="clearDeviceSD" type="button">Clear SD Card</button><button id="formatDeviceSD" type="button" hidden>Format SD Card</button></div>' +
         '<p id="deviceSDRawStatus" class="settings-hint" role="status" hidden></p>';
       extras.append(card);
