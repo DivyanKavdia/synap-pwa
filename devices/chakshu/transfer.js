@@ -188,6 +188,13 @@
         (root.SynapModules?.client?.context === this.context ? root.SynapModules.client.module : null);
       return info?.id === 2 && info.mediaVersion >= 3 && Boolean(this.features & 0x40);
     }
+    // Reliability-first: C3 SD uses the original six-credit opcode12.
+    // Keep adaptive/compact code dormant until field reliability is proven.
+    get reliableC3SdMode() {
+      const info = this.context.module ||
+        (root.SynapModules?.client?.context === this.context ? root.SynapModules.client.module : null);
+      return info?.id === 2;
+    }
     // Media-v2/3 remains read-only; older C3 builds use opcode30 unchanged.
     adaptWindow(complete, short, credits, elapsedMs, hasMore, adaptive) {
       if (!complete || short) {
@@ -331,7 +338,7 @@
         this.streamDisabled = true;
         return { parts: [], next: offset };
       }
-      const fast = Boolean(path) && Boolean(this.features & 0x40) && !this.fastDisabled;
+      const fast = Boolean(path) && Boolean(this.features & 0x40) && !this.fastDisabled && !this.reliableC3SdMode;
       const adaptive = fast && this.adaptiveSupported;
       const compact = adaptive && this.compactSupported && Number.isInteger(sessionToken) && sessionToken > 0;
       const paceMs = adaptive ? this.fastPaceMs : 15;

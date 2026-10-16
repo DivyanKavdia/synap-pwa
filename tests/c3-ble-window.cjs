@@ -207,3 +207,22 @@ test('C3 media-v3 limits Bluefy packets before radio queue loss, v2 unchanged',(
  assert.match(source,/Math\.min\(compact \? this\.compactCreditCeiling : 12, this\.fastCredits\)/);
  assert.match(source,/this\.fastDisabled = true/);
 });
+
+test('Odyssey C3 SD defaults to six-credit opcode12 on media-v3 firmware',()=>{
+ const c3=new Client({mediaFeatures:0x41,module:{id:2,mediaVersion:3}});
+ const legacy=new Client({mediaFeatures:0x41,module:{id:2,mediaVersion:1}});
+ const chakshu=new Client({mediaFeatures:0x41,module:{id:3,mediaVersion:3}});
+ assert.equal(c3.reliableC3SdMode,true);
+ assert.equal(legacy.reliableC3SdMode,true);
+ assert.equal(chakshu.reliableC3SdMode,false);
+ assert.match(source,/!this\.fastDisabled && !this\.reliableC3SdMode/);
+ assert.match(source,/this\.sendOnly\(fast \? \(adaptive \? 31 : 30\) : 12/);
+});
+test('OTA owns BLE: suppress C3 background catalogue and retry traffic',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ const media=fs.readFileSync(path.join(__dirname,'../devices/chakshu/media.js'),'utf8');
+ const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
+ assert.match(media,/dataset\.otaTransferring === 'true'/);
+ assert.match(media,/dataset\.otaTransferring !== 'true'/);
+ assert.match(app,/document\.body\.dataset\.otaTransferring=value\?'true':'false'/);
+});

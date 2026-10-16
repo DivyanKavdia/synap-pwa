@@ -607,7 +607,8 @@
     // Suppress background SD traffic on that link, then automatically restore
     // normal C3 catalogue discovery once build 1445+ reconnects normally.
     if (root.document?.body?.dataset.otaRecovery === 'c3' ||
-      root.document?.body?.dataset.otaCommitted === 'true') return;
+      root.document?.body?.dataset.otaCommitted === 'true' ||
+      root.document?.body?.dataset.otaTransferring === 'true') return;
     autoSyncTimer = setTimeout(() => {
       autoSyncTimer = null;
       syncPendingSD().catch((e) => {
@@ -920,7 +921,8 @@
       wifi?.active ||
       root.SynapChakshuV2?.busy ||
       root.SynapAppControls?.recordingState?.().active ||
-      root.document?.body?.dataset.otaCommitted === 'true'
+      root.document?.body?.dataset.otaCommitted === 'true' ||
+      root.document?.body?.dataset.otaTransferring === 'true'
     )
       return 0;
     const expected = owner,
@@ -990,6 +992,7 @@
         const retryMs = 15000;
         root.setTimeout(() => {
           if (connected()?.deviceId === deviceId && owner === expected &&
+              root.document?.body?.dataset.otaTransferring !== 'true' &&
               !root.SynapAppControls?.recordingState?.().active)
             schedulePendingSync(0);
         }, retryMs);

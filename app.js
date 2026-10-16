@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell221-c3-sd-sync-throughput";
+  const APP_SHELL_REVISION = "1.0.0-shell222-c3-sd-safe-sync";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -3962,7 +3962,7 @@
     });
     const lock = value=>{
       if (value) clearReconnectTimer(true);
-      firmwareBusy=value;cancel.disabled=true;cancel.hidden=!value;progress.hidden=!value;
+      firmwareBusy=value;if(document.body)document.body.dataset.otaTransferring=value?'true':'false';cancel.disabled=true;cancel.hidden=!value;progress.hidden=!value;
       ui.chooseDeviceButton.disabled=value;
       for (const id of ["otaLatest","otaReleaseCheck","firmwareUpdateButton"]) {
         const control=document.getElementById(id);if(control)control.disabled=value;
