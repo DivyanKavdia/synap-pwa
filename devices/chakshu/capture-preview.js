@@ -1103,6 +1103,8 @@
       wantsDescribe = Boolean(api().state.sdFiles?.find((file) => file.path === path)?.describe),
       key = receiptKey(connection.deviceId, path);
     let stage = 'receipt-check', speed = null;
+    const releaseWake = liveModule?.id === 2
+      ? root.SynapAppControls?.beginSDTransferWake?.() : null;
     busy = true;
     renderSDInbox();
     reportSDStage(path, stage);
@@ -1205,6 +1207,7 @@
       if (liveModule?.id === 2) await reportC3SyncTrace(path, connection, 'failed-' + stage);
       throw error;
     } finally {
+      releaseWake?.();
       busy = false;
       renderSDInbox();
     }

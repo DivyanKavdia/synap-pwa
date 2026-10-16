@@ -180,10 +180,12 @@
   let startTimeout = null;
   let finalizeTimeout = null;
   let finalizing = false;
+  let sdBleSyncWakeCount = 0;
   const screenWakeLock = typeof globalThis.SynapScreenWakeLock === 'function' ? new globalThis.SynapScreenWakeLock({
     navigator,
     scope: () => firmwareBusy ? 'firmware' :
-      (appState === 'starting' || appState === 'recording') ? `recording:${recordingSessionId}` : null,
+      (appState === 'starting' || appState === 'recording') ? `recording:${recordingSessionId}` :
+      sdBleSyncWakeCount > 0 && appState === 'idle' ? 'sd-ble-sync' : null,
     log: (message, error) => log(message, error ? friendlyError(error) : undefined)
   }) : null;
   let recordingSessionId = 0;
@@ -4813,7 +4815,23 @@
       throw error;
     }
   }
-  globalThis.SynapAppControls = Object.freeze({toggleCapture,toggleConnection,recordingState,stopCapture,canReload,startMediaAudio,adoptHardwareStream,shellRevision:APP_SHELL_REVISION});
+  function beginSDTransferWake() {
+    if (!screenWakeLock || firmwareBusy || appState !== 'idle') return () => {};
+    sdBleSyncWakeCount++;
+    // Best effort: Bluefy native or browser wake-lock can be refused. A
+    // rejected wake request never prevents SD transfer or its verification.
+    void screenWakeLock.acquire().catch(() => {});
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      sdBleSyncWakeCount = Math.max(0,sdBleSyncWakeCount-1);
+      // Do not release a recording/OTA wake-lock which may have replaced ours.
+      if (!sdBleSyncWakeCount && !firmwareBusy && appState === 'idle')
+        void screenWakeLock.release().catch(() => {});
+    };
+  }
+  globalThis.SynapAppControls = Object.freeze({toggleCapture,toggleConnection,recordingState,stopCapture,canReload,startMediaAudio,adoptHardwareStream,beginSDTransferWake,shellRevision:APP_SHELL_REVISION});
 
   function setStartup(state, message) {
     document.body.dataset.startup = state;

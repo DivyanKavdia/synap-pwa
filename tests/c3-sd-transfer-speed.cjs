@@ -32,3 +32,15 @@ test('background suspension is separated from live BLE speed without modifying S
  assert.doesNotMatch(helper,/unlink\(|deleteSD\(|formatSD\(|api\(\)\.catalogue\(/);
  assert.match(code,/SD original preserved/);
 });
+
+test('BLE SD sync temporarily acquires shared screen-awake lease without affecting OTA or recording',()=>{
+ const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
+ assert.match(code,/beginSDTransferWake\?\.\(\)/);
+ assert.match(code,/releaseWake\?\.\(\)/);
+ assert.match(app,/function beginSDTransferWake\(\)/);
+ assert.match(app,/sdBleSyncWakeCount > 0 && appState === 'idle' \? 'sd-ble-sync'/);
+ assert.match(app,/if \(!sdBleSyncWakeCount && !firmwareBusy && appState === 'idle'\)/);
+ assert.match(app,/void screenWakeLock\.acquire\(\)\.catch/);
+ assert.match(app,/void screenWakeLock\.release\(\)\.catch/);
+ assert.match(app,/beginSDTransferWake,shellRevision/);
+});
