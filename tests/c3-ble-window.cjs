@@ -157,3 +157,36 @@ test('media-v3 loss holds 15ms for 24 clean windows before probing faster pacing
  assert.match(source,/\? 1600 : 3000/);
  assert.match(source,/timeoutMs, speedHoldWindows:/);
 });
+
+test('C3 media-v3 recurring Bluefy loss falls back without losing source or offset',()=>{
+ const newer=new Client({mediaFeatures:0x41,module:{id:2,mediaVersion:3}});
+ // Not consecutive: a clean window between losses used to erase the evidence.
+ for(let n=0;n<3;n++) {
+   newer.adaptWindow(false,true,12,1600,true,true);
+   if(n<2) {
+     newer.adaptWindow(true,false,6,250,true,true);
+     assert.equal(newer.fastDisabled,false);
+   }
+ }
+ assert.equal(newer.compactLossEvents,3);
+ assert.equal(newer.fastDisabled,true,'three intermittent missing-credit windows must use op12');
+ assert.match(source,/this\.sendOnly\(fast \? \(adaptive \? 31 : 30\) : 12/);
+ const older=new Client({mediaFeatures:0x41,module:{id:2,mediaVersion:2}});
+ older.adaptWindow(false,true,12,1600,true,true);
+ older.adaptWindow(true,false,6,250,true,true);
+ assert.equal(older.compactLossEvents,0,'media-v2 protocol must not change');
+});
+
+test('C3 media-v3 raises credits slowly on clean windows and decays old losses',()=>{
+ const newer=new Client({mediaFeatures:0x41,module:{id:2,mediaVersion:3}});
+ assert.equal(newer.fastCredits,8);
+ for(let i=0;i<3;i++)newer.adaptWindow(true,false,8,250,true,true);
+ assert.equal(newer.fastCredits,8);
+ newer.adaptWindow(true,false,8,250,true,true);
+ assert.equal(newer.fastCredits,9);
+ newer.adaptWindow(false,true,9,1600,true,true);
+ assert.equal(newer.compactLossEvents,1);
+ for(let i=0;i<24;i++)newer.adaptWindow(true,false,6,250,true,true);
+ assert.equal(newer.compactLossEvents,0);
+ assert.equal(newer.fastDisabled,false);
+});

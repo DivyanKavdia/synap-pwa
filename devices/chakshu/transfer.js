@@ -159,6 +159,11 @@
       this.fastPaceMs = 15;
       this.fastGoodWindows = 0;
       this.fastLossHoldWindows = 0;
+      // Bluefy can lose a window every few otherwise successful windows. The
+      // old consecutive-failure threshold never caught that recurring loss.
+      this.compactLossEvents = 0;
+      this.compactCleanWindows = 0;
+      this.compactCreditGoodWindows = 0;
     }
     get features() {
       return (
@@ -187,18 +192,39 @@
         this.fastGoodWindows = 0;
         this.fastPaceMs = 15;
         // Avoid returning to lossy 8ms after just a few clean windows.
-        if (adaptive && this.compactSupported) this.fastLossHoldWindows = 24;
+        if (adaptive && this.compactSupported) {
+          this.fastLossHoldWindows = 24;
+          this.compactCreditGoodWindows = 0;
+          this.compactCleanWindows = 0;
+          // Fall back to proven six-credit op12 after three *intermittent*
+          // losses, not just three adjacent lost windows. Read-only, same
+          // verified file and next contiguous offset.
+          if (++this.compactLossEvents >= 3) this.fastDisabled = true;
+        }
         if (++this.fastWindowFailures >= 3) this.fastDisabled = true;
         return;
       }
       this.fastWindowFailures = 0;
+      if (adaptive && this.compactSupported && this.compactLossEvents &&
+          ++this.compactCleanWindows >= 24) {
+        --this.compactLossEvents;
+        this.compactCleanWindows = 0;
+      }
       if (adaptive && this.compactSupported && this.fastLossHoldWindows > 0) {
         --this.fastLossHoldWindows;
         this.fastPaceMs = 15;
         this.fastGoodWindows = 0;
       }
-      if (elapsedMs < 1500 && hasMore)
-        this.fastCredits = Math.min(12, credits + 1);
+      if (elapsedMs < 1500 && hasMore) {
+        if (adaptive && this.compactSupported) {
+          // Slow-start at four clean windows per extra credit. Jumping from
+          // 8 to 12 credits in four windows previously outran Bluefy.
+          if (++this.compactCreditGoodWindows >= 4) {
+            this.fastCredits = Math.min(12, credits + 1);
+            this.compactCreditGoodWindows = 0;
+          }
+        } else this.fastCredits = Math.min(12, credits + 1);
+      }
       if (adaptive && (!this.compactSupported || this.fastLossHoldWindows === 0) &&
           this.fastCredits >= 12 && elapsedMs < 1500 && hasMore &&
           ++this.fastGoodWindows >= 8) {
@@ -369,7 +395,7 @@
                 payloadBytes: result.next - offset,
                 rateBytesPerSecond: Math.round((result.next - offset) * 1000 / Math.max(1, Date.now() - began)),
                 interrupted: !complete || short,
-                fallbackToLegacy: this.fastDisabled },
+                fallbackToLegacy: this.fastDisabled, compactLossEvents: this.compactLossEvents },
             }));
         }
         return result;
