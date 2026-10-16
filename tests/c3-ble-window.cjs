@@ -226,3 +226,13 @@ test('OTA owns BLE: suppress C3 background catalogue and retry traffic',()=>{
  assert.match(media,/dataset\.otaTransferring !== 'true'/);
  assert.match(app,/document\.body\.dataset\.otaTransferring=value\?'true':'false'/);
 });
+
+test('resumable OTA also suspends C3 SD catalogues',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ const media=fs.readFileSync(path.join(__dirname,'../devices/chakshu/media.js'),'utf8');
+ const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
+ assert.match(media,/dataset\.otaResumePending === 'true'/);
+ assert.match(media,/dataset\.otaResumePending !== 'true'/);
+ assert.match(app,/dataset\.otaResumePending='true'/);
+ assert.match(app,/dataset\.otaResumePending='false'/);
+});
