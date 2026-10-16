@@ -41,10 +41,10 @@ test('C3 fast mode is feature-gated with no-recording and small-MTU fallback',()
  assert.match(source,/this\.context\.module\?\.id === 2/);
 });
 
-test('C3 slow-start credits cap at 12 and repeated losses use legacy op12 without SD writes',()=>{
+test('C3 v3 credits cap at 10 and legacy v2 retains 12 with fallback on loss',()=>{
  assert.match(source,/this\.fastCredits = 8/);
- assert.match(source,/Math\.min\(12, this\.fastCredits\)/);
- assert.match(source,/Math\.min\(12, credits \+ 1\)/);
+ assert.match(source,/Math\.min\(compact \? this\.compactCreditCeiling : 12, this\.fastCredits\)/);
+ assert.match(source,/Math\.min\(this\.compactCreditCeiling, credits \+ 1\)/);
  assert.match(source,/if \(\+\+this\.fastWindowFailures >= 3\) this\.fastDisabled = true/);
  assert.match(source,/this\.sendOnly\(fast \? \(adaptive \? 31 : 30\) : 12/);
  assert.match(source,/fallbackToLegacy: this\.fastDisabled/);
