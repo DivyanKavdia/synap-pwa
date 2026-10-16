@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell217-c3-speed-meter";
+  const APP_SHELL_REVISION = "1.0.0-shell218-c3-loss-aware-sync";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -181,6 +181,7 @@
   let finalizeTimeout = null;
   let finalizing = false;
   let sdBleSyncWakeCount = 0;
+  let sdBleWakeRetryAfter = 0;
   const screenWakeLock = typeof globalThis.SynapScreenWakeLock === 'function' ? new globalThis.SynapScreenWakeLock({
     navigator,
     scope: () => firmwareBusy ? 'firmware' :
@@ -4820,14 +4821,28 @@
     sdBleSyncWakeCount++;
     // Best effort: Bluefy native or browser wake-lock can be refused. A
     // rejected wake request never prevents SD transfer or its verification.
-    void screenWakeLock.acquire().catch(() => {});
+    if (Date.now() >= sdBleWakeRetryAfter) {
+      void screenWakeLock.acquire().then(() => {
+        // A denied Bluefy native wake request must not be retried with every
+        // SD file. This cooldown never applies to recording or OTA wake scope.
+        if (!firmwareBusy && appState === 'idle' &&
+            screenWakeLock.owner?.scope !== 'sd-ble-sync') {
+          sdBleWakeRetryAfter = Date.now() + 300000;
+          log('SD BLE sync screen wake denied; skipping retries for five minutes');
+        }
+      }).catch(() => {
+        if (!firmwareBusy && appState === 'idle')
+          sdBleWakeRetryAfter = Date.now() + 300000;
+      });
+    }
     let released = false;
     return () => {
       if (released) return;
       released = true;
       sdBleSyncWakeCount = Math.max(0,sdBleSyncWakeCount-1);
       // Do not release a recording/OTA wake-lock which may have replaced ours.
-      if (!sdBleSyncWakeCount && !firmwareBusy && appState === 'idle')
+      if (!sdBleSyncWakeCount && !firmwareBusy && appState === 'idle' &&
+          screenWakeLock.owner?.scope === 'sd-ble-sync')
         void screenWakeLock.release().catch(() => {});
     };
   }

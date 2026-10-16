@@ -17,7 +17,7 @@ test('read-only C3 SD BLE sync shows actual contiguous byte throughput and estim
  assert.match(code,/reportSDStage\(path,'ble-speed-summary'/);
  assert.match(html,/id="librarySDSpeed"[^>]*aria-live="off"/);
  assert.match(code,/deviceSDSpeed/);
- assert.match(sw,/shell217-c3-speed-meter/);
+ assert.match(sw,/shell218-c3-loss-aware-sync/);
  assert.match(html,/c3-speed-meter1/);
 });
 test('background suspension is separated from live BLE speed without modifying SD safety',()=>{
@@ -39,8 +39,17 @@ test('BLE SD sync temporarily acquires shared screen-awake lease without affecti
  assert.match(code,/releaseWake\?\.\(\)/);
  assert.match(app,/function beginSDTransferWake\(\)/);
  assert.match(app,/sdBleSyncWakeCount > 0 && appState === 'idle' \? 'sd-ble-sync'/);
- assert.match(app,/if \(!sdBleSyncWakeCount && !firmwareBusy && appState === 'idle'\)/);
- assert.match(app,/void screenWakeLock\.acquire\(\)\.catch/);
+ assert.match(app,/if \(!sdBleSyncWakeCount && !firmwareBusy && appState === 'idle' &&/);
+ assert.match(app,/void screenWakeLock\.acquire\(\)\.then/);
  assert.match(app,/void screenWakeLock\.release\(\)\.catch/);
  assert.match(app,/beginSDTransferWake,shellRevision/);
+});
+
+test('denied SD wake locks cool down separately from recording and OTA',()=>{
+ const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
+ assert.match(app,/let sdBleWakeRetryAfter = 0/);
+ assert.match(app,/Date\.now\(\) >= sdBleWakeRetryAfter/);
+ assert.match(app,/sdBleWakeRetryAfter = Date\.now\(\) \+ 300000/);
+ assert.match(app,/screenWakeLock\.owner\?\.scope !== 'sd-ble-sync'/);
+ assert.match(app,/screenWakeLock\.owner\?\.scope === 'sd-ble-sync'/);
 });

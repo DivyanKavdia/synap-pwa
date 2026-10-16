@@ -135,3 +135,25 @@ test('C3 media-v3 compact opcode31 uses token-bound 16-byte no-response command'
  assert.match(source,/first\.sessionToken \|\| 0/);
  assert.match(source,/op === 3 && this\.compactSupported/);
 });
+
+test('media-v3 loss holds 15ms for 24 clean windows before probing faster pacing',()=>{
+ const newer=new Client({mediaFeatures:0x41,module:{id:2,mediaVersion:3}});
+ newer.fastCredits=12;newer.fastPaceMs=8;
+ newer.adaptWindow(false,true,12,180,true,true);
+ assert.equal(newer.fastPaceMs,15);
+ assert.equal(newer.fastLossHoldWindows,24);
+ for(let i=0;i<23;i++)newer.adaptWindow(true,false,12,340,true,true);
+ assert.equal(newer.fastPaceMs,15);
+ assert.equal(newer.fastGoodWindows,0);
+ assert.equal(newer.fastLossHoldWindows,1);
+ newer.adaptWindow(true,false,12,340,true,true);
+ assert.equal(newer.fastLossHoldWindows,0);
+ for(let i=0;i<8;i++)newer.adaptWindow(true,false,12,300,true,true);
+ assert.equal(newer.fastPaceMs,12);
+ const older=new Client({mediaFeatures:0x41,module:{id:2,mediaVersion:2}});
+ older.adaptWindow(false,true,12,300,true,true);
+ assert.equal(older.fastLossHoldWindows,0);
+ assert.match(source,/const timeoutMs = compact && root\.document\?\.visibilityState === 'visible'/);
+ assert.match(source,/\? 1600 : 3000/);
+ assert.match(source,/timeoutMs, speedHoldWindows:/);
+});
