@@ -324,7 +324,16 @@
       $(id).disabled = busy || !state.connected || !available;
     $('visualImport').disabled = busy;
     const recording = root.SynapAppControls.recordingState().active;
-    $('visualCheckSD').disabled = busy || recording || !state.connected || !state.mediaSupported;
+    // When VFS/read faults leave an always-powered C3 SD controller unsafe,
+    // "Check SD" would issue an explicit same-rail recovery command on older
+    // firmware. Require an actual card power-cycle instead of repeated probes.
+    const c3SdReadOrVfsFault = info?.id === 2 &&
+      (info?.sdLiveProbeState === 4 || info?.sdProbeState === 4);
+    $('visualCheckSD').disabled = busy || recording || !state.connected ||
+      !state.mediaSupported || c3SdReadOrVfsFault;
+    $('visualCheckSD').title = c3SdReadOrVfsFault
+      ? 'SD read/VFS fault: power-cycle the SD card. Do not format or attempt same-rail recovery.'
+      : '';
     $('visualWifi').disabled =
       busy || recording || !state.connected || !state.storageReady || !state.wifiSupported;
     $('visualWifi').title = state.wifiSupported
@@ -338,15 +347,15 @@
       ? pendingSD
         ? 'SD card ready · ' + pendingSD + ' offline capture' + (pendingSD === 1 ? '' : 's') + ' waiting to sync.'
         : 'SD card ready. Offline Hey Snap captures will appear here after the next connection.'
-      : info?.id === 2 && info?.sdProbeState === 1
+      : c3SdReadOrVfsFault
+        ? 'SD read or filesystem validation failed. Original recordings retained. Do not format or delete. Fully power-cycle the SD card; back up through a card reader if errors repeat.'
+        : info?.id === 2 && info?.sdProbeState === 1
         ? 'SD SPI bus setup failed. Check power and wiring, then retry.'
         : info?.id === 2 && info?.sdProbeState === 2
           ? 'SD card protocol initialization failed. Check the card, then retry.'
           : info?.id === 2 && info?.sdProbeState === 3
-            ? 'SD card responded, but FAT mount failed. Check formatting and retry.'
-            : info?.id === 2 && info?.sdProbeState === 4
-              ? 'SD filesystem mounted but VFS validation failed.'
-              : info?.id === 3
+            ? 'SD card responded, but FAT mount failed. Preserve recordings; back up the card before considering repair or formatting.'
+            : info?.id === 3
                 ? 'SD card unavailable. Offline Hey Snap capture requires the card; choose Check SD card.'
                 : 'SD card unavailable. Offline recording requires a mounted card; choose Check SD card.';
     if (syncNotice) syncNotice.hidden = !state.connected || pendingSD === 0;
@@ -524,7 +533,7 @@
           ? type + ' · Not synced · On device SD · ' + byteLabel(row.byteSize)
           : type + ' · Incomplete SD recording · On device SD · ' + byteLabel(row.byteSize);
       preview.textContent = !sdReady
-        ? 'SD unavailable · Check SD card in Settings before syncing or deleting'
+        ? 'SD unavailable · Original recordings preserved · Do not format or delete'
         : synced
           ? 'Synced · SD copy retained'
           : syncable
@@ -536,7 +545,7 @@
       if (discard) {
         discard.hidden = false;
         discard.disabled = !sdReady;
-        discard.title = sdReady ? '' : 'Connect and use Check SD card in Settings to restore storage first.';
+        discard.title = sdReady ? '' : 'SD unavailable. Preserve recordings; do not retry deleting or formatting.';
         discard.textContent = 'Delete from SD';
         discard.setAttribute('aria-label', 'Delete from SD: ' + title);
       }
