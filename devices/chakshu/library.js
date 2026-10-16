@@ -324,7 +324,16 @@
       $(id).disabled = busy || !state.connected || !available;
     $('visualImport').disabled = busy;
     const recording = root.SynapAppControls.recordingState().active;
-    $('visualCheckSD').disabled = busy || recording || !state.connected || !state.mediaSupported;
+    // When VFS/read faults leave an always-powered C3 SD controller unsafe,
+    // "Check SD" would issue an explicit same-rail recovery command on older
+    // firmware. Require an actual card power-cycle instead of repeated probes.
+    const c3SdReadOrVfsFault = info?.id === 2 &&
+      (info?.sdLiveProbeState === 4 || info?.sdProbeState === 4);
+    $('visualCheckSD').disabled = busy || recording || !state.connected ||
+      !state.mediaSupported || c3SdReadOrVfsFault;
+    $('visualCheckSD').title = c3SdReadOrVfsFault
+      ? 'SD read/VFS fault: power-cycle the SD card. Do not format or attempt same-rail recovery.'
+      : '';
     $('visualWifi').disabled =
       busy || recording || !state.connected || !state.storageReady || !state.wifiSupported;
     $('visualWifi').title = state.wifiSupported
@@ -334,8 +343,6 @@
       syncNotice = $('visualSDSyncNotice'),
       syncText = $('visualSDSyncText'),
       syncButton = $('visualSyncSD');
-    const c3SdReadOrVfsFault = info?.id === 2 &&
-      (info?.sdLiveProbeState === 4 || info?.sdProbeState === 4);
     $('visualStorageHint').textContent = state.storageReady
       ? pendingSD
         ? 'SD card ready · ' + pendingSD + ' offline capture' + (pendingSD === 1 ? '' : 's') + ' waiting to sync.'
