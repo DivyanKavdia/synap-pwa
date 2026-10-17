@@ -22,10 +22,19 @@ test('emergency SD format requires prior cold FAT-mount failure and exact typed 
  assert.match(ui,/Type ERASE SD to authorize/);
  assert.match(ui,/request\(33,0x53445246\)/);
  const body=ui.split('async function emergencyFormatSD() {')[1].split('async function formatSD()')[0];
- assert.match(body,/\!\[3,4\]\.includes\(Number\(info\?\.sdLiveProbeState\)\)/);
+ assert.match(body,/Number\(info\?\.sdLiveProbeState\)!==3/);
  assert.match(body,/info\?\.sdDetectionState!==2/);
  assert.match(body,/api\(\)\.state\.storageReady/);
  assert.match(body,/Never disconnect power/);
  assert.match(body,/Do not retry Format/);
  assert.doesNotMatch(body,/request\(19\)|request\(14\)|request\(18\)|localStorage\.removeItem/);
+});
+
+test('emergency reformat is denied for directory validation problems (stage4)',()=>{
+ const run=ui.split('async function emergencyFormatSD() {')[1].split('async function formatSD()')[0];
+ const button=ui.split('if (emergencySettings) {')[1].split('if (formatSettings) {')[0];
+ assert.match(run,/Number\(info\?\.sdLiveProbeState\)!==3/);
+ assert.match(button,/Number\(info\?\.sdLiveProbeState\)===3/);
+ assert.doesNotMatch(run,/\[3,4\]/);
+ assert.doesNotMatch(button,/\[3,4\]/);
 });
