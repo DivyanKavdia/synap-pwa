@@ -487,9 +487,38 @@
   async function startVideo() {
     return startLive();
   }
+  let recorderHealth = null, recorderHealthConnection = null;
+  function currentRecorderHealth() {
+    return recorderHealthConnection === connected() ? recorderHealth : null;
+  }
+  async function readRecorderHealth() {
+    const connection = connected();
+    if (!connection || moduleInfo()?.id !== 2) throw Error('Connect Odyssey C3 first.');
+    const reply = await camera().request(34);
+    const data = JSON.parse(new TextDecoder().decode(reply.bytes));
+    if (data?.version !== 1 ||
+        !['stage','bytes','faultLed','micRestarts','sdState','sdLiveProbe',
+          'readQuarantine','writeQuarantine','recording','stopPending'].every(
+            key => Number.isSafeInteger(data[key]) && data[key] >= 0) ||
+        !['readQuarantine','writeQuarantine','recording','stopPending'].every(
+            key => data[key] === 0 || data[key] === 1))
+      throw Error('Invalid recorder health response; SD recovery was not attempted.');
+    if (connected() !== connection) throw Error('Pendant connection changed. Read recorder health again.');
+    recorderHealthConnection = connection;
+    recorderHealth = Object.freeze(data);
+    notify();
+    return recorderHealth;
+  }
   async function refreshSD() {
     if (root.SynapAppControls.recordingState().active)
       throw Error('Stop recording before checking the SD card.');
+    if (moduleInfo()?.id === 2) {
+      const health = await readRecorderHealth();
+      if (health.readQuarantine || health.writeQuarantine)
+        throw Error('SD protected—power-cycle required. Remove battery and USB power from the SD supply. MCU restart alone is insufficient. Originals preserved.');
+      if (health.recording || health.stopPending)
+        throw Error('Wait for the offline recording to stop and finish saving before recovering SD.');
+    }
     // Explicit SD recovery must wake Odyssey C3 out of the PWA's 30-second
     // remote-standby state before firmware operation 14 is dispatched.
     forgetSDProbe();
@@ -950,6 +979,10 @@
         // remount or test write. Once per link, surface its first CMD24/CMD25
         // phase in existing app diagnostics, even when catalogue() returned [].
         const liveModule = moduleInfo();
+        if (connected()?.deviceId === deviceId && liveModule?.id === 2) {
+          try { await readRecorderHealth(); }
+          catch (_) { /* Older firmware may lack op34; never remount as fallback. */ }
+        }
         if (connected()?.deviceId === deviceId && liveModule?.id === 2 && Number(liveModule.sdProbeState) >= 40) {
           try {
             const report = await camera().request(27);
@@ -1011,6 +1044,7 @@
     setAudio,
     startOffline,
     refreshSD,
+    readRecorderHealth,
     startWifi,
     stopWifi,
     stop,
@@ -1034,6 +1068,8 @@
         // for cached callers but deliberately false while the app owns BLE.
         offlineReady: false,
         sdProfilesSupported: Boolean(moduleInfo()?.mediaFeatures & 16),
+        recorderHealth: currentRecorderHealth(),
+        sdProtected: Boolean(currentRecorderHealth()?.readQuarantine || currentRecorderHealth()?.writeQuarantine),
         storageReady: capabilities.hasMedia(moduleInfo()) && capabilities.ready(moduleInfo(), 'sd'),
         sdFiles: sdFiles.slice(),
         sdFilesDeviceId,
