@@ -9,7 +9,9 @@ const render=s.split('function renderSDInbox(')[1]?.split('async function syncAl
 
 test('C3 unsafe historical write fault blocks destructive formatting',()=>{
   assert.match(s,/function c3FormatUnsafe\(\)/);
-  assert.match(s,/Number\(info\?\.sdProbeState\) >= 40/);
+  assert.match(s,/const stage=Number\(info\?\.sdProbeState\)/);
+  assert.match(s,/stage >= 40/);
+  assert.match(s,/!\[43,48,52,68\]\.includes\(stage\)/);
   assert.match(format,/if \(c3FormatUnsafe\(\)\)/);
   assert.match(s,/formatSettings\.disabled =[\s\S]*?c3FormatUnsafe\(\)/);
   assert.match(format,/!api\(\)\.state\.storageReady/);
