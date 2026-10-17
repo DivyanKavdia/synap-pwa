@@ -7,7 +7,7 @@ const capture=fs.readFileSync('devices/chakshu/capture-preview.js','utf8');
 const html=fs.readFileSync('index.html','utf8');
 test('C3 format is explicitly confirmed and capability-gated',()=>{
   assert.match(capture,/mediaFeatures & 4/);
-  assert.match(capture,/await client\(\)\.request\(19\)/);
+  assert.match(capture,/await client\(\)\.request\(19, 0x5344464d\)/);
   assert.match(capture,/ALL files on the card will be permanently erased/);
   assert.match(capture,/info\?\.sdDetectionState !== 1 \|\| info\?\.sdLiveProbeState !== 6/);
 });

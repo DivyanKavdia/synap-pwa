@@ -16,12 +16,12 @@ test('C3 unsafe historical write fault blocks destructive formatting',()=>{
 });
 
 test('failed format captures only read-only op27 and does not auto-remount',()=>{
-  assert.match(format,/client\(\)\.request\(19\)/);
+  assert.match(format,/client\(\)\.request\(19, 0x5344464d\)/);
   assert.match(format,/client\(\)\.request\(27\)/);
   assert.match(format,/format-failed-media-snapshot/);
   assert.match(format,/historicRecordStage/);
   assert.doesNotMatch(format,/api\(\)\.refreshSD\(\)|request\(14\)|request\(18\)/);
-  assert.equal((format.match(/client\(\)\.request\(19\)/g)||[]).length,1);
+  assert.equal((format.match(/client\(\)\.request\(19, 0x5344464d\)/g)||[]).length,1);
 });
 
 test('successful format settles, then observes catalogue before deleting receipts',()=>{
@@ -33,15 +33,15 @@ test('successful format settles, then observes catalogue before deleting receipt
   assert.match(page,/capture-preview\.js\?v=1\.0\.0-c3-[a-z0-9-]+/);
 });
 
-test('C3 full-card on-device format is disabled in the UI and before op19',()=>{
-  assert.match(s,/const C3_FULL_CARD_FORMAT_DISABLED = true/);
+test('C3 format requires healthy SD and explicit confirmation',()=>{
+  assert.match(s,/const C3_FULL_CARD_FORMAT_DISABLED = false/);
   const guard=format.indexOf('if (C3_FULL_CARD_FORMAT_DISABLED)');
   const command=format.indexOf('client().request(19)');
   assert(guard>=0 && command>guard,'safety gate must run before destructive command');
-  assert.match(format,/Odyssey C3 on-device full-card formatting is temporarily disabled/);
+  assert.match(format,/This firmware does not support safe SD formatting/);
   assert.match(s,/formatSettings\.disabled =[\s\S]*?C3_FULL_CARD_FORMAT_DISABLED/);
-  assert.match(s,/Format SD \(disabled\)/);
-  assert.match(s,/Power off and format on a computer/);
+  assert.match(s,/Type FORMAT SD to confirm permanent erasure/);
+  assert.match(s,/formatSettings\.disabled =[\s\S]*?c3FormatUnsafe\(\)/);
 });
 
 test('C3 blocks all BLE FAT maintenance writes before op17, op18 or op19',()=>{

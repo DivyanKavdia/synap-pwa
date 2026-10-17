@@ -317,7 +317,7 @@
   // Until SDSPI/FatFs metadata writes are qualified on real C3 hardware,
   // never issue BLE unlink, batch clear or FAT format on this target. This
   // does NOT alter normal offline capture or read-only verified BLE sync.
-  const C3_FULL_CARD_FORMAT_DISABLED = true;
+  const C3_FULL_CARD_FORMAT_DISABLED = false;
   const C3_SD_MAINTENANCE_WRITES_DISABLED = true;
   function c3MaintenanceWritesBlocked() {
     return C3_SD_MAINTENANCE_WRITES_DISABLED && root.SynapModules?.client?.module?.id === 2;
@@ -1347,9 +1347,50 @@
       renderSDInbox();
     }
   }
+
+  // FAT capacity is fetched by an explicit button, never between BLE sync
+  // packets or while the offline recorder owns the storage mutex.
+  let sdCapacitySnapshot=null, sdCapacityDeviceId='';
+  const sdBytesLabel=bytes => (Number(bytes)/(1024*1024*1024)).toFixed(2)+' GiB';
+  async function checkSDCapacity() {
+    if (busy || api()?.state?.working) throw Error('Finish the current SD transfer first.');
+    const connection=context();
+    if (root.SynapModules?.client?.module?.id !== 2)
+      throw Error('SD capacity is supported on Synap Odyssey C3.');
+    if (!api().state.storageReady)
+      throw Error('SD unavailable. Recover SD before checking its capacity.');
+    if (root.SynapAppControls?.recordingState?.().active)
+      throw Error('Stop recording before checking SD capacity.');
+    busy=true;
+    renderSDInbox();
+    try {
+      const reply=await client().request(32);
+      if (root.SynapDevices?.connection !== connection)
+        throw Error('Bluetooth connection changed while reading capacity.');
+      const data=JSON.parse(new TextDecoder().decode(reply.bytes));
+      if (data?.version!==1 ||
+          ![data.totalBytes,data.freeBytes,data.physicalBytes].every(
+            value=>Number.isSafeInteger(value)&&value>=0) ||
+          !data.totalBytes || data.freeBytes>data.totalBytes)
+        throw Error('Invalid SD capacity data from the pendant.');
+      sdCapacityDeviceId=connection.deviceId;
+      sdCapacitySnapshot=data;
+      reportSDStage('@all','sd-capacity-readonly',{
+        totalBytes:data.totalBytes,freeBytes:data.freeBytes,physicalBytes:data.physicalBytes,
+      });
+      return data;
+    } catch(error) {
+      sdCapacityDeviceId='';
+      sdCapacitySnapshot=null;
+      throw error;
+    } finally {
+      busy=false;
+      renderSDInbox();
+    }
+  }
   async function formatSD() {
     if (C3_FULL_CARD_FORMAT_DISABLED)
-      throw Error('Odyssey C3 on-device full-card formatting is temporarily disabled for SD data safety. Power off, remove the card and use a computer for formatting after backing up recordings.');
+      throw Error('This firmware does not support safe SD formatting.');
     if (busy) throw Error('Another SD transfer is already running.');
     const connection = context();
     if (!c3FormatSupported()) throw Error('Update Odyssey C3 firmware to format its SD card.');
@@ -1364,7 +1405,7 @@
     try {
       status('Formatting SD card…');
       try {
-        await client().request(19);
+        await client().request(19, 0x5344464d); // SDFM: destructive-format confirmation token
       } catch (error) {
         // Native ESP-IDF format unmounts FAT before f_mkfs. If f_mkfs
         // returns an error, FAT may be partially overwritten and unmounted.
@@ -1571,6 +1612,8 @@
       settings = document.getElementById('deviceSDSettings'),
       settingsStatus = document.getElementById('deviceSDSettingsStatus'),
       retrySettings = document.getElementById('retryDeviceSD'),
+      capacitySettings = document.getElementById('checkDeviceSDCapacity'),
+      capacityText = document.getElementById('deviceSDCapacity'),
       clearSettings = document.getElementById('clearDeviceSD'),
       formatSettings = document.getElementById('formatDeviceSD'),
       rawProbeSettings = document.getElementById('diagnoseDeviceSD'),
@@ -1607,6 +1650,22 @@
                 : info?.id === 2 && info?.sdLiveProbeState === 4
                   ? 'SD filesystem mounted, but VFS validation failed.'
                   : 'SD card unavailable. Check the card and retry storage.';
+    if (capacityText) {
+      const capacityReady=state.connected && state.storageReady &&
+        sdCapacityDeviceId===deviceId && sdCapacitySnapshot;
+      capacityText.textContent=capacityReady
+        ? 'SD FAT capacity '+sdBytesLabel(sdCapacitySnapshot.totalBytes)+
+          ' · Used '+sdBytesLabel(sdCapacitySnapshot.totalBytes-sdCapacitySnapshot.freeBytes)+
+          ' · Free '+sdBytesLabel(sdCapacitySnapshot.freeBytes)+
+          ' · Card '+sdBytesLabel(sdCapacitySnapshot.physicalBytes)
+        : 'SD capacity: '+(!state.connected?'connect the pendant':
+            !state.storageReady?'unavailable; use Recover SD first':'select Check capacity');
+    }
+    if (capacitySettings) {
+      capacitySettings.hidden=info?.id!==2;
+      capacitySettings.disabled=blocked || !state.connected || !state.storageReady ||
+        Boolean(root.SynapAppControls?.recordingState?.().active);
+    }
     if (retrySettings)
       retrySettings.disabled =
         !supportsStorage ||
@@ -1653,7 +1712,7 @@
         Boolean(root.SynapAppControls?.recordingState?.().active);
       formatSettings.textContent = C3_FULL_CARD_FORMAT_DISABLED ? 'Format SD (disabled)' : 'Format SD Card';
       formatSettings.title = C3_FULL_CARD_FORMAT_DISABLED
-        ? 'On-device FAT formatting disabled on Odyssey C3 after field I/O failure. Power off and format on a computer only after backing up data.'
+        ? 'On-device formatting unavailable. Power off and format on a computer after backup.'
         : c3FormatUnsafe()
         ? 'Formatting disabled: recorded SD write fault. Preserve the card until the firmware write path is qualified.'
         : !state.storageReady
@@ -2016,7 +2075,8 @@
         '<h3 class="settings-card-title">SD card</h3>' +
         '<p id="deviceSDSettingsStatus" class="settings-hint">Connect a supported pendant to manage SD storage.</p>' +
          '<p id="deviceSDSpeed" class="settings-hint" aria-live="off" hidden></p>' +
-        '<div class="visual-actions"><button id="retryDeviceSD" type="button">Retry SD card</button><button id="diagnoseDeviceSD" type="button" hidden>Diagnose SD (read-only)</button><button id="diagnoseDeviceSDRam" type="button" hidden>SD controller status (RAM-only)</button><button id="clearDeviceSD" type="button">Clear SD Card</button><button id="formatDeviceSD" type="button" hidden>Format SD Card</button></div>' +
+        '<p id="deviceSDCapacity" class="settings-hint" role="status">SD capacity: connect and choose Check capacity.</p>' +
+        '<div class="visual-actions"><button id="retryDeviceSD" type="button">Recover SD</button><button id="checkDeviceSDCapacity" type="button">Check capacity</button><button id="diagnoseDeviceSD" type="button" hidden>Diagnose SD (read-only)</button><button id="diagnoseDeviceSDRam" type="button" hidden>SD controller status (RAM-only)</button><button id="clearDeviceSD" type="button">Clear SD Card</button><button id="formatDeviceSD" type="button" hidden>Format SD Card</button></div>' +
         '<p id="deviceSDRawStatus" class="settings-hint" role="status" hidden></p>';
       extras.append(card);
       document.getElementById('retryDeviceSD')?.addEventListener('click', async () => {
@@ -2045,6 +2105,18 @@
           status(error.message);
         } finally {
           button.disabled = false;
+          renderSDInbox();
+        }
+      });
+      document.getElementById('checkDeviceSDCapacity')?.addEventListener('click', async () => {
+        const button=document.getElementById('checkDeviceSDCapacity');
+        button.disabled=true;
+        try {
+          const data=await checkSDCapacity();
+          status('SD FAT storage '+sdBytesLabel(data.totalBytes)+' · Free '+sdBytesLabel(data.freeBytes));
+        } catch(error) {
+          status('SD capacity unavailable · '+error.message);
+        } finally {
           renderSDInbox();
         }
       });
@@ -2122,11 +2194,10 @@
         }
       });
       document.getElementById('formatDeviceSD')?.addEventListener('click', async () => {
-        if (
-          !confirm(
-            'Format this SD card? ALL files on the card will be permanently erased, including non-Synap files. This cannot be undone.',
-          )
-        )
+        if (!confirm(
+          'Format this SD card? ALL files on the card will be permanently erased, including non-Synap files. This cannot be undone. Back up all recordings first.'
+        )) return;
+        if (root.prompt('Type FORMAT SD to confirm permanent erasure of ALL files:') !== 'FORMAT SD')
           return;
         const button = document.getElementById('formatDeviceSD'),
           settingsStatus = document.getElementById('deviceSDSettingsStatus');
@@ -2169,6 +2240,7 @@
     }
   }
   const exposed = {
+    checkSDCapacity,
     moveSD,
     moveC3Wifi,
     c3ApStatus,
