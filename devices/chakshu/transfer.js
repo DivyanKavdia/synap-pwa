@@ -458,7 +458,7 @@
         v.setUint32(6, offset, true);
         bytes.set(name, 10);
         await this.writeCommand(run, bytes);
-        const deadline = Date.now() + (op === 19 ? C3_SD_FORMAT_DEADLINE_MS : RESPONSE_DEADLINE_MS);
+        const deadline = Date.now() + ((op === 19 || op === 33) ? C3_SD_FORMAT_DEADLINE_MS : RESPONSE_DEADLINE_MS);
         while (Date.now() < deadline) {
           signal?.throwIfAborted();
           const reply = decode(

@@ -17,3 +17,15 @@ test('capacity read cannot format, clear or remount SD',()=>{
  assert.doesNotMatch(fn,/request\((?:17|18|19)\)|formatSD\(|clearSD\(|refreshSD\(/);
  assert.match(fn,/root\.SynapDevices\?\.connection !== connection/);
 });
+test('emergency SD format requires prior cold FAT-mount failure and exact typed authorization',()=>{
+ assert.match(ui,/id="emergencyFormatDeviceSD"/);
+ assert.match(ui,/Type ERASE SD to authorize/);
+ assert.match(ui,/request\(33,0x53445246\)/);
+ const body=ui.split('async function emergencyFormatSD() {')[1].split('async function formatSD()')[0];
+ assert.match(body,/Number\(info\?\.sdLiveProbeState\)!==3/);
+ assert.match(body,/info\?\.sdDetectionState!==2/);
+ assert.match(body,/!api\(\)\.state\.storageReady/);
+ assert.match(body,/Never disconnect power/);
+ assert.match(body,/Do not retry Format/);
+ assert.doesNotMatch(body,/request\(19\)|request\(14\)|request\(18\)|localStorage\.removeItem/);
+});

@@ -1388,6 +1388,53 @@
       renderSDInbox();
     }
   }
+  // Emergency provisioning is NEVER automatic: it may erase ALL files. It
+  // is only usable when a freshly power-cycled SD card responds over SPI but
+  // the FAT volume fails to mount. A timed-out CMD24/25 on the current SD
+  // power rail still requires a real electrical power cycle first.
+  async function emergencyFormatSD() {
+    if (busy || api()?.state?.working)
+      throw Error('Finish all recording and SD transfers before emergency recovery.');
+    const connection=context();
+    const info=root.SynapModules?.client?.module;
+    if (info?.id!==2 || api().state.storageReady || info?.sdDetectionState!==2 ||
+        Number(info?.sdLiveProbeState)!==3)
+      throw Error('Emergency format is available only after a cold boot with an SD FAT mount failure. Do not format a card with a live write timeout.');
+    if (api().state.offline || api().state.session ||
+        root.SynapAppControls?.recordingState?.().active)
+      throw Error('Stop recording before emergency recovery.');
+    busy=true;
+    renderSDInbox();
+    try {
+      await root.SynapPowerLifecycle?.wakeForActivity?.();
+      status('Emergency SD FAT recovery requested. Never disconnect power during this operation.');
+      try {
+        await client().request(33,0x53445246); // SDRF, one-shot destructive token
+      } catch(error) {
+        reportSDStage('@all','emergency-fat-rescue-not-verified',{
+          message:error?.message || String(error),
+          mediaCode:error?.mediaCode ?? null,
+        });
+        throw Error('Emergency recovery refused or unverified. Do not repeat Format. Fully power off the pendant and SD supply, then examine the card. Firmware build may need updating. Detail: '+error.message);
+      }
+      await new Promise(resolve=>root.setTimeout(resolve,6000));
+      await root.SynapModules?.refresh?.();
+      if(root.SynapDevices?.connection!==connection)
+        throw Error('Bluetooth changed after emergency recovery. Do not retry formatting; reconnect to inspect.');
+      const live=root.SynapModules?.client?.module;
+      if(live?.sdDetectionState!==1 || live?.sdLiveProbeState!==6)
+        throw Error('Emergency recovery result not verified. Do not retry Format.');
+      // A successful mount need not mean the helper actually formatted; it
+      // may have re-mounted the original FAT. Preserve existing sync receipts.
+      const found=await api().catalogue();
+      status('SD filesystem available after emergency recovery · '+found.length+
+        ' Synap files visible. Browse and check capacity before recording.');
+      return found;
+    } finally {
+      busy=false;
+      renderSDInbox();
+    }
+  }
   async function formatSD() {
     if (C3_FULL_CARD_FORMAT_DISABLED)
       throw Error('This firmware does not support safe SD formatting.');
@@ -1621,6 +1668,7 @@
       capacityText = document.getElementById('deviceSDCapacity'),
       clearSettings = document.getElementById('clearDeviceSD'),
       formatSettings = document.getElementById('formatDeviceSD'),
+      emergencySettings = document.getElementById('emergencyFormatDeviceSD'),
       rawProbeSettings = document.getElementById('diagnoseDeviceSD'),
       ramProbeSettings = document.getElementById('diagnoseDeviceSDRam'),
       wifiSettings = document.getElementById('deviceWifiSettings'),
@@ -1704,6 +1752,17 @@
         info?.sdDetectionState === 1 ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
       rawProbeSettings.title = 'Read up to two diagnostic sectors once per pendant boot; subsequent taps show the cached result. Never formats or repairs SD.';
+    }
+    if (emergencySettings) {
+      const fatMountFailed = supportsStorage && info?.id===2 && state.connected &&
+        !state.storageReady && info?.sdDetectionState===2 &&
+        Number(info?.sdLiveProbeState)===3;
+      emergencySettings.hidden = !supportsStorage || info?.id!==2 || state.storageReady;
+      emergencySettings.disabled = !fatMountFailed || blocked ||
+        Boolean(root.SynapAppControls?.recordingState?.().active);
+      emergencySettings.title = fatMountFailed
+        ? 'DESTRUCTIVE LAST RESORT: a cold-booted card initialized but FAT failed. May erase ALL files.'
+        : 'Only after a full power cycle and FAT mount failure. Live SD controller timeout requires electrical SD power removal; this is NOT a reset button.';
     }
     if (formatSettings) {
       formatSettings.hidden = !supportsC3Format;
@@ -2081,7 +2140,7 @@
         '<p id="deviceSDSettingsStatus" class="settings-hint">Connect a supported pendant to manage SD storage.</p>' +
          '<p id="deviceSDSpeed" class="settings-hint" aria-live="off" hidden></p>' +
         '<p id="deviceSDCapacity" class="settings-hint" role="status">SD capacity: connect and choose Check capacity.</p>' +
-        '<div class="visual-actions"><button id="retryDeviceSD" type="button">Recover SD</button><button id="checkDeviceSDCapacity" type="button">Check capacity</button><button id="diagnoseDeviceSD" type="button" hidden>Diagnose SD (read-only)</button><button id="diagnoseDeviceSDRam" type="button" hidden>SD controller status (RAM-only)</button><button id="clearDeviceSD" type="button">Clear SD Card</button><button id="formatDeviceSD" type="button" hidden>Format SD Card</button></div>' +
+        '<div class="visual-actions"><button id="retryDeviceSD" type="button">Recover SD</button><button id="checkDeviceSDCapacity" type="button">Check capacity</button><button id="diagnoseDeviceSD" type="button" hidden>Diagnose SD (read-only)</button><button id="diagnoseDeviceSDRam" type="button" hidden>SD controller status (RAM-only)</button><button id="clearDeviceSD" type="button">Clear SD Card</button><button id="formatDeviceSD" type="button" hidden>Format SD Card</button><button id="emergencyFormatDeviceSD" type="button" hidden>Emergency SD reformat (erases all)</button></div>' +
         '<p id="deviceSDRawStatus" class="settings-hint" role="status" hidden></p>';
       extras.append(card);
       document.getElementById('retryDeviceSD')?.addEventListener('click', async () => {
@@ -2198,6 +2257,25 @@
           renderSDInbox();
         }
       });
+      document.getElementById('emergencyFormatDeviceSD')?.addEventListener('click',async()=>{
+        if (!confirm('EMERGENCY SD REFORMAT: This may PERMANENTLY ERASE EVERY FILE, including unsynced recordings. Only proceed after fully cutting power to the SD card and attempting Recover SD. A stuck CMD24/CMD25 controller CANNOT be fixed by software format. Continue?'))
+          return;
+        if (root.prompt('Type ERASE SD to authorize potential loss of ALL SD recordings:')!=='ERASE SD')
+          return;
+        const button=document.getElementById('emergencyFormatDeviceSD');
+        const settingsStatus=document.getElementById('deviceSDSettingsStatus');
+        button.disabled=true;
+        if (settingsStatus) settingsStatus.textContent='Emergency FAT recovery: do not disconnect power…';
+        try {
+          await emergencyFormatSD();
+          if(settingsStatus) settingsStatus.textContent='Emergency FAT recovery finished; inspect the SD recordings and check capacity.';
+        } catch(error) {
+          if(settingsStatus) settingsStatus.textContent='Emergency recovery failed or refused · '+error.message;
+          status(error.message);
+        } finally {
+          renderSDInbox();
+        }
+      });
       document.getElementById('formatDeviceSD')?.addEventListener('click', async () => {
         if (!confirm(
           'Format this SD card? ALL files on the card will be permanently erased, including non-Synap files. This cannot be undone. Back up all recordings first.'
@@ -2246,6 +2324,7 @@
   }
   const exposed = {
     checkSDCapacity,
+    emergencyFormatSD,
     moveSD,
     moveC3Wifi,
     c3ApStatus,

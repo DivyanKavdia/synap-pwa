@@ -13,7 +13,7 @@ test('C3 format is explicitly confirmed and capability-gated',()=>{
 });
 test('format waits for slow native FAT and warns on uncertain timeout; no automatic replay',()=>{
   assert.match(transfer,/C3_SD_FORMAT_DEADLINE_MS = 600000/);
-  assert.match(transfer,/op === 19 \? C3_SD_FORMAT_DEADLINE_MS : RESPONSE_DEADLINE_MS/);
+  assert.match(transfer,/op === 19 \|\| op === 33/);
   assert.match(transfer,/do not immediately repeat Format/);
   assert.match(html,/devices\/chakshu\/transfer\.js\?v=1\.0\.0-c3-[a-z0-9-]+/);
 });
