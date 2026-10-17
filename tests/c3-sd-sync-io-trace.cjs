@@ -41,5 +41,5 @@ test('standalone C3 RAM diagnosis can inspect native SDSPI failures even after F
   assert.match(s,/ramProbeSettings\.hidden = info\?\.id !== 2/);
   assert.match(s,/ramProbeSettings\.disabled = info\?\.id !== 2 \|\| blocked \|\| !state\.connected/);
   assert.match(s,/await diagnoseC3SdWireReadOnly\(\)/);
-  assert.match(html,/capture-preview\.js\?v=1\.0\.0-c3-sd-recorder-health1/);
+  assert.match(html,/capture-preview\.js\?v=1\.0\.0-c3-access-states1/);
 });
