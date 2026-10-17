@@ -1093,7 +1093,10 @@
       reportSDStage(path, 'blocked-sd-unavailable', {
         sdLiveProbeState: liveModule.sdLiveProbeState,
       });
-      throw Error('The C3 SD card is unavailable after a reset. Recover the card before syncing; the SD original was kept.');
+      const failedStage = Number(liveModule.sdProbeState);
+      throw Error(failedStage >= 40 && ![48, 52, 68].includes(failedStage)
+        ? 'C3 SD access is suspended after an offline write/file failure, not confirmed card absence. Preserve the original and fully reset SD power before syncing.'
+        : 'C3 SD mount is not ready. Preserve the original recording and check the mounting diagnostics before syncing.');
     }
     if (sourceEntry && (sourceEntry.syncable === false || Number(sourceEntry.bytes) <= 44)) {
       const bytes = Math.max(0, Number(sourceEntry.bytes) || 0);
@@ -1708,7 +1711,11 @@
                 ? 'SD FAT mount or format failed. The filesystem may be incomplete; do not repeat Format.'
                 : info?.id === 2 && info?.sdLiveProbeState === 4
                   ? 'SD filesystem mounted, but VFS validation failed.'
-                  : 'SD card unavailable. Check the card and retry storage.';
+                  : info?.id === 2 && info?.sdDetectionState === 2 &&
+                    Number(info?.sdProbeState) >= 40 &&
+                    ![48, 52, 68].includes(Number(info?.sdProbeState))
+                  ? 'SD access suspended after recording write/file fault. Card not confirmed absent. Fully power-cycle SD and validate mount to resume normal use; keep original recordings.'
+                  : 'SD mount not ready. Check the card diagnostics without erasing recordings.';
     if (capacityText) {
       const capacityReady=state.connected && state.storageReady &&
         sdCapacityDeviceId===deviceId && sdCapacitySnapshot;
@@ -2218,7 +2225,7 @@
                 : stage===52 || stage===68
                   ? 'SD storage full — original files should remain accessible. Sync before manually formatting.'
                   : stage>=40
-                    ? 'Offline recorder reported a storage or file verification failure (stage '+stage+'). Preserve existing WAV files.'
+                    ? 'Offline recorder reported a storage or file verification failure (stage '+stage+'). This does not prove the SD card is absent; preserve existing WAV files.'
                     : 'No retained recorder fault.';
           const code=data.faultLed;
           const red=code===4?'4 red flashes = blocked SD/controller':

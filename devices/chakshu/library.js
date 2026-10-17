@@ -327,13 +327,18 @@
     // When VFS/read faults leave an always-powered C3 SD controller unsafe,
     // "Check SD" would issue an explicit same-rail recovery command on older
     // firmware. Require an actual card power-cycle instead of repeated probes.
+    const c3SdWriteFault = info?.id === 2 && info?.sdDetectionState === 2 &&
+      Number(info?.sdProbeState) >= 40 &&
+      ![48, 52, 68].includes(Number(info?.sdProbeState));
     const c3SdReadOrVfsFault = info?.id === 2 &&
       (info?.sdLiveProbeState === 4 || info?.sdProbeState === 4);
     $('visualCheckSD').disabled = busy || recording || !state.connected ||
-      !state.mediaSupported || c3SdReadOrVfsFault;
-    $('visualCheckSD').title = c3SdReadOrVfsFault
-      ? 'SD read/VFS fault: power-cycle the SD card. Do not format or attempt same-rail recovery.'
-      : '';
+      !state.mediaSupported || c3SdReadOrVfsFault || c3SdWriteFault;
+    $('visualCheckSD').title = c3SdWriteFault
+      ? 'SD write fault: access temporarily suspended; preserve WAVs, fully reset SD card power, then retry after mount validation.'
+      : c3SdReadOrVfsFault
+        ? 'SD read/VFS fault: power-cycle the SD card. Do not format or attempt same-rail recovery.'
+        : '';
     $('visualWifi').disabled =
       busy || recording || !state.connected || !state.storageReady || !state.wifiSupported;
     $('visualWifi').title = state.wifiSupported
@@ -347,8 +352,10 @@
       ? pendingSD
         ? 'SD card ready · ' + pendingSD + ' offline capture' + (pendingSD === 1 ? '' : 's') + ' waiting to sync.'
         : 'SD card ready. Offline Hey Snap captures will appear here after the next connection.'
-      : c3SdReadOrVfsFault
-        ? 'SD read or filesystem validation failed. Original recordings retained. Do not format or delete. Fully power-cycle the SD card; back up through a card reader if errors repeat.'
+      : c3SdWriteFault
+        ? 'SD write failed; access is suspended, not proof the card is missing. Original recordings retained. Fully remove SD power, then normal recording and sync resume after a verified mount. Do not format.'
+        : c3SdReadOrVfsFault
+          ? 'SD read or filesystem validation failed. Original recordings retained. Do not format or delete. Fully power-cycle the SD card; back up through a card reader if errors repeat.'
         : info?.id === 2 && info?.sdProbeState === 1
         ? 'SD SPI bus setup failed. Check power and wiring, then retry.'
         : info?.id === 2 && info?.sdProbeState === 2
@@ -533,7 +540,7 @@
           ? type + ' · Not synced · On device SD · ' + byteLabel(row.byteSize)
           : type + ' · Incomplete SD recording · On device SD · ' + byteLabel(row.byteSize);
       preview.textContent = !sdReady
-        ? 'SD unavailable · Original recordings preserved · Do not format or delete'
+        ? 'SD access paused · Original recordings preserved · Do not format or delete'
         : synced
           ? 'Synced · SD copy retained'
           : syncable

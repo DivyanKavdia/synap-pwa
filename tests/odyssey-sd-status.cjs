@@ -147,5 +147,27 @@ test('C3 SD read and VFS faults preserve originals and never encourage formattin
  assert.match(library,/SD read\/VFS fault: power-cycle the SD card/);
  assert.doesNotMatch(relevant,/SD filesystem mounted but VFS validation failed/);
  assert.doesNotMatch(relevant,/FAT mount failed\. Check formatting and retry/);
- assert.match(library,/SD unavailable · Original recordings preserved · Do not format or delete/);
+ assert.match(library,/SD access paused · Original recordings preserved · Do not format or delete/);
+});
+
+
+test('C3 failed CMD25 recording is classified as suspended access, never proof of card absence',()=>{
+ const firmwareStage=66;
+ const c3=Object.assign({},info(2,1,2,
+   profiles.FLAGS.audio|profiles.FLAGS.sd|profiles.FLAGS.settings|profiles.FLAGS.touch,
+   profiles.FLAGS.audio|profiles.FLAGS.settings|profiles.FLAGS.touch,3),
+   {sdProbeState:firmwareStage,sdDetectionState:2});
+ const nodes=render(c3);
+ assert.match(nodes.moduleStatus.textContent,/access is paused for safety/);
+ assert.match(nodes.moduleStatus.textContent,/card is not confirmed absent/);
+ const media=fs.readFileSync('devices/chakshu/media.js','utf8');
+ const library=fs.readFileSync('devices/chakshu/library.js','utf8');
+ const capture=fs.readFileSync('devices/chakshu/capture-preview.js','utf8');
+ assert.match(media,/C3 SD access suspended after a recorder write\/file fault/);
+ assert.match(library,/c3SdWriteFault/);
+ assert.match(library,/fully reset SD card power/);
+ assert.match(capture,/SD access is suspended after an offline write\/file failure/);
+ // A fresh mount remains the only evidence the card is ready for normal use.
+ assert.match(library,/state\.storageReady/);
+ assert.doesNotMatch(media.split('async function catalogueNow(signal) {')[1].split('async function catalogue()')[0],/request\(14/);
 });

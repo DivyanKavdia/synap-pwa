@@ -705,6 +705,10 @@
         if (failure?.mediaCode === 3 && failedState === 2 && failedStage === 2) {
           failure.message =
             'C3 SD card initialization or FAT mount failed. See connection diagnostics for the device error.';
+        } else if (failure?.mediaCode === 3 && failedState === 2 &&
+                   failedStage >= 40 && ![48, 52, 68].includes(failedStage)) {
+          failure.message =
+            'C3 SD access suspended after a recorder write/file fault; this does not mean the card is missing. Retain recordings; fully reset SD power and confirm a clean FAT mount before retrying.';
         } else if (failure?.mediaCode === 7 || failedStage === 4) {
           failure.message =
             'C3 SD filesystem access failed. Choose Check SD card to remount explicitly.';
