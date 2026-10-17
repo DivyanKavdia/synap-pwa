@@ -540,12 +540,16 @@
             ? row.describeRequested ? 'Sync & describe' : 'Sync to Memories'
             : Number(row.byteSize) > 0
               ? 'Cannot sync · recording did not finalize'
-              : 'Cannot sync · no audio was written';
+              : 'Cannot sync · no committed audio length; preserve the card for recovery';
       preview.hidden = false;
       if (discard) {
         discard.hidden = false;
-        discard.disabled = !sdReady;
-        discard.title = sdReady ? '' : 'SD unavailable. Preserve recordings; do not retry deleting or formatting.';
+        const maintenanceBlocked = root.SynapModules?.client?.module?.id === 2 ||
+          root.SynapChakshuV2?.c3MaintenanceWritesBlocked?.();
+        discard.disabled = !sdReady || maintenanceBlocked;
+        discard.title = maintenanceBlocked
+          ? 'C3 SD deletion is disabled. Synced originals remain on SD.'
+          : sdReady ? '' : 'SD unavailable. Preserve recordings; do not retry deleting or formatting.';
         discard.textContent = 'Delete from SD';
         discard.setAttribute('aria-label', 'Delete from SD: ' + title);
       }
@@ -647,6 +651,8 @@
           let deleted = false;
           if (
             removeFromSD &&
+            root.SynapModules?.client?.module?.id !== 2 &&
+            !root.SynapChakshuV2?.c3MaintenanceWritesBlocked?.() &&
             confirm('Synced to Memories successfully. Delete this recording from the device SD card now? The copy in Memories will be kept.')
           ) {
             await removeFromSD(item.sourcePath);
@@ -679,6 +685,9 @@
       action(async () => {
         const item = card.synapRecording;
         if (!item?.sdOnly) throw Error('This item is not stored on the device SD card.');
+        if (root.SynapModules?.client?.module?.id === 2 ||
+            root.SynapChakshuV2?.c3MaintenanceWritesBlocked?.())
+          throw Error('C3 SD deletion is disabled. Original recordings retained.');
         const removeFromSD = root.SynapChakshuV2?.deleteSDItem;
         if (!removeFromSD) throw Error('SD cleanup is still loading. Retry in a moment.');
         const warning = item.sdSynced

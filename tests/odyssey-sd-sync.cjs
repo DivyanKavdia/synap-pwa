@@ -52,7 +52,7 @@ assert.match(preview,/Delete this recording from the device SD card now\?/);
 assert.match(media,/file\?\.syncable !== false && bytes > 44/,'legacy and new catalogues must classify empty/header-only WAVs as incomplete');
 assert.match(preview,/blocked-incomplete-source/,'verified sync must reject incomplete SD artifacts before transfer');
 assert.match(library,/Incomplete SD recording/,'Memories must distinguish incomplete artifacts from syncable recordings');
-assert.match(library,/Cannot sync · no audio was written/);
+assert.match(library,/Cannot sync · no committed audio length; preserve the card for recovery/);
 assert.match(library,/Not synced · On device SD/);
 assert.match(library,/Synced to Memories · Also on device SD/);
 assert.match(library,/Synced · SD copy retained/);

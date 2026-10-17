@@ -43,7 +43,7 @@ test('recorder health uses SD-independent BLE opcode and classifies failure with
  assert.match(ui,/id="diagnoseDeviceSDRecorder"/);
  const body=ui.split("document.getElementById('diagnoseDeviceSDRecorder')?.addEventListener")[1]
    .split("document.getElementById('diagnoseDeviceSDRam')?.addEventListener")[0];
- assert.match(body,/client\(\)\.request\(34\)/);
+ assert.match(body,/api\(\)\.readRecorderHealth\(\)/);
  assert.match(body,/data\.writeQuarantine/);
  assert.match(body,/stage===43/);
  assert.match(body,/stage===52 \|\| stage===68/);

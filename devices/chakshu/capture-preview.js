@@ -1666,6 +1666,7 @@
       outcome = last?.message ? String(last.message).replace(/Chakshu SD/g, 'device storage').replace(/Chakshu/g, 'device') : '',
       suffix = outcome ? ' Last offline result: ' + outcome : '',
       blocked = busy || state.working || state.offline || Boolean(state.session),
+      protectedSD = Boolean(state.sdProtected),
       settings = document.getElementById('deviceSDSettings'),
       settingsStatus = document.getElementById('deviceSDSettingsStatus'),
       retrySettings = document.getElementById('retryDeviceSD'),
@@ -1694,6 +1695,8 @@
     if (settingsStatus && supportsStorage)
       settingsStatus.textContent = !state.connected
         ? 'Connect the pendant to manage its SD card.'
+        : protectedSD
+          ? 'SD protected—power-cycle required. Preserve originals. Remove battery and USB power; MCU restart alone does not reset the SD supply.'
         : busy
           ? 'SD transfer in progress · SD maintenance controls are temporarily disabled.'
           : state.storageReady
@@ -1718,15 +1721,16 @@
           ' · Free '+sdBytesLabel(sdCapacitySnapshot.freeBytes)+
           ' · Card '+sdBytesLabel(sdCapacitySnapshot.physicalBytes)
         : 'SD capacity: '+(!state.connected?'connect the pendant':
-            !state.storageReady?'unavailable; use Recover SD first':'select Check capacity');
+            protectedSD?'protected—power-cycle required':!state.storageReady?'unavailable; read Recorder fault details before recovery':'select Check capacity');
     }
     if (capacitySettings) {
       capacitySettings.hidden=info?.id!==2;
-      capacitySettings.disabled=blocked || !state.connected || !state.storageReady ||
+      capacitySettings.disabled=protectedSD || blocked || !state.connected || !state.storageReady ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
     }
     if (retrySettings)
       retrySettings.disabled =
+        protectedSD ||
         !supportsStorage ||
         blocked ||
         !state.connected ||
@@ -1757,6 +1761,7 @@
       rawProbeSettings.hidden = info?.id !== 2;
       // No FAT read is required. Present this only while the SD is unavailable.
       rawProbeSettings.disabled =
+        protectedSD ||
         info?.id !== 2 ||
         blocked ||
         !state.connected ||
@@ -1770,7 +1775,7 @@
         !state.storageReady && info?.sdDetectionState===2 &&
         Number(info?.sdLiveProbeState)===3;
       emergencySettings.hidden = !supportsStorage || info?.id!==2 || state.storageReady;
-      emergencySettings.disabled = !fatMountFailed || blocked ||
+      emergencySettings.disabled = protectedSD || !fatMountFailed || blocked ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
       emergencySettings.title = fatMountFailed
         ? 'DESTRUCTIVE LAST RESORT: a cold-booted card initialized but FAT failed. May erase ALL files.'
@@ -1779,6 +1784,7 @@
     if (formatSettings) {
       formatSettings.hidden = !supportsC3Format;
       formatSettings.disabled =
+        protectedSD ||
         C3_FULL_CARD_FORMAT_DISABLED ||
         !supportsC3Format ||
         blocked ||
@@ -2202,8 +2208,7 @@
         button.disabled=true;
         if(output){output.hidden=false;output.textContent='Reading recorder fault (no SD card access)…';}
         try {
-          const response=await client().request(34);
-          const data=JSON.parse(new TextDecoder().decode(response.bytes));
+          const data=await api().readRecorderHealth();
           if(data?.version!==1 ||
               !['stage','bytes','faultLed','micRestarts','sdState','sdLiveProbe',
                 'readQuarantine','writeQuarantine'].every(k=>Number.isSafeInteger(data[k])))
@@ -2380,6 +2385,7 @@
     }
   }
   const exposed = {
+    c3MaintenanceWritesBlocked,
     checkSDCapacity,
     emergencyFormatSD,
     moveSD,
