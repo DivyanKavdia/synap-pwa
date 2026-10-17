@@ -332,7 +332,12 @@
     // Firmware retains failed SD recording stages (>=40) across restarts.
     // A card that has already timed out on CMD25 must not be subjected to
     // destructive FAT rebuilds until its write reliability is qualified.
-    return Boolean(info?.id === 2 && Number(info?.sdProbeState) >= 40);
+    const stage=Number(info?.sdProbeState);
+    // Microphone faults and out-of-space are not a trapped SD controller.
+    // These remain format-confirmed (never automatic), so a user can clear a
+    // genuinely full SD after exporting any readable recordings.
+    return Boolean(info?.id === 2 && stage >= 40 &&
+      ![43,48,52,68].includes(stage));
   }
   function audioJournal() {
     return new root.DKAudioStore({ ...root.SynapRecordingJournal.options() });
@@ -1671,6 +1676,7 @@
       emergencySettings = document.getElementById('emergencyFormatDeviceSD'),
       rawProbeSettings = document.getElementById('diagnoseDeviceSD'),
       ramProbeSettings = document.getElementById('diagnoseDeviceSDRam'),
+      recorderProbeSettings = document.getElementById('diagnoseDeviceSDRecorder'),
       wifiSettings = document.getElementById('deviceWifiSettings'),
       wifiSettingsStatus = document.getElementById('deviceWifiSettingsStatus'),
       wifiSave = document.getElementById('startDeviceAp'),
@@ -1735,6 +1741,12 @@
         Boolean(root.SynapAppControls?.recordingState?.().active);
       clearSettings.title = c3MaintenanceWritesBlocked() ? C3_SD_WRITE_SAFETY_MESSAGE : 'Remove Synap recordings from SD';
     }
+    if (recorderProbeSettings) {
+      recorderProbeSettings.hidden = info?.id !== 2;
+      recorderProbeSettings.disabled = info?.id !== 2 || blocked || !state.connected ||
+        Boolean(root.SynapAppControls?.recordingState?.().active);
+      recorderProbeSettings.title='Read the last recorder fault from ESP RAM/NVS without accessing the SD card.';
+    }
     if (ramProbeSettings) {
       ramProbeSettings.hidden = info?.id !== 2;
       ramProbeSettings.disabled = info?.id !== 2 || blocked || !state.connected ||
@@ -1762,7 +1774,7 @@
         Boolean(root.SynapAppControls?.recordingState?.().active);
       emergencySettings.title = fatMountFailed
         ? 'DESTRUCTIVE LAST RESORT: a cold-booted card initialized but FAT failed. May erase ALL files.'
-        : 'Only after a full power cycle and FAT mount or directory-validation failure. Live SD controller timeout requires electrical SD power removal; this is NOT a reset button.';
+        : 'Only after a full power cycle and FAT mount failure. Live SD controller timeout requires electrical SD power removal; this is NOT a reset button.';
     }
     if (formatSettings) {
       formatSettings.hidden = !supportsC3Format;
@@ -2140,7 +2152,7 @@
         '<p id="deviceSDSettingsStatus" class="settings-hint">Connect a supported pendant to manage SD storage.</p>' +
          '<p id="deviceSDSpeed" class="settings-hint" aria-live="off" hidden></p>' +
         '<p id="deviceSDCapacity" class="settings-hint" role="status">SD capacity: connect and choose Check capacity.</p>' +
-        '<div class="visual-actions"><button id="retryDeviceSD" type="button">Recover SD</button><button id="checkDeviceSDCapacity" type="button">Check capacity</button><button id="diagnoseDeviceSD" type="button" hidden>Diagnose SD (read-only)</button><button id="diagnoseDeviceSDRam" type="button" hidden>SD controller status (RAM-only)</button><button id="clearDeviceSD" type="button">Clear SD Card</button><button id="formatDeviceSD" type="button" hidden>Format SD Card</button><button id="emergencyFormatDeviceSD" type="button" hidden>Emergency SD reformat (erases all)</button></div>' +
+        '<div class="visual-actions"><button id="retryDeviceSD" type="button">Recover SD</button><button id="checkDeviceSDCapacity" type="button">Check capacity</button><button id="diagnoseDeviceSD" type="button" hidden>Diagnose SD (read-only)</button><button id="diagnoseDeviceSDRam" type="button" hidden>SD controller status (RAM-only)</button><button id="diagnoseDeviceSDRecorder" type="button" hidden>Recorder fault details</button><button id="clearDeviceSD" type="button">Clear SD Card</button><button id="formatDeviceSD" type="button" hidden>Format SD Card</button><button id="emergencyFormatDeviceSD" type="button" hidden>Emergency SD reformat (erases all)</button></div>' +
         '<p id="deviceSDRawStatus" class="settings-hint" role="status" hidden></p>';
       extras.append(card);
       document.getElementById('retryDeviceSD')?.addEventListener('click', async () => {
@@ -2183,6 +2195,51 @@
         } finally {
           renderSDInbox();
         }
+      });
+      document.getElementById('diagnoseDeviceSDRecorder')?.addEventListener('click',async()=>{
+        const button=document.getElementById('diagnoseDeviceSDRecorder');
+        const output=document.getElementById('deviceSDRawStatus');
+        button.disabled=true;
+        if(output){output.hidden=false;output.textContent='Reading recorder fault (no SD card access)…';}
+        try {
+          const response=await client().request(34);
+          const data=JSON.parse(new TextDecoder().decode(response.bytes));
+          if(data?.version!==1 ||
+              !['stage','bytes','faultLed','micRestarts','sdState','sdLiveProbe',
+                'readQuarantine','writeQuarantine'].every(k=>Number.isSafeInteger(data[k])))
+            throw Error('Invalid recorder health response');
+          const stage=data.stage, live=data.sdLiveProbe;
+          let reason = data.writeQuarantine
+            ? 'SD write/controller failure — further card commands are blocked. Remove all pendant and SD power; do NOT retry or format on the same power rail.'
+            : data.readQuarantine
+              ? 'SD read timed out — protect recordings and fully power-cycle the SD supply before recovering.'
+              : stage===43
+                ? 'Microphone I2S fault — no evidence in this record of an SD write error.'
+                : stage===52 || stage===68
+                  ? 'SD storage full — original files should remain accessible. Sync before manually formatting.'
+                  : stage>=40
+                    ? 'Offline recorder reported a storage or file verification failure (stage '+stage+'). Preserve existing WAV files.'
+                    : 'No retained recorder fault.';
+          const code=data.faultLed;
+          const red=code===4?'4 red flashes = blocked SD/controller':
+            code===3?'3 red flashes = microphone fault':
+              code===2?'2 red flashes = SD/file error':'No current red-fault indication';
+          const message='Recorder: '+reason+' '+red+
+            ' · FAT probe '+live+' · Recorded '+data.bytes+' PCM bytes'+
+            ' · Mic restarts '+data.micRestarts+
+            ' · SD mounted '+(data.sdState===1?'yes':'no')+'.';
+          reportSDStage('@all','c3-recorder-health-readonly',{
+            stage,bytes:data.bytes,faultLed:code,micRestarts:data.micRestarts,
+            sdState:data.sdState,sdLiveProbe:live,
+            readQuarantine:data.readQuarantine,writeQuarantine:data.writeQuarantine
+          });
+          if(output)output.textContent=message;
+          status(message);
+        }catch(error){
+          const message='Recorder fault status unavailable. Update the C3 firmware to the latest build. '+error.message;
+          if(output)output.textContent=message;
+          status(message);
+        }finally{button.disabled=false;renderSDInbox();}
       });
       document.getElementById('diagnoseDeviceSDRam')?.addEventListener('click', async () => {
         const button = document.getElementById('diagnoseDeviceSDRam'),

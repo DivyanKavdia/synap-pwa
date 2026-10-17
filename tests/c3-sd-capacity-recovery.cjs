@@ -38,3 +38,17 @@ test('emergency reformat is denied for directory validation problems (stage4)',(
  assert.doesNotMatch(run,/\[3,4\]/);
  assert.doesNotMatch(button,/\[3,4\]/);
 });
+
+test('recorder health uses SD-independent BLE opcode and classifies failure without formatting',()=>{
+ assert.match(ui,/id="diagnoseDeviceSDRecorder"/);
+ const body=ui.split("document.getElementById('diagnoseDeviceSDRecorder')?.addEventListener")[1]
+   .split("document.getElementById('diagnoseDeviceSDRam')?.addEventListener")[0];
+ assert.match(body,/client\(\)\.request\(34\)/);
+ assert.match(body,/data\.writeQuarantine/);
+ assert.match(body,/stage===43/);
+ assert.match(body,/stage===52 \|\| stage===68/);
+ assert.match(body,/4 red flashes/);
+ assert.match(body,/3 red flashes/);
+ assert.match(body,/2 red flashes/);
+ assert.doesNotMatch(body,/request\(14\)|request\(19\)|request\(33\)|formatSD\(|api\(\)\.refreshSD\(/);
+});
