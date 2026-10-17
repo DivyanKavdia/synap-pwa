@@ -96,6 +96,10 @@
         (info?.legacy ? 'Earlier firmware detected. Update for hardware readiness checks.'
           : c3OfflineWriter
             ? 'Offline SD validation mode. The card is mounted only after the app is disconnected and a double-tap starts recording. SD browsing and sync are intentionally disabled in this firmware.'
+          : info?.id === 2 && info?.sdDetectionState === 2 &&
+              Number(info?.sdProbeState) >= 40 &&
+              ![48, 52, 68].includes(Number(info?.sdProbeState))
+            ? 'Offline SD write or file verification failed. SD access is paused for safety; the card is not confirmed absent. After a complete SD power cycle, a successful FAT mount restores normal recording and sync. Preserve existing WAVs.'
           : caps.hasMedia(info) && caps.supports(info, 'sd')
             ? caps.ready(info, 'sd')
               ? 'SD card ready. Offline WAV recordings appear in Memories while BLE is connected.'
@@ -107,10 +111,6 @@
                     ? 'SD card initialized, but the FAT filesystem could not be mounted.'
                     : info?.id === 2 && info?.sdProbeState === 4
                       ? 'SD filesystem mounted, but VFS validation failed.'
-                      : info?.id === 2 && info?.sdDetectionState === 2 &&
-                        Number(info?.sdProbeState) >= 40 &&
-                        ![48, 52, 68].includes(Number(info?.sdProbeState))
-                      ? 'Offline SD write or file verification failed. SD access is paused for safety; the card is not confirmed absent. After a complete SD power cycle, a successful FAT mount restores normal recording and sync. Preserve existing WAVs.'
                       : 'SD access is not ready. Check the mount diagnostics; card absence is not established.'
             : info?.sdDetectionState === 1
               ? 'SD card detected at startup. Restart the pendant after changing the card.'
