@@ -67,7 +67,7 @@ test('sync receipts store reconstructed WAV hash and byte count, not original SD
 test('brownout leaves old catalogue copies visible but blocks further doomed BLE SD reads',()=>{
  assert.match(source,/liveModule\?\.id === 2 && liveModule\.sdDetectionState === 2/);
  assert.match(source,/blocked-sd-unavailable/);
- assert.match(source,/Recover the card before syncing; the SD original was kept/);
+ assert.match(source,/C3 SD mount is not ready. Preserve the original recording/);
  assert.match(source,/reportSDStage\(path, 'download-complete'/);
 });
 
