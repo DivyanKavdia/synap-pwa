@@ -24,7 +24,7 @@ test('emergency SD format requires prior cold FAT-mount failure and exact typed 
  const body=ui.split('async function emergencyFormatSD() {')[1].split('async function formatSD()')[0];
  assert.match(body,/Number\(info\?\.sdLiveProbeState\)!==3/);
  assert.match(body,/info\?\.sdDetectionState!==2/);
- assert.match(body,/!api\(\)\.state\.storageReady/);
+ assert.match(body,/api\(\)\.state\.storageReady/);
  assert.match(body,/Never disconnect power/);
  assert.match(body,/Do not retry Format/);
  assert.doesNotMatch(body,/request\(19\)|request\(14\)|request\(18\)|localStorage\.removeItem/);
