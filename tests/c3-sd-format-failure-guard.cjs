@@ -36,7 +36,7 @@ test('successful format settles, then observes catalogue before deleting receipt
 test('C3 format requires healthy SD and explicit confirmation',()=>{
   assert.match(s,/const C3_FULL_CARD_FORMAT_DISABLED = false/);
   const guard=format.indexOf('if (C3_FULL_CARD_FORMAT_DISABLED)');
-  const command=format.indexOf('client().request(19)');
+  const command=format.indexOf('client().request(19, 0x5344464d)');
   assert(guard>=0 && command>guard,'safety gate must run before destructive command');
   assert.match(format,/This firmware does not support safe SD formatting/);
   assert.match(s,/formatSettings\.disabled =[\s\S]*?C3_FULL_CARD_FORMAT_DISABLED/);

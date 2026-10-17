@@ -26,7 +26,7 @@ assert.match(media,/camera\(\)\.request\(14/);
 assert.match(preview,/id = 'deviceSDSettings'/);
 assert.match(preview,/Clear SD Card/);
 assert.match(preview,/Format SD Card/);
-assert.match(preview,/request\(19\)/);
+assert.match(preview,/request\(19, 0x5344464d\)/);
 assert.match(preview,/ALL files on the card will be permanently erased/);
 const settingsRender=preview.indexOf("settings = document.getElementById('deviceSDSettings')"),
   libraryPanelReturn=preview.indexOf('if (!panel) return;', settingsRender);

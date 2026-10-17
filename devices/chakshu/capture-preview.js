@@ -1400,6 +1400,11 @@
       throw Error('SD format disabled: this Odyssey C3 retains an SD recording write timeout. Preserve existing files; full-card formatting is unsafe until SD write reliability is fixed.');
     if (api().state.offline || api().state.session || root.SynapAppControls.recordingState().active)
       throw Error('Stop recording before formatting the SD card.');
+    // Preflight media op32 is read-only and only exists on firmware with the
+    // token-bound formatter. An older C3 must never receive format opcode19.
+    await checkSDCapacity();
+    // A synced WAV remains on the card by design. The confirmation dialog
+    // still warns that formatting erases ALL files, including non-Synap files.
     busy = true;
     renderSDInbox();
     try {
