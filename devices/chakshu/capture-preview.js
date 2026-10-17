@@ -1398,8 +1398,8 @@
     const connection=context();
     const info=root.SynapModules?.client?.module;
     if (info?.id!==2 || api().state.storageReady || info?.sdDetectionState!==2 ||
-        Number(info?.sdLiveProbeState)!==3)
-      throw Error('Emergency format is available only after a cold boot with an SD FAT mount failure. Do not format a card with a live write timeout.');
+        ![3,4].includes(Number(info?.sdLiveProbeState)))
+      throw Error('Emergency format is available only after a cold boot with an SD FAT mount or directory-validation failure. Do not format a card with a live write timeout.');
     if (api().state.offline || api().state.session ||
         root.SynapAppControls?.recordingState?.().active)
       throw Error('Stop recording before emergency recovery.');
@@ -1756,13 +1756,13 @@
     if (emergencySettings) {
       const fatMountFailed = supportsStorage && info?.id===2 && state.connected &&
         !state.storageReady && info?.sdDetectionState===2 &&
-        Number(info?.sdLiveProbeState)===3;
+        [3,4].includes(Number(info?.sdLiveProbeState));
       emergencySettings.hidden = !supportsStorage || info?.id!==2 || state.storageReady;
       emergencySettings.disabled = !fatMountFailed || blocked ||
         Boolean(root.SynapAppControls?.recordingState?.().active);
       emergencySettings.title = fatMountFailed
         ? 'DESTRUCTIVE LAST RESORT: a cold-booted card initialized but FAT failed. May erase ALL files.'
-        : 'Only after a full power cycle and FAT mount failure. Live SD controller timeout requires electrical SD power removal; this is NOT a reset button.';
+        : 'Only after a full power cycle and FAT mount or directory-validation failure. Live SD controller timeout requires electrical SD power removal; this is NOT a reset button.';
     }
     if (formatSettings) {
       formatSettings.hidden = !supportsC3Format;

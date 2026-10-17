@@ -22,7 +22,7 @@ test('emergency SD format requires prior cold FAT-mount failure and exact typed 
  assert.match(ui,/Type ERASE SD to authorize/);
  assert.match(ui,/request\(33,0x53445246\)/);
  const body=ui.split('async function emergencyFormatSD() {')[1].split('async function formatSD()')[0];
- assert.match(body,/Number\(info\?\.sdLiveProbeState\)!==3/);
+ assert.match(body,/\!\[3,4\]\.includes\(Number\(info\?\.sdLiveProbeState\)\)/);
  assert.match(body,/info\?\.sdDetectionState!==2/);
  assert.match(body,/api\(\)\.state\.storageReady/);
  assert.match(body,/Never disconnect power/);
