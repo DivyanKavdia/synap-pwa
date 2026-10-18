@@ -776,7 +776,16 @@
         api().startOffline(Number($('visualSDQuality').value), Number($('visualSDLength').value)),
       ),
     );
-    $('visualCheckSD').addEventListener('click', () => action(() => api().refreshSD()));
+    $('visualCheckSD').addEventListener('click', () => action(async () => {
+      if (root.SynapCapabilities?.isChakshu(root.SynapModules?.client?.module)) {
+        const detail = await api().diagnoseSD();
+        status('Chakshu SD ' + (detail.sdReady ? 'mounted' : 'unavailable') +
+          ' · ' + detail.sdMountStage + ' · ' + Math.round(detail.sdClockHz / 1000) +
+          ' kHz · recovery ' + (detail.sdRecoveryLocked ? 'active' : 'idle'));
+        return;
+      }
+      return api().refreshSD();
+    }));
     $('visualWifi').addEventListener('click', () => action(() => api().startWifi()));
     $('visualWifiStop').addEventListener('click', () => action(() => api().stopWifi()));
     $('visualWifiCopy').addEventListener('click', () => {
