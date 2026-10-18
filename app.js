@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell230-c3-delete-quarantine";
+  const APP_SHELL_REVISION = "1.0.0-shell231-target-ota-discovery";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;
@@ -4055,7 +4055,11 @@
           } else announce(`Update not confirmed · Retry update`);
         }
         // A slow/offline public feed must not keep recording controls locked.
-        const m=await releases.latest();
+        const m=await releases.latestFor(board,info);
+        log('Firmware release checked',{
+          deviceId:id,target:m.target,installedBuild:info.build,publishedBuild:m.build,
+          otaCapacity:info.capacity,offer:m.build>info.build
+        });
         if(firmwareBusy||!eligible())return;
         if(epoch!==connectionEpoch||id!==targetId()||!isGattConnected())throw Error('Pendant connection changed.');
         if(releases.compatible(m,info,board)) {
@@ -4071,6 +4075,7 @@
       }catch(error){if(firmwareBusy)return;
         if(error.name==='AbortError' || !eligible()){lastCheck=0;status.textContent='Check available after recording stops';return;}
         offered=null;bannerButton.hidden=true;latestButton.hidden=true;
+        log('Firmware update discovery failed',{message:friendlyError(error),deviceId:targetId()});
         announce("Update check: "+friendlyError(error));
       }finally{discoveryBusy=false;checkButton.textContent="Check for update";if(!firmwareBusy)discoveryControls.forEach(control=>control.disabled=false);}
     }

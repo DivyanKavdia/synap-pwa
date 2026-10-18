@@ -131,3 +131,28 @@ test('Chakshu-only Build 2332 and Odyssey Build 2326 coexist in verified OTA cat
     {...published['xiao-esp32s3-sense-8m'],build:2331});
   await assert.rejects(r.latest(fetcher),/Invalid or incompatible firmware release manifest/);
 });
+
+
+test('target-specific Chakshu OTA ignores broken or missing unrelated release feeds',async()=>{
+  const identity='SYNAP-FW:xiao-esp32s3-sense-8m:synap-os1-build2343:2343';
+  const info={protocol:3,state:1,capacity:3342336,maxData:503,build:2343};
+  const latest=fixture('xiao-esp32s3-sense-8m',2353,3,'synap-os1-build2353').m;
+  const calls=[];
+  const fetcher=async(url)=>{
+    calls.push(url);
+    if(url.split('?')[0]!==r.BASE+r.TARGETS['xiao-esp32s3-sense-8m'].manifestPath)
+      throw Error('Unrelated feed unavailable');
+    return new Response(JSON.stringify(latest));
+  };
+  const selected=await r.latestFor(identity,info,fetcher);
+  assert.equal(selected.target,'xiao-esp32s3-sense-8m');
+  assert.equal(selected.build,2353);
+  assert.equal(calls.length,1,'only the matching board release is requested');
+  assert(r.compatible(selected,info,identity));
+  await assert.rejects(r.latestFor(identity,info,async()=>new Response(JSON.stringify(
+    fixture('esp32s3-fh4r2-qspi-4m',2353,3,'synap-os1-build2353').m
+  ))),/different hardware target|Invalid or incompatible/);
+  const c3Identity='SYNAP-FW:esp32c3-supermini-4m:synap-os1-build2326:2326';
+  assert.equal(r.releaseTargetFor(c3Identity,{capacity:1966080}),'esp32c3-supermini-4m-sd-ota');
+  assert.equal(r.releaseTargetFor(c3Identity,{capacity:1310720}),'esp32c3-supermini-4m');
+});

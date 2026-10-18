@@ -152,6 +152,26 @@
     return Object.keys(manifests).length>1?catalog(manifests):primary;
   }
 
+  // Query just the CONNECTED hardware's release. Fetching every unrelated
+  // firmware feed can conceal a valid Chakshu OTA when any other target's
+  // manifest or multi-request catalog lookup fails on mobile networks.
+  // The same strict hardware/partition/SHA/provenance validation remains.
+  function releaseTargetFor(identity,info=null) {
+    const running=targetFromIdentity(identity);
+    if(!running)throw Error('Unknown pendant firmware identity. Reconnect and check the pendant.');
+    if(running.target==='esp32c3-supermini-4m' && Number(info?.capacity)>=1966080)
+      return 'esp32c3-supermini-4m-sd-ota';
+    return running.target;
+  }
+  async function latestFor(identity,info=null,fetcher=root.fetch.bind(root)) {
+    const target=releaseTargetFor(identity,info),config=configFor(target);
+    if(!config)throw Error('No firmware release feed for the connected hardware.');
+    const manifest=await verifyManifest(
+      await json(BASE+config.manifestPath+'?t='+Date.now(),8192,fetcher),fetcher);
+    if(manifest.target!==target)throw Error('Firmware release feed returned a different hardware target.');
+    return manifest;
+  }
+
   async function download(m,capacity,fetcher=root.fetch.bind(root),signal){
     const manifest=await verifyManifest(m,fetcher),config=configFor(manifest.target);if(manifest.size>capacity)throw Error('Firmware does not fit this pendant.');
     const bytes=await request(manifest.url,manifest.size,fetcher,signal);if(bytes.length!==manifest.size)throw Error('Firmware download is incomplete.');
@@ -161,6 +181,6 @@
     if(!found)throw Error('Firmware image target/build does not match the release.');if(!config)throw Error('Unknown firmware hardware target.');return new Blob([bytes],{type:'application/octet-stream'});
   }
 
-  root.SynapReleases={TARGET,TARGETS,REPOSITORY,RELEASE_BRANCH,WORKFLOW,BASE,API,IDENTITY_UUID,LEGACY_UNSIGNED_MAX_BUILD,SIGNING_KEY_ID,SIGNING_PUBLIC_KEY_SPKI,canonicalManifest,validateManifest,verifyManifest,verifyGitHubProvenance,targetFromIdentity,versionLabel,compatible,latest,download,isCatalog,selectCatalogManifest};
+  root.SynapReleases={TARGET,TARGETS,REPOSITORY,RELEASE_BRANCH,WORKFLOW,BASE,API,IDENTITY_UUID,LEGACY_UNSIGNED_MAX_BUILD,SIGNING_KEY_ID,SIGNING_PUBLIC_KEY_SPKI,canonicalManifest,validateManifest,verifyManifest,verifyGitHubProvenance,targetFromIdentity,versionLabel,compatible,latest,latestFor,releaseTargetFor,download,isCatalog,selectCatalogManifest};
   if(typeof module!=='undefined')module.exports=root.SynapReleases;
 })(globalThis);

@@ -35,7 +35,7 @@ function setup(options={}){
       if(options.commitDrop)throw Error('Lost acknowledgement');return{committed:true};}
   }
   const releases={IDENTITY_UUID:'identity',validateManifest:m=>m,versionLabel,targetFromIdentity,
-    latest:async()=>{assert(!c.firmwareBusy,'release discovery must not interrupt recording or FIFO processing');calls.push('manifest');if(options.offline)throw Error('Offline');return m;},
+    latestFor:async(identity,info)=>{assert(!c.firmwareBusy,'release discovery must not interrupt recording or FIFO processing');calls.push('manifest');if(options.offline)throw Error('Offline');return m;},
     compatible:(m,info)=>m.build>info.build,
     download:async(_manifest,_capacity,_fetcher,signal)=>{calls.push('download');progressMatches('Downloading update…',null);
       if(options.cancelDownload){for(const fn of node('otaCancel').events.click)await fn();progressMatches('Cancelling transfer…',null);assert(signal.aborted);throw Error('Download cancelled');}
