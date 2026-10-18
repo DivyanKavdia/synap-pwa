@@ -332,6 +332,11 @@
       ![48, 52, 68].includes(Number(info?.sdProbeState));
     const c3SdReadOrVfsFault = info?.id === 2 &&
       (info?.sdLiveProbeState === 4 || info?.sdProbeState === 4);
+    const diagnosticButton = $('visualDiagnoseSD');
+    if (diagnosticButton) {
+      diagnosticButton.hidden = !root.SynapCapabilities?.isChakshu(info);
+      diagnosticButton.disabled = busy || recording || !state.connected;
+    }
     $('visualCheckSD').disabled = busy || recording || !state.connected ||
       !state.mediaSupported || c3SdReadOrVfsFault || c3SdWriteFault;
     $('visualCheckSD').title = c3SdWriteFault
@@ -776,15 +781,20 @@
         api().startOffline(Number($('visualSDQuality').value), Number($('visualSDLength').value)),
       ),
     );
-    $('visualCheckSD').addEventListener('click', () => action(async () => {
-      if (root.SynapCapabilities?.isChakshu(root.SynapModules?.client?.module)) {
-        const detail = await api().diagnoseSD();
-        status('Chakshu SD ' + (detail.sdReady ? 'mounted' : 'unavailable') +
-          ' · ' + detail.sdMountStage + ' · ' + Math.round(detail.sdClockHz / 1000) +
-          ' kHz · recovery ' + (detail.sdRecoveryLocked ? 'active' : 'idle'));
-        return;
-      }
-      return api().refreshSD();
+    // Preserve Check SD's established remount behavior. Diagnostics are
+    // separate, optional and Chakshu-only, never substituted for recovery.
+    $('visualCheckSD').addEventListener('click', () => action(() => api().refreshSD()));
+    const diagnosticButton = document.createElement('button');
+    diagnosticButton.id = 'visualDiagnoseSD';
+    diagnosticButton.type = 'button';
+    diagnosticButton.textContent = 'SD Diagnostics';
+    diagnosticButton.hidden = true;
+    $('visualCheckSD').after(diagnosticButton);
+    diagnosticButton.addEventListener('click', () => action(async () => {
+      const detail = await api().diagnoseSD();
+      status('Chakshu SD ' + (detail.sdReady ? 'mounted' : 'unavailable') +
+        ' · ' + detail.sdMountStage + ' · ' + Math.round(detail.sdClockHz / 1000) +
+        ' kHz · recovery ' + (detail.sdRecoveryLocked ? 'active' : 'idle'));
     }));
     $('visualWifi').addEventListener('click', () => action(() => api().startWifi()));
     $('visualWifiStop').addEventListener('click', () => action(() => api().stopWifi()));
