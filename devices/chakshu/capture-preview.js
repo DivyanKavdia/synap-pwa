@@ -2232,6 +2232,15 @@
           // firmware; older devices continue to provide the original v1 keys.
           const coldRecovery=Number.isSafeInteger(data.coldRecovery)?data.coldRecovery:0;
           const resetReason=Number.isSafeInteger(data.resetReason)?data.resetReason:null;
+          const cleanupRemoved=Number.isSafeInteger(data.cleanupRemoved)?data.cleanupRemoved:null;
+          const cleanupStatus=Number.isSafeInteger(data.cleanupStatus)?data.cleanupStatus:null;
+          const cleanupNote=cleanupStatus===1
+            ? ' Cold-boot cleanup removed '+cleanupRemoved+' empty Synap WAV/temporary file(s); files with recoverable audio were kept.'
+            : cleanupStatus===2
+              ? ' Cold-boot cleanup stopped after SD read/write trouble. No further cleanup or same-rail retry is safe.'
+              : cleanupStatus===3
+                ? ' Additional empty artifacts remain for a later verified cold boot.'
+                : '';
           const restored=Boolean(data.sdState===1 && live===6 &&
             !data.writeQuarantine && !data.readQuarantine);
           const coldNote=coldRecovery===1
@@ -2262,12 +2271,12 @@
             ' · FAT probe '+live+' · Recorded '+data.bytes+' PCM bytes'+
             ' · Mic restarts '+data.micRestarts+
             ' · SD mounted '+(data.sdState===1?'yes':'no')+
-            (resetReason===null?'':' · Boot reset '+resetReason)+'.'+coldNote;
+            (resetReason===null?'':' · Boot reset '+resetReason)+'.'+coldNote+cleanupNote;
           reportSDStage('@all','c3-recorder-health-readonly',{
             stage,bytes:data.bytes,faultLed:code,micRestarts:data.micRestarts,
             sdState:data.sdState,sdLiveProbe:live,
             readQuarantine:data.readQuarantine,writeQuarantine:data.writeQuarantine,
-            coldRecovery,resetReason,restored
+            coldRecovery,resetReason,restored,cleanupRemoved,cleanupStatus
           });
           if(output)output.textContent=message;
           status(message);
