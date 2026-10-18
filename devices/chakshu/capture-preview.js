@@ -854,9 +854,10 @@
       if (error?.mediaCode === 1 && root.SynapModules?.client?.module?.id === 2) {
         // Busy is overloaded by the C3 media protocol: recorder/OTA/storage
         // contention OR the firmware's trusted low-battery FAT write guard.
-        // A 3.844 V battery was rejected by earlier 3.9 V delete firmware.
-        // Newer C3 uses 3.8 V for one explicit unlink; never retry blindly.
-        throw Error('C3 refused SD deletion (busy or low battery). Stop recording/OTA and check battery. Updated firmware requires at least 3.8 V for one-file deletion; older builds require 3.9 V. The SD file was not confirmed deleted.');
+        // Older builds enforced an ADC-voltage threshold; latest firmware
+        // removes SD battery admission checks. BUSY can also mean contention.
+        // Never retry a destructive operation blindly.
+        throw Error('C3 refused SD deletion (busy). Stop recording/OTA and retry only when SD is idle and ready. Latest firmware no longer uses a battery-voltage threshold for SD actions; older firmware may still enforce one. The SD file was not confirmed deleted.');
       }
       throw error;
     }
