@@ -494,6 +494,18 @@
   async function startVideo() {
     return startLive();
   }
+  async function diagnoseSD() {
+    // Chakshu-only operation 35: reads latched state without touching microSD.
+    if (!capabilities.isChakshu(moduleInfo()))
+      throw Error('Chakshu SD diagnostics require a connected Chakshu.');
+    const answer = await camera().request(35);
+    const detail = JSON.parse(new TextDecoder().decode(answer.bytes));
+    if (typeof detail.sdReady !== 'boolean' ||
+        !Number.isSafeInteger(detail.sdClockHz) ||
+        typeof detail.sdMountStage !== 'string')
+      throw Error('Invalid Chakshu SD diagnostic response.');
+    return detail;
+  }
   async function refreshSD() {
     if (root.SynapAppControls.recordingState().active)
       throw Error('Stop recording before checking the SD card.');
@@ -1037,6 +1049,7 @@
     setAudio,
     startOffline,
     refreshSD,
+    diagnoseSD,
     startWifi,
     stopWifi,
     stop,
