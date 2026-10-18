@@ -141,7 +141,13 @@
     for(const [target,path] of Object.entries(index.targets)){
       const config=configFor(target);if(!config||path!==config.manifestPath||target===primary.target)continue;
       const manifest=await verifyManifest(await json(BASE+path+'?t='+Date.now(),8192,fetcher),fetcher);
-      if(manifest.target!==target||manifest.build!==index.build)throw Error('Firmware target catalog contains mismatched releases.');manifests[target]=manifest;
+      // Target-specific OTA releases are intentionally independent. A Chakshu
+      // build may advance while all Odyssey manifests and binaries remain
+      // untouched. validateManifest() already binds EACH target to its own
+      // content-addressed URL, build, identity, partition and provenance.
+      // Do not compare its build against the primary S3 feed/index build.
+      if(manifest.target!==target)throw Error('Firmware target catalog contains mismatched hardware targets.');
+      manifests[target]=manifest;
     }
     return Object.keys(manifests).length>1?catalog(manifests):primary;
   }
