@@ -760,10 +760,12 @@
     };
     const main = await add(path);
     let wav = null;
-    if (isMjpegPath(path)) {
-      await add(stem(path) + '.json', false);
+    // Chakshu stores multimedia moments as matching visual/WAV/JSON stems.
+    // A still-photo memory can carry a spoken note, not only an MJPEG video.
+    // Never issue companion reads on Odyssey C3 or S3 paths.
+    if (isMjpegPath(path)) await add(stem(path) + '.json', false);
+    if (isMjpegPath(path) || /\.jpg$/i.test(path))
       wav = await add(stem(path) + '.wav', false);
-    }
     return { files, main, wav };
   }
   async function verifyVisual(id, expectedMain, expectedWav) {
