@@ -2221,12 +2221,27 @@
                 'readQuarantine','writeQuarantine'].every(k=>Number.isSafeInteger(data[k])))
             throw Error('Invalid recorder health response');
           const stage=data.stage, live=data.sdLiveProbe;
+          // op34 adds optional RAM-only boot recovery signals in newer C3
+          // firmware; older devices continue to provide the original v1 keys.
+          const coldRecovery=Number.isSafeInteger(data.coldRecovery)?data.coldRecovery:0;
+          const resetReason=Number.isSafeInteger(data.resetReason)?data.resetReason:null;
+          const restored=Boolean(data.sdState===1 && live===6 &&
+            !data.writeQuarantine && !data.readQuarantine);
+          const coldNote=coldRecovery===1
+            ? ' Cold slider power-on verified a fresh FAT mount; normal SD recording and sync have resumed.'
+            : coldRecovery===2
+              ? ' Cold mount could not be verified; unplug USB, slider OFF for 30 seconds, then ON. Do not format.'
+              : coldRecovery===3
+                ? ' MCU-only reboot left SD power uncertain. Unplug USB and cycle the physical slider before retrying.'
+                : '';
           let reason = data.writeQuarantine
             ? 'SD write/controller failure — further card commands are blocked. Remove all pendant and SD power; do NOT retry or format on the same power rail.'
             : data.readQuarantine
               ? 'SD read timed out — protect recordings and fully power-cycle the SD supply before recovering.'
-              : stage===43
-                ? 'Microphone I2S fault — no evidence in this record of an SD write error.'
+              : restored && stage>=44 && stage!==48
+                ? 'Historical recorder storage fault retained for diagnostics; current SD FAT is verified mounted.'
+                : stage===43
+                  ? 'Microphone I2S fault — no evidence in this record of an SD write error.'
                 : stage===52 || stage===68
                   ? 'SD storage full — original files should remain accessible. Sync before manually formatting.'
                   : stage>=40
@@ -2239,11 +2254,13 @@
           const message='Recorder: '+reason+' '+red+
             ' · FAT probe '+live+' · Recorded '+data.bytes+' PCM bytes'+
             ' · Mic restarts '+data.micRestarts+
-            ' · SD mounted '+(data.sdState===1?'yes':'no')+'.';
+            ' · SD mounted '+(data.sdState===1?'yes':'no')+
+            (resetReason===null?'':' · Boot reset '+resetReason)+'.'+coldNote;
           reportSDStage('@all','c3-recorder-health-readonly',{
             stage,bytes:data.bytes,faultLed:code,micRestarts:data.micRestarts,
             sdState:data.sdState,sdLiveProbe:live,
-            readQuarantine:data.readQuarantine,writeQuarantine:data.writeQuarantine
+            readQuarantine:data.readQuarantine,writeQuarantine:data.writeQuarantine,
+            coldRecovery,resetReason,restored
           });
           if(output)output.textContent=message;
           status(message);
