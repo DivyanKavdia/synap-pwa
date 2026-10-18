@@ -282,6 +282,9 @@
       const owned = requireAccess(),
         device = connected(),
         client = camera('photo');
+      // Only Chakshu gets the new bounded spoken-moment lifecycle.
+      // Odyssey device audio/photo handling remains exactly as before.
+      const chakshuMoment = capabilities.isChakshu(moduleInfo());
       let audio = root.SynapAppControls.recordingState();
       const audioOwned = withAudio;
       try {
@@ -306,7 +309,7 @@
         await owned.store.patch(row.id, { state: 'saved' });
         // Photo + Audio is one bounded five-second spoken memory rather than
         // leaving a live microphone session recording indefinitely.
-        if (audioOwned && audio.sessionId) {
+        if (audioOwned && audio.sessionId && chakshuMoment) {
           await delay(5000);
           check(owned.owner);
           await saveAudio(audio.sessionId);
@@ -927,7 +930,8 @@
       };
       await add(path);
       check(scope.owner);
-      if (path.endsWith('.mjpeg') || path.endsWith('.jpg')) {
+      if (path.endsWith('.mjpeg') ||
+          (capabilities.isChakshu(moduleInfo()) && path.endsWith('.jpg'))) {
         const companions = path.endsWith('.mjpeg') ? ['json', 'wav'] : ['wav'];
         for (const extension of companions) {
           try {

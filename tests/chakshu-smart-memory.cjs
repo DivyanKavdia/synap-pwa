@@ -9,16 +9,18 @@ test('Chakshu smart photo memory records a bounded voice note and retains the vi
   const photo=media.split('async function photo(withAudio = false) {')[1].split('// Old cached callers')[0];
   assert.match(photo,/startMediaAudio\(\{ localOnly: true \}\)/);
   assert.match(photo,/audioId: audio\.active \? audio\.recordingId : null/);
-  assert.match(photo,/if \(audioOwned && audio\.sessionId\) \{\s*await delay\(5000\)/);
+  assert.match(photo,/const chakshuMoment = capabilities\.isChakshu\(moduleInfo\(\)\)/);
+  assert.match(photo,/if \(audioOwned && audio\.sessionId && chakshuMoment\) \{\s*await delay\(5000\)/);
   assert.match(photo,/await saveAudio\(audio\.sessionId\)/);
   assert.match(photo,/stopCapture\(audio\.sessionId\)/);
 });
 test('Only visual Chakshu SD stems fetch matching WAV companions without deleting the SD original',()=>{
   const dl=capture.split('async function download(path, signal, progress) {')[1].split('async function verifyVisual(')[0];
-  assert(dl.includes('if (isMjpegPath(path) || /\\.jpg$/i.test(path))'));
+  assert(dl.includes('root.SynapCapabilities?.isChakshu(root.SynapModules?.client?.module)'));
+  assert(dl.includes("wav = await add(stem(path) + '.wav', false)"));
   assert(dl.includes("wav = await add(stem(path) + '.wav', false)"));
   const direct=media.split('async function importSD(path, progress) {')[1].split('async function moveSD(')[0];
-  assert.match(direct,/path\.endsWith\('\.mjpeg'\) \|\| path\.endsWith\('\.jpg'\)/);
+  assert.match(direct,/capabilities\.isChakshu\(moduleInfo\(\)\) && path\.endsWith\('\.jpg'\)/);
   assert.match(direct,/const companions = path\.endsWith\('\.mjpeg'\) \? \['json', 'wav'\] : \['wav'\]/);
   const imports=media.split('async function importFilesNow(')[1].split('async function importSD(')[0];
   assert.match(imports,/if \(audioFile\)[\s\S]*await importAudio\(/);
