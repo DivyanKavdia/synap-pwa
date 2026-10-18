@@ -1,0 +1,33 @@
+'use strict';
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const ui=fs.readFileSync('devices/chakshu/capture-preview.js','utf8');
+const library=fs.readFileSync('devices/chakshu/library.js','utf8');
+test('C3 delete is explicitly selectable; bulk clear remains blocked',()=>{
+ const deleteFile=ui.split('async function deleteSD(path, optional = false) {')[1].split('async function deleteSyncedSet(')[0];
+ const single=ui.split('async function deleteSDItem(path) {')[1].split('async function discardIncompleteSD(')[0];
+ const clear=ui.split('async function clearSD() {')[1].split('async function diagnoseC3SdReadOnly(')[0];
+ assert.match(deleteFile,/client\(\)\.request\(17, 0, path\)/);
+ assert.doesNotMatch(deleteFile,/c3MaintenanceWritesBlocked\(\)/);
+ assert.doesNotMatch(single,/c3MaintenanceWritesBlocked\(\)/);
+ assert.match(clear,/c3MaintenanceWritesBlocked\(\)/);
+ assert.match(ui,/C3_SD_MAINTENANCE_WRITES_DISABLED = true/);
+ assert.match(ui,/remove\.textContent = 'Delete from SD'/);
+ assert.match(ui,/remove\.disabled = !api\(\)\.state\.storageReady \|\| busy/);
+ assert.match(ui,/This recording is NOT synced to Memories/);
+ assert.match(library,/Delete the only known SD audio copy permanently/);
+});
+test('C3 exact deletion is verified by later catalogue; receipts retained on uncertainty',()=>{
+ const single=ui.split('async function deleteSDItem(path) {')[1].split('async function discardIncompleteSD(')[0];
+ assert.match(single,/await deleteSyncedSet\(path\)/);
+ assert.match(single,/settleMs = 6000/);
+ assert.match(single,/assertSameConnection\(\)/);
+ assert.match(single,/fresh = await api\(\)\.catalogue\(\)/);
+ assert(single.indexOf('fresh.some(')<single.indexOf('localStorage.removeItem('));
+ assert.match(single,/delete-unverified/);
+ assert.match(single,/delete-verified/);
+ const move=ui.split('async function offerDeleteSynced(paths) {')[1].split('function upgradeUi()')[0];
+ assert.match(move,/if \(root\.SynapModules\?\.client\?\.module\?\.id === 2\)/);
+ assert.doesNotMatch(move.split('if (root.SynapModules?.client?.module?.id === 2) {')[1].split('const unique')[0],/deleteSDItem\(/);
+});
