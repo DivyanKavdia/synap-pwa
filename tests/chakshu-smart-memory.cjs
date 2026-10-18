@@ -15,8 +15,8 @@ test('Chakshu smart photo memory records a bounded voice note and retains the vi
 });
 test('Only visual Chakshu SD stems fetch matching WAV companions without deleting the SD original',()=>{
   const dl=capture.split('async function download(path, signal, progress) {')[1].split('async function verifyVisual(')[0];
-  assert.match(dl,/if \(isMjpegPath\(path\) \|\| \/\\\.jpg\$\/i\.test\(path\)\)/);
-  assert.match(dl,/wav = await add\(stem\(path\) \+ '\\.wav', false\)/);
+  assert(dl.includes('if (isMjpegPath(path) || /\\.jpg$/i.test(path))'));
+  assert(dl.includes("wav = await add(stem(path) + '.wav', false)"));
   const direct=media.split('async function importSD(path, progress) {')[1].split('async function moveSD(')[0];
   assert.match(direct,/path\.endsWith\('\.mjpeg'\) \|\| path\.endsWith\('\.jpg'\)/);
   assert.match(direct,/const companions = path\.endsWith\('\.mjpeg'\) \? \['json', 'wav'\] : \['wav'\]/);
