@@ -16,7 +16,7 @@ test('C3 cold slider recovery is visible but optional for legacy op34',()=>{
  assert.match(source,/slider OFF for 30 seconds/);
  assert.match(source,/Boot reset /);
  assert.match(source,/coldRecovery,resetReason,restored/);
- assert.match(html,/capture-preview\.js\?v=1\.0\.0-c3-cold-recovery1/);
+ assert.match(html,/capture-preview\.js\?v=1\.0\.0-c3-delete-quarantine1/);
 });
 test('C3 recorder health stays RAM-only and never modifies files',()=>{
  const start=source.indexOf('const response=await client().request(34);');
