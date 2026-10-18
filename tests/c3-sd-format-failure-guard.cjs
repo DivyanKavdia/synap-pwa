@@ -46,24 +46,21 @@ test('C3 format requires healthy SD and explicit confirmation',()=>{
   assert.match(s,/formatSettings\.disabled =[\s\S]*?c3FormatUnsafe\(\)/);
 });
 
-test('C3 blocks all BLE FAT maintenance writes before op17, op18 or op19',()=>{
+test('C3 blocks bulk FAT cleanup, permits explicit verified single-file deletion',()=>{
   assert.match(s,/const C3_SD_MAINTENANCE_WRITES_DISABLED = true/);
   assert.match(s,/function c3MaintenanceWritesBlocked\(\)/);
   const deleteCommand=s.split('async function deleteSD(path, optional = false) {')[1].split('async function deleteSyncedSet(')[0];
   const deleteItem=s.split('async function deleteSDItem(path) {')[1].split('async function discardIncompleteSD(')[0];
   const clear=s.split('async function clearSD() {')[1].split('async function diagnoseC3SdReadOnly(')[0];
-  for(const [name,body,command] of [
-    ['delete',deleteCommand,'client().request(17'],
-    ['delete item',deleteItem,'deleteSyncedSet(path)'],
-    ['clear',clear,'client().request(18'],
-  ]){
-    const guard=body.indexOf('if (c3MaintenanceWritesBlocked())');
-    assert(guard>=0 && guard<body.indexOf(command),name+' must gate FAT mutation');
-  }
-  assert.match(s,/remove.disabled = c3MaintenanceWritesBlocked\(\)/);
+  assert.doesNotMatch(deleteCommand,/if \(c3MaintenanceWritesBlocked\(\)\)/);
+  assert.doesNotMatch(deleteItem,/if \(c3MaintenanceWritesBlocked\(\)\)/);
+  assert.match(deleteCommand,/client\(\)\.request\(17, 0, path\)/);
+  assert.match(deleteItem,/fresh = await api\(\)\.catalogue\(\)/);
+  assert(clear.indexOf('if (c3MaintenanceWritesBlocked())')<
+         clear.indexOf('client().request(18'), 'bulk clear stays blocked');
+  assert.match(s,/remove.disabled = !api\(\)\.state\.storageReady \|\| busy/);
   assert.match(s,/clear.disabled = c3MaintenanceWritesBlocked\(\)/);
   assert.match(s,/clearSettings.disabled =[\s\S]*?c3MaintenanceWritesBlocked\(\)/);
-  assert.match(s,/Synced recordings remain on SD/);
-  // Keep reads / recording unchanged: this is only a PWA maintenance guard.
+  assert.match(s,/No post-sync FAT reads or unlink on C3/);
   assert.match(s,/await reportC3PostSync\(path, connection\)/);
 });
