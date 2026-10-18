@@ -4,17 +4,22 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const ui=fs.readFileSync('devices/chakshu/capture-preview.js','utf8');
 const library=fs.readFileSync('devices/chakshu/library.js','utf8');
-test('C3 delete is explicitly selectable; bulk clear remains blocked',()=>{
+test('C3 delete is refused before BLE request; other module explicit workflow retained',()=>{
  const deleteFile=ui.split('async function deleteSD(path, optional = false) {')[1].split('async function deleteSyncedSet(')[0];
  const single=ui.split('async function deleteSDItem(path) {')[1].split('async function discardIncompleteSD(')[0];
  const clear=ui.split('async function clearSD() {')[1].split('async function diagnoseC3SdReadOnly(')[0];
+ assert.match(deleteFile,/root\.SynapModules\?\.client\?\.module\?\.id === 2/);
+ assert(deleteFile.indexOf("module?.id === 2") < deleteFile.indexOf("client().request(17, 0, path)"));
  assert.match(deleteFile,/client\(\)\.request\(17, 0, path\)/);
+ assert.match(single,/root\.SynapModules\?\.client\?\.module\?\.id === 2/);
+ assert(single.indexOf("module?.id === 2") < single.indexOf("await deleteSyncedSet(path)"));
  assert.doesNotMatch(deleteFile,/c3MaintenanceWritesBlocked\(\)/);
  assert.doesNotMatch(single,/c3MaintenanceWritesBlocked\(\)/);
  assert.match(clear,/c3MaintenanceWritesBlocked\(\)/);
  assert.match(ui,/C3_SD_MAINTENANCE_WRITES_DISABLED = true/);
- assert.match(ui,/remove\.textContent = 'Delete from SD'/);
- assert.match(ui,/remove\.disabled = !api\(\)\.state\.storageReady \|\| busy/);
+ assert.match(ui,/remove\.textContent = c3DeletePaused \? 'SD delete paused' : 'Delete from SD'/);
+ assert.match(ui,/remove\.disabled = c3DeletePaused \|\| !api\(\)\.state\.storageReady \|\| busy/);
+ assert.match(library,/discard\.disabled = !sdReady \|\| c3DeletePaused/);
  assert.match(ui,/This recording is NOT synced to Memories/);
  assert.match(library,/Delete the only known SD audio copy permanently/);
 });
