@@ -525,7 +525,9 @@
             : 'Photo';
       const syncable = row.sdSyncable !== false && Number(row.byteSize) > 44,
         synced = syncable && Boolean(row.sdSynced),
-        sdReady = Boolean(api().state.connected && api().state.storageReady);
+        pendantConnected = Boolean(api().state.connected),
+        sdMounted = Boolean(api().state.storageReady),
+        sdReady = pendantConnected && sdMounted;
       opener.setAttribute(
         'aria-label',
         synced
@@ -539,8 +541,12 @@
         : syncable
           ? type + ' · Not synced · On device SD · ' + byteLabel(row.byteSize)
           : type + ' · Incomplete SD recording · On device SD · ' + byteLabel(row.byteSize);
-      preview.textContent = !sdReady
-        ? 'SD access paused · Original recordings preserved · Do not format or delete'
+      // BLE disconnect must not be misreported as an SD controller fault:
+      // only a connected pendant can establish current storage readiness.
+      preview.textContent = !pendantConnected
+        ? 'Pendant disconnected · SD status unknown · Reconnect to check recordings'
+        : !sdMounted
+          ? 'SD access paused · Original recordings preserved · Do not format or delete'
         : synced
           ? 'Synced · SD copy retained'
           : syncable
@@ -552,7 +558,9 @@
       if (discard) {
         discard.hidden = false;
         discard.disabled = !sdReady;
-        discard.title = sdReady ? '' : 'SD unavailable. Preserve recordings; do not retry deleting or formatting.';
+        discard.title = sdReady ? '' : !pendantConnected
+          ? 'Reconnect the original pendant before checking or deleting its SD recordings.'
+          : 'SD unavailable. Preserve recordings; do not retry deleting or formatting.';
         discard.textContent = 'Delete from SD';
         discard.setAttribute('aria-label', 'Delete from SD: ' + title);
       }
