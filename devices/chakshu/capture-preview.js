@@ -764,7 +764,8 @@
     // A still-photo memory can carry a spoken note, not only an MJPEG video.
     // Never issue companion reads on Odyssey C3 or S3 paths.
     if (isMjpegPath(path)) await add(stem(path) + '.json', false);
-    if (isMjpegPath(path) || /\.jpg$/i.test(path))
+    if (isMjpegPath(path) ||
+        (root.SynapCapabilities?.isChakshu(root.SynapModules?.client?.module) && /\.jpg$/i.test(path)))
       wav = await add(stem(path) + '.wav', false);
     return { files, main, wav };
   }
