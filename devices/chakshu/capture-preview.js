@@ -851,6 +851,14 @@
       return reply.total;
     } catch (error) {
       if (optional && /SD file unavailable/.test(error.message)) return 0;
+      if (error?.mediaCode === 1 && root.SynapModules?.client?.module?.id === 2) {
+        // Busy is overloaded by the C3 media protocol: recorder/OTA/storage
+        // contention OR the firmware's trusted low-battery FAT write guard.
+        // Older builds enforced an ADC-voltage threshold; latest firmware
+        // removes SD battery admission checks. BUSY can also mean contention.
+        // Never retry a destructive operation blindly.
+        throw Error('C3 refused SD deletion (busy). Stop recording/OTA and retry only when SD is idle and ready. Latest firmware no longer uses a battery-voltage threshold for SD actions; older firmware may still enforce one. The SD file was not confirmed deleted.');
+      }
       throw error;
     }
   }
@@ -2221,12 +2229,36 @@
                 'readQuarantine','writeQuarantine'].every(k=>Number.isSafeInteger(data[k])))
             throw Error('Invalid recorder health response');
           const stage=data.stage, live=data.sdLiveProbe;
+          // op34 adds optional RAM-only boot recovery signals in newer C3
+          // firmware; older devices continue to provide the original v1 keys.
+          const coldRecovery=Number.isSafeInteger(data.coldRecovery)?data.coldRecovery:0;
+          const resetReason=Number.isSafeInteger(data.resetReason)?data.resetReason:null;
+          const cleanupRemoved=Number.isSafeInteger(data.cleanupRemoved)?data.cleanupRemoved:null;
+          const cleanupStatus=Number.isSafeInteger(data.cleanupStatus)?data.cleanupStatus:null;
+          const cleanupNote=cleanupStatus===1
+            ? ' Cold-boot cleanup removed '+cleanupRemoved+' empty Synap WAV/temporary file(s); files with recoverable audio were kept.'
+            : cleanupStatus===2
+              ? ' Cold-boot cleanup stopped after SD read/write trouble. No further cleanup or same-rail retry is safe.'
+              : cleanupStatus===3
+                ? ' Additional empty artifacts remain for a later verified cold boot.'
+                : '';
+          const restored=Boolean(data.sdState===1 && live===6 &&
+            !data.writeQuarantine && !data.readQuarantine);
+          const coldNote=coldRecovery===1
+            ? ' Cold slider power-on verified a fresh FAT mount; normal SD recording and sync have resumed.'
+            : coldRecovery===2
+              ? ' Cold mount could not be verified; unplug USB, slider OFF for 30 seconds, then ON. Do not format.'
+              : coldRecovery===3
+                ? ' MCU-only reboot left SD power uncertain. Unplug USB and cycle the physical slider before retrying.'
+                : '';
           let reason = data.writeQuarantine
             ? 'SD write/controller failure — further card commands are blocked. Remove all pendant and SD power; do NOT retry or format on the same power rail.'
             : data.readQuarantine
               ? 'SD read timed out — protect recordings and fully power-cycle the SD supply before recovering.'
-              : stage===43
-                ? 'Microphone I2S fault — no evidence in this record of an SD write error.'
+              : restored && stage>=44 && stage!==48
+                ? 'Historical recorder storage fault retained for diagnostics; current SD FAT is verified mounted.'
+                : stage===43
+                  ? 'Microphone I2S fault — no evidence in this record of an SD write error.'
                 : stage===52 || stage===68
                   ? 'SD storage full — original files should remain accessible. Sync before manually formatting.'
                   : stage>=40
@@ -2239,11 +2271,13 @@
           const message='Recorder: '+reason+' '+red+
             ' · FAT probe '+live+' · Recorded '+data.bytes+' PCM bytes'+
             ' · Mic restarts '+data.micRestarts+
-            ' · SD mounted '+(data.sdState===1?'yes':'no')+'.';
+            ' · SD mounted '+(data.sdState===1?'yes':'no')+
+            (resetReason===null?'':' · Boot reset '+resetReason)+'.'+coldNote+cleanupNote;
           reportSDStage('@all','c3-recorder-health-readonly',{
             stage,bytes:data.bytes,faultLed:code,micRestarts:data.micRestarts,
             sdState:data.sdState,sdLiveProbe:live,
-            readQuarantine:data.readQuarantine,writeQuarantine:data.writeQuarantine
+            readQuarantine:data.readQuarantine,writeQuarantine:data.writeQuarantine,
+            coldRecovery,resetReason,restored,cleanupRemoved,cleanupStatus
           });
           if(output)output.textContent=message;
           status(message);
