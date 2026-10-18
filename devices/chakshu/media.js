@@ -805,7 +805,21 @@
           ))
       )
         throw Error('Invalid video frame timeline.');
-      const frames = splitMJPEG(new Uint8Array(await file.arrayBuffer()), timing?.frameTimesMs);
+      const encoded = new Uint8Array(await file.arrayBuffer());
+      if (!image && timing && timing.visualCrc32 !== undefined) {
+        const claimed = timing.visualCrc32;
+        if (!Number.isSafeInteger(claimed) || claimed < 0 || claimed > 0xffffffff)
+          throw Error('Chakshu SD video checksum metadata is invalid. Preserve the original.');
+        let crc = 0xffffffff;
+        for (const byte of encoded) {
+          crc ^= byte;
+          for (let i = 0; i < 8; i++)
+            crc = ((crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0)) >>> 0;
+        }
+        if (((~crc) >>> 0) !== claimed)
+          throw Error('Chakshu SD video checksum failed. The SD original is retained; do not delete.');
+      }
+      const frames = splitMJPEG(encoded, timing?.frameTimesMs);
       if (
         timing &&
         (timing.frameTimesMs.length !== frames.length ||
