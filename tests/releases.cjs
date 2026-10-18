@@ -88,3 +88,46 @@ test('device-ID targeting remains independent of owner keys while publisher auth
   assert.equal(r.TARGET,'esp32s3-fh4r2-qspi-4m');assert.equal(r.TARGETS['esp32c3-supermini-4m'].chip,5);
   assert.equal(r.SIGNING_KEY_ID,'prod-2026-01');assert.match(r.SIGNING_PUBLIC_KEY_SPKI,/^[A-Za-z0-9+/=]+$/);
 });
+
+test('Chakshu-only Build 2332 and Odyssey Build 2326 coexist in verified OTA catalog',async()=>{
+  const published=Object.fromEntries(Object.keys(r.TARGETS).map(target=>[
+    target,fixture(target,target==='xiao-esp32s3-sense-8m'?2332:2326,3,
+      'synap-os1-build'+(target==='xiao-esp32s3-sense-8m'?2332:2326)).m
+  ]));
+  const index={schema:1,primary:r.TARGET,build:2326,channel:'production',
+    targets:Object.fromEntries(Object.entries(r.TARGETS).map(([target,config])=>[target,config.manifestPath]))};
+  const responses=new Map([
+    [r.BASE+'latest.json',published[r.TARGET]],
+    [r.BASE+'targets.json',index],
+    ...Object.entries(index.targets).map(([target,path])=>[r.BASE+path,published[target]])
+  ]);
+  const fetcher=async(url)=>{
+    const entry=responses.get(url.split('?')[0]);
+    if(!entry)return new Response('',{status:404});
+    return new Response(JSON.stringify(entry),{headers:{'content-type':'application/json'}});
+  };
+  const found=await r.latest(fetcher);
+  assert(r.isCatalog(found),'independent target releases must remain discoverable');
+  assert.equal(found.manifests['xiao-esp32s3-sense-8m'].build,2332);
+  assert.equal(found.manifests[r.TARGET].build,2326);
+  assert.equal(found.manifests['esp32c3-supermini-4m'].build,2326);
+  assert.equal(found.manifests['esp32c3-supermini-4m-sd-ota'].build,2326);
+  assert.equal(r.selectCatalogManifest(found,
+    'SYNAP-FW:xiao-esp32s3-sense-8m:synap-os1-build2326:2326').build,2332);
+  assert.equal(r.selectCatalogManifest(found,
+    'SYNAP-FW:esp32c3-supermini-4m:synap-os1-build2326:2326',{capacity:1966080}).build,2326);
+  const info={protocol:3,state:1,capacity:3342336,maxData:503,build:2326};
+  assert(r.compatible({__synapTargetCatalog:true,manifests:found.manifests},info,
+    'SYNAP-FW:xiao-esp32s3-sense-8m:synap-os1-build2326:2326'));
+  assert.equal(r.compatible({__synapTargetCatalog:true,manifests:found.manifests},
+    {...info,capacity:1966080},'SYNAP-FW:esp32c3-supermini-4m:synap-os1-build2326:2326'),false);
+
+  // Per-target trust remains mandatory: wrong hardware and inconsistent
+  // target/build identities are not excused by independent release cadence.
+  responses.set(r.BASE+r.TARGETS['xiao-esp32s3-sense-8m'].manifestPath,
+    published['esp32c3-supermini-4m']);
+  await assert.rejects(r.latest(fetcher),/mismatched hardware targets/);
+  responses.set(r.BASE+r.TARGETS['xiao-esp32s3-sense-8m'].manifestPath,
+    {...published['xiao-esp32s3-sense-8m'],build:2331});
+  await assert.rejects(r.latest(fetcher),/Invalid or incompatible firmware release manifest/);
+});
