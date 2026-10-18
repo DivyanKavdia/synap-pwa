@@ -29,3 +29,11 @@ test('new smart-memory work does not edit non-Chakshu module descriptors',()=>{
   for(const id of ['esp32c3-supermini-4m','esp32s3-fh4r2-qspi-4m','xiao-esp32s3-sense-8m'])
     assert(profiles.includes(id));
 });
+
+test('Chakshu-only diagnostics do not replace existing SD remount control',()=>{
+ const library=fs.readFileSync('devices/chakshu/library.js','utf8');
+ assert(library.includes("api().refreshSD()"),'existing Check SD recovery preserved');
+ assert(library.includes("diagnosticButton.id = 'visualDiagnoseSD'"));
+ assert(library.includes("diagnosticButton.hidden = !root.SynapCapabilities?.isChakshu(info)"));
+ assert(library.includes("await api().diagnoseSD()"));
+});
