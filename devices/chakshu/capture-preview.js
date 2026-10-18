@@ -1231,6 +1231,33 @@
       return { ...receipt, alreadySynced: false, keptOnSD: true, sdAvailableAfterSync };
     } catch (error) {
       speed?.finish(true);
+      // Chakra-only: op3 FILE_UNAVAILABLE can mean the catalogue path is
+      // genuinely absent or that an earlier SD.exists lookup failed. Query
+      // RAM-only op35 once; no FAT scan, retry, delete, format or remount.
+      // Older Chakshu builds may not have op35: preserve the original error.
+      if (liveModule?.id === 3 && stage === 'download' && error?.mediaCode === 11) {
+        try {
+          const detail = await api().diagnoseSD();
+          reportSDStage(path, 'chakshu-file-selection', {
+            sdReady: detail.sdReady,
+            fileStage: detail.fileStage || 'legacy-unknown',
+            fileErrno: detail.fileErrno ?? null,
+            fileFaults: detail.fileFaults ?? null,
+            mountStage: detail.sdMountStage,
+            clockHz: detail.sdClockHz,
+          });
+          if (detail.fileStage === 'missing')
+            error.message = 'Chakshu cannot find this WAV at its previously listed path. Use Browse SD to refresh the catalogue; do not format or delete recordings.';
+          else if (detail.fileStage === 'open-io' || !detail.sdReady)
+            error.message = 'Chakshu SD file opening failed due to a storage I/O fault. Preserve recordings and inspect SD diagnostics before retrying.';
+          else
+            error.message = 'Chakshu could not select this SD WAV. Refresh the SD catalogue and check the read-only SD diagnostics; the original was not deleted.';
+        } catch (diagnosticError) {
+          reportSDStage(path, 'chakshu-file-diagnostic-unavailable', {
+            message: diagnosticError?.message || String(diagnosticError),
+          });
+        }
+      }
       reportSDStage(path, 'failed', { failedAt: stage, message: error?.message || String(error) });
       if (liveModule?.id === 2) await reportC3SyncTrace(path, connection, 'failed-' + stage);
       throw error;
