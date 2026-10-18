@@ -744,3 +744,15 @@ test('Odyssey C3 SD retry uses fresh live mount probe; historic recorder stage r
   for(const i of [1,2,3,4]) assert(ui.includes('info?.sdLiveProbeState === '+i));
   assert.doesNotMatch(ui,/info\?\.sdProbeState === [1234]/);
 });
+
+test('Chakshu quarantine diagnostics are RAM-only and cannot affect Odyssey media actions',()=>{
+  const fs=require('node:fs');
+  const source=fs.readFileSync('devices/chakshu/library.js','utf8');
+  const block=source.split("diagnosticButton.addEventListener('click'")[1]
+    .split("$('visualWifi').addEventListener")[0];
+  assert.match(block,/const detail = await api\(\)\.diagnoseSD\(\)/);
+  assert.match(block,/if \(detail\.sdQuarantined\)/);
+  assert.match(block,/detail\.sdProbeCardType === 4 && !detail\.sdProbeSectorAttempted/);
+  assert.match(block,/Do not format/);
+  assert.doesNotMatch(block,/request\(14\)|\.remove\(|\.format\(/);
+});
