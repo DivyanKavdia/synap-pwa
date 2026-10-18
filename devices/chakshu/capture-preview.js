@@ -323,7 +323,7 @@
   function c3MaintenanceWritesBlocked() {
     return C3_SD_MAINTENANCE_WRITES_DISABLED && root.SynapModules?.client?.module?.id === 2;
   }
-  const C3_SD_WRITE_SAFETY_MESSAGE = 'Odyssey C3 bulk SD clearing is disabled. Use Delete from SD on one selected recording only while the card is healthy; original recordings are preserved after any storage error.';
+  const C3_SD_WRITE_SAFETY_MESSAGE = 'Odyssey C3 SD deletion is temporarily disabled: a user-requested FAT delete made storage unavailable after a successful sync. Synced audio stays in Memories and the SD original is retained. Back up and manage the card externally until SD writes are qualified.';
   function c3FormatSupported() {
     const info = root.SynapModules?.client?.module;
     return Boolean(info?.id === 2 && (info.mediaFeatures & 4));
@@ -845,7 +845,11 @@
     }
   }
   async function deleteSD(path, optional = false) {
-    // Single-file opcode17 is guarded in firmware. C3 bulk op18 remains disabled.
+    // Field 2026-10-18: op17 unlink returned EIO after a verified C3 sync.
+    // Do not send this FAT-mutating command even from older PWA flows.
+    if (root.SynapModules?.client?.module?.id === 2)
+      throw Error('Odyssey C3 SD deletion is paused after a confirmed FAT write fault. The SD original and verified Memories copy are retained. Back up/manage SD via a card reader; do not retry BLE delete or format.');
+    // Chakshu and unaffected modules retain their explicit delete workflow.
     try {
       const reply = await client().request(17, 0, path);
       return reply.total;
@@ -872,7 +876,10 @@
     return deleteSD(path);
   }
   async function deleteSDItem(path) {
-    // Do not gate explicit one-file deletion with the bulk-clear safety flag.
+    // Refuse BEFORE any SD command; never allow a C3 unlink to damage the
+    // mounted card that just completed a verified read-only BLE transfer.
+    if (root.SynapModules?.client?.module?.id === 2)
+      throw Error('Odyssey C3 Delete from SD is paused: FAT unlink made the card unavailable after sync. Files are retained; use a card reader after backup.');
     if (busy) throw Error('Another SD transfer is already running.');
     const connection = context();
     const originalOwner = api().state.owner;
@@ -1622,11 +1629,14 @@
         });
       }
       remove.type = 'button';
-      remove.textContent = 'Delete from SD';
-      remove.disabled = !api().state.storageReady || busy;
-      remove.title = remove.disabled
-        ? 'SD access is not ready. Preserve WAVs and never delete during write/read quarantine.'
-        : 'Permanently delete this selected SD file after explicit confirmation';
+      const c3DeletePaused = root.SynapModules?.client?.module?.id === 2;
+      remove.textContent = c3DeletePaused ? 'SD delete paused' : 'Delete from SD';
+      remove.disabled = c3DeletePaused || !api().state.storageReady || busy;
+      remove.title = c3DeletePaused
+        ? 'C3 FAT unlink failed after verified sync. Preserve SD files; use a card reader after backup.'
+        : remove.disabled
+          ? 'SD access is not ready. Preserve WAVs and never delete during write/read quarantine.'
+          : 'Permanently delete this selected SD file after explicit confirmation';
       remove.addEventListener('click', async () => {
         const warning = synced
           ? 'Delete this SD copy? The synced copy in Memories will be kept.'

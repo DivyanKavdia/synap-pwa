@@ -17,8 +17,8 @@ test('Library distinguishes BLE disconnect from genuine unready SD mount',()=>{
 });
 
 test('disconnected or SD-paused Library blocks delete; retained sync receipts still shown',()=>{
-  assert.match(body,/discard\.disabled = !sdReady/);
-  assert.match(body,/discard\.title = sdReady \? '' : !pendantConnected/);
+  assert.match(body,/discard\.disabled = !sdReady \|\| c3DeletePaused/);
+  assert.match(body,/discard\.title = c3DeletePaused/);
   assert.match(body,/Synced to Memories · Also on device SD/);
   assert.doesNotMatch(body,/\b(?:unlink|format|deleteSDItem|removeFile)\s*\(/);
 });

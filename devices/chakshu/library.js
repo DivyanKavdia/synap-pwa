@@ -527,6 +527,7 @@
         synced = syncable && Boolean(row.sdSynced),
         pendantConnected = Boolean(api().state.connected),
         sdMounted = Boolean(api().state.storageReady),
+        c3DeletePaused = root.SynapModules?.client?.module?.id === 2,
         sdReady = pendantConnected && sdMounted;
       opener.setAttribute(
         'aria-label',
@@ -557,11 +558,13 @@
       preview.hidden = false;
       if (discard) {
         discard.hidden = false;
-        discard.disabled = !sdReady;
-        discard.title = sdReady ? '' : !pendantConnected
-          ? 'Reconnect the original pendant before checking or deleting its SD recordings.'
-          : 'SD unavailable. Preserve recordings; do not retry deleting or formatting.';
-        discard.textContent = 'Delete from SD';
+        discard.disabled = !sdReady || c3DeletePaused;
+        discard.title = c3DeletePaused
+          ? 'C3 SD deletion paused: FAT unlink failed after a successful transfer. Preserve originals and use a card reader after backup.'
+          : sdReady ? '' : !pendantConnected
+            ? 'Reconnect the original pendant before checking or deleting its SD recordings.'
+            : 'SD unavailable. Preserve recordings; do not retry deleting or formatting.';
+        discard.textContent = c3DeletePaused ? 'SD delete paused' : 'Delete from SD';
         discard.setAttribute('aria-label', 'Delete from SD: ' + title);
       }
       disposeCard(card);

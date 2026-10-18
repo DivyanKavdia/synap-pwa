@@ -46,7 +46,7 @@ test('C3 format requires healthy SD and explicit confirmation',()=>{
   assert.match(s,/formatSettings\.disabled =[\s\S]*?c3FormatUnsafe\(\)/);
 });
 
-test('C3 blocks bulk FAT cleanup, permits explicit verified single-file deletion',()=>{
+test('C3 blocks bulk FAT cleanup and single-file deletion after confirmed FAT timeout',()=>{
   assert.match(s,/const C3_SD_MAINTENANCE_WRITES_DISABLED = true/);
   assert.match(s,/function c3MaintenanceWritesBlocked\(\)/);
   const deleteCommand=s.split('async function deleteSD(path, optional = false) {')[1].split('async function deleteSyncedSet(')[0];
@@ -55,10 +55,12 @@ test('C3 blocks bulk FAT cleanup, permits explicit verified single-file deletion
   assert.doesNotMatch(deleteCommand,/if \(c3MaintenanceWritesBlocked\(\)\)/);
   assert.doesNotMatch(deleteItem,/if \(c3MaintenanceWritesBlocked\(\)\)/);
   assert.match(deleteCommand,/client\(\)\.request\(17, 0, path\)/);
+  assert(deleteCommand.indexOf("module?.id === 2") < deleteCommand.indexOf("client().request(17, 0, path)"));
+  assert(deleteItem.indexOf("module?.id === 2") < deleteItem.indexOf("await deleteSyncedSet(path)"));
   assert.match(deleteItem,/fresh = await api\(\)\.catalogue\(\)/);
   assert(clear.indexOf('if (c3MaintenanceWritesBlocked())')<
          clear.indexOf('client().request(18'), 'bulk clear stays blocked');
-  assert.match(s,/remove.disabled = !api\(\)\.state\.storageReady \|\| busy/);
+  assert.match(s,/remove.disabled = c3DeletePaused \|\| !api\(\)\.state\.storageReady \|\| busy/);
   assert.match(s,/clear.disabled = c3MaintenanceWritesBlocked\(\)/);
   assert.match(s,/clearSettings.disabled =[\s\S]*?c3MaintenanceWritesBlocked\(\)/);
   assert.match(s,/No post-sync FAT reads or unlink on C3/);
