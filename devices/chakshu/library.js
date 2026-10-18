@@ -694,6 +694,10 @@
             ? 'Delete this incomplete recording from the SD card? This cannot be undone.'
             : 'Delete this recording from the SD card without syncing it to Memories? This cannot be undone.';
         if (!confirm(warning)) return 'SD copy kept.';
+        if (!item.sdSynced && item.sdSyncable && Number(item.byteSize) > 44 &&
+            api().state?.connected && root.SynapModules?.client?.module?.id === 2 &&
+            !confirm('This recording is NOT synced to Memories. Delete the only known SD audio copy permanently?'))
+          return 'SD copy kept.';
         discard.disabled = true;
         try {
           await removeFromSD(item.sourcePath);
