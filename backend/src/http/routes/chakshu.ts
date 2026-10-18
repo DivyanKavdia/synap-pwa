@@ -52,11 +52,11 @@ export function chakshuRoutes(): Router {
           model: config.gemini.memoryModel,
           usage_label: 'chakshu-vision',
           system_instruction:
-            'Describe only what is visibly supported by this image. Be concise and concrete. Do not identify people, infer sensitive traits, guess intent, or invent obscured details. Mention uncertainty when needed.',
+            'Describe only what is visibly supported by this image. For a note, sign, slide, document or whiteboard, also transcribe clearly legible text exactly, without guessing covered or blurry words. Keep the response concise, identify no people, infer no sensitive traits or intent, and say when text cannot be read.',
           input: [
             {
               type: 'text',
-              text: 'What do you see? Return a short factual description suitable for a personal memory entry.',
+              text: 'What do you see? Give a concise factual description for my Chakshu visual memory. Include clearly readable text from the image when relevant; do not invent missing words.',
             },
             { type: 'image', data: body.toString('base64'), mime_type: 'image/jpeg' },
           ],

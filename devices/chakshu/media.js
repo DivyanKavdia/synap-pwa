@@ -304,6 +304,13 @@
         });
         await owned.store.append(row.id, { blob, atMs });
         await owned.store.patch(row.id, { state: 'saved' });
+        // Photo + Audio is one bounded five-second spoken memory rather than
+        // leaving a live microphone session recording indefinitely.
+        if (audioOwned && audio.sessionId) {
+          await delay(5000);
+          check(owned.owner);
+          await saveAudio(audio.sessionId);
+        }
         notify();
         return row.id;
       } catch (e) {
@@ -486,6 +493,18 @@
   }
   async function startVideo() {
     return startLive();
+  }
+  async function diagnoseSD() {
+    // Chakshu-only operation 35: reads latched state without touching microSD.
+    if (!capabilities.isChakshu(moduleInfo()))
+      throw Error('Chakshu SD diagnostics require a connected Chakshu.');
+    const answer = await camera().request(35);
+    const detail = JSON.parse(new TextDecoder().decode(answer.bytes));
+    if (typeof detail.sdReady !== 'boolean' ||
+        !Number.isSafeInteger(detail.sdClockHz) ||
+        typeof detail.sdMountStage !== 'string')
+      throw Error('Invalid Chakshu SD diagnostic response.');
+    return detail;
   }
   async function refreshSD() {
     if (root.SynapAppControls.recordingState().active)
@@ -798,7 +817,21 @@
           ))
       )
         throw Error('Invalid video frame timeline.');
-      const frames = splitMJPEG(new Uint8Array(await file.arrayBuffer()), timing?.frameTimesMs);
+      const encoded = new Uint8Array(await file.arrayBuffer());
+      if (!image && timing && timing.visualCrc32 !== undefined) {
+        const claimed = timing.visualCrc32;
+        if (!Number.isSafeInteger(claimed) || claimed < 0 || claimed > 0xffffffff)
+          throw Error('Chakshu SD video checksum metadata is invalid. Preserve the original.');
+        let crc = 0xffffffff;
+        for (const byte of encoded) {
+          crc ^= byte;
+          for (let i = 0; i < 8; i++)
+            crc = ((crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0)) >>> 0;
+        }
+        if (((~crc) >>> 0) !== claimed)
+          throw Error('Chakshu SD video checksum failed. The SD original is retained; do not delete.');
+      }
+      const frames = splitMJPEG(encoded, timing?.frameTimesMs);
       if (
         timing &&
         (timing.frameTimesMs.length !== frames.length ||
@@ -894,10 +927,11 @@
       };
       await add(path);
       check(scope.owner);
-      if (path.endsWith('.mjpeg')) {
-        for (const extension of ['json', 'wav']) {
+      if (path.endsWith('.mjpeg') || path.endsWith('.jpg')) {
+        const companions = path.endsWith('.mjpeg') ? ['json', 'wav'] : ['wav'];
+        for (const extension of companions) {
           try {
-            await add(path.replace(/mjpeg$/, extension));
+            await add(path.replace(/\.(mjpeg|jpg)$/i, '.' + extension));
           } catch (e) {
             if (!/SD file unavailable/.test(e.message)) throw e;
           }
@@ -1015,6 +1049,7 @@
     setAudio,
     startOffline,
     refreshSD,
+    diagnoseSD,
     startWifi,
     stopWifi,
     stop,

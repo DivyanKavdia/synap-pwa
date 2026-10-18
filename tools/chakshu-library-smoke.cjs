@@ -457,11 +457,10 @@ async function until(page, predicate, arg) {
       await page.locator('#clearLibrarySearch').click();
       await page.locator('#visualPhotoAudio').click();
       await page.waitForFunction(() => document.getElementById('visualDialog').open);
-      assert.equal(await page.evaluate(() => SynapAppControls.recordingState().active), true);
+      // Photo + Audio is a bounded spoken moment: the microphone and journal
+      // must have stopped before the visual viewer is presented.
+      assert.equal(await page.evaluate(() => SynapAppControls.recordingState().active), false);
       await page.locator('#visualClose').click();
-      await page.evaluate(() =>
-        SynapAppControls.stopCapture(SynapAppControls.recordingState().sessionId),
-      );
       await page.locator('#visualMode').selectOption('video');
       await page.locator('#visualOnline').click();
       await until(page, async () => {
