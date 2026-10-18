@@ -304,6 +304,13 @@
         });
         await owned.store.append(row.id, { blob, atMs });
         await owned.store.patch(row.id, { state: 'saved' });
+        // Photo + Audio is one bounded five-second spoken memory rather than
+        // leaving a live microphone session recording indefinitely.
+        if (audioOwned && audio.sessionId) {
+          await delay(5000);
+          check(owned.owner);
+          await saveAudio(audio.sessionId);
+        }
         notify();
         return row.id;
       } catch (e) {
@@ -894,10 +901,11 @@
       };
       await add(path);
       check(scope.owner);
-      if (path.endsWith('.mjpeg')) {
-        for (const extension of ['json', 'wav']) {
+      if (path.endsWith('.mjpeg') || path.endsWith('.jpg')) {
+        const companions = path.endsWith('.mjpeg') ? ['json', 'wav'] : ['wav'];
+        for (const extension of companions) {
           try {
-            await add(path.replace(/mjpeg$/, extension));
+            await add(path.replace(/\.(mjpeg|jpg)$/i, '.' + extension));
           } catch (e) {
             if (!/SD file unavailable/.test(e.message)) throw e;
           }
