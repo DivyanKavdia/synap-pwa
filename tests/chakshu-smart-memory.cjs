@@ -39,3 +39,14 @@ test('Chakshu-only diagnostics do not replace existing SD remount control',()=>{
  assert(library.includes("diagnosticButton.hidden = !root.SynapCapabilities?.isChakshu(info)"));
  assert(library.includes("await api().diagnoseSD()"));
 });
+
+test('Chakshu missing WAV sync reads RAM-only diagnostics without remounting or touching Odyssey paths',()=>{
+  const transfer=capture.split('async function moveSD(path, progress = () => {}) {')[1]
+    .split('async function clearSD()')[0];
+  assert.match(transfer,/liveModule\?\.id === 3 && stage === 'download' && error\?\.mediaCode === 11/);
+  assert.match(transfer,/const detail = await api\(\)\.diagnoseSD\(\)/);
+  assert.match(transfer,/reportSDStage\(path, 'chakshu-file-selection'/);
+  assert.match(transfer,/Use Browse SD to refresh the catalogue/);
+  assert.doesNotMatch(transfer,/request\(14\)|SD\.remove|formatSD\(/);
+  assert.match(transfer,/if \(liveModule\?\.id === 2\) await reportC3SyncTrace/);
+});
