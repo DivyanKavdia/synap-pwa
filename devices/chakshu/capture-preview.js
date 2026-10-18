@@ -314,15 +314,16 @@
   // Field failure: a native full-card FAT format returned I/O failure on an
   // otherwise mounted Odyssey C3 and left SD unavailable. Keep the UI and
   // command blocked until the C3 formatter is separately qualified.
-  // Until SDSPI/FatFs metadata writes are qualified on real C3 hardware,
-  // never issue BLE unlink, batch clear or FAT format on this target. This
-  // does NOT alter normal offline capture or read-only verified BLE sync.
+  // Bulk Clear remains blocked on C3. Explicit one-file WAV deletion is
+  // available only after an idle, verified mount and confirmation; the firmware
+  // refuses operation 17 during native read/write quarantine. Never auto-delete
+  // a recording after sync or allow an unsafe multi-file cleanup.
   const C3_FULL_CARD_FORMAT_DISABLED = false;
   const C3_SD_MAINTENANCE_WRITES_DISABLED = true;
   function c3MaintenanceWritesBlocked() {
     return C3_SD_MAINTENANCE_WRITES_DISABLED && root.SynapModules?.client?.module?.id === 2;
   }
-  const C3_SD_WRITE_SAFETY_MESSAGE = 'Odyssey C3 SD deletion and clearing are temporarily disabled: FAT metadata writes have made cards unavailable. Synced recordings remain on SD. Back up data before using a computer to remove files.';
+  const C3_SD_WRITE_SAFETY_MESSAGE = 'Odyssey C3 bulk SD clearing is disabled. Use Delete from SD on one selected recording only while the card is healthy; original recordings are preserved after any storage error.';
   function c3FormatSupported() {
     const info = root.SynapModules?.client?.module;
     return Boolean(info?.id === 2 && (info.mediaFeatures & 4));
@@ -844,7 +845,7 @@
     }
   }
   async function deleteSD(path, optional = false) {
-    if (c3MaintenanceWritesBlocked()) throw Error(C3_SD_WRITE_SAFETY_MESSAGE);
+    // Single-file opcode17 is guarded in firmware. C3 bulk op18 remains disabled.
     try {
       const reply = await client().request(17, 0, path);
       return reply.total;
@@ -863,7 +864,7 @@
     return deleteSD(path);
   }
   async function deleteSDItem(path) {
-    if (c3MaintenanceWritesBlocked()) throw Error(C3_SD_WRITE_SAFETY_MESSAGE);
+    // Do not gate explicit one-file deletion with the bulk-clear safety flag.
     if (busy) throw Error('Another SD transfer is already running.');
     const connection = context();
     const originalOwner = api().state.owner;
@@ -880,7 +881,7 @@
     if (api().state.offline || api().state.session || root.SynapAppControls?.recordingState?.().active)
       throw Error('Stop recording before deleting from the SD card.');
     if (!api().state.storageReady)
-      throw Error('SD card is unavailable. Reconnect and use Check SD card in Settings before deleting. Existing recordings were not changed.');
+      throw Error('SD card access is not ready. A write/read fault may have suspended access; preserve existing WAVs and fully power-cycle the SD card before trying again.');
     busy = true;
     renderSDInbox();
     try {
@@ -1613,9 +1614,11 @@
         });
       }
       remove.type = 'button';
-      remove.textContent = c3MaintenanceWritesBlocked() ? 'Delete from SD (disabled)' : 'Delete from SD';
-      remove.disabled = c3MaintenanceWritesBlocked();
-      if (remove.disabled) remove.title = C3_SD_WRITE_SAFETY_MESSAGE;
+      remove.textContent = 'Delete from SD';
+      remove.disabled = !api().state.storageReady || busy;
+      remove.title = remove.disabled
+        ? 'SD access is not ready. Preserve WAVs and never delete during write/read quarantine.'
+        : 'Permanently delete this selected SD file after explicit confirmation';
       remove.addEventListener('click', async () => {
         const warning = synced
           ? 'Delete this SD copy? The synced copy in Memories will be kept.'
@@ -1623,6 +1626,8 @@
             ? 'Delete this incomplete recording from the SD card? This cannot be undone.'
             : 'Delete this recording from the SD card without syncing it to Memories? This cannot be undone.';
         if (!confirm(warning)) return;
+        if (!synced && !incomplete && root.SynapModules?.client?.module?.id === 2 &&
+            !confirm('This recording is NOT synced to Memories. Deleting it permanently loses its audio. Delete this SD file anyway?')) return;
         remove.disabled = true;
         try {
           await deleteSDItem(file.path);
