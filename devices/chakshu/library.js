@@ -792,6 +792,16 @@
     $('visualCheckSD').after(diagnosticButton);
     diagnosticButton.addEventListener('click', () => action(async () => {
       const detail = await api().diagnoseSD();
+      // Chakshu-only: quarantined storage must not look like an ordinary
+      // recoverable card. Op35 is RAM-only; no new FAT read or remount.
+      if (detail.sdQuarantined) {
+        const unknown = detail.sdProbeCardType === 4 && !detail.sdProbeSectorAttempted;
+        status('Chakshu SD controller quarantined · ' +
+          (unknown ? 'Card identification failed (sector 0 was not read).' :
+            'Storage I/O was unsafe.') +
+          ' Original recordings preserved where readable. Switch off and fully remove SD power before retrying. Do not format.');
+        return;
+      }
       status('Chakshu SD ' + (detail.sdReady ? 'mounted' : 'unavailable') +
         ' · ' + detail.sdMountStage + ' · ' + Math.round(detail.sdClockHz / 1000) +
         ' kHz · recovery ' + (detail.sdRecoveryLocked ? 'active' : 'idle'));
