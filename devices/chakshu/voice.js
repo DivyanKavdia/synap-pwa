@@ -262,9 +262,13 @@
       if (!current(b)) return;
       b.subscribed = true;
       await readState(b, 'Read current Chakshu voice status');
-      if (state?.enabled) {
-        message = message || 'Hey Snap ready · voice actions save to Chakshu SD.';
+      if (state?.enabled && state.status===1) {
+        message=message||'Hey Snap listener active · voice actions save to Chakshu SD.';
         feedback('', 'listening', 0);
+      } else if(state && state.status!==1){
+        message=['Initializing Hey Snap model','', 'Hey Snap model has not started',
+          'Hey Snap model requires more free memory','Hey Snap model initialization failed',
+          'Hey Snap disabled'][state.status]||'Hey Snap listener unavailable';
       }
     } catch (error) {
       message = error.message;
@@ -321,7 +325,7 @@
   }
 
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice13',
+    revision: '1.0.0-chakshu-voice14',
     decode,
     decodeDiagnostic,
     label: commandLabel,

@@ -77,7 +77,7 @@
       experience.textContent = !info
         ? ''
         : chakshu
-          ? 'Audio builds transcripts and memories. Photos, video and soundtracks stay local. Touch control, battery telemetry and standby follow the same device controls as Odyssey when the connected firmware reports them ready. Hey Snap runs on the pendant only while it is disconnected from this app, so commands always have one owner.'
+          ? 'Audio builds transcripts and memories. Photos, video and soundtracks stay local. Touch control, battery telemetry and standby follow the same device controls as Odyssey when the connected firmware reports them ready. Hey Snap listens on Chakshu while idle, even with Bluetooth connected. Starting live PWA audio temporarily pauses it, so the microphone has one owner.'
           : caps.profile(info)
             ? 'Audio recording, transcripts and memories.' +
               (caps.ready(info, 'touch') ? ' Touch control is available.' : '') +
@@ -89,6 +89,28 @@
             : 'Capabilities could not be verified. Refresh status before recording.';
     }
     byId('chakshuChecks').hidden = !chakshu;
+    const voiceHost=byId('chakshuHeySnap'),voiceStatus=byId('chakshuVoiceStatus'),
+      voiceToggle=byId('chakshuVoiceToggle'),voiceDiagnose=byId('chakshuVoiceDiagnose');
+    const hasVoice=Boolean(chakshu && caps.hasVoice(info));
+    if(voiceHost)voiceHost.hidden=!hasVoice;
+    if(hasVoice && voiceStatus){
+      const voice=root.SynapChakshuVoice?.state;
+      const states=['Initializing microphone model','Listening for “Hey Snap” (experimental)',
+        'Voice model not initialized','Not enough memory for voice model','Voice model error','Hey Snap disabled'];
+      const recording=Boolean(root.SynapAppControls?.recordingState?.()?.active);
+      const text=voice
+        ? (recording && voice.status===1 ? 'Paused during PWA audio capture' :
+           (states[voice.status]||'Voice status unavailable'))
+        : 'Reading Hey Snap state…';
+      const sdReady=caps.ready(info,'sd');
+      voiceStatus.textContent=text+(sdReady?'':' · SD unavailable: voice photo, video and audio cannot be saved.')+
+        (root.SynapChakshuVoice?.message && voice?.status===1 ? ' · '+root.SynapChakshuVoice.message : '');
+      if(voiceToggle){
+        voiceToggle.disabled=!voice;
+        voiceToggle.textContent=voice?.enabled?'Disable Hey Snap':'Enable Hey Snap';
+      }
+      if(voiceDiagnose)voiceDiagnose.disabled=!voice;
+    }
     byId('moduleRefresh').disabled = !client || client.pending || client.busy;
     if (!chakshu) {
       byId('moduleStatus').textContent =
@@ -176,6 +198,30 @@
         }
         render();
       });
+    byId('chakshuVoiceToggle')?.addEventListener('click',async()=>{
+      const button=byId('chakshuVoiceToggle');
+      button.disabled=true;
+      try {
+        const on=Boolean(root.SynapChakshuVoice?.state?.enabled);
+        await root.SynapChakshuVoice.enabled(!on);
+      } catch(error){byId('chakshuVoiceStatus').textContent=error.message;}
+      finally{render();}
+    });
+    byId('chakshuVoiceDiagnose')?.addEventListener('click',async()=>{
+      const button=byId('chakshuVoiceDiagnose');
+      button.disabled=true;
+      try {
+        const reading=await root.SynapChakshuVoice.diagnose();
+        byId('chakshuVoiceDiagnostic').textContent=
+          'Mic activity: '+reading.meanAbs+' AC / peak '+reading.peak+
+          ' · last candidate: '+reading.candidate+
+          ' ('+Math.round(reading.confidence*100)+'% model confidence)'+
+          (reading.active?' · listener active':' · listener not active');
+      }catch(error){byId('chakshuVoiceDiagnostic').textContent=error.message;}
+      finally{button.disabled=false;}
+    });
+    root.addEventListener('synap-chakshu-voice',render);
+    root.addEventListener('synap-chakshu-voice-result',render);
     root.addEventListener('synap-module-changed', render);
     render();
   }

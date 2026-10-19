@@ -166,3 +166,13 @@ test('reads voice diagnostics only when asked',async()=>{
   assert.equal(reading.candidateCount,7);
   assert.deepEqual(ops,['find:4fa12358','diagnostics']);
 });
+
+
+test('Chakshu Hey Snap reports model-unavailable instead of falsely claiming ready',async()=>{
+  const voice=load(),{ops}=connect({incoming:{status:2,command:0,sequence:0}});
+  await voice.sync();await settle();
+  assert.equal(voice.state.status,2);
+  assert.match(voice.message,/model has not started/);
+  assert(!/Hey Snap ready/.test(voice.message));
+  assert.equal(ops.filter(x=>x.startsWith('write:')).length,0);
+});

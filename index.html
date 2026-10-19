@@ -238,7 +238,14 @@
           <button type="button" data-chakshu-operation="3">10-second WAV to SD</button>
 
         </div>
-        <p class="settings-hint">Chakshu stays awake while powered. Use the main microphone for standalone audio and transcripts. The ten-second microphone check saves a WAV to SD; import it to review. Photos and videos save to this phone.</p>
+        <div id="chakshuHeySnap" hidden>
+          <h4>Hey Snap · Chakshu only</h4>
+          <p id="chakshuVoiceStatus" class="settings-hint" role="status">Reading Hey Snap state…</p>
+          <p class="settings-hint">Say “Hey Snap”, then within five seconds say “take a snap”, “record video”, “record audio”, “stop”, or “explain what you see”. Voice actions save to Chakshu SD. Detection is experimental and needs real-device testing.</p>
+          <div class="chakshu-actions"><button id="chakshuVoiceToggle" type="button">Enable Hey Snap</button><button id="chakshuVoiceDiagnose" type="button">Voice diagnostics</button></div>
+          <p id="chakshuVoiceDiagnostic" class="settings-hint" role="status"></p>
+        </div>
+        <p class="settings-hint">Chakshu stays awake while powered. The ten-second microphone check saves a WAV to SD; import it to review. Hey Snap operates locally and pauses for PWA recording.</p>
         <p id="chakshuFile" class="chakshu-file"></p>
         <progress id="chakshuProgress" value="0" max="100" aria-label="Chakshu hardware check progress" hidden></progress>
       </div>
@@ -326,7 +333,7 @@
 <script>(function(){function renderSynapDeviceId(){var el=document.getElementById('setupDeviceId');if(!el)return;try{var key=(globalThis.SynapDevices&&globalThis.SynapDevices.KEY)||'synap-device-associations-v1';var data=JSON.parse(localStorage.getItem(key)||'null');var devices=Array.isArray(data&&data.devices)?data.devices.slice():[];devices.sort(function(a,b){return String(b.lastConnectedAt||'').localeCompare(String(a.lastConnectedAt||''));});var id=devices[0]&&devices[0].deviceId?String(devices[0].deviceId):'';el.textContent=id?id.toLowerCase():'No pendant selected';el.title=id;el.dataset.deviceId=id;}catch(e){el.textContent='No pendant selected';el.title='';el.dataset.deviceId='';}}document.addEventListener('DOMContentLoaded',function(){renderSynapDeviceId();var status=document.getElementById('setupDeviceStatus');if(status)new MutationObserver(renderSynapDeviceId).observe(status,{childList:true,subtree:true,characterData:true});document.getElementById('settingsButton')?.addEventListener('click',function(){setTimeout(renderSynapDeviceId,80)});});globalThis.renderSynapDeviceId=renderSynapDeviceId;})();</script>
 <script src="devices/modules.js?v=1.0.0-c3-ble-fast"></script>
 <script src="devices/power.js?v=1.0.0-restart-capabilities2"></script>
-<script src="devices/panel.js?v=1.0.0-c3-access-states1"></script>
+<script src="devices/panel.js?v=1.0.0-chakshu-hey-snap1"></script>
 <script src="runtime-compat.js?v=1.0.0-controls1"></script>
 <script src="recording/bluetooth-session.js?v=1.0.0-chakshu-core14"></script>
 <script src="recording/screen-wake-lock.js?v=1.0.0-ota-prep1"></script>
@@ -358,9 +365,9 @@
 <script src="ai-providers.js?v=1.0.0-maintenance1"></script>
 <script src="synap-backend.js?v=1.0.0-shell157-experimental-voice"></script>
 <script src="first-memory.js?v=1.0.0-compact-workspace1"></script>
-<script src="app.js?v=1.0.0-shell231-target-ota-discovery"></script>
+<script src="app.js?v=1.0.0-shell232-chakshu-hey-snap"></script>
 <script src="recording-notifications.js?v=1.0.0-background1"></script>
-<script src="enhancements.js?v=1.0.0-shell231-target-ota-discovery"></script>
+<script src="enhancements.js?v=1.0.0-shell232-chakshu-hey-snap"></script>
 <script src="processing-pipeline-ui.js?v=1.0.0-status-reconcile1"></script>
 <script src="memory-ui-fix.js?v=1.0.0-moments1"></script>
 <script src="synap-account-ui.js?v=1.0.0-compact-workspace1"></script>
