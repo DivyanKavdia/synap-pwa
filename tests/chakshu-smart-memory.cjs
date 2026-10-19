@@ -21,7 +21,7 @@ test('Only visual Chakshu SD stems fetch matching WAV companions without deletin
   assert(dl.includes("wav = await add(stem(path) + '.wav', false)"));
   const direct=media.split('async function importSD(path, progress) {')[1].split('async function moveSD(')[0];
   assert.match(direct,/capabilities\.isChakshu\(moduleInfo\(\)\) && path\.endsWith\('\.jpg'\)/);
-  assert.match(direct,/const companions = path\.endsWith\('\.mjpeg'\) \? \['json', 'wav'\] : \['wav'\]/);
+  assert.match(direct,/const companions = path\.endsWith\('\.mjpeg'\) \? \['json', 'wav'\] : \['json', 'wav'\]/);
   const imports=media.split('async function importFilesNow(')[1].split('async function importSD(')[0];
   assert.match(imports,/if \(audioFile\)[\s\S]*await importAudio\(/);
   assert.match(capture,/await verifyVisual\(row\.id, source\.main, source\.wav\)/);
