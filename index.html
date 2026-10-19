@@ -140,7 +140,7 @@
         <div class="visual-actions"><button id="visualOnline" type="button">Record video on phone</button></div>
         <details class="visual-help"><summary>About phone video</summary><p>Camera frames and soundtrack stay in this browser on your phone. Bluetooth limits the frame rate; keep synap open and Chakshu nearby. Starting video saves any standalone audio take first. Clips hold up to 32 MiB of video. Export a copy to keep it outside the browser.</p></details>
         <h4>Offline capture</h4>
-        <p>Hey Snap captures picture comprehension photos and short video clips to SD while idle, whether the app is connected or not. PWA-started capture remains a separate phone-owned flow.</p>
+        <p>Hey Snap captures ordinary photos, photos explicitly marked for visual interpretation, and short video clips to SD while idle, whether the app is connected or not. PWA-started capture remains a separate phone-owned flow.</p>
         <div hidden aria-hidden="true"><label>Quality <select id="visualSDQuality"><option value="0">HD detail</option><option value="1">Smooth</option></select></label><label>Clip length <select id="visualSDLength"><option value="30" selected>30 seconds</option></select></label><button id="visualRecordSD" type="button" disabled>Offline only</button><p id="visualSDVideoHint"></p></div>
       </div>
       <figure id="visualLive" hidden><img id="visualLiveFrame" alt="Latest camera frame"><figcaption id="visualLiveDescription" aria-live="polite"></figcaption></figure>
@@ -241,7 +241,7 @@
         <div id="chakshuHeySnap" hidden>
           <h4>Hey Snap · Chakshu only</h4>
           <p id="chakshuVoiceStatus" class="settings-hint" role="status">Reading Hey Snap state…</p>
-          <p class="settings-hint">Say “Hey Snap”, then “explain what you see” (picture comprehension after sync) or “record video” (automatically stops after the selected duration). “Take a snap” also requests comprehension. No voice audio/stop commands. Chakshu saves originals to SD; only a photo explicitly marked for comprehension is sent to the vision service after import. Voice detection is experimental.</p>
+          <p class="settings-hint">Say “Hey Snap”, then “take a snap” (ordinary local photo), “explain what you see” (photo marked for AI interpretation after sync), or “record video” (automatically stops after the selected duration). No voice audio/stop commands. Chakshu saves originals to SD; only photos specifically requested for interpretation are sent to the vision service after import. Voice detection is experimental.</p>
           <label class="settings-hint" for="chakshuVoiceVideoSeconds">Hey Snap video length <select id="chakshuVoiceVideoSeconds"><option value="5">5 seconds</option><option value="10" selected>10 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option></select></label>
           <div class="chakshu-actions"><button id="chakshuVoiceToggle" type="button">Enable Hey Snap</button><button id="chakshuVoiceDiagnose" type="button">Voice diagnostics</button></div>
           <p id="chakshuVoiceDiagnostic" class="settings-hint" role="status"></p>
@@ -329,7 +329,7 @@
   <div class="visual-actions"><button id="capturePreviewPhoto" type="button">Take photo</button><button id="capturePreviewStop" type="button">Stop &amp; save video</button><button id="capturePreviewOpen" type="button">Open in library</button></div>
 </dialog>
 <script src="devices/profiles.js?v=1.0.0-c3-large-wifi1"></script>
-<script data-synap-chakshu-voice="2" src="devices/chakshu/voice.js?v=1.0.0-chakshu-voice15"></script>
+<script data-synap-chakshu-voice="2" src="devices/chakshu/voice.js?v=1.0.0-chakshu-voice16"></script>
 <script src="devices/capabilities.js?v=1.0.0-chakshu-hey-snap1"></script>
 <script src="devices/identity.js?v=1.0.0-chakshu-core14"></script>
 <script>(function(){function renderSynapDeviceId(){var el=document.getElementById('setupDeviceId');if(!el)return;try{var key=(globalThis.SynapDevices&&globalThis.SynapDevices.KEY)||'synap-device-associations-v1';var data=JSON.parse(localStorage.getItem(key)||'null');var devices=Array.isArray(data&&data.devices)?data.devices.slice():[];devices.sort(function(a,b){return String(b.lastConnectedAt||'').localeCompare(String(a.lastConnectedAt||''));});var id=devices[0]&&devices[0].deviceId?String(devices[0].deviceId):'';el.textContent=id?id.toLowerCase():'No pendant selected';el.title=id;el.dataset.deviceId=id;}catch(e){el.textContent='No pendant selected';el.title='';el.dataset.deviceId='';}}document.addEventListener('DOMContentLoaded',function(){renderSynapDeviceId();var status=document.getElementById('setupDeviceStatus');if(status)new MutationObserver(renderSynapDeviceId).observe(status,{childList:true,subtree:true,characterData:true});document.getElementById('settingsButton')?.addEventListener('click',function(){setTimeout(renderSynapDeviceId,80)});});globalThis.renderSynapDeviceId=renderSynapDeviceId;})();</script>
@@ -367,9 +367,9 @@
 <script src="ai-providers.js?v=1.0.0-maintenance1"></script>
 <script src="synap-backend.js?v=1.0.0-shell157-experimental-voice"></script>
 <script src="first-memory.js?v=1.0.0-compact-workspace1"></script>
-<script src="app.js?v=1.0.0-shell233-chakshu-visual-actions"></script>
+<script src="app.js?v=1.0.0-shell234-chakshu-visual-only"></script>
 <script src="recording-notifications.js?v=1.0.0-background1"></script>
-<script src="enhancements.js?v=1.0.0-shell233-chakshu-visual-actions"></script>
+<script src="enhancements.js?v=1.0.0-shell234-chakshu-visual-only"></script>
 <script src="processing-pipeline-ui.js?v=1.0.0-status-reconcile1"></script>
 <script src="memory-ui-fix.js?v=1.0.0-moments1"></script>
 <script src="synap-account-ui.js?v=1.0.0-compact-workspace1"></script>

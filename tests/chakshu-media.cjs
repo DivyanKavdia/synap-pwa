@@ -671,7 +671,7 @@ test('connected Chakshu uses PWA capture while SD is an unsynced offline inbox',
   assert.match(lifecycle, /verification failed/);
   assert.match(lifecycle, /Synced to Memories successfully\. Delete this recording from the device SD card now\?/);
   assert.match(lifecycle, /deleteSDItem/);
-  assert.match(html, /Hey Snap captures picture comprehension photos and short video clips to SD while idle/);
+  assert.match(html, /Hey Snap captures ordinary photos, photos explicitly marked for visual interpretation, and short video clips to SD while idle/);
   assert.match(html, /id="visualSDSyncNotice"/);
   assert.match(html, /id="librarySDInbox"/);
   assert.match(html, /id="libraryStorageInfoToggle"/);

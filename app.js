@@ -5,7 +5,7 @@
 
   const APP_VERSION = "1.0.0";
   const APP_REVISION = "1.0.0-audio6";
-  const APP_SHELL_REVISION = "1.0.0-shell233-chakshu-visual-actions";
+  const APP_SHELL_REVISION = "1.0.0-shell234-chakshu-visual-only";
   let deviceAssociation = null;
   let deviceIdentityMessage = "Not connected";
   const PROTOCOL_VERSION = 0x02;

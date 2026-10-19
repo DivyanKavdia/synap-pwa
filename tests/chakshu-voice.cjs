@@ -35,6 +35,8 @@ afterEach(()=>{
 test('decodes the bounded single-model Chakshu voice protocol',()=>{
   const voice=load(),wake=voice.decode(packet({command:1})),stop=voice.decode(packet({command:8}));
   assert.equal(wake.command,1);assert.equal(voice.label(wake),'Hey Snap');
+  assert.equal(voice.label(voice.decode(packet({command:2}))),'Take a snap');
+  assert.equal(voice.label(voice.decode(packet({command:7}))),'Picture comprehension');
  assert.equal(wake.videoSeconds,10);
   assert.equal(voice.label(stop),'Stop');
   assert.throws(()=>voice.decode(packet({command:20})),/Unsupported/);

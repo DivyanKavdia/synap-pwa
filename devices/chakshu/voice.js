@@ -82,7 +82,7 @@
   }
   function commandLabel(incoming) {
     if (incoming.command === WAKE) return 'Hey Snap';
-    if (incoming.command === PHOTO) return 'Picture comprehension (legacy photo)';
+    if (incoming.command === PHOTO) return 'Take a snap';
     if (incoming.command === VIDEO_START) return 'Record a short video';
     if (incoming.command === VIDEO_STOP) return 'Stop video';
     if (incoming.command === AUDIO_ON) return 'Start audio';
@@ -266,7 +266,7 @@
       b.subscribed = true;
       await readState(b, 'Read current Chakshu voice status');
       if (state?.enabled && state.status===1) {
-        message=message||'Hey Snap ready for picture comprehension or short video. SD must be writable.';
+        message=message||'Hey Snap ready for local photos, picture comprehension or short video. SD must be writable.';
         feedback('', 'listening', 0);
       } else if(state && state.status!==1){
         message=['Initializing Hey Snap model','', 'Hey Snap model has not started',
@@ -348,7 +348,7 @@
   }
 
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice15',
+    revision: '1.0.0-chakshu-voice16',
     decode,
     decodeDiagnostic,
     label: commandLabel,
