@@ -17,7 +17,7 @@ test('read-only C3 SD BLE sync shows actual contiguous byte throughput and estim
  assert.match(code,/reportSDStage\(path,'ble-speed-summary'/);
  assert.match(html,/id="librarySDSpeed"[^>]*aria-live="off"/);
  assert.match(code,/deviceSDSpeed/);
- assert.match(sw,/shell232-chakshu-hey-snap/);
+ assert.match(sw,/shell233-chakshu-visual-actions/);
  assert.match(html,/c3-delete-quarantine1/);
 });
 test('background suspension is separated from live BLE speed without modifying SD safety',()=>{
