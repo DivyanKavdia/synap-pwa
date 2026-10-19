@@ -35,6 +35,7 @@ afterEach(()=>{
 test('decodes the bounded single-model Chakshu voice protocol',()=>{
   const voice=load(),wake=voice.decode(packet({command:1})),stop=voice.decode(packet({command:8}));
   assert.equal(wake.command,1);assert.equal(voice.label(wake),'Hey Snap');
+ assert.equal(wake.videoSeconds,10);
   assert.equal(voice.label(stop),'Stop');
   assert.throws(()=>voice.decode(packet({command:20})),/Unsupported/);
   assert.throws(()=>voice.decode(new DataView(new Uint8Array(20).buffer)),/Unsupported/);
@@ -126,7 +127,7 @@ test('Hey Snap wake feedback remains live while BLE is connected',async()=>{
   assert.equal(voice.message,'Hey Snap heard · listening for command.');
 });
 
-test('voice audio and describe always report Chakshu SD storage',async()=>{
+test('legacy audio outcomes and picture comprehension indicate SD storage',async()=>{
   const voice=load(),{events}=connect();
   await voice.sync();await settle();
   events.emit(packet({sequence:20,command:5,result:2,value:60}));
@@ -134,7 +135,7 @@ test('voice audio and describe always report Chakshu SD storage',async()=>{
   assert.match(voice.message,/saving to Chakshu SD/);
   events.emit(packet({sequence:21,command:7,result:3,value:0}));
   await settle();
-  assert.equal(voice.message,'Explain what you see photo saved to Chakshu SD. Sync it to generate the description.');
+  assert.equal(voice.message,'Picture captured for comprehension. Sync it to generate the description.');
 });
 
 test('manual Hey Snap enable and disable remain diagnostic controls while connected',async()=>{
