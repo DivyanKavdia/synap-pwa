@@ -103,13 +103,15 @@
            (states[voice.status]||'Voice status unavailable'))
         : 'Reading Hey Snap state…';
       const sdReady=caps.ready(info,'sd');
-      voiceStatus.textContent=text+(sdReady?'':' · SD unavailable: voice photo, video and audio cannot be saved.')+
+      voiceStatus.textContent=text+(sdReady?'':' · SD unavailable: picture comprehension and video cannot be saved.')+
         (root.SynapChakshuVoice?.message && voice?.status===1 ? ' · '+root.SynapChakshuVoice.message : '');
       if(voiceToggle){
         voiceToggle.disabled=!voice;
         voiceToggle.textContent=voice?.enabled?'Disable Hey Snap':'Enable Hey Snap';
       }
       if(voiceDiagnose)voiceDiagnose.disabled=!voice;
+      const videoLength=byId('chakshuVoiceVideoSeconds');
+      if(videoLength){videoLength.disabled=!voice || !voice.enabled;videoLength.value=String(voice?.videoSeconds||10);}
     }
     byId('moduleRefresh').disabled = !client || client.pending || client.busy;
     if (!chakshu) {
@@ -205,6 +207,13 @@
         const on=Boolean(root.SynapChakshuVoice?.state?.enabled);
         await root.SynapChakshuVoice.enabled(!on);
       } catch(error){byId('chakshuVoiceStatus').textContent=error.message;}
+      finally{render();}
+    });
+    byId('chakshuVoiceVideoSeconds')?.addEventListener('change',async(event)=>{
+      const select=event.currentTarget;
+      select.disabled=true;
+      try{await root.SynapChakshuVoice.setVideoSeconds(Number(select.value));}
+      catch(error){byId('chakshuVoiceStatus').textContent=error.message;}
       finally{render();}
     });
     byId('chakshuVoiceDiagnose')?.addEventListener('click',async()=>{
