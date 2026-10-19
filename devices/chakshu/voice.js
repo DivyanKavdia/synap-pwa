@@ -55,6 +55,7 @@
       atMs: value.getUint32(10, true),
       drops: value.getUint32(14, true),
       offline: Boolean(value.getUint8(18)),
+      videoSeconds: [5, 10, 15, 30].includes(value.getUint8(19)) ? value.getUint8(19) : 10,
       value: value.getUint16(20, true),
     });
   }
@@ -81,12 +82,12 @@
   }
   function commandLabel(incoming) {
     if (incoming.command === WAKE) return 'Hey Snap';
-    if (incoming.command === PHOTO) return 'Take a snap';
-    if (incoming.command === VIDEO_START) return 'Record a video';
+    if (incoming.command === PHOTO) return 'Picture comprehension (legacy photo)';
+    if (incoming.command === VIDEO_START) return 'Record a short video';
     if (incoming.command === VIDEO_STOP) return 'Stop video';
     if (incoming.command === AUDIO_ON) return 'Start audio';
     if (incoming.command === AUDIO_OFF) return 'Stop audio';
-    if (incoming.command === DESCRIBE) return 'Explain what you see';
+    if (incoming.command === DESCRIBE) return 'Picture comprehension';
     if (incoming.command === STOP) return 'Stop';
     return 'Voice command';
   }
@@ -121,16 +122,18 @@
       if (incoming.result === 0 || incoming.result === 2)
         return incoming.command === AUDIO_ON
           ? 'Voice audio accepted · saving to Chakshu SD for up to ' + (incoming.value || 60) + ' seconds.'
-          : 'Voice ' + noun.toLowerCase() + ' accepted · saving to Chakshu SD.';
+          : incoming.command === VIDEO_START
+            ? 'Hey Snap video accepted · recording up to ' + (incoming.value || incoming.videoSeconds) + ' seconds to Chakshu SD.'
+            : 'Voice ' + noun.toLowerCase() + ' accepted · saving to Chakshu SD.';
       return '';
     }
     if (incoming.command === DESCRIBE) {
       if (incoming.result === 3)
-        return 'Explain what you see photo saved to Chakshu SD. Sync it to generate the description.';
+        return 'Picture captured for comprehension. Sync it to generate the description.';
       if (incoming.result === 1)
-        return 'Explain what you see failed on Chakshu (code ' + incoming.value + ').';
+        return 'Picture comprehension capture failed on Chakshu (code ' + incoming.value + ').';
       if (incoming.result === 0 || incoming.result === 2)
-        return 'Explain what you see accepted · saving the photo to Chakshu SD.';
+        return 'Picture comprehension accepted · saving the photo to Chakshu SD.';
       return '';
     }
     if (incoming.command === STOP && incoming.result !== 1) return 'Voice SD capture stop command received.';
@@ -263,7 +266,7 @@
       b.subscribed = true;
       await readState(b, 'Read current Chakshu voice status');
       if (state?.enabled && state.status===1) {
-        message=message||'Hey Snap listener active · voice actions save to Chakshu SD.';
+        message=message||'Hey Snap ready for picture comprehension or short video. SD must be writable.';
         feedback('', 'listening', 0);
       } else if(state && state.status!==1){
         message=['Initializing Hey Snap model','', 'Hey Snap model has not started',
@@ -300,6 +303,26 @@
       notify();
     }
   }
+  async function setVideoSeconds(seconds) {
+    if (![5, 10, 15, 30].includes(seconds)) throw Error('Choose 5, 10, 15 or 30 seconds.');
+    const b = binding;
+    if (!b) throw Error('Connect Chakshu to change the video duration.');
+    while (pending && current(b)) await new Promise((resolve) => setTimeout(resolve, 20));
+    if (!current(b)) throw Error('Chakshu connection changed.');
+    pending = true;
+    try {
+      await b.context.mediaQueue(
+        () => b.control.writeValueWithResponse(new Uint8Array([0xcc, PROTOCOL, 2, seconds])),
+        'Set Hey Snap video duration',
+      );
+      if (current(b)) await readState(b, 'Confirm Hey Snap video duration');
+      if (state?.videoSeconds !== seconds) throw Error('Chakshu did not confirm the requested video duration.');
+      return state;
+    } finally {
+      pending = false;
+      notify();
+    }
+  }
   async function diagnose() {
     const b = binding;
     if (!b) throw Error('Connect Chakshu first.');
@@ -325,7 +348,7 @@
   }
 
   root.SynapChakshuVoice = Object.freeze({
-    revision: '1.0.0-chakshu-voice14',
+    revision: '1.0.0-chakshu-voice15',
     decode,
     decodeDiagnostic,
     label: commandLabel,
@@ -333,6 +356,7 @@
     sync,
     release,
     enabled,
+    setVideoSeconds,
     diagnose,
     lastOutcome,
     get state() { return state; },
