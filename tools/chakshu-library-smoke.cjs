@@ -422,7 +422,7 @@ async function until(page, predicate, arg) {
       await page.waitForFunction(() => document.getElementById('visualDialog').open);
       assert.equal(await page.locator('#visualPreview').evaluate((el) => el.naturalWidth), 160);
       assert.equal(await page.locator('#visualDescribe,#visualReadText,#visualInference').count(), 0);
-      assert.match(await page.locator('#visualDialog').textContent(), /stay on this device/);
+      assert.match(await page.locator('#visualDialog').textContent(), /(?:stay on this device|Saved in this browser on this device)/);
       await page.locator('.visual-edit summary').click();
       await page.locator('#visualName').fill('Station sign');
       await page.locator('#visualNotes').fill('Return platform <b>north</b>');

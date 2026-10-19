@@ -103,6 +103,7 @@ async function run() {
           versionLabel: window.SynapReleases.versionLabel,
           targetFromIdentity: window.SynapReleases.targetFromIdentity,
           validateManifest: (value) => value,
+          latestFor: async () => manifest,
           latest: async () => manifest,
           compatible: (m, info) => m.build > info.build,
           download: async (_m, _capacity, _fetcher, signal) => {
