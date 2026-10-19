@@ -226,6 +226,7 @@
     $('visualPlay').disabled = !frames.length;
     $('visualName').value = row.name || '';
     $('visualNotes').value = row.notes || '';
+    $('visualRetryDescribe').hidden = !(row.kind === 'image' && row.descriptionRequested && row.descriptionPending);
     renderFavourite();
     $('visualInfo').textContent =
       (row.state === 'interrupted' ? 'Interrupted capture · ' : '') +
@@ -844,6 +845,21 @@
           );
       }),
     );
+    $('visualRetryDescribe').addEventListener('click', async () => {
+      const id = selected?.id, store = api().store;
+      if(!id || !selected?.descriptionRequested)return;
+      const btn = $('visualRetryDescribe');btn.disabled = true;
+      try {
+        await api().describe(id);
+        if(selected?.id !== id || api().store !== store)return;
+        selected = await store.get(id);
+        renderDescriptions();
+        btn.hidden = !selected?.descriptionPending;
+        $('visualDetailStatus').textContent = 'Picture comprehension completed.';
+      } catch(error) {
+        if(selected?.id===id)$('visualDetailStatus').textContent = error.message;
+      } finally {btn.disabled = false;}
+    });
     $('visualClose').addEventListener('click', closeViewer);
     $('visualAudioSource').addEventListener('click', (event) => {
       if (!selected?.audioId) return;
