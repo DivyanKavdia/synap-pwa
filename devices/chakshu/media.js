@@ -873,7 +873,7 @@
       }
       const frames = splitMJPEG(encoded, timing?.frameTimesMs);
       if (
-        timing &&
+        !image && timing &&
         (timing.frameTimesMs.length !== frames.length ||
           !Number.isFinite(timing.durationMs) ||
           timing.durationMs < frames.at(-1).atMs)
