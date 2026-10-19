@@ -323,9 +323,45 @@
       }
     });
   }
-  // Old cached callers cannot opt back into cloud visual processing.
-  async function describe() {
-    throw Error('Photos and videos stay on this phone. Cloud descriptions are disabled.');
+  // A spoken "explain what you see" is an explicit request to process that
+  // specific JPEG. Ordinary photos and videos remain local and are never sent.
+  async function describeSavedPhoto(scope, rowId, blob) {
+    if (!blob || blob.type !== 'image/jpeg' || !blob.size || blob.size > 2 * 1024 * 1024)
+      throw Error('Comprehension requires one complete JPEG no larger than 2 MiB.');
+    const response = await root.SynapAuth.authedFetch('/v1/chakshu/describe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/jpeg' },
+      body: blob,
+    });
+    const data = await response.json();
+    if (!response.ok) throw Error(data?.error?.message || 'Vision service could not describe the photo.');
+    const description = String(data?.description || '').trim();
+    if (!description) throw Error('The vision service returned no description.');
+    check(scope.owner);
+    await scope.store.addDescription(rowId, {
+      atMs: 0, text: description, source: 'hey-snap-explicit',
+      createdAt: new Date().toISOString(),
+    });
+    await scope.store.ackVoiceRequest(rowId, 'hey-snap-describe');
+    await scope.store.patch(rowId, { descriptionPending: false, descriptionError: '' });
+    notify();
+    return description;
+  }
+  async function describe(id) {
+    // Manual retry is permitted only on an explicitly Hey-Snap-marked photo.
+    const scope = requireAccess();
+    const row = await scope.store.get(id);
+    if (!row || row.kind !== 'image' || !row.descriptionRequested)
+      throw Error('Only a photo requested through Hey Snap can be described.');
+    if ((row.voiceRequests || []).includes('hey-snap-describe'))
+      return row.descriptions?.find((item) => item.source === 'hey-snap-explicit')?.text || '';
+    const frame = await scope.store.firstFrame(id);
+    if (!frame?.blob) throw Error('The saved photo cannot be found.');
+    try { return await describeSavedPhoto(scope, id, frame.blob); }
+    catch (error) {
+      await scope.store.patch(id, { descriptionPending: true, descriptionError: String(error?.message || error).slice(0, 160) });
+      throw error;
+    }
   }
   async function saveAudio(sessionId) {
     if (!sessionId) return;
@@ -811,9 +847,10 @@
       const image = /\.jpe?g$/i.test(file.name),
         stem = file.name.replace(/\.[^.]+$/, ''),
         timingFile = files.find((f) => f.name === stem + '.json');
-      const timing = timingFile ? JSON.parse(await timingFile.text()) : null;
+      const timing = timingFile ? JSON.parse(await timingFile.text()) : null,
+        descriptionRequested = Boolean(image && timing?.schema === 1 && timing?.voice === 'describe');
       if (
-        timing &&
+        !image && timing &&
         (!Array.isArray(timing.frameTimesMs) ||
           timing.frameTimesMs.some(
             (t, i, a) => !Number.isFinite(t) || t < 0 || (i && t < a[i - 1]),
@@ -853,6 +890,8 @@
         localOnly: true,
         timingEstimated: !image && !timing,
         sourceName: file.name,
+        descriptionRequested,
+        descriptionPending: descriptionRequested,
         ...(!image &&
         timing &&
         Number.isInteger(timing.width) &&
@@ -892,6 +931,18 @@
           state: 'saved',
           durationMs: timing?.durationMs || frames.at(-1).atMs,
         });
+        // Do not roll back a verified local JPEG if vision/cloud processing
+        // is unavailable. Preserve the image and mark a retryable request.
+        if (descriptionRequested) {
+          try {
+            await describeSavedPhoto(scope, row.id, frames[0].blob);
+          } catch (error) {
+            await scope.store.patch(row.id, {
+              descriptionPending: true,
+              descriptionError: String(error?.message || error).slice(0, 160),
+            });
+          }
+        }
       } catch (e) {
         await scope.store.patch(row.id, { state: 'interrupted' });
         throw e;
@@ -932,7 +983,7 @@
       check(scope.owner);
       if (path.endsWith('.mjpeg') ||
           (capabilities.isChakshu(moduleInfo()) && path.endsWith('.jpg'))) {
-        const companions = path.endsWith('.mjpeg') ? ['json', 'wav'] : ['wav'];
+        const companions = path.endsWith('.mjpeg') ? ['json', 'wav'] : ['json', 'wav'];
         for (const extension of companions) {
           try {
             await add(path.replace(/\.(mjpeg|jpg)$/i, '.' + extension));
