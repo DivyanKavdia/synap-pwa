@@ -14,11 +14,11 @@ function load(){
   require('../devices/chakshu/voice.js');
   return global.SynapChakshuVoice;
 }
-function packet({sequence=1,command=2,result=2,status=1,value=0,enabled=true}={}){
+function packet({sequence=1,command=2,result=2,status=1,value=0,enabled=true,videoSeconds=10}={}){
   const bytes=new Uint8Array(22),view=new DataView(bytes.buffer);
   bytes[0]=0xcd;bytes[1]=2;bytes[2]=status;bytes[3]=enabled?1:0;
   view.setUint32(4,sequence,true);bytes[8]=command;bytes[9]=result;
-  view.setUint32(10,123,true);view.setUint32(14,4,true);view.setUint16(20,value,true);
+  view.setUint32(10,123,true);view.setUint32(14,4,true);bytes[19]=videoSeconds;view.setUint16(20,value,true);
   return view;
 }
 function diagnosticPacket({status=1,enabled=true,meanAbs=321,peak=2345,candidate=1,confidence=612,at=456,count=7,active=true}={}){
@@ -58,7 +58,7 @@ function connect({enabled=true,incoming={}}={}){
   const ops=[],listeners=new Set();
   let current=packet({enabled,...incoming});
   const control={
-    writeValueWithResponse(value){ops.push('write:'+value[2]);current=packet({enabled:value[2]===1,sequence:incoming.sequence||1,command:incoming.command||0,result:incoming.result||0,value:incoming.value||0});return Promise.resolve()},
+    writeValueWithResponse(value){ops.push('write:'+value[2]+(value.length===4?':'+value[3]:''));current=packet({enabled:value[2]===2?current.getUint8(3)===1:value[2]===1,sequence:incoming.sequence||1,command:incoming.command||0,result:incoming.result||0,value:incoming.value||0,videoSeconds:value[2]===2?value[3]:current.getUint8(19)});return Promise.resolve()},
     readValue(){ops.push('read');return Promise.resolve(current)},
   };
   const events={
@@ -149,6 +149,17 @@ test('manual Hey Snap enable and disable remain diagnostic controls while connec
   await voice.enabled(true);
   assert.deepEqual(ops,['write:1','read']);
   assert.equal(voice.state.enabled,true);
+});
+
+test('video length is validated and confirmed via a four-byte control update',async()=>{
+  const voice=load(),{ops}=connect();
+  await voice.sync();await settle();
+  ops.length=0;
+  await voice.setVideoSeconds(15);
+  assert.equal(voice.state.videoSeconds,15);
+  assert.equal(voice.state.enabled,true);
+  assert.deepEqual(ops,['write:2:15','read']);
+  await assert.rejects(voice.setVideoSeconds(7),/Choose 5, 10, 15 or 30/);
 });
 
 test('release performs no ownership write because firmware stays armed across disconnect',async()=>{
