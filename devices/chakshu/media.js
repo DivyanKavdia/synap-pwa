@@ -837,7 +837,8 @@
       throw e;
     }
   }
-  async function importFilesNow(files, deviceId = devices[0]?.deviceId) {
+  async function importFilesNow(files, deviceId = devices[0]?.deviceId, options = {}) {
+    const autoDescribe = options.deferDescription !== true;
     const scope = requireAccess();
     let count = 0;
     for (const file of files) {
@@ -933,7 +934,7 @@
         });
         // Do not roll back a verified local JPEG if vision/cloud processing
         // is unavailable. Preserve the image and mark a retryable request.
-        if (descriptionRequested) {
+        if (descriptionRequested && autoDescribe) {
           try {
             await describeSavedPhoto(scope, row.id, frames[0].blob);
           } catch (error) {
@@ -1113,7 +1114,7 @@
     importSD,
     moveSD,
     syncPendingSD,
-    importFiles: (files, deviceId) => operation(() => importFilesNow(files, deviceId)),
+    importFiles: (files, deviceId, options) => operation(() => importFilesNow(files, deviceId, options)),
     pollOffline,
     get state() {
       return {
