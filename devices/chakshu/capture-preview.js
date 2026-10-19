@@ -763,7 +763,9 @@
     // Chakshu stores multimedia moments as matching visual/WAV/JSON stems.
     // A still-photo memory can carry a spoken note, not only an MJPEG video.
     // Never issue companion reads on Odyssey C3 or S3 paths.
-    if (isMjpegPath(path)) await add(stem(path) + '.json', false);
+    if (isMjpegPath(path) ||
+        (root.SynapCapabilities?.isChakshu(root.SynapModules?.client?.module) && /\.jpg$/i.test(path)))
+      await add(stem(path) + '.json', false);
     if (isMjpegPath(path) ||
         (root.SynapCapabilities?.isChakshu(root.SynapModules?.client?.module) && /\.jpg$/i.test(path)))
       wav = await add(stem(path) + '.wav', false);
@@ -1168,7 +1170,9 @@
         throw Error('Account or pendant changed during transfer. The SD original was kept.');
       stage = 'import';
       reportSDStage(path, stage, { files: source.files.length });
-      await api().importFiles(source.files, connection.deviceId);
+      // Verify JPEG and SD receipt before sending an explicitly requested
+      // comprehension image to the vision endpoint. Only one describe call.
+      await api().importFiles(source.files, connection.deviceId, { deferDescription: true });
       reportSDStage(path, 'import-complete');
       const rows = await api().store.list(),
         journal = audioJournal(),
@@ -1223,9 +1227,13 @@
       // independent of that retention choice; Memories stays durable either way.
       if (wantsDescribe && visualId) {
         try {
+          await api().store.patch(visualId, { descriptionRequested: true, descriptionPending: true });
           receipt.description = await describeVisual(visualId, source.main);
+          await api().store.ackVoiceRequest(visualId, 'hey-snap-describe');
+          await api().store.patch(visualId, { descriptionPending: false, descriptionError: '' });
         } catch (error) {
           receipt.descriptionError = error.message;
+          await api().store.patch(visualId, { descriptionPending: true, descriptionError: error.message });
         }
       }
       return { ...receipt, alreadySynced: false, keptOnSD: true, sdAvailableAfterSync };
