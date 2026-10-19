@@ -317,7 +317,8 @@
   <details class="visual-edit"><summary>Title &amp; notes</summary><label for="visualName">Title</label><input id="visualName" maxlength="160"><label for="visualNotes">Notes</label><textarea id="visualNotes" maxlength="2000" rows="3" placeholder="What would you like to remember?"></textarea><button id="visualSaveDetails" type="button">Save details</button></details>
   <audio id="visualAudio" controls hidden></audio><a id="visualAudioSource" hidden>Open audio transcript</a>
   <div class="visual-actions"><label>Linked audio <select id="visualAudioLink"></select></label><button id="visualSaveLink" type="button">Save audio link</button></div>
-  <p>Photos, video and their soundtracks stay on this device. Cloud descriptions are disabled.</p>
+  <p>Ordinary photos, video and their soundtracks remain local. Only a photo explicitly requested for Hey Snap comprehension is sent to the vision service after import.</p>
+  <button id="visualRetryDescribe" type="button" hidden>Retry picture comprehension</button>
   <p id="visualDetailStatus" role="status"></p><div id="visualDescriptions"></div>
   <div class="visual-actions"><button id="visualDownload" type="button">Download original</button><button id="visualDelete" type="button">Delete visual from this browser</button></div>
 </dialog>
@@ -398,6 +399,6 @@
 <script src="devices/chakshu/transfer.js?v=1.0.0-c3-compact-v3-3"></script>
 <script src="devices/chakshu/media.js?v=1.0.0-chakshu-vision1"></script>
 <script src="devices/chakshu/player.js?v=1.0.0-devices1"></script>
-<script src="devices/chakshu/library.js?v=1.0.0-c3-delete-quarantine1-chakshu-rail1"></script>
+<script src="devices/chakshu/library.js?v=1.0.0-chakshu-vision-retry1"></script>
 <script src="devices/chakshu/capture-preview.js?v=1.0.0-c3-delete-quarantine1-chakshu-wav-select1"></script>
 </body></html>
