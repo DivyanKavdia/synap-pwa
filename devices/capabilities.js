@@ -33,14 +33,14 @@
     const expected = profile(info)?.protocols?.[key] || 0;
     return Boolean(Number.isInteger(expected) && expected > 0 && info[key + 'Version'] === expected);
   }
-  // C3 firmware 2200 adds media-v2 opcode31 (adaptive BLE SD windows) while
-  // retaining the entire v1 catalogue/read ABI. Protocol v2 must not hide the
-  // mounted SD card, suppress catalogue discovery or disable the sync inbox.
-  // Allow v2 ONLY for identified C3 hardware advertising the fast BLE bit.
-  // Chakshu and all other modules retain exact-version matching.
+  // C3 media-v2/v3 added adaptive/compact BLE windows; media-v4 adds
+  // optional read-only compressed sync (opcode36). All preserve the original
+  // catalogue/read/control ABI, so do not hide SD when a newer C3 connects.
+  // Require an identified C3 plus the advertised fast-BLE feature. Keep
+  // exact-version matching for Chakshu and every other hardware profile.
   const hasMedia = (info) => protocol(info, 'media') ||
     Boolean(info?.id === 2 && profile(info) &&
-      [2, 3].includes(info.mediaVersion) && (info.mediaFeatures & 0x40) &&
+      [2, 3, 4].includes(info.mediaVersion) && (info.mediaFeatures & 0x40) &&
       supports(info, 'sd'));
   const hasVoice = (info) => protocol(info, 'voice') && supports(info, 'audio');
   function canCapture(info, kind, offline = false) {
