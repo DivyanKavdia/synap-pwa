@@ -35,7 +35,7 @@ test('fresh and cached shells share the refresh generation without changing BLE 
   const revision=sw.match(/const CACHE_REVISION='([^']+)'/)[1];
   assert.equal(revision,'1.0.0-shell235-c3-sd-media-v4');
   assert(read('enhancements.js').includes(`SHELL_REVISION='${revision}'`));
-  assert.match(read('index.html'), /devices\/capabilities\.js\?v=1\.0\.0-chakshu-hey-snap1/);
+  assert.match(read('index.html'), /devices\/capabilities\.js\?v=1\.0\.0-c3-sd-media-v4/);
   assert.match(sw,/CLIENT_REVISION='1\.0\.0-audio6'/);
   assert.match(sw,/'\.\/compact\.css'/);
   assert.match(read('index.html'),/compact\.css\?v=/);
