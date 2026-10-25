@@ -1158,7 +1158,7 @@
       const before = await localSnapshot(),
         source = await download(path, undefined, speed.progress);
       speed.finish();
-      reportSDStage(path, 'download-complete', { bytes: source.main.size });
+      reportSDStage(path, 'download-complete', { bytes: source.main.size, transferEncoding: source.main.synapTransferEncoding || 'original' });
       if (sourceEntry?.crc32 !== undefined && isWavPath(path)) {
         stage = 'integrity';
         reportSDStage(path, stage, { expectedCrc32: sourceEntry.crc32 });
@@ -1208,6 +1208,7 @@
         audioId,
         mainBytes: source.main.size,
         ...(sourceEntry?.crc32 !== undefined ? { sourceCrc32: sourceEntry.crc32 } : {}),
+        ...(source.main.synapTransferEncoding === 'ima-adpcm' ? { transferEncoding: 'ima-adpcm', lossy: true } : {}),
         ...(sourceEntry?.take ? { take: sourceEntry.take, part: sourceEntry.part ?? null } : {}),
         mainSha256: mainSha,
         ...(verifiedAudio

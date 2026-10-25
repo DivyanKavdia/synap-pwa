@@ -46,7 +46,7 @@ test('C3 v3 credits cap at 10 and legacy v2 retains 12 with fallback on loss',()
  assert.match(source,/Math\.min\(compact \? this\.compactCreditCeiling : 12, this\.fastCredits\)/);
  assert.match(source,/Math\.min\(this\.compactCreditCeiling, credits \+ 1\)/);
  assert.match(source,/if \(\+\+this\.fastWindowFailures >= 3\) this\.fastDisabled = true/);
- assert.match(source,/this\.sendOnly\(fast \? \(adaptive \? 31 : 30\) : 12/);
+ assert.match(source,/this\.sendOnly\(compressed \? 36 : fast \? \(adaptive \? 31 : 30\) : 12/);
  assert.match(source,/fallbackToLegacy: this\.fastDisabled/);
 });
 test('C3 SD notification errors are explicit while Chakshu errors keep legacy compatibility',()=>{
@@ -74,7 +74,7 @@ test('C3 contiguous full credits finish without END; a missing packet cannot adv
  assert.equal(state.creditComplete(12),true);
  assert.equal(state.contiguous().next,5760);
  assert.equal(state.ended,false);
- assert.match(source,/window\.ended \|\| \(fast && window\.creditComplete\(credits\)\)/);
+ assert.match(source,/window\.ended \|\| \(\(fast \|\| compressed\) && window\.creditComplete\(credits\)\)/);
  assert.match(source,/notificationWaitMs/);
 });
 
@@ -131,7 +131,7 @@ test('C3 media-v3 compact opcode31 uses token-bound 16-byte no-response command'
  assert.equal(v2.adaptiveSupported,true);
  const other=new Client({mediaFeatures:0x41,module:{id:3,mediaVersion:3}});
  assert.equal(other.compactSupported,false);
- assert.match(source,/compact \? '' : path, credits, paceMs, compact \? sessionToken : 0/);
+ assert.match(source,/\(compact \|\| compressed\) \? '' : path, credits, paceMs, \(compact \|\| compressed\) \? sessionToken : 0/);
  assert.match(source,/first\.sessionToken \|\| 0/);
  assert.match(source,/op === 3 && this\.compactSupported/);
 });
@@ -170,7 +170,7 @@ test('C3 media-v3 recurring Bluefy loss falls back without losing source or offs
  }
  assert.equal(newer.compactLossEvents,3);
  assert.equal(newer.fastDisabled,true,'three intermittent missing-credit windows must use op12');
- assert.match(source,/this\.sendOnly\(fast \? \(adaptive \? 31 : 30\) : 12/);
+ assert.match(source,/this\.sendOnly\(compressed \? 36 : fast \? \(adaptive \? 31 : 30\) : 12/);
  const older=new Client({mediaFeatures:0x41,module:{id:2,mediaVersion:2}});
  older.adaptWindow(false,true,12,1600,true,true);
  older.adaptWindow(true,false,6,250,true,true);
@@ -216,7 +216,7 @@ test('Odyssey C3 SD defaults to six-credit opcode12 on media-v3 firmware',()=>{
  assert.equal(legacy.reliableC3SdMode,true);
  assert.equal(chakshu.reliableC3SdMode,false);
  assert.match(source,/!this\.fastDisabled && !this\.reliableC3SdMode/);
- assert.match(source,/this\.sendOnly\(fast \? \(adaptive \? 31 : 30\) : 12/);
+ assert.match(source,/this\.sendOnly\(compressed \? 36 : fast \? \(adaptive \? 31 : 30\) : 12/);
 });
 test('OTA owns BLE: suppress C3 background catalogue and retry traffic',()=>{
  const fs=require('node:fs'),path=require('node:path');

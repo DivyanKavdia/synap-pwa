@@ -9,8 +9,8 @@ test('C3 user-facing transfer stays BLE-only without a SoftAP handoff',()=>{
  assert.match(preview,/Syncing to Memories over Bluetooth/);
 });
 test('fast C3 media windows keep bounded credits and legacy op12 fallback',()=>{
- assert.match(tx,/this\.sendOnly\(fast \? \(adaptive \? 31 : 30\) : 12/);
+ assert.match(tx,/this\.sendOnly\(compressed \? 36 : fast \? \(adaptive \? 31 : 30\) : 12/);
  assert.match(tx,/const prefix = compact \? 16 : adaptive \? 12 : fast \? 11 : 10/);
- assert.match(tx,/new MediaWindow\(id, offset, total, fast \? 12 : 8, Boolean\(path\)\)/);
+ assert.match(tx,/new MediaWindow\(id, offset, total, fast \? 12 : 8, Boolean\(path\), compressed\)/);
  assert.match(tx,/this\.streamDisabled = true/);
 });
