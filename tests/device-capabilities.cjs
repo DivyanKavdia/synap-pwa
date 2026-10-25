@@ -74,8 +74,10 @@ test('profile-scoped protocols give C3 SD media without unlocking Chakshu camera
   assert.equal(caps.ready(c3v2, 'sd'), true);
   assert.equal(caps.hasMedia({ ...c3v2, mediaFeatures: 0x05 }), false,
     'unadvertised C3 protocol-v2 is not assumed compatible');
-  assert.equal(caps.hasMedia({ ...c3v2, mediaVersion: 4 }), false,
-    'unknown C3 media protocol is rejected');
+  assert.equal(caps.hasMedia({ ...c3v2, mediaVersion: 4 }), true,
+    'media-v4 retains SD catalogue and settings while adding compressed sync');
+  assert.equal(caps.hasMedia({ ...c3v2, mediaVersion: 5 }), false,
+    'unknown future C3 media protocol is rejected');
   assert.equal(caps.hasMedia({ ...c3v2, target: 'unknown' }), false,
     'unrecognized board identity is rejected');
   assert.equal(caps.hasMedia({ ...descriptor(3, 1023, 1023), mediaVersion: 2, mediaFeatures: 0x40 }), false,
@@ -84,6 +86,34 @@ test('profile-scoped protocols give C3 SD media without unlocking Chakshu camera
   const chakshuMask = mask(profiles.BY_MODULE[3].features);
   const wrong = { ...descriptor(3, chakshuMask, chakshuMask), target: profiles.BY_MODULE[1].target };
   assert.equal(caps.isChakshu(wrong), false);
+});
+test('build 2372 C3+SD media-v4 descriptor exposes storage without bypassing safety flags', () => {
+  // Real firmware reports a generic hardware identity and separate SD OTA target.
+  // The capability descriptor is the reliable source of SD support.
+  const view = new DataView(new ArrayBuffer(20));
+  [0xc7, 1, 2, 1].forEach((value, index) => view.setUint8(index, value));
+  view.setUint16(4, 381, true);
+  view.setUint16(6, 381, true);
+  view.setUint8(14, 4); // media-v4 compressed SD sync
+  view.setUint8(16, 0xf5); // validation + stage 6 + legacy/format/fast BLE flags
+  view.setUint8(17, 1);
+  view.setUint8(18, 1); // SD detected
+  view.setUint8(19, 6); // live FAT mount
+  const info = decode(view);
+  assert.equal(info.target, 'esp32c3-supermini-4m');
+  assert.equal(info.mediaVersion, 4);
+  assert.equal(info.mediaFeatures, 0x45);
+  assert.equal(info.sdDetectionState, 1);
+  assert.equal(info.sdLiveProbeState, 6);
+  assert.equal(info.sdProbeState, 6);
+  assert.equal(caps.hasMedia(info), true);
+  assert.equal(caps.ready(info, 'sd'), true);
+  assert.equal(caps.isChakshu(info), false);
+  assert.equal(caps.canCapture(info, 'photo'), false);
+  assert.equal(caps.hasMedia({ ...info, mediaFeatures: 0x05 }), false,
+    'fast BLE flag remains required');
+  assert.equal(caps.hasMedia({ ...info, supported: info.supported & ~profiles.FLAGS.sd }), false,
+    'an absent SD capability must keep storage controls hidden');
 });
 test('Chakshu live capture needs a ready camera, and offline video additionally needs SD', () => {
   const all = mask(profiles.BY_MODULE[3].features);
