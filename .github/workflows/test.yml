@@ -34,7 +34,7 @@ jobs:
 
   workflows:
     name: browser-${{ matrix.name }}
-    # Playwright 1.51.1 requires the supported Ubuntu 24.04 browser dependencies.
+    # Playwright 1.51 supports Ubuntu 24.04; latest runner is now 26.04.
     runs-on: ubuntu-24.04
     timeout-minutes: 18
     strategy:

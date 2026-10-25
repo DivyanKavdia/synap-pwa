@@ -505,7 +505,9 @@ async function until(page, predicate, arg) {
       assert(privacy.record.localOnly);
       assert.equal(privacy.record.processingState, 'local');
       assert.deepEqual(privacy.jobs, []);
-      assert.match(privacy.message, /Cloud descriptions are disabled/);
+      // Only an explicitly Hey-Snap-marked photo may trigger description;
+      // arbitrary/legacy spoken commands remain unable to upload video frames.
+      assert.match(privacy.message, /Only a photo requested through Hey Snap can be described/);
       assert.equal(descriptions.length, 0, 'old spoken explain events cannot upload frames');
       assert.equal(await page.locator('#visualOffline').count(), 0);
       await page.locator('#visualSD').click();
