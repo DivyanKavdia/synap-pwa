@@ -107,7 +107,7 @@ test('C3 BLE only advertises fast read capability; Wi-Fi UI is gone',()=>{
   assert.match(preview,/supportsC3Wifi = false/);
   assert.doesNotMatch(preview,/id="startDeviceAp"|id="stopDeviceAp"/);
   assert.doesNotMatch(library,/Start Wi-Fi downloads/);
-  assert.match(transferSource,/this\.sendOnly\(fast \? \(adaptive \? 31 : 30\) : 12/);
+  assert.match(transferSource,/this\.sendOnly\(compressed \? 36 : fast \? \(adaptive \? 31 : 30\) : 12/);
   const normal=preview.slice(preview.indexOf('async function moveSD'),preview.indexOf('async function clearSD'));
   assert.doesNotMatch(normal,/return moveC3Wifi/);
 });
@@ -151,6 +151,6 @@ test('C3 media clients sharing a BLE connection do not accept stale same-ID repl
 
 test('C3 BLE media transfers retain the source and use capped credits',()=>{
  assert.match(transferSource,/Math\.max\(6, Math\.min\(12, credits\)\)/);
- assert.match(transferSource,/new MediaWindow\(id, offset, total, fast \? 12 : 8, Boolean\(path\)\)/);
+ assert.match(transferSource,/new MediaWindow\(id, offset, total, fast \? 12 : 8, Boolean\(path\), compressed\)/);
  assert.match(preview,/SD original kept/);
 });

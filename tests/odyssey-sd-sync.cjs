@@ -18,7 +18,7 @@ assert.match(library,/info = root\.SynapModules\?\.client\?\.module/,'SD library
 assert(transfer.includes('{0,51}\\.wav'));
 assert.match(transfer,/readPath = image \? '' : op === 8 \? '@catalogue' : path/);
 assert.match(transfer,/this\._request\(readOp, size, readPath, signal\)/);
-assert.match(transfer,/revision: '1\.0\.0-chakshu-core18'/);
+assert.match(transfer,/revision: '1\.0\.0-chakshu-core19'/);
 assert.match(media,/Odyssey SD audio/);
 assert.match(media,/schedulePendingSync\(250\)/);
 assert.match(media,/root\.document\?\.body\?\.dataset\.otaRecovery === 'c3'/,'Odyssey automatic catalogue must be suppressed only during OTA recovery');
@@ -79,7 +79,7 @@ assert.match(modulesSource,/profile\.id === 2 \? value\.getUint8\(16\) & 0x45 : 
 assert.match(transfer,/if \(this\.features & 1 && !this\.streamDisabled\)/,
   'C3 retains safe legacy notification windows');
 assert.match(transfer,/this\.window\(size, first\.total, signal, c3WindowPath, first\.sessionToken \|\| 0\)/);
-assert.match(transfer,/this\.sendOnly\(fast \? \(adaptive \? 31 : 30\) : 12/,
+assert.match(transfer,/this\.sendOnly\(compressed \? 36 : fast \? \(adaptive \? 31 : 30\) : 12/,
   'new firmware uses credit-based op30, old firmware still uses op12');
 assert.doesNotMatch(preview,/Start pendant Wi-Fi|Start private Wi-Fi downloads/);
 assert.doesNotMatch(library,/Start Wi-Fi downloads/);

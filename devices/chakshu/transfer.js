@@ -79,9 +79,17 @@
       bytes: new Uint8Array(value.buffer, value.byteOffset + 16, value.byteLength - 16).slice(),
     };
   }
+  function sdSyncCrc32(bytes) {
+    let crc = 0xffffffff;
+    for (const byte of bytes) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  }
   class MediaWindow {
-    constructor(id, offset, total, maxChunks = 8, sdWindow = false) {
-      Object.assign(this, { id, offset, total, maxChunks, sdWindow, ended: false, chunks: new Map() });
+    constructor(id, offset, total, maxChunks = 8, sdWindow = false, compressed = false) {
+      Object.assign(this, { id, offset, total, maxChunks, sdWindow, compressed, ended: false, chunks: new Map() });
     }
     accept(value) {
       if (
@@ -92,11 +100,25 @@
         value.getUint32(4, true) !== this.id
       )
         return false;
-      const kind = value.getUint8(2),
-        error = value.getUint8(3),
+      let kind = value.getUint8(2);
+      const error = value.getUint8(3),
         total = value.getUint32(8, true),
-        offset = value.getUint32(12, true),
-        size = value.byteLength - 16;
+        offset = value.getUint32(12, true);
+      let size = value.byteLength - 16;
+      let bytes;
+      if (kind === 3 && !error) {
+        if (!this.compressed || value.byteLength !== 426 || !root.SynapAudioCodecV3?.decodeFrame)
+          throw Error('Unexpected compressed SD block.');
+        const samples = value.getUint16(16, true);
+        const packet = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+        if (!samples || samples > 800 || offset < 44 || (offset - 44) % 2 ||
+            sdSyncCrc32(packet.subarray(0, 422)) !== value.getUint32(422, true))
+          throw Error('Compressed SD block failed integrity verification. Original retained.');
+        bytes = root.SynapAudioCodecV3.decodeFrame(packet.subarray(18, 422)).slice(0, samples * 2);
+        size = bytes.length;
+        this.receivedCompressed = true;
+        kind = 1;
+      }
       if (error) {
         const failure = Error(this.sdWindow
           ? 'SD read failed during Bluetooth sync. Preserve the original recording; do not format or delete the card.'
@@ -116,9 +138,9 @@
         this.ended = true;
         return true;
       }
-      if (kind !== 1 || !size || size > 480) throw Error('Invalid camera notification.');
-      const bytes = new Uint8Array(value.buffer, value.byteOffset + 16, size).slice(),
-        previous = this.chunks.get(offset);
+      if (kind !== 1 || !size || size > (bytes ? 1600 : 480)) throw Error('Invalid camera notification.');
+      bytes ||= new Uint8Array(value.buffer, value.byteOffset + 16, size).slice();
+      const previous = this.chunks.get(offset);
       if (previous && (previous.length !== size || previous.some((v, i) => v !== bytes[i])))
         throw Error('Conflicting camera notification.');
       if (!previous && this.chunks.size >= this.maxChunks) throw Error('Camera credit window exceeded.');
@@ -187,6 +209,13 @@
       const info = this.context.module ||
         (root.SynapModules?.client?.context === this.context ? root.SynapModules.client.module : null);
       return info?.id === 2 && info.mediaVersion >= 3 && Boolean(this.features & 0x40);
+    }
+    get compressedSupported() {
+      const info = this.context.module ||
+        (root.SynapModules?.client?.context === this.context ? root.SynapModules.client.module : null);
+      // Only the two SD-specific firmware tracks advertise v4. No build-number guessing.
+      return info?.id === 2 && info.mediaVersion === 4 && Boolean(this.features & 0x40) &&
+        typeof root.SynapAudioCodecV3?.decodeFrame === 'function';
     }
     // Reliability-first: C3 SD uses the original six-credit opcode12.
     // Keep adaptive/compact code dormant until field reliability is proven.
@@ -301,7 +330,7 @@
       // 8-15ms pacing byte. Legacy op12 and Chakshu remain unchanged.
       const pathBytes = path ? new TextEncoder().encode(path) : new Uint8Array();
       if (pathBytes.length > 63) throw Error('Invalid SD transfer path.');
-      const compact = op === 31 && !path && Number.isInteger(sessionToken) && sessionToken > 0;
+      const compact = (op === 31 || op === 36) && !path && Number.isInteger(sessionToken) && sessionToken > 0;
       const adaptive = op === 31 && Boolean(path || compact);
       const fast = (op === 30 && Boolean(path)) || adaptive;
       const prefix = compact ? 16 : adaptive ? 12 : fast ? 11 : 10;
@@ -338,6 +367,7 @@
         this.streamDisabled = true;
         return { parts: [], next: offset };
       }
+      const compressed = Boolean(path) && this.compressedSupported && Number.isInteger(sessionToken) && sessionToken > 0;
       const fast = Boolean(path) && Boolean(this.features & 0x40) && !this.fastDisabled && !this.reliableC3SdMode;
       const adaptive = fast && this.adaptiveSupported;
       const compact = adaptive && this.compactSupported && Number.isInteger(sessionToken) && sessionToken > 0;
@@ -345,7 +375,7 @@
       const credits = fast ? Math.max(6, Math.min(compact ? this.compactCreditCeiling : 12, this.fastCredits)) : 6;
       const began = Date.now();
       const id = nextRequestId(this.context),
-        window = new MediaWindow(id, offset, total, fast ? 12 : 8, Boolean(path));
+        window = new MediaWindow(id, offset, total, fast ? 12 : 8, Boolean(path), compressed);
       let timer, finish, fail;
       let commandMs = 0, notificationWaitMs = 0;
       const done = new Promise((resolve, reject) => {
@@ -359,7 +389,7 @@
       const receive = (event) => {
         try {
           if (window.accept(event.target.value) &&
-              (window.ended || (fast && window.creditComplete(credits)))) finish();
+              (window.ended || ((fast || compressed) && window.creditComplete(credits)))) finish();
         } catch (error) {
           fail(error);
         }
@@ -372,7 +402,7 @@
       root.addEventListener?.('synap-gatt-disconnected', disconnect, { once: true });
       try {
         const commandStarted = Date.now();
-        await this.sendOnly(fast ? (adaptive ? 31 : 30) : 12, offset, signal, id, compact ? '' : path, credits, paceMs, compact ? sessionToken : 0);
+        await this.sendOnly(compressed ? 36 : fast ? (adaptive ? 31 : 30) : 12, offset, signal, id, (compact || compressed) ? '' : path, credits, paceMs, (compact || compressed) ? sessionToken : 0);
         commandMs = Date.now() - commandStarted;
         signal?.throwIfAborted();
         const notificationsStarted = Date.now();
@@ -411,7 +441,7 @@
                 fallbackToLegacy: this.fastDisabled, compactLossEvents: this.compactLossEvents },
             }));
         }
-        return result;
+        return { ...result, compressed: compressed && Boolean(window.receivedCompressed) };
       } finally {
         clearTimeout(timer);
         this.stream.removeEventListener('characteristicvaluechanged', receive);
@@ -633,7 +663,8 @@
       progress(0, first.total);
       const parts = [];
       let size = 0,
-        stalls = 0;
+        stalls = 0,
+        usedCompressed = false;
       const readOp = image ? 2 : 4,
         // Only the C3 uses explicit-path notification requests; Chakshu's
         // existing 10-byte window protocol is unchanged.
@@ -649,6 +680,7 @@
           if (this.features & 1 && !this.streamDisabled) {
             const result = await this.window(size, first.total, signal, c3WindowPath, first.sessionToken || 0);
             if (result.next > size) {
+              usedCompressed ||= Boolean(result.compressed);
               parts.push(...result.parts);
               size = result.next;
               stalls = 0;
@@ -676,7 +708,9 @@
       } finally {
         if (signal?.aborted && this.stream) this.sendOnly(16, 0).catch(() => {});
       }
-      return new Blob(parts, { type: image ? 'image/jpeg' : 'application/octet-stream' });
+      const blob = new Blob(parts, { type: image ? 'image/jpeg' : 'application/octet-stream' });
+      Object.defineProperty(blob, 'synapTransferEncoding', { value: usedCompressed ? 'ima-adpcm' : 'original' });
+      return blob;
     }
     snapshot(signal, progress, preview = false) {
       return this.bytes(1, '', signal, progress, preview);
@@ -706,6 +740,6 @@
       });
     }
   }
-  root.SynapChakshuTransfer = { Client, MediaWindow, decode, revision: '1.0.0-chakshu-core18' };
+  root.SynapChakshuTransfer = { Client, MediaWindow, decode, revision: '1.0.0-chakshu-core19' };
   if (typeof module !== 'undefined') module.exports = root.SynapChakshuTransfer;
 })(globalThis);

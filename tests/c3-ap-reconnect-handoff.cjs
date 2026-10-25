@@ -18,6 +18,6 @@ test('C3 hotspot controls are absent but read-only SD transfer and fallback rema
  assert.doesNotMatch(preview,/id="startDeviceAp"|id="stopDeviceAp"|id="diagnoseDeviceAp"/);
  assert.match(preview,/supportsC3Wifi = false/);
  assert.match(preview,/Syncing to Memories over Bluetooth/);
- assert.match(transfer,/this\.sendOnly\(fast \? \(adaptive \? 31 : 30\) : 12/);
+ assert.match(transfer,/this\.sendOnly\(compressed \? 36 : fast \? \(adaptive \? 31 : 30\) : 12/);
  assert.match(transfer,/this\.streamDisabled = true/);
 });
