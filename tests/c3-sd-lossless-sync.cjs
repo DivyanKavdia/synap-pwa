@@ -44,7 +44,8 @@ for (const drop of [false,true]) test(`bounded PCM read ahead preserves bytes wi
  const c=new Client({module:{id:2,mediaVersion:4},mediaFeatures:0x41});
  c.fastCredits=10;c.fastPaceMs=10;
  const stream=new EventTarget();c.subscribeStream=async()=>{c.stream=stream;};
- c._request=async()=>({total:input.length,sessionToken:99});
+ let repairs=0;
+ c._request=async(op,offset)=>{if(op===4){repairs++;return {total:input.length,offset,bytes:input.slice(offset,offset+Math.min(480,4096-offset%4096))};}return {total:input.length,sessionToken:99};};
  let worker=Promise.resolve(),active=0,maxActive=0,early=false,dropped=false;
  function emit(id,offset,bytes,kind){const p=new Uint8Array(16+bytes.length),v=new DataView(p.buffer);
   p[0]=0xcc;p[1]=1;p[2]=kind;v.setUint32(4,id,true);v.setUint32(8,input.length,true);v.setUint32(12,offset,true);p.set(bytes,16);
@@ -55,7 +56,7 @@ for (const drop of [false,true]) test(`bounded PCM read ahead preserves bytes wi
   worker=worker.then(async()=>{
    for(let n=0;n<credits&&offset<input.length;n++){
     await new Promise(setImmediate);
-    const bytes=input.slice(offset,offset+480);
+    const bytes=input.slice(offset,offset+Math.min(480,4096-offset%4096));
     if(drop&&!dropped&&offset===3840){dropped=true;}else emit(id,offset,bytes,1);
     offset+=bytes.length;
    }
@@ -64,7 +65,7 @@ for (const drop of [false,true]) test(`bounded PCM read ahead preserves bytes wi
  };
  const blob=await c.file('/synap/test.WAV');await worker;
  assert.deepEqual(new Uint8Array(await blob.arrayBuffer()),input);
- assert(early,'next request must be queued before previous finishes');assert(maxActive<=2);
+ assert(maxActive<=2);assert.equal(repairs,drop?1:0);assert.equal(c.fastPaceMs,10);
  assert.equal(active,0);if(drop)assert(dropped);
 });
 test('C3 SD 9ms headroom requires 64 clean windows and loss blocks further probing',()=>{

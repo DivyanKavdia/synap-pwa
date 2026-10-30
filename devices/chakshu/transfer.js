@@ -135,6 +135,7 @@
       if (total !== this.total || offset < this.offset || offset > total || size > total - offset)
         throw Error('Camera transfer changed. Retry the import.');
       if (kind === 2 && !size) {
+        this.endOffset = offset;
         this.ended = true;
         return true;
       }
@@ -401,15 +402,12 @@
       const receive = (event) => {
         try {
           if (!window.accept(event.target.value)) return;
-          // One bounded read ahead, only after a stable, contiguous grant.
-          // The worker serializes SD access; each window has its own request ID.
+          // Packet lengths can shrink at SD cache boundaries. Predicting
+          // credits*480 skips bytes; only prefetch a verified contiguous end.
           if (!prefetched && prefetch && this.fasterPcmRamp && compact &&
-              credits === 10 && paceMs <= 10 && !this.fastLossHoldWindows &&
-              window.chunks.size === credits - 2 &&
-              window.contiguous().next === offset + (credits - 2) * 480 &&
-              offset + credits * 480 < total) {
+              window.creditComplete(credits) && window.contiguous().next < total) {
             prefetched = true;
-            prefetch(offset + credits * 480);
+            prefetch(window.contiguous().next);
           }
           if (window.ended || ((fast || compressed) && window.creditComplete(credits))) finish();
         } catch (error) {
@@ -437,6 +435,24 @@
         timer = setTimeout(finish, timeoutMs);
         await done;
         notificationWaitMs = Date.now() - notificationsStarted;
+        // Recover at most two isolated lost packets without throwing away
+        // later received chunks or reducing the connection's established pace.
+        // Opcode4 is the existing explicit-path, read-only single-packet read.
+        if (this.fasterPcmRamp && compact && window.ended &&
+            Number.isInteger(window.endOffset) && window.endOffset > offset &&
+            credits - window.chunks.size > 0 && credits - window.chunks.size <= 2) {
+          for (let retry = 0; retry < 2; retry++) {
+            const gap = window.contiguous().next;
+            if (gap >= window.endOffset) break;
+            const reply = await this._request(4, gap, path, signal);
+            const nextReceived = Math.min(window.endOffset,
+              ...Array.from(window.chunks.keys()).filter(start => start > gap));
+            if (reply.total !== total || reply.offset !== gap || !reply.bytes.length ||
+                reply.bytes.length > nextReceived - gap)
+              throw Error('SD gap recovery changed. Original retained.');
+            window.chunks.set(gap, reply.bytes.slice());
+          }
+        }
         const result = window.contiguous();
         if (fast) {
           const complete = (window.ended || window.creditComplete(credits)) &&
