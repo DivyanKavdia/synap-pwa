@@ -26,8 +26,8 @@ test('CRC protects payload and offsets; wrong sessions, overflow and unexpected 
  assert.throws(()=>new MediaWindow(7,44,3248,8,true).accept(block()));
  assert.throws(()=>state().accept(block(45)));
 });
-test('only C3 media-v4 negotiates opcode36 with a connection-bound selection token',async()=>{
- for(const [id,mediaVersion,expected] of [[2,4,true],[2,3,false],[3,4,false],[1,4,false],[2,5,false]]){
+test('offline compression stays disabled on every device',async()=>{
+ for(const [id,mediaVersion,expected] of [[2,4,false],[2,3,false],[3,4,false],[1,4,false],[2,5,false]]){
   assert.equal(new Client({module:{id,mediaVersion},mediaFeatures:0x41}).compressedSupported,expected);
  }
  const c=new Client({module:{id:2,mediaVersion:4},mediaFeatures:0x41,queue:async f=>f()});let sent;

@@ -211,18 +211,15 @@
       return info?.id === 2 && info.mediaVersion >= 3 && Boolean(this.features & 0x40);
     }
     get compressedSupported() {
-      const info = this.context.module ||
-        (root.SynapModules?.client?.context === this.context ? root.SynapModules.client.module : null);
-      // Only the two SD-specific firmware tracks advertise v4. No build-number guessing.
-      return info?.id === 2 && info.mediaVersion === 4 && Boolean(this.features & 0x40) &&
-        typeof root.SynapAudioCodecV3?.decodeFrame === 'function';
+      // Offline sync always preserves PCM samples. Never request opcode36.
+      return false;
     }
-    // Reliability-first: C3 SD uses the original six-credit opcode12.
-    // Keep adaptive/compact code dormant until field reliability is proven.
     get reliableC3SdMode() {
       const info = this.context.module ||
         (root.SynapModules?.client?.context === this.context ? root.SynapModules.client.module : null);
-      return info?.id === 2;
+      // Only the SD-specific media-v4 tracks opt into existing lossless op31.
+      // Other C3 firmware retains its conservative six-packet path.
+      return info?.id === 2 && info.mediaVersion !== 4;
     }
     // Media-v2/3 remains read-only; older C3 builds use opcode30 unchanged.
     adaptWindow(complete, short, credits, elapsedMs, hasMore, adaptive) {
