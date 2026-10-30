@@ -67,3 +67,17 @@ for (const drop of [false,true]) test(`bounded PCM read ahead preserves bytes wi
  assert(early,'next request must be queued before previous finishes');assert(maxActive<=2);
  assert.equal(active,0);if(drop)assert(dropped);
 });
+test('C3 SD 9ms headroom requires 64 clean windows and loss blocks further probing',()=>{
+ const c=new Client({module:{id:2,mediaVersion:4},mediaFeatures:0x41});
+ c.fastCredits=10;c.fastPaceMs=10;
+ for(let i=0;i<63;i++)c.adaptWindow(true,false,10,110,true,true);
+ assert.equal(c.fastPaceMs,10);
+ c.adaptWindow(true,false,10,110,true,true);assert.equal(c.fastPaceMs,9);
+ c.adaptWindow(false,true,10,110,true,true);assert.equal(c.fastPaceMs,15);
+ for(let i=0;i<150;i++)c.adaptWindow(true,false,c.fastCredits,110,true,true);
+ assert.equal(c.fastPaceMs,10);assert.equal(c.pcmHeadroomBlocked,true);
+ const old=new Client({module:{id:2,mediaVersion:3},mediaFeatures:0x41});
+ old.fastCredits=10;old.fastPaceMs=10;
+ for(let i=0;i<100;i++)old.adaptWindow(true,false,10,110,true,true);
+ assert.equal(old.fastPaceMs,10);
+});

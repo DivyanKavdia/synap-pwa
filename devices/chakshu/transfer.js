@@ -179,6 +179,8 @@
       this.fastWindowFailures = 0;
       this.fastDisabled = false; // Older six-credit op12 after repeated packet loss.
       this.fastPaceMs = 15;
+      this.pcmHeadroomCleanWindows = 0;
+      this.pcmHeadroomBlocked = false;
       this.fastGoodWindows = 0;
       this.fastLossHoldWindows = 0;
       // Bluefy can lose a window every few otherwise successful windows. The
@@ -229,6 +231,8 @@
     // Media-v2/3 remains read-only; older C3 builds use opcode30 unchanged.
     adaptWindow(complete, short, credits, elapsedMs, hasMore, adaptive) {
       if (!complete || short) {
+        this.pcmHeadroomCleanWindows = 0;
+        this.pcmHeadroomBlocked = true;
         this.fastCredits = Math.max(6, Math.floor(credits / 2));
         this.fastGoodWindows = 0;
         this.fastPaceMs = 15;
@@ -245,6 +249,12 @@
         if (++this.fastWindowFailures >= 3) this.fastDisabled = true;
         return;
       }
+      // A fresh C3+SD connection must prove sustained clean delivery before
+      // probing 9 ms. Any missing data disables this probe for this Client.
+      if (adaptive && this.fasterPcmRamp && !this.pcmHeadroomBlocked &&
+          this.fastPaceMs <= 10 && credits === 10 && elapsedMs < 1500 && hasMore) {
+        if (++this.pcmHeadroomCleanWindows >= 64) this.fastPaceMs = 9;
+      } else this.pcmHeadroomCleanWindows = 0;
       this.fastWindowFailures = 0;
       if (adaptive && this.compactSupported && this.compactLossEvents &&
           ++this.compactCleanWindows >= 24) {
@@ -271,7 +281,7 @@
           elapsedMs < 1500 && hasMore && ++this.fastGoodWindows >= (this.fasterPcmRamp ? 4 : 8)) {
         // Media-v3 stabilizes at 10 ms: 8 ms repeatedly outran Bluefy.
         this.fastPaceMs = this.compactSupported
-          ? (this.fastPaceMs >= 15 ? 12 : 10)
+          ? (this.fastPaceMs >= 15 ? 12 : this.fasterPcmRamp && this.fastPaceMs === 9 ? 9 : 10)
           : (this.fastPaceMs >= 15 ? 12 : this.fastPaceMs >= 12 ? 10 : 8);
         this.fastGoodWindows = 0;
       }
@@ -394,7 +404,7 @@
           // One bounded read ahead, only after a stable, contiguous grant.
           // The worker serializes SD access; each window has its own request ID.
           if (!prefetched && prefetch && this.fasterPcmRamp && compact &&
-              credits === 10 && paceMs === 10 && !this.fastLossHoldWindows &&
+              credits === 10 && paceMs <= 10 && !this.fastLossHoldWindows &&
               window.chunks.size === credits - 2 &&
               window.contiguous().next === offset + (credits - 2) * 480 &&
               offset + credits * 480 < total) {
