@@ -221,6 +221,11 @@
       // Other C3 firmware retains its conservative six-packet path.
       return info?.id === 2 && info.mediaVersion !== 4;
     }
+    get fasterPcmRamp() {
+      const info = this.context.module ||
+        (root.SynapModules?.client?.context === this.context ? root.SynapModules.client.module : null);
+      return info?.id === 2 && info.mediaVersion === 4;
+    }
     // Media-v2/3 remains read-only; older C3 builds use opcode30 unchanged.
     adaptWindow(complete, short, credits, elapsedMs, hasMore, adaptive) {
       if (!complete || short) {
@@ -255,7 +260,7 @@
         if (adaptive && this.compactSupported) {
           // Slow-start at four clean windows per extra credit. Jumping from
           // 8 to 12 credits in four windows previously outran Bluefy.
-          if (++this.compactCreditGoodWindows >= 4) {
+          if (++this.compactCreditGoodWindows >= (this.fasterPcmRamp ? 2 : 4)) {
             this.fastCredits = Math.min(this.compactCreditCeiling, credits + 1);
             this.compactCreditGoodWindows = 0;
           }
@@ -263,7 +268,7 @@
       }
       if (adaptive && (!this.compactSupported || this.fastLossHoldWindows === 0) &&
           this.fastCredits >= (this.compactSupported ? this.compactCreditCeiling : 12) &&
-          elapsedMs < 1500 && hasMore && ++this.fastGoodWindows >= 8) {
+          elapsedMs < 1500 && hasMore && ++this.fastGoodWindows >= (this.fasterPcmRamp ? 4 : 8)) {
         // Media-v3 stabilizes at 10 ms: 8 ms repeatedly outran Bluefy.
         this.fastPaceMs = this.compactSupported
           ? (this.fastPaceMs >= 15 ? 12 : 10)

@@ -31,3 +31,11 @@ test('only SD v4 opts into faster PCM and repeated loss restores conservative tr
  for(let i=0;i<3;i++)c.adaptWindow(false,true,c.fastCredits,150,true,true);
  assert.equal(c.fastPaceMs,15);assert.equal(c.fastCredits,6);assert.equal(c.fastDisabled,true);
 });
+test('SD-only PCM ramp reaches 10ms within eleven clean windows and retains loss hold',()=>{
+ const c=new Client({module:{id:2,mediaVersion:4},mediaFeatures:0x41});
+ for(let i=0;i<11;i++)c.adaptWindow(true,false,c.fastCredits,150,true,true);
+ assert.equal(c.fastPaceMs,10);assert.equal(c.fastCredits,10);
+ c.adaptWindow(false,true,10,150,true,true);
+ for(let i=0;i<23;i++)c.adaptWindow(true,false,c.fastCredits,150,true,true);
+ assert.equal(c.fastPaceMs,15);
+});
