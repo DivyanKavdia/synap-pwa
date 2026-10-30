@@ -357,7 +357,7 @@
       );
       return id;
     }
-    async window(offset, total, signal, path = '', sessionToken = 0) {
+    async window(offset, total, signal, path = '', sessionToken = 0, prefetch = null) {
       signal?.throwIfAborted();
       try {
         await this.subscribeStream(signal);
@@ -379,7 +379,7 @@
       const id = nextRequestId(this.context),
         window = new MediaWindow(id, offset, total, fast ? 12 : 8, Boolean(path), compressed);
       let timer, finish, fail;
-      let commandMs = 0, notificationWaitMs = 0;
+      let commandMs = 0, notificationWaitMs = 0, prefetched = false;
       const done = new Promise((resolve, reject) => {
         finish = resolve;
         fail = reject;
@@ -390,8 +390,18 @@
       done.catch(() => {});
       const receive = (event) => {
         try {
-          if (window.accept(event.target.value) &&
-              (window.ended || ((fast || compressed) && window.creditComplete(credits)))) finish();
+          if (!window.accept(event.target.value)) return;
+          // One bounded read ahead, only after a stable, contiguous grant.
+          // The worker serializes SD access; each window has its own request ID.
+          if (!prefetched && prefetch && this.fasterPcmRamp && compact &&
+              credits === 10 && paceMs === 10 && !this.fastLossHoldWindows &&
+              window.chunks.size === credits - 2 &&
+              window.contiguous().next === offset + (credits - 2) * 480 &&
+              offset + credits * 480 < total) {
+            prefetched = true;
+            prefetch(offset + credits * 480);
+          }
+          if (window.ended || ((fast || compressed) && window.creditComplete(credits))) finish();
         } catch (error) {
           fail(error);
         }
@@ -667,6 +677,7 @@
       let size = 0,
         stalls = 0,
         usedCompressed = false;
+      let pendingWindow = null;
       const readOp = image ? 2 : 4,
         // Only the C3 uses explicit-path notification requests; Chakshu's
         // existing 10-byte window protocol is unchanged.
@@ -680,7 +691,23 @@
         while (size < first.total) {
           signal?.throwIfAborted();
           if (this.features & 1 && !this.streamDisabled) {
-            const result = await this.window(size, first.total, signal, c3WindowPath, first.sessionToken || 0);
+            // Never chain speculative reads: consume this one before granting more.
+            let result;
+            if (pendingWindow) {
+              const pending = pendingWindow;
+              pendingWindow = null;
+              const outcome = await pending.promise;
+              if (outcome.error) throw outcome.error;
+              if (pending.offset === size) result = outcome.result;
+              // A gap in the preceding window invalidates the read ahead.
+              // Drain it before retrying so no old work survives file selection.
+            }
+            if (!result) result = await this.window(size, first.total, signal, c3WindowPath, first.sessionToken || 0,
+              next => {
+                pendingWindow = { offset: next, promise:
+                  this.window(next, first.total, signal, c3WindowPath, first.sessionToken || 0)
+                    .then(result => ({ result }), error => ({ error })) };
+              });
             if (result.next > size) {
               usedCompressed ||= Boolean(result.compressed);
               parts.push(...result.parts);
@@ -708,6 +735,8 @@
           progress(size / first.total, first.total);
         }
       } finally {
+        // Drain any queued read before releasing the shared file-selection lock.
+        if (pendingWindow) await pendingWindow.promise;
         if (signal?.aborted && this.stream) this.sendOnly(16, 0).catch(() => {});
       }
       const blob = new Blob(parts, { type: image ? 'image/jpeg' : 'application/octet-stream' });

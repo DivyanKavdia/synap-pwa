@@ -78,7 +78,7 @@ assert.match(modulesSource,/profile\.id === 2 \? value\.getUint8\(16\) & 0x45 : 
   'C3 supports legacy + fast BLE capabilities with Wi-Fi bit disabled');
 assert.match(transfer,/if \(this\.features & 1 && !this\.streamDisabled\)/,
   'C3 retains safe legacy notification windows');
-assert.match(transfer,/this\.window\(size, first\.total, signal, c3WindowPath, first\.sessionToken \|\| 0\)/);
+assert.match(transfer,/this\.window\(size, first\.total, signal, c3WindowPath, first\.sessionToken \\|\| 0\s*(?:,|\))/,'C3 SD sync uses the lossless window reader with optional bounded read-ahead');
 assert.match(transfer,/this\.sendOnly\(compressed \? 36 : fast \? \(adaptive \? 31 : 30\) : 12/,
   'new firmware uses credit-based op30, old firmware still uses op12');
 assert.doesNotMatch(preview,/Start pendant Wi-Fi|Start private Wi-Fi downloads/);
