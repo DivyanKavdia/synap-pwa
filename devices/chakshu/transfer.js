@@ -181,6 +181,7 @@
       this.fastDisabled = false; // Older six-credit op12 after repeated packet loss.
       this.fastPaceMs = 15;
       this.pcmHeadroomCleanWindows = 0;
+      this.pcmCreditHeadroomCleanWindows = 0;
       this.pcmHeadroomBlocked = false;
       this.fastGoodWindows = 0;
       this.fastLossHoldWindows = 0;
@@ -233,6 +234,10 @@
     adaptWindow(complete, short, credits, elapsedMs, hasMore, adaptive) {
       if (!complete || short) {
         this.pcmHeadroomCleanWindows = 0;
+        this.pcmCreditHeadroomCleanWindows = 0;
+        // Reset only on an unrecovered short window. Repaired notifications
+        // leave the established transfer pace and credit ceiling untouched.
+        if (this.fasterPcmRamp) this.compactCreditCeiling = 10;
         this.pcmHeadroomBlocked = true;
         this.fastCredits = Math.max(6, Math.floor(credits / 2));
         this.fastGoodWindows = 0;
@@ -256,6 +261,15 @@
           this.fastPaceMs <= 10 && credits === 10 && elapsedMs < 1500 && hasMore) {
         if (++this.pcmHeadroomCleanWindows >= 64) this.fastPaceMs = 9;
       } else this.pcmHeadroomCleanWindows = 0;
+      // v4 PCM only: after sustained clean 9 ms delivery, request one extra
+      // notification per window. This amortizes the BLE command/END gap
+      // without shortening packet spacing. Never increase v3 credits, and
+      // never probe the larger window after a genuinely missing packet.
+      if (adaptive && this.fasterPcmRamp && !this.pcmHeadroomBlocked &&
+          this.fastPaceMs === 9 && credits === 10 && elapsedMs < 1500 && hasMore) {
+        if (++this.pcmCreditHeadroomCleanWindows >= 32)
+          this.compactCreditCeiling = 11;
+      } else if (this.compactCreditCeiling === 10) this.pcmCreditHeadroomCleanWindows = 0;
       this.fastWindowFailures = 0;
       if (adaptive && this.compactSupported && this.compactLossEvents &&
           ++this.compactCleanWindows >= 24) {
