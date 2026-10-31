@@ -68,6 +68,39 @@ for (const drop of [false,true]) test(`bounded PCM read ahead preserves bytes wi
  assert(maxActive<=2);assert.equal(repairs,drop?1:0);assert.equal(c.fastPaceMs,10);
  assert.equal(active,0);if(drop)assert(dropped);
 });
+test('11-credit v4 window selectively repairs one missing packet at 9ms without throttling',async()=>{
+ const input=Uint8Array.from({length:11023},(_,i)=>(i*19+i%7)&255);
+ const c=new Client({module:{id:2,mediaVersion:4},mediaFeatures:0x41});
+ c.fastCredits=11;c.compactCreditCeiling=11;c.fastPaceMs=9;
+ const stream=new EventTarget();c.subscribeStream=async()=>{c.stream=stream;};
+ let repairs=0,dropped=false,windows=0;
+ c._request=async(op,offset)=>{
+  if(op===4){repairs++;return {total:input.length,offset,bytes:input.slice(offset,offset+480)};}
+  assert.equal(op,3);return {total:input.length,sessionToken:171};
+ };
+ function emit(id,offset,bytes,kind){
+  const p=new Uint8Array(16+bytes.length),v=new DataView(p.buffer);
+  p[0]=0xcc;p[1]=1;p[2]=kind;v.setUint32(4,id,true);
+  v.setUint32(8,input.length,true);v.setUint32(12,offset,true);p.set(bytes,16);
+  const event=new Event('characteristicvaluechanged');
+  Object.defineProperty(event,'target',{value:{value:v}});stream.dispatchEvent(event);
+ }
+ c.sendOnly=async(op,offset,signal,id,path,credits,pace,token)=>{
+  assert.equal(op,31);assert.equal(credits,11);assert.equal(pace,9);assert.equal(token,171);
+  windows++;
+  for(let i=0;i<credits&&offset<input.length;i++){
+   const bytes=input.slice(offset,offset+480);
+   if(!dropped&&i===4){dropped=true;}else emit(id,offset,bytes,1);
+   offset+=bytes.length;
+  }
+  emit(id,offset,new Uint8Array(),2);
+ };
+ const result=await c.file('/synap/test.WAV');
+ assert.deepEqual(new Uint8Array(await result.arrayBuffer()),input);
+ assert.equal(result.synapTransferEncoding,'original');
+ assert.equal(repairs,1);assert.equal(dropped,true);assert(windows>1);
+ assert.equal(c.fastPaceMs,9);assert.equal(c.compactCreditCeiling,11);
+});
 test('v4 PCM increases to 11 credits only after 9ms clean headroom; recovered loss does not throttle',()=>{
  const c=new Client({module:{id:2,mediaVersion:4},mediaFeatures:0x41});
  c.fastCredits=10;c.fastPaceMs=10;
