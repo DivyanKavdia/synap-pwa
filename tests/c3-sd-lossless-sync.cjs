@@ -111,7 +111,10 @@ test('v4 PCM increases to 11 credits only after 9ms clean headroom; recovered lo
  for(let i=0;i<30;i++)c.adaptWindow(true,false,10,110,true,true);
  assert.equal(c.compactCreditCeiling,10);
  c.adaptWindow(true,false,10,110,true,true);
- assert.equal(c.compactCreditCeiling,11);assert.equal(c.fastCredits,11);
+ assert.equal(c.compactCreditCeiling,11);
+ // Credit grant increases only at the existing two-window slow-start cadence.
+ for(let i=0;i<2;i++)c.adaptWindow(true,false,10,110,true,true);
+ assert.equal(c.fastCredits,11);
  c.adaptWindow(true,false,11,110,true,true);
  assert.equal(c.fastPaceMs,9);assert.equal(c.compactCreditCeiling,11);
  c.adaptWindow(false,true,11,1600,true,true);
