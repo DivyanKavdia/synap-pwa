@@ -68,6 +68,27 @@ for (const drop of [false,true]) test(`bounded PCM read ahead preserves bytes wi
  assert(maxActive<=2);assert.equal(repairs,drop?1:0);assert.equal(c.fastPaceMs,10);
  assert.equal(active,0);if(drop)assert(dropped);
 });
+test('v4 PCM increases to 11 credits only after 9ms clean headroom; recovered loss does not throttle',()=>{
+ const c=new Client({module:{id:2,mediaVersion:4},mediaFeatures:0x41});
+ c.fastCredits=10;c.fastPaceMs=10;
+ for(let i=0;i<63;i++)c.adaptWindow(true,false,10,110,true,true);
+ assert.equal(c.fastPaceMs,10);assert.equal(c.compactCreditCeiling,10);
+ c.adaptWindow(true,false,10,110,true,true);
+ assert.equal(c.fastPaceMs,9);
+ for(let i=0;i<30;i++)c.adaptWindow(true,false,10,110,true,true);
+ assert.equal(c.compactCreditCeiling,10);
+ c.adaptWindow(true,false,10,110,true,true);
+ assert.equal(c.compactCreditCeiling,11);assert.equal(c.fastCredits,11);
+ c.adaptWindow(true,false,11,110,true,true);
+ assert.equal(c.fastPaceMs,9);assert.equal(c.compactCreditCeiling,11);
+ c.adaptWindow(false,true,11,1600,true,true);
+ assert.equal(c.compactCreditCeiling,10);assert.equal(c.fastPaceMs,15);
+ assert.equal(c.fastCredits,6);
+ const older=new Client({module:{id:2,mediaVersion:3},mediaFeatures:0x41});
+ older.fastCredits=10;older.fastPaceMs=10;
+ for(let i=0;i<200;i++)older.adaptWindow(true,false,10,110,true,true);
+ assert.equal(older.compactCreditCeiling,10);
+});
 test('C3 SD 9ms headroom requires 64 clean windows and loss blocks further probing',()=>{
  const c=new Client({module:{id:2,mediaVersion:4},mediaFeatures:0x41});
  c.fastCredits=10;c.fastPaceMs=10;
